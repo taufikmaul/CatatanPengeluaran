@@ -2,9 +2,11 @@
 app/config.py — Centralized settings menggunakan pydantic-settings
 Semua env vars dibaca dari .env file
 """
-from pydantic_settings import BaseSettings
-from pydantic import Field
 from functools import lru_cache
+from typing import Any
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -29,6 +31,9 @@ class Settings(BaseSettings):
     app_host: str = Field("0.0.0.0", env="APP_HOST")
     app_port: int = Field(8000, env="APP_PORT")
     webhook_url: str = Field("", env="WEBHOOK_URL")
+    # URL publik dashboard, dipakai untuk tombol/link di balasan Telegram.
+    # Kosongkan untuk menurunkan otomatis dari WEBHOOK_URL (buang suffix /webhook).
+    dashboard_url: str = Field("", env="DASHBOARD_URL")
     secret_key: str = Field("change_me", env="SECRET_KEY")
     # Skema database dikelola Alembic. Set AUTO_CREATE_TABLES=true hanya untuk
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
@@ -55,6 +60,41 @@ class Settings(BaseSettings):
         "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
         "Asset", "Iuran", "Tukar Cash"
     ]
+
+    @property
+    def public_dashboard_url(self) -> str:
+        """URL dashboard yang bisa dibuka user dari Telegram.
+
+        Prioritas: DASHBOARD_URL → turunan WEBHOOK_URL → localhost (dev).
+        """
+        if self.dashboard_url:
+            return self.dashboard_url.rstrip("/") + "/dashboard"
+        if self.webhook_url.startswith(("http://", "https://")):
+            base = self.webhook_url.rstrip("/")
+            if base.endswith("/webhook"):
+                base = base[: -len("/webhook")]
+            return base + "/dashboard"
+        return f"http://localhost:{self.app_port}/dashboard"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _treat_blank_values_as_unset(cls, values: Any) -> Any:
+        """Anggap nilai kosong ("") dari .env sebagai "tidak di-set".
+
+        Tanpa ini, baris seperti `DASHBOARD_PIN_THREAD_ID=` pada .env dikirim
+        sebagai string kosong dan gagal di-parse Pydantic untuk field non-string
+        (mis. `int | None`), sehingga aplikasi gagal start. Dengan penanganan ini,
+        nilai kosong berarti "pakai default" (atau `None` untuk field opsional),
+        sehingga menghapus isi sebuah baris di .env selalu aman.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        return {
+            key: value
+            for key, value in values.items()
+            if not (isinstance(value, str) and not value.strip())
+        }
 
     class Config:
         env_file = ".env"
