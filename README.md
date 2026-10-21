@@ -133,10 +133,11 @@ app/
 
 alembic/                 # Migrasi database (skema dikelola Alembic)
 tests/                   # Test suite (pytest + SQLite in-memory)
-scripts/                 # Utilitas CLI (impor data historis)
+scripts/                 # Utilitas CLI
 ├── import_common.py     # Parser & penulis DB bersama (dipakai kedua importer)
 ├── import_from_csv.py   # Impor riwayat dari file CSV
-└── import_from_sheets.py # Impor riwayat langsung dari Google Sheets
+├── import_from_sheets.py # Impor riwayat langsung dari Google Sheets
+└── push-branch.sh       # Terapkan commit ke mesin lokal lalu push (lihat bagian Skrip Transfer)
 secrets/                 # Credential service account (git-ignored, bukan file repo)
 ```
 
@@ -222,6 +223,244 @@ Dua jaminan keamanan yang sama berlaku untuk kedua jalur:
   dilewati (`duplikat dilewati`), bukan diduplikasi. Nilai uang dinormalisasi ke
   2 desimal sebelum dibandingkan, karena `Decimal("30000")` dan
   `Decimal("30000.00")` — bentuk yang dikembalikan Postgres — bukan string yang sama.
+
+---
+
+## 🔐 Setup SSH ke VPS
+
+Server produksi menyimpan `.env` (token bot, password, kredensial AI) sehingga
+aksesnya **hanya lewat kunci SSH** — autentikasi password dimatikan.
+
+### Konfigurasi yang berlaku di server
+
+| Parameter | Nilai |
+|---|---|
+| Port | `22` |
+| `PubkeyAuthentication` | `yes` |
+| `PasswordAuthentication` | `no` |
+| `KbdInteractiveAuthentication` | `no` |
+| `PermitRootLogin` | `yes` |
+| User aplikasi | `ubuntu` (punya `sudo`) |
+
+### 1. Buat kunci di mesin lokal
+
+```bash
+# Ed25519 cukup, lebih pendek dan modern daripada RSA
+ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)" -f ~/.ssh/catpen_vps
+
+# Kunci privat tidak boleh dibaca user lain
+chmod 600 ~/.ssh/catpen_vps
+chmod 644 ~/.ssh/catpen_vps.pub
+```
+
+Jangan memakai `-N ""` (passphrase kosong) untuk kunci yang dipakai di banyak
+mesin. Biarkan `ssh-keygen` meminta passphrase, lalu daftarkan ke `ssh-agent`:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/catpen_vps
+```
+
+### 2. Pasang public key ke server
+
+```bash
+ssh-copy-id -i ~/.ssh/catpen_vps.pub ubuntu@43.156.36.246
+```
+
+`ssh-copy-id` memerlukan satu kali login password. Kalau password sudah
+dimatikan, gunakan cara ini dari mesin yang masih punya sesi aktif:
+
+```bash
+cat ~/.ssh/catpen_vps.pub | ssh ubuntu@43.156.36.246 \
+  'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+```
+
+Direktori `~/.ssh` wajib `700` dan `authorized_keys` wajib `600`; bila
+permission-nya lebih longgar, sshd akan menolak key tersebut dengan pesan yang
+tidak jelas (`Permission denied (publickey)`).
+
+### 3. Buat `~/.ssh/config` di mesin lokal
+
+```sshconfig
+Host catpen
+    HostName 43.156.36.246
+    User ubuntu
+    IdentityFile ~/.ssh/catpen_vps
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+```
+
+Dengan ini semua perintah cukup memakai `catpen` alih-alih IP dan path kunci.
+Opsi `IdentitiesOnly yes` penting bila Anda punya banyak key: tanpa itu ssh
+mengirim semua identitas yang dimuat agent, dan server bisa menolak setelah
+percobaan yang terlalu banyak.
+
+### 4. Verifikasi
+
+```bash
+# -o BatchMode=yes mematikan prompt supaya gagal cepat, bukan menggantung
+ssh -o BatchMode=yes catpen 'whoami && hostname'
+```
+
+### 5. Kunci akses password (lakukan setelah langkah 4 berhasil)
+
+```bash
+# Di server
+sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sshd -t && sudo systemctl reload ssh
+```
+
+> **Kesalahan klasik:** mematikan password sebelum kunci terbukti bekerja akan
+> mengunci Anda keluar. Selalu uji dengan `ssh -o BatchMode=yes` **dan** biarkan
+> satu sesi SSH lama tetap terbuka sampai key-login terbukti berhasil.
+>
+> `PermitRootLogin yes` di server ini **tidak disarankan**. Set ke `no`
+> (atau `prohibit-password`) setelah Anda yakin `ubuntu` + `sudo` cukup untuk
+> semua pekerjaan.
+
+### 6. Hal yang kerap jadi jebakan
+
+- **Group docker pada sesi non-interaktif.** User `ubuntu` ada di grup `docker`,
+  tetapi layanan sesi (mis. gateway SSH yang jalan sebagai service) tidak selalu
+  mewarisi grup tersebut. Bila `docker compose` gagal dengan
+  *permission denied while trying to connect to the Docker daemon socket*,
+  jalankan perintahnya lewat `sg docker -c "..."` atau login ulang.
+- **`sudo` di server ini tidak meminta password** (`NOPASSWD`). Artinya sesi SSH
+  yang bocor sama dengan akses root. Jaga kunci privat, dan jangan menaruhnya di
+  mesin bersama.
+- **Gunakan `-T` saat `docker compose run`** dari skrip atau `scp` alur non-TTY,
+  agar Docker tidak mencoba mengalokasikan TTY.
+
+---
+
+## 🔁 Alur Kerja: Lokal → GitHub → Prod
+
+Aturan yang dipakai: **semua penulisan kode terjadi di mesin lokal**, VPS hanya
+menjalankan `git pull`. Ini menjaga repo di server selalu identik dengan remote
+sehingga tidak ada perubahan yang hanya hidup di satu tempat.
+
+```
+mesin lokal          GitHub              VPS (prod)
+git commit/push  →   origin  →   git pull + docker compose up -d --build
+```
+
+### Jangan edit langsung di VPS
+
+Mengedit di VPS lalu lupa push membuat repo server menyimpang dari `origin`, dan
+`git pull` berikutnya akan konflik atau — lebih buruk — menimpa kerja yang belum
+disimpan. Bila sudah terjadi, simpan dulu pekerjaannya sebagai ref supaya tidak
+hilang, lalu kembalikan `main` ke posisi remote:
+
+```bash
+# Di VPS: amankan pekerjaan yang belum di-push
+git tag backup/vps-work-$(date +%F) HEAD
+
+# Kembalikan main ke kondisi origin tanpa menghapus tag backup di atas
+git checkout main
+git reset --hard origin/main
+
+# Sisa file untracked (mis. __pycache__) tidak tersentuh reset, hapus manual bila perlu
+git status --short --untracked-files=all
+```
+
+Selama tag `backup/...` masih ada, commit tersebut tetap bisa diambil kembali:
+`git checkout backup/vps-work-2026-10-21`. Hapus tag setelah yakin tidak
+dibutuhkan lagi.
+
+### Deploy perubahan di prod
+
+```bash
+ssh catpen
+cd ~/apps/catatan-pengeluaran
+git checkout main
+git pull
+sg docker -c "docker compose up -d --build"    # --build wajib bila Dockerfile/requirements berubah
+sg docker -c "docker compose ps"
+curl -s http://127.0.0.1:8000/health
+```
+
+Bila perubahan menyentuh `docker-compose.yml` (mis. lokasi mount `secrets/` atau
+jumlah worker), **restart saja tidak cukup** — container harus dibuat ulang,
+sehingga `up -d --build` yang dipakai, bukan `restart`.
+
+### Kalau VPS tidak punya kredensial Git
+
+VPS yang hanya melakukan `pull` sebenarnya tidak perlu kredensial tulis. Namun
+bila suatu saat Anda harus mendorong pekerjaan **dari** VPS dan di sana tidak ada
+kredensial (tidak ada `credential.helper`, `~/.git-credentials`, token, maupun
+kunci privat SSH), `git push` akan berhenti menunggu username. Jangan menempelkan
+token ke URL remote atau ke riwayat shell — pakai skrip transfer di bawah.
+
+---
+
+## 📦 Skrip Transfer (`push-branch.sh`)
+
+Dipakai ketika pekerjaan dibuat di satu mesin (mis. VPS) tetapi harus di-push
+dari mesin lain yang punya akses GitHub.
+
+Paket transfer terdiri dari:
+
+| Berkas | Isi |
+|---|---|
+| `feat-impor-historis.bundle` | Git bundle berisi commit, hash asli dipertahankan |
+| `patches/*.patch` | Alternatif: patch untuk `git am` |
+| `push-branch.sh` | Penerap + verifikasi + push |
+| `SHA256SUMS` | Checksum bundle & skrip |
+
+Skripnya juga tersedia di repo ini sebagai `scripts/push-branch.sh`, jadi tidak
+perlu menyalinnya dari paket transfer.
+
+Buat paket di mesin sumber:
+
+```bash
+mkdir -p /tmp/catpen-transfer
+cd /path/ke/repo
+git bundle create /tmp/catpen-transfer/feat-impor-historis.bundle origin/main..HEAD
+git format-patch origin/main..HEAD -o /tmp/catpen-transfer/patches --quiet
+```
+
+### Pemakaian
+
+```bash
+# 1. Unduh paket ke mesin lokal
+scp -r catpen:/tmp/catpen-transfer ~/Downloads/
+
+# 2. Pastikan paket utuh
+cd ~/Downloads/catpen-transfer && sha256sum -c SHA256SUMS
+
+# 3. Terapkan TANPA push, untuk diperiksa dulu
+bash push-branch.sh ~/path/ke/CatatanPengeluaran --dry-run
+
+# 4. Terapkan lalu push (meminta konfirmasi sebelum push)
+bash push-branch.sh ~/path/ke/CatatanPengeluaran
+```
+
+Argumen kedua opsional bila `push-branch.sh` dipanggil dari dalam folder paket.
+Jalankan `bash push-branch.sh --help` untuk ringkasan.
+
+### Apa yang diperiksa skrip
+
+1. Repo tujuan valid dan **working tree bersih** (berhenti bila ada perubahan
+   belum di-commit, supaya kerja Anda tidak tercampur).
+2. `git fetch origin` lalu bandingkan `origin/main` dengan commit basis bundle.
+   Bila `main` sudah bergerak, skrip memberi peringatan dan meminta konfirmasi.
+3. Membuat branch baru dari `origin/main` (bukan dari `main` lokal yang mungkin
+   tertinggal), sehingga yang di-push benar-benar bersih.
+4. Menerapkan commit: bundle bila ada (hash asli dipertahankan), atau `git am`
+   bila hanya tersedia patch. Kegagalan `git am` di-`abort`, tidak meninggalkan
+   repo setengah jadi.
+5. **Memverifikasi jumlah commit dan tree hash.** Tree hash dihitung dari isi
+   berkas, bukan metadata, jadi nilainya sama persis baik lewat bundle maupun
+   patch. Bila tree hash tidak cocok, skrip **menolak push**.
+6. Menampilkan log commit dan remote tujuan, lalu meminta konfirmasi eksplisit.
+7. `git push -u origin <branch>`, kemudian mencetak URL pembuatan Pull Request.
+
+`--dry-run` mengerjakan langkah 1–6 tanpa langkah 7, sehingga aman dipakai untuk
+memeriksa hasil sebelum menyentuh remote.
+
+Skrip ini tidak memodifikasi working tree: semua langkah berjalan di branch baru,
+dan bila dijalankan ulang ia me-reset branch tersebut ke `origin/main` terlebih
+dahulu (idempoten).
 
 ---
 
