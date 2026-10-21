@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import Base, get_db
 from app.main import app
+from app.services.dashboard_auth_service import create_session_token, SESSION_COOKIE_NAME
 
 
 @pytest.fixture
@@ -40,9 +41,15 @@ class TestUtilityEndpoints:
 
 
 class TestDashboard:
+    async def test_redirects_unauthenticated_to_login(self, client):
+        response = await client.get("/dashboard", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/dashboard/login"
+
     async def test_renders_with_empty_database(self, client, db):
         # Dashboard memanggil get_monthly_report + pagination lewat dependency
         # yang sudah di-override ke DB test.
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
         response = await client.get("/dashboard")
 
         assert response.status_code == 200
@@ -50,11 +57,13 @@ class TestDashboard:
         assert "Historycake Dashboard" in response.text
 
     async def test_accepts_filter_query_params(self, client, db):
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
         response = await client.get("/dashboard?month=9&year=2025")
         assert response.status_code == 200
         assert "September" in response.text
 
     async def test_rejects_invalid_page(self, client, db):
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
         response = await client.get("/dashboard?page=0")
         assert response.status_code == 422
 
@@ -66,7 +75,7 @@ class TestSchemaConsistency:
                 lambda sync_conn: set(inspect(sync_conn).get_table_names())
             )
 
-        assert {"users", "expenses", "sessions"} <= tables
+        assert {"users", "expenses", "sessions", "dashboard_pins", "dashboard_access_logs"} <= tables
 
     async def test_users_table_has_unique_telegram_id(self, engine):
         async with engine.connect() as conn:
@@ -89,4 +98,4 @@ class TestSchemaConsistency:
 
     async def test_models_metadata_matches_alembic_target(self):
         """Alembic memakai Base.metadata yang sama; pastikan tabel terdaftar."""
-        assert set(Base.metadata.tables) == {"users", "expenses", "sessions"}
+        assert set(Base.metadata.tables) == {"users", "expenses", "sessions", "dashboard_pins", "dashboard_access_logs"}
