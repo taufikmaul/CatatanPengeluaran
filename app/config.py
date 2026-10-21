@@ -2,9 +2,11 @@
 app/config.py — Centralized settings menggunakan pydantic-settings
 Semua env vars dibaca dari .env file
 """
-from pydantic_settings import BaseSettings
-from pydantic import Field
 from functools import lru_cache
+from typing import Any
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -73,6 +75,26 @@ class Settings(BaseSettings):
                 base = base[: -len("/webhook")]
             return base + "/dashboard"
         return f"http://localhost:{self.app_port}/dashboard"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _treat_blank_values_as_unset(cls, values: Any) -> Any:
+        """Anggap nilai kosong ("") dari .env sebagai "tidak di-set".
+
+        Tanpa ini, baris seperti `DASHBOARD_PIN_THREAD_ID=` pada .env dikirim
+        sebagai string kosong dan gagal di-parse Pydantic untuk field non-string
+        (mis. `int | None`), sehingga aplikasi gagal start. Dengan penanganan ini,
+        nilai kosong berarti "pakai default" (atau `None` untuk field opsional),
+        sehingga menghapus isi sebuah baris di .env selalu aman.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        return {
+            key: value
+            for key, value in values.items()
+            if not (isinstance(value, str) and not value.strip())
+        }
 
     class Config:
         env_file = ".env"
