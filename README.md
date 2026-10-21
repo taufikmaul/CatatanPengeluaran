@@ -117,6 +117,9 @@ app/
 ├── scheduler/           # Cron jobs
 ├── dashboard/           # Web dashboard
 └── utils/               # Helpers
+
+alembic/                 # Migrasi database (skema dikelola Alembic)
+tests/                   # Test suite (pytest + SQLite in-memory)
 ```
 
 ---
@@ -155,3 +158,74 @@ Fitur dashboard:
 | `/dashboard` | GET | Dashboard web |
 | `/setup-webhook` | POST | Set ulang webhook |
 | `/docs` | GET | Swagger API docs |
+
+---
+
+## 🗄️ Migrasi Database (Alembic)
+
+Skema database **dikelola Alembic**. `create_all` sudah tidak dipakai di
+produksi; container menjalankan `alembic upgrade head` otomatis lewat
+`docker-entrypoint.sh` sebelum uvicorn start.
+
+```bash
+# Terapkan semua migrasi
+alembic upgrade head
+
+# Lihat versi aktif
+alembic current
+
+# Cek apakah model berubah tapi belum ada migrasi
+alembic check
+
+# Buat migrasi baru setelah mengubah model
+alembic revision --autogenerate -m "tambah kolom x"
+
+# Rollback satu langkah
+alembic downgrade -1
+```
+
+URL database dibaca dari `DATABASE_URL` (bukan dari `alembic.ini`). Untuk
+menjalankan migrasi di database lain tanpa mengubah `.env`:
+
+```bash
+alembic -x db_url="postgresql+asyncpg://user:pass@host:5432/db" upgrade head
+```
+
+Set `SKIP_MIGRATIONS=true` bila migrasi dijalankan sebagai job terpisah di
+pipeline deploy.
+
+---
+
+## 🧪 Testing
+
+Test suite memakai **SQLite in-memory**, jadi tidak butuh PostgreSQL dan tidak
+memanggil jaringan (Telegram & AI selalu di-mock).
+
+```bash
+# Sekali setup
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements-dev.txt
+
+# Jalankan test
+.venv/bin/python -m pytest
+
+# Dengan coverage
+.venv/bin/python -m pytest --cov=app --cov-report=term-missing
+```
+
+Cakupan test saat ini:
+
+| File | Fokus |
+|---|---|
+| `tests/test_formatters.py` | Format Rupiah, tanggal, progress bar |
+| `tests/test_validators.py` | Rekalkulasi total, validasi kategori |
+| `tests/test_intent.py` | Klasifikasi command, media, natural language |
+| `tests/test_expense_service.py` | Simpan, dedupe, rekap bulanan, pagination |
+| `tests/test_agent_tools.py` | Audit kategori/perhitungan, price insight |
+| `tests/test_memory_and_auth.py` | Autentikasi user, conversation memory |
+| `tests/test_webhook.py` | Auth flow, routing media/teks, dedup callback |
+| `tests/test_app.py` | Endpoint utilitas, dashboard, konsistensi skema |
+| `tests/test_migrations.py` | Alembic upgrade/downgrade & anti-drift |
+
+> Catatan: gunakan Python 3.12. `asyncpg==0.29.0` belum bisa dikompilasi di
+> Python 3.13+.

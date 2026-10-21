@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     app_port: int = Field(8000, env="APP_PORT")
     webhook_url: str = Field("", env="WEBHOOK_URL")
     secret_key: str = Field("change_me", env="SECRET_KEY")
+    # Skema database dikelola Alembic. Set AUTO_CREATE_TABLES=true hanya untuk
+    # development cepat / SQLite lokal; jangan diaktifkan di produksi.
+    auto_create_tables: bool = Field(False, env="AUTO_CREATE_TABLES")
 
     # Scheduler
     auto_report_time: str = Field("08:00", env="AUTO_REPORT_TIME")

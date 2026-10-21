@@ -3,6 +3,7 @@ app/agent/memory.py — Per-user conversation memory untuk Hermes
 Disimpan di Postgres (tabel sessions) agar persist antar restart
 """
 from datetime import datetime
+from copy import deepcopy
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.session import ConversationSession
@@ -19,14 +20,18 @@ DEFAULT_CONTEXT = {
 
 
 async def get_user_context(db: AsyncSession, user_id: int) -> dict:
-    """Ambil context user dari DB. Return default jika belum ada."""
+    """Ambil context user dari DB. Return default jika belum ada.
+
+    Selalu mengembalikan salinan, supaya pemanggil tidak memutasi objek milik
+    sesi SQLAlchemy secara diam-diam.
+    """
     result = await db.execute(
         select(ConversationSession).where(ConversationSession.user_id == user_id)
     )
     session = result.scalar_one_or_none()
-    if not session:
-        return dict(DEFAULT_CONTEXT)
-    return session.context or dict(DEFAULT_CONTEXT)
+    if not session or not session.context:
+        return deepcopy(DEFAULT_CONTEXT)
+    return dict(session.context)
 
 
 async def update_user_context(db: AsyncSession, user_id: int, updates: dict) -> None:
@@ -37,12 +42,13 @@ async def update_user_context(db: AsyncSession, user_id: int, updates: dict) -> 
     session = result.scalar_one_or_none()
 
     if not session:
-        context = {**DEFAULT_CONTEXT, **updates}
+        context = {**deepcopy(DEFAULT_CONTEXT), **updates}
         session = ConversationSession(user_id=user_id, context=context)
         db.add(session)
     else:
-        current = session.context or dict(DEFAULT_CONTEXT)
-        # Merge updates
+        # Assign dict baru (bukan mutasi in-place) agar perubahan pasti
+        # terdeteksi SQLAlchemy dan terkirim sebagai UPDATE.
+        current = {**(session.context or {})}
         current.update(updates)
         # Simpan last 5 conversation turns only
         if "conversation_history" in current:
@@ -61,7 +67,7 @@ async def add_conversation_turn(
 ) -> None:
     """Tambah 1 turn ke conversation history."""
     ctx = await get_user_context(db, user_id)
-    history = ctx.get("conversation_history", [])
+    history = list(ctx.get("conversation_history", []))
     history.append({
         "role": role,
         "content": content[:500],  # limit panjang
@@ -72,4 +78,4 @@ async def add_conversation_turn(
 
 async def clear_user_context(db: AsyncSession, user_id: int) -> None:
     """Reset context user ke default."""
-    await update_user_context(db, user_id, dict(DEFAULT_CONTEXT))
+    await update_user_context(db, user_id, deepcopy(DEFAULT_CONTEXT))
