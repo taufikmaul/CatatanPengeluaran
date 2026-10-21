@@ -1,0 +1,52 @@
+# ── Secrets (JANGAN pernah commit) ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+service-account*.json
+*SSH Key*
+*ssh*key*
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── Virtualenv / tooling ──
+.venv/
+venv/
+env/
+.python-version
+
+# ── Testing & coverage ──
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ── Database lokal ──
+*.db
+*.sqlite
+*.sqlite3
+postgres_data/
+
+# ── graft's local graph cache — regenerable, not committed (run `graft build`). ──
+/graft/
+
+# ── OS / editor ──
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Catatan Pengeluaran — Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  </style>
+</head>
+<body class="text-gray-800">
+
+<!-- Header -->
+<header class="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+  <div class="flex items-center gap-3">
+    <span class="text-2xl">🎂</span>
+    <div>
+      <h1 class="font-bold text-lg leading-tight">Catatan Pengeluaran</h1>
+      <p class="text-xs text-gray-400">Historycake Dashboard</p>
+    </div>
+  </div>
+  <span class="text-sm text-gray-400">Powered by Hermes Agent</span>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- Filter Bar -->
+  <form method="GET" class="card p-4 flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">Bulan</label>
+      <select name="month" class="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-300">
+        {% set month_names = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"] %}
+        {% for i in range(1, 13) %}
+          <option value="{{ i }}" {% if i == current_month %}selected{% endif %}>{{ month_names[i-1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">Tahun</label>
+      <input type="number" name="year" value="{{ current_year }}" class="border rounded-lg px-3 py-2 text-sm w-24" />
+    </div>
+    <div>
+      <label class="text-xs text-gray-500 block mb-1">Kategori</label>
+      <select name="category" class="border rounded-lg px-3 py-2 text-sm">
+        <option value="">Semua Kategori</option>
+        {% for cat in valid_categories %}
+          <option value="{{ cat }}" {% if cat == selected_category %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition">
+      Filter
+    </button>
+    <a href="/dashboard" class="text-sm text-gray-400 hover:text-gray-600 py-2">Reset</a>
+  </form>
+
+  <!-- Stat Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="card p-4">
+      <p class="text-xs text-gray-400 mb-1">Total Lunas</p>
+      <p class="text-xl font-bold text-green-600">{{ fmt_rupiah(report.total_lunas) }}</p>
+      <p class="text-xs text-gray-400 mt-1">{{ month_name }} {{ current_year }}</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-400 mb-1">Transaksi</p>
+      <p class="text-xl font-bold text-blue-600">{{ report.expense_count }}</p>
+      <p class="text-xs text-gray-400 mt-1">item tercatat</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-400 mb-1">Belum Lunas</p>
+      <p class="text-xl font-bold text-red-500">{{ report.list_hutang | length }}</p>
+      <p class="text-xs text-gray-400 mt-1">tagihan pending</p>
+    </div>
+    <div class="card p-4">
+      <p class="text-xs text-gray-400 mb-1">Kategori</p>
+      <p class="text-xl font-bold text-purple-600">{{ report.per_kategori | length }}</p>
+      <p class="text-xs text-gray-400 mt-1">kategori aktif</p>
+    </div>
+  </div>
+
+  <!-- Chart + Hutang -->
+  <div class="grid md:grid-cols-2 gap-4">
+
+    <!-- Donut Chart Kategori -->
+    <div class="card p-5">
+      <h2 class="font-semibold mb-4 text-gray-700">📂 Breakdown Kategori</h2>
+      {% if chart_labels %}
+        <canvas id="categoryChart" height="220"></canvas>
+      {% else %}
+        <div class="text-center text-gray-400 py-12">Belum ada data bulan ini</div>
+      {% endif %}
+    </div>
+
+    <!-- Tagihan Belum Lunas -->
+    <div class="card p-5">
+      <h2 class="font-semibold mb-4 text-gray-700">⚠️ Tagihan Belum Lunas</h2>
+      {% if report.list_hutang %}
+        <div class="space-y-2">
+          {% for h in report.list_hutang %}
+          <div class="flex justify-between items-center bg-red-50 rounded-lg px-3 py-2 text-sm">
+            <span class="font-medium text-gray-700">{{ h.barang }}</span>
+            <div class="text-right">
+              <div class="font-bold text-red-600">{{ fmt_rupiah(h.nominal) }}</div>
+              <div class="text-xs text-gray-400">Tempo: {{ h.tempo }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="text-center text-green-500 py-12">
+          <div class="text-3xl mb-2">✅</div>
+          <p class="text-sm">Semua tagihan lunas!</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tabel Data -->
+  <div class="card overflow-hidden">
+    <div class="p-4 border-b flex justify-between items-center">
+      <h2 class="font-semibold text-gray-700">📋 Data Pengeluaran</h2>
+      <span class="text-sm text-gray-400">{{ total_count }} item</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Tanggal</th>
+            <th class="px-4 py-3 text-left">Barang</th>
+            <th class="px-4 py-3 text-left">Toko</th>
+            <th class="px-4 py-3 text-center">Qty</th>
+            <th class="px-4 py-3 text-right">Harga Satuan</th>
+            <th class="px-4 py-3 text-left">Kategori</th>
+            <th class="px-4 py-3 text-right">Total</th>
+            <th class="px-4 py-3 text-center">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% if expenses %}
+            {% for e in expenses %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-4 py-3 text-gray-500 whitespace-nowrap">
+                {{ e.expense_date.strftime('%d/%m/%Y') if e.expense_date else '-' }}
+              </td>
+              <td class="px-4 py-3 font-medium">{{ e.item_name }}</td>
+              <td class="px-4 py-3 text-gray-500">{{ e.supplier or '-' }}</td>
+              <td class="px-4 py-3 text-center text-gray-600">{{ e.qty }}</td>
+              <td class="px-4 py-3 text-right text-gray-600">{{ fmt_rupiah(e.unit_price|float) }}</td>
+              <td class="px-4 py-3">
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                  {{ e.category or 'Lainnya' }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right font-semibold">{{ fmt_rupiah(e.total_price|float) }}</td>
+              <td class="px-4 py-3 text-center">
+                {% if e.pay_status and e.pay_status.lower() == 'lunas' %}
+                  <span class="text-green-500 text-xs font-medium">✅ Lunas</span>
+                {% else %}
+                  <span class="text-red-500 text-xs font-medium">⚠️ Pending</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8" class="px-4 py-12 text-center text-gray-400">
+                Belum ada data untuk periode ini
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="p-4 border-t flex justify-center gap-2">
+      {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&month={{ current_month }}&year={{ current_year }}{% if selected_category %}&category={{ selected_category }}{% endif %}"
+           class="px-3 py-1 border rounded text-sm hover:bg-gray-50">← Prev</a>
+      {% endif %}
+      <span class="px-3 py-1 text-sm text-gray-500">{{ page }} / {{ total_pages }}</span>
+      {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}&month={{ current_month }}&year={{ current_year }}{% if selected_category %}&category={{ selected_category }}{% endif %}"
+           class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next →</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</main>
+
+<!-- Chart.js Script -->
+<script>
+{% if chart_labels %}
+const ctx = document.getElementById('categoryChart').getContext('2d');
+const colors = [
+  '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+  '#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6'
+];
+new Chart(ctx, {
+  type: 'doughnut',
+  data: {
+    labels: {{ chart_labels | tojson }},
+    datasets: [{
+      data: {{ chart_values | tojson }},
+      backgroundColor: colors.slice(0, {{ chart_labels | length }}),
+      borderWidth: 2,
+      borderColor: '#fff',
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 12, font: { size: 11 } } },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` Rp ${ctx.parsed.toLocaleString('id-ID')}`
+        }
+      }
+    },
+    cutout: '65%',
+  }
+});
+{% endif %}
+</script>
+
+</body>
+</html>
