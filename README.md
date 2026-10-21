@@ -420,8 +420,13 @@ OUT=/tmp/catpen-transfer
 
 # Bundle + patch + manifest dibuat dari satu titik acuan, supaya angkanya konsisten
 BASE=$(git rev-parse origin/main)
-git bundle create "$OUT/feat-impor-historis.bundle" "$BASE..HEAD"
-git format-patch "$BASE..HEAD" -o "$OUT/patches" --quiet
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Sebutkan NAMA ref, bukan "HEAD". Bundle dari range tanpa nama ref tidak
+# merekam ref apa pun, sehingga `git fetch <bundle> <branch>` gagal dengan
+# "couldn't find remote ref".
+git bundle create "$OUT/feat-impor-historis.bundle" "$BASE..refs/heads/$BRANCH"
+git format-patch "$BASE..refs/heads/$BRANCH" -o "$OUT/patches" --quiet
 cat > "$OUT/manifest.env" <<EOF
 EXPECTED_BASE=$BASE
 EXPECTED_TREE=$(git rev-parse HEAD^{tree})
