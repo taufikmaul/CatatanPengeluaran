@@ -26,8 +26,14 @@ TELEGRAM_TOKEN=token_bot_dari_botfather
 BOT_PASSWORD=password_rahasia_anda
 SUMOPOD_API_KEY=sk-your-sumopod-key-here
 WEBHOOK_URL=https://domain-anda.com/webhook
+DASHBOARD_URL=https://domain-anda.com
+SECRET_KEY=string_acak_panjang_anda
 DATABASE_URL=postgresql+asyncpg://catpen:catpen_secret@db:5432/catatan_pengeluaran
 ```
+
+`SECRET_KEY` bukan sekadar formalitas: nilainya dipakai sebagai token admin untuk
+endpoint `/setup-webhook` (lihat langkah 5). `DASHBOARD_URL` boleh dikosongkan —
+sistem akan menurunkannya dari `WEBHOOK_URL` dengan membuang akhiran `/webhook`.
 
 ### 3. Jalankan dengan Docker
 
@@ -69,10 +75,16 @@ certbot --nginx -d domain-anda.com
 
 ### 5. Set Webhook
 
-Setelah HTTPS aktif:
+Setelah HTTPS aktif, set webhook. Endpoint ini memicu panggilan ke Telegram API
+sehingga dilindungi `SECRET_KEY`: kirim lewat header `X-Admin-Token`, atau lewat
+query `?token=`. Tanpa token yang benar hasilnya `403 Forbidden`.
+
 ```bash
-curl -X POST https://domain-anda.com/setup-webhook
+curl -X POST -H "X-Admin-Token: $SECRET_KEY" https://domain-anda.com/setup-webhook
 ```
+
+Catatan: app juga memasang webhook otomatis saat startup bila `WEBHOOK_URL` terisi,
+jadi langkah ini hanya untuk memaksa pemasangan ulang.
 
 ---
 
@@ -89,7 +101,8 @@ curl -X POST https://domain-anda.com/setup-webhook
 | 🔢 `/audit hitung` | Fix perhitungan matematika |
 | 🧠 Hermes Memory | Bot ingat konteks + insight harga |
 | 📅 Auto-Report | Laporan otomatis Senin pagi |
-| 🔄 Sheets Sync | Sync otomatis ke Google Sheets setiap 5 menit |
+| 🔄 Sheets Sync | Sync otomatis ke Google Sheets setiap 5 menit (opsional) |
+| 📥 Impor Riwayat | Impor data lama dari CSV atau Google Sheets |
 | 🌐 Dashboard | Web dashboard dengan chart |
 
 ---
@@ -120,19 +133,95 @@ app/
 
 alembic/                 # Migrasi database (skema dikelola Alembic)
 tests/                   # Test suite (pytest + SQLite in-memory)
+scripts/                 # Utilitas CLI (impor data historis)
+├── import_common.py     # Parser & penulis DB bersama (dipakai kedua importer)
+├── import_from_csv.py   # Impor riwayat dari file CSV
+└── import_from_sheets.py # Impor riwayat langsung dari Google Sheets
+secrets/                 # Credential service account (git-ignored, bukan file repo)
 ```
 
 ---
 
-## 🔄 Google Sheets Sync
+## 🔄 Google Sheets Sync (opsional)
 
-Data tersimpan di **PostgreSQL** (primary), lalu otomatis di-sync ke Google Sheets setiap 5 menit.
+Data tersimpan di **PostgreSQL** (primary). Google Sheets adalah **salinan
+sekunder** yang sifatnya opsional: bot, `/rekap`, dan dashboard tetap berjalan
+normal tanpa Sheets sama sekali.
 
-Untuk aktifkan:
-1. Buat Google Service Account
-2. Download `credentials.json`
-3. Share Spreadsheet ke email service account
-4. Set `SPREADSHEET_ID` dan `GOOGLE_CREDENTIALS_JSON` di `.env`
+Untuk mengaktifkan sync 5 menit:
+
+1. Buat Google Service Account di GCP.
+2. Aktifkan **Google Sheets API** dan **Google Drive API**.
+3. Download key JSON, simpan sebagai `secrets/credentials.json`.
+4. Share spreadsheet ke email service account tersebut (akses Editor).
+5. Set `SPREADSHEET_ID` di `.env`. Path credential dibaca dari
+   `GOOGLE_CREDENTIALS_JSON` (default `secrets/credentials.json`).
+
+```bash
+mkdir -p secrets && chmod 700 secrets
+# salin key JSON ke secrets/credentials.json
+chmod 600 secrets/credentials.json
+docker compose up -d
+```
+
+Bila credential belum ada, sync **ditunda tanpa merusak apa pun**: job hanya
+mencatat satu baris peringatan (bukan berulang setiap 5 menit), dan baris baru
+tetap tersimpan dengan `sheets_synced = false` sehingga otomatis ikut terkirim
+begitu credential dipasang.
+
+> Direktori `secrets/` di-mount **sebagai direktori**, bukan file tunggal.
+> Bind-mount file yang belum ada membuat Docker otomatis membuat *direktori*
+> kosong bernama sama, dan `gspread` gagal tanpa pesan yang jelas. `secrets/`
+> juga sudah masuk `.gitignore` — jangan pernah commit credential.
+
+---
+
+## 📥 Impor Data Historis
+
+Sync aplikasi bersifat **satu arah** (Postgres → Sheets). Data lama yang sudah
+ada di spreadsheet tidak otomatis masuk Postgres, jadi dashboard dan `/rekap`
+akan terlihat kosong. Dua script di `scripts/` mengisi kekosongan itu.
+
+### Jalur CSV (disarankan, tanpa setup GCP)
+
+1. Buka spreadsheet → **File → Download → Comma Separated Values (.csv)**.
+2. Upload ke server, lalu cek dulu tanpa menulis:
+
+```bash
+# dari host: kirim file ke container lewat volume
+scp pengeluaran.csv ubuntu@server:~/pengeluaran.csv
+
+docker compose run --rm --no-deps \
+  -v ~/pengeluaran.csv:/tmp/data.csv:ro -T app \
+  python scripts/import_from_csv.py /tmp/data.csv --dry-run
+
+# hapus --dry-run bila hasil parsing sudah benar
+```
+
+### Jalur Google Sheets (butuh service account)
+
+```bash
+docker compose run --rm --no-deps -T app \
+  python scripts/import_from_sheets.py --dry-run
+```
+
+Opsi yang tersedia di kedua importer: `--dry-run`, `--limit N`, dan
+`--date-format "%d/%m/%Y"` untuk tanggal ambigu. Importer CSV menambahkan
+`--no-header` dan `--delimiter` bila deteksi otomatis meleset.
+
+Yang ditangani importer CSV secara otomatis: delimiter koma maupun titik-koma
+(Excel locale Indonesia), encoding UTF-8/BOM/CP1252/Latin-1, angka Rupiah
+(`Rp 15.000`, `1.500.000`, `15.000,50`), baris kosong, dan baris header.
+
+Dua jaminan keamanan yang sama berlaku untuk kedua jalur:
+
+- **Tidak menulis balik ke Sheet.** Semua baris historis ditandai
+  `sheets_synced = true`, jadi job sync tidak akan menggandakannya di spreadsheet.
+- **Idempoten.** Kunci (tanggal, supplier, barang, total) dibandingkan dengan isi
+  database, sehingga impor boleh diulang kapan saja — baris yang sudah ada akan
+  dilewati (`duplikat dilewati`), bukan diduplikasi. Nilai uang dinormalisasi ke
+  2 desimal sebelum dibandingkan, karena `Decimal("30000")` dan
+  `Decimal("30000.00")` — bentuk yang dikembalikan Postgres — bukan string yang sama.
 
 ---
 
@@ -156,7 +245,7 @@ Fitur dashboard:
 | `/health` | GET | Health check |
 | `/webhook` | POST | Telegram webhook |
 | `/dashboard` | GET | Dashboard web |
-| `/setup-webhook` | POST | Set ulang webhook |
+| `/setup-webhook` | POST | Set ulang webhook (butuh `X-Admin-Token`) |
 | `/docs` | GET | Swagger API docs |
 
 ---
@@ -196,6 +285,37 @@ pipeline deploy.
 
 ---
 
+## ⚙️ Catatan Operasional
+
+### Jalankan tepat satu worker
+
+Container sengaja memakai `--workers 1`. Uvicorn dengan beberapa worker
+menjalankan `lifespan` di **setiap** proses, sehingga:
+
+- APScheduler terpasang lebih dari sekali → laporan mingguan dan sync Sheets
+  bisa terkirim ganda;
+- `setWebhook` dipanggil berkali-kali saat startup → Telegram membalas
+  `429 Too Many Requests`.
+
+Untuk menambah kapasitas, jalankan beberapa **container** di belakang load
+balancer hanya jika scheduler dipisah ke proses sendiri.
+
+### Perilaku autentikasi di private chat
+
+User yang belum terdaftar hanya bisa mengirim password. Setelah password benar,
+user langsung dicatat di tabel `users` **dan** pesan tersebut diteruskan ke
+pipeline normal, sehingga menu utama tampil di balasan yang sama — bukan pesan
+"akses diterima" yang menggantung tanpa tindak lanjut.
+
+### Exception tidak lagi ditelan
+
+Handler `/webhook` selalu membalas `200 OK` (Telegram akan mengulang kiriman bila
+menerima non-2xx), tetapi traceback-nya kini dicatat ke log container. Kalau bot
+terlihat diam, periksa `docker compose logs app` — jangan berasumsi pesan tidak
+sampai.
+
+---
+
 ## 🧪 Testing
 
 Test suite memakai **SQLite in-memory**, jadi tidak butuh PostgreSQL dan tidak
@@ -226,6 +346,8 @@ Cakupan test saat ini:
 | `tests/test_webhook.py` | Auth flow, routing media/teks, dedup callback |
 | `tests/test_app.py` | Endpoint utilitas, dashboard, konsistensi skema |
 | `tests/test_migrations.py` | Alembic upgrade/downgrade & anti-drift |
+| `tests/test_import_from_csv.py` | Deteksi delimiter/encoding, tanggal ambigu, angka Rupiah, kunci dedupe |
+| `tests/test_import_from_sheets.py` | Parsing baris sheet & konversi tipe |
 
 > Catatan: gunakan Python 3.12. `asyncpg==0.29.0` belum bisa dikompilasi di
 > Python 3.13+.
