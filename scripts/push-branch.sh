@@ -21,11 +21,13 @@ set -Eeuo pipefail
 
 BRANCH="feat/impor-historis-dan-perbaikan"
 BASE_BRANCH="main"
-# Hash tree hasil akhir. Dipakai sebagai bukti isi branch identik dengan yang
-# ada di VPS: tree hash dihitung dari isi file, bukan dari commit atau metadata,
-# sehingga tetap sama walau hash commit berbeda (mis. lewat jalur patch).
-EXPECTED_TREE="b8981a3a17739e67be2d00d566ad013f77bfc686"
-EXPECTED_BASE="9d5e09a6ebbf7fed6ec017dc40a17efe05fcbad2"
+# Nilai harapan TIDAK ditulis mati di sini. Semuanya dibaca dari manifest.env
+# yang dibuat bersama bundle. Kalau angka seperti jumlah commit atau tree hash
+# di-hardcode, skrip ini diam-diam jadi basi setiap kali pekerjaan bertambah:
+# ia akan menolak push yang sebenarnya benar.
+EXPECTED_TREE=""
+EXPECTED_BASE=""
+EXPECTED_COMMITS=""
 
 DRY_RUN="no"
 REPO_PATH=""
@@ -62,6 +64,12 @@ fi
 
 BUNDLE="$TRANSFER_DIR/feat-impor-historis.bundle"
 PATCH_DIR="$TRANSFER_DIR/patches"
+MANIFEST="$TRANSFER_DIR/manifest.env"
+
+if [ -f "$MANIFEST" ]; then
+    # shellcheck disable=SC1090
+    . "$MANIFEST"
+fi
 
 step() { printf '\n== %s ==\n' "$*"; }
 fail() { printf '\nGAGAL: %s\n' "$*" >&2; exit 1; }
@@ -82,7 +90,7 @@ git fetch origin --prune
 BASE_SHA="$(git rev-parse "origin/$BASE_BRANCH")"
 echo "origin/$BASE_BRANCH = ${BASE_SHA:0:7}"
 
-if [ "$BASE_SHA" != "$EXPECTED_BASE" ]; then
+if [ -n "$EXPECTED_BASE" ] && [ "$BASE_SHA" != "$EXPECTED_BASE" ]; then
     echo
     echo "PERHATIAN: origin/$BASE_BRANCH sudah bergerak dari ${EXPECTED_BASE:0:7} ke ${BASE_SHA:0:7}."
     echo "Bundle dibuat terhadap ${EXPECTED_BASE:0:7}. Bila ada commit baru di main,"
@@ -132,13 +140,19 @@ echo "Jumlah commit : $COMMIT_COUNT"
 echo "Tree sekarang : ${ACTUAL_TREE:0:7}"
 echo "Tree diharapkan: ${EXPECTED_TREE:0:7}"
 
-if [ "$COMMIT_COUNT" != "5" ]; then
-    fail "Jumlah commit $COMMIT_COUNT, seharusnya 5."
+if [ -z "$EXPECTED_TREE" ]; then
+    echo
+    echo "PERINGATAN: manifest.env tidak ditemukan - verifikasi tree dilewati."
+    echo "Paket tanpa manifest tidak bisa membuktikan isinya utuh."
+else
+    if [ -n "$EXPECTED_COMMITS" ] && [ "$COMMIT_COUNT" != "$EXPECTED_COMMITS" ]; then
+        fail "Jumlah commit $COMMIT_COUNT, seharusnya $EXPECTED_COMMITS."
+    fi
+    if [ "$ACTUAL_TREE" != "$EXPECTED_TREE" ]; then
+        fail "Tree hash tidak cocok. Isi file berbeda dari paket - jangan di-push."
+    fi
+    echo "OK: isi branch identik dengan paket hasil kerja."
 fi
-if [ "$ACTUAL_TREE" != "$EXPECTED_TREE" ]; then
-    fail "Tree hash tidak cocok. Isi file berbeda dari yang di VPS - jangan di-push."
-fi
-echo "OK: isi branch identik dengan hasil kerja di VPS."
 
 git --no-pager log --oneline "origin/$BASE_BRANCH..HEAD"
 

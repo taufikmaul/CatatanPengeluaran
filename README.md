@@ -404,8 +404,9 @@ Paket transfer terdiri dari:
 |---|---|
 | `feat-impor-historis.bundle` | Git bundle berisi commit, hash asli dipertahankan |
 | `patches/*.patch` | Alternatif: patch untuk `git am` |
+| `manifest.env` | Nilai harapan: basis commit, jumlah commit, tree hash |
 | `push-branch.sh` | Penerap + verifikasi + push |
-| `SHA256SUMS` | Checksum bundle & skrip |
+| `SHA256SUMS` | Checksum seluruh berkas paket |
 
 Skripnya juga tersedia di repo ini sebagai `scripts/push-branch.sh`, jadi tidak
 perlu menyalinnya dari paket transfer.
@@ -415,9 +416,24 @@ Buat paket di mesin sumber:
 ```bash
 mkdir -p /tmp/catpen-transfer
 cd /path/ke/repo
-git bundle create /tmp/catpen-transfer/feat-impor-historis.bundle origin/main..HEAD
-git format-patch origin/main..HEAD -o /tmp/catpen-transfer/patches --quiet
+OUT=/tmp/catpen-transfer
+
+# Bundle + patch + manifest dibuat dari satu titik acuan, supaya angkanya konsisten
+BASE=$(git rev-parse origin/main)
+git bundle create "$OUT/feat-impor-historis.bundle" "$BASE..HEAD"
+git format-patch "$BASE..HEAD" -o "$OUT/patches" --quiet
+cat > "$OUT/manifest.env" <<EOF
+EXPECTED_BASE=$BASE
+EXPECTED_TREE=$(git rev-parse HEAD^{tree})
+EXPECTED_COMMITS=$(git rev-list --count "$BASE..HEAD")
+EOF
 ```
+
+Nilai verifikasi sengaja disimpan di `manifest.env`, **bukan ditulis di dalam
+skrip**. Angka yang di-hardcode akan menjadi basi begitu pekerjaan bertambah,
+dan skrip akan menolak push yang sebenarnya benar. Bila `manifest.env` tidak
+ada, skrip tetap berjalan tetapi memberi peringatan bahwa keutuhan isi tidak
+bisa dibuktikan.
 
 ### Pemakaian
 
