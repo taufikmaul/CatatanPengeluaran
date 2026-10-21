@@ -3,7 +3,7 @@ app/main.py — FastAPI Application Entry Point
 Menggantikan seluruh Google Apps Script
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from app.database.connection import init_db
 from app.bot.webhook import router as webhook_router
@@ -82,10 +82,20 @@ async def health():
 
 
 @app.post("/setup-webhook")
-async def setup_webhook():
-    """Set ulang webhook Telegram secara manual."""
+async def setup_webhook(request: Request):
+    """Set ulang webhook Telegram secara manual.
+
+    Dilindungi SECRET_KEY (header X-Admin-Token atau query ?token=) karena
+    endpoint ini memicu panggilan ke Telegram API dan terbuka ke publik.
+    """
+    from fastapi import HTTPException
     from app.config import settings
     from app.bot.telegram_client import set_webhook
+
+    token = request.headers.get("X-Admin-Token") or request.query_params.get("token")
+    if not settings.secret_key or token != settings.secret_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     if not settings.webhook_url:
         return {"error": "WEBHOOK_URL tidak dikonfigurasi di .env"}
     result = await set_webhook(settings.webhook_url)

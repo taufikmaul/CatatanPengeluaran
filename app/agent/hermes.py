@@ -228,7 +228,7 @@ class HermesAgent:
 
         keyboard = {
             "inline_keyboard": [[
-                {"text": "📊 Buka Dashboard", "url": "http://localhost:8000/dashboard"}
+                {"text": "📊 Buka Dashboard", "url": settings.public_dashboard_url}
             ]]
         }
         await tg.send_message(self.chat_id, msg, self.thread_id, keyboard)
@@ -328,7 +328,7 @@ class HermesAgent:
                 ],
                 [
                     {"text": "💡 Bantuan", "callback_data": "menu_bantuan"},
-                    {"text": "🌐 Dashboard", "url": "http://localhost:8000/dashboard"},
+                    {"text": "🌐 Dashboard", "url": settings.public_dashboard_url},
                 ],
             ]
         }
@@ -382,7 +382,7 @@ class HermesAgent:
 
         keyboard = {
             "inline_keyboard": [[
-                {"text": "🌐 Lihat Dashboard", "url": "http://localhost:8000/dashboard"}
+                {"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}
             ]]
         }
 

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     app_host: str = Field("0.0.0.0", env="APP_HOST")
     app_port: int = Field(8000, env="APP_PORT")
     webhook_url: str = Field("", env="WEBHOOK_URL")
+    # URL publik dashboard, dipakai untuk tombol/link di balasan Telegram.
+    # Kosongkan untuk menurunkan otomatis dari WEBHOOK_URL (buang suffix /webhook).
+    dashboard_url: str = Field("", env="DASHBOARD_URL")
     secret_key: str = Field("change_me", env="SECRET_KEY")
     # Skema database dikelola Alembic. Set AUTO_CREATE_TABLES=true hanya untuk
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
@@ -55,6 +58,21 @@ class Settings(BaseSettings):
         "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
         "Asset", "Iuran", "Tukar Cash"
     ]
+
+    @property
+    def public_dashboard_url(self) -> str:
+        """URL dashboard yang bisa dibuka user dari Telegram.
+
+        Prioritas: DASHBOARD_URL → turunan WEBHOOK_URL → localhost (dev).
+        """
+        if self.dashboard_url:
+            return self.dashboard_url.rstrip("/") + "/dashboard"
+        if self.webhook_url.startswith(("http://", "https://")):
+            base = self.webhook_url.rstrip("/")
+            if base.endswith("/webhook"):
+                base = base[: -len("/webhook")]
+            return base + "/dashboard"
+        return f"http://localhost:{self.app_port}/dashboard"
 
     class Config:
         env_file = ".env"
