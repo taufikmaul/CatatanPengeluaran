@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Verifikasi PIN Dashboard — Historycake</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #f1f5f9; }
+    .card { background: white; border-radius: 16px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.06), 0 2px 6px -1px rgba(0,0,0,0.04); }
+    .pin-input { letter-spacing: 0.5em; }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 text-gray-800">
+
+<div class="w-full max-w-md">
+
+  <!-- Logo & Title -->
+  <div class="text-center mb-6">
+    <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-3xl shadow-inner mb-3">
+      🎂
+    </div>
+    <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Catatan Pengeluaran</h1>
+    <p class="text-sm text-gray-500 mt-1">Historycake Dashboard Access</p>
+  </div>
+
+  <div class="card p-6 md:p-8 space-y-6">
+
+    <!-- Notification Messages -->
+    {% if error %}
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+      <span class="text-lg">⚠️</span>
+      <div class="flex-1 font-medium leading-relaxed">{{ error }}</div>
+    </div>
+    {% endif %}
+
+    {% if message %}
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+      <span class="text-lg">📩</span>
+      <div class="flex-1 font-medium leading-relaxed">{{ message }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Step 1: Request PIN -->
+    <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Langkah 1</span>
+        <span class="text-xs text-blue-600 font-medium flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
+          Telegram Bot
+        </span>
+      </div>
+      <p class="text-sm text-gray-600 mb-3">
+        Klik tombol di bawah untuk meminta kode PIN 6-digit yang akan dikirim langsung ke Telegram Anda.
+      </p>
+      <form method="POST" action="/dashboard/request-pin">
+        <button type="submit" id="btnRequestPin" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-4 rounded-lg text-sm transition flex items-center justify-center gap-2 shadow-sm">
+          <span>📲 Minta Kode PIN via Telegram</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Step 2: Verify PIN -->
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Langkah 2</span>
+        <span class="text-xs text-slate-400">Berlaku 5 menit</span>
+      </div>
+      <form method="POST" action="/dashboard/verify-pin" class="space-y-4">
+        <div>
+          <label for="pin" class="block text-sm font-medium text-gray-700 mb-1">Masukkan 6-Digit PIN</label>
+          <input
+            type="text"
+            id="pin"
+            name="pin"
+            required
+            maxlength="6"
+            pattern="[0-9]{6}"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="······"
+            class="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-2xl font-mono tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+            autofocus
+          />
+        </div>
+
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl text-sm transition shadow-sm flex items-center justify-center gap-2">
+          <span>🔓 Verifikasi PIN & Masuk</span>
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- Security Footer -->
+  <div class="mt-6 text-center text-xs text-gray-500 space-y-1">
+    <p class="flex items-center justify-center gap-1.5 font-medium text-gray-600">
+      <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      Dilindungi Verifikasi Telegram & Proteksi Anti-Brute Force
+    </p>
+    <p>Akses dibatasi maksimal 3 percobaan per PIN.</p>
+  </div>
+
+</div>
+
+</body>
+</html>

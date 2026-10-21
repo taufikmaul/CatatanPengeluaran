@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     report_chat_id: str = Field("", env="REPORT_CHAT_ID")
     report_thread_id: int = Field(7, env="REPORT_THREAD_ID")
 
+    # Dashboard PIN & Security
+    dashboard_pin_chat_id: str = Field("", env="DASHBOARD_PIN_CHAT_ID")
+    dashboard_pin_thread_id: int | None = Field(None, env="DASHBOARD_PIN_THREAD_ID")
+    dashboard_session_expire_hours: int = Field(24, env="DASHBOARD_SESSION_EXPIRE_HOURS")
+    dashboard_pin_expire_seconds: int = Field(300, env="DASHBOARD_PIN_EXPIRE_SECONDS")
+    dashboard_pin_cooldown_seconds: int = Field(60, env="DASHBOARD_PIN_COOLDOWN_SECONDS")
+    dashboard_pin_max_attempts: int = Field(3, env="DASHBOARD_PIN_MAX_ATTEMPTS")
+    dashboard_lockout_attempts: int = Field(5, env="DASHBOARD_LOCKOUT_ATTEMPTS")
+    dashboard_lockout_minutes: int = Field(15, env="DASHBOARD_LOCKOUT_MINUTES")
+
     # Kategori yang valid (fix, tidak perlu dari env)
     valid_categories: list[str] = [
         "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
