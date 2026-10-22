@@ -78,9 +78,11 @@ async def dashboard_index(
         year=current_year,
     )
 
-    # Data untuk chart: per kategori
+    # Data untuk chart: per kategori & metode bayar
     chart_labels = list(report["per_kategori"].keys())
     chart_values = [round(v) for v in report["per_kategori"].values()]
+    pm_chart_labels = list(report.get("per_metode_bayar", {}).keys())
+    pm_chart_values = [round(v) for v in report.get("per_metode_bayar", {}).values()]
 
     MONTHS = ["Januari","Februari","Maret","April","Mei","Juni",
               "Juli","Agustus","September","Oktober","November","Desember"]
@@ -104,6 +106,8 @@ async def dashboard_index(
             "valid_categories": settings.valid_categories,
             "chart_labels": chart_labels,
             "chart_values": chart_values,
+            "pm_chart_labels": pm_chart_labels,
+            "pm_chart_values": pm_chart_values,
             "fmt_rupiah": fmt_rupiah,
             "fmt_date_id": fmt_date_id,
         },

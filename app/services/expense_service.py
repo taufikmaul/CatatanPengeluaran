@@ -119,26 +119,37 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
     total_lunas = 0.0
     per_kategori: dict[str, float] = {}
+    per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
 
     for e in expenses:
         nominal = float(e.total_price or 0)
         status = (e.pay_status or "").lower()
 
+        # Agregasi Metode Pembayaran
+        metode = (e.pay_method or "Tunai").strip() or "Tunai"
+        per_metode_bayar[metode] = per_metode_bayar.get(metode, 0.0) + nominal
+
         if status == "lunas":
             total_lunas += nominal
             kat = e.category or "Lainnya"
-            per_kategori[kat] = per_kategori.get(kat, 0) + nominal
+            per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
         elif "belum" in status or status in ("hutang", "tempo"):
             list_hutang.append({
+                "id": e.id,
                 "barang": e.item_name,
+                "supplier": e.supplier or "-",
                 "nominal": nominal,
                 "tempo": e.due_date or "-",
+                "tanggal": str(e.expense_date),
+                "kategori": e.category or "Lainnya",
+                "status": e.pay_status or "Belum Lunas",
             })
 
     return {
         "total_lunas": total_lunas,
         "per_kategori": per_kategori,
+        "per_metode_bayar": per_metode_bayar,
         "list_hutang": list_hutang,
         "expense_count": len(expenses),
         "month": month,

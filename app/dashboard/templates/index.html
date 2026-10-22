@@ -100,41 +100,91 @@
     </div>
   </div>
 
-  <!-- Chart + Hutang -->
-  <div class="grid md:grid-cols-2 gap-4">
+  <!-- Charts + Orderan Perlu Pelunasan Row -->
+  <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
 
     <!-- Donut Chart Kategori -->
-    <div class="card p-5">
-      <h2 class="font-semibold mb-4 text-gray-700">📂 Breakdown Kategori</h2>
-      {% if chart_labels %}
-        <canvas id="categoryChart" height="220"></canvas>
-      {% else %}
-        <div class="text-center text-gray-400 py-12">Belum ada data bulan ini</div>
-      {% endif %}
+    <div class="card p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3 border-b pb-2">
+          <h2 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <span>📂</span> Distribusi Kategori
+          </h2>
+          <span class="text-xs font-semibold text-gray-500">{{ fmt_rupiah(report.total_lunas) }}</span>
+        </div>
+        {% if chart_labels %}
+          <canvas id="categoryChart" height="210"></canvas>
+        {% else %}
+          <div class="text-center text-gray-400 py-12">Belum ada data bulan ini</div>
+        {% endif %}
+      </div>
     </div>
 
-    <!-- Tagihan Belum Lunas -->
-    <div class="card p-5">
-      <h2 class="font-semibold mb-4 text-gray-700">⚠️ Tagihan Belum Lunas</h2>
-      {% if report.list_hutang %}
-        <div class="space-y-2">
-          {% for h in report.list_hutang %}
-          <div class="flex justify-between items-center bg-red-50 rounded-lg px-3 py-2 text-sm">
-            <span class="font-medium text-gray-700">{{ h.barang }}</span>
-            <div class="text-right">
-              <div class="font-bold text-red-600">{{ fmt_rupiah(h.nominal) }}</div>
-              <div class="text-xs text-gray-400">Tempo: {{ h.tempo }}</div>
+    <!-- Pie / Donut Chart Metode Pembayaran -->
+    <div class="card p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3 border-b pb-2">
+          <h2 class="font-bold text-sm text-gray-800 flex items-center gap-2">
+            <span>💳</span> Metode Pembayaran
+          </h2>
+          <span class="text-xs font-semibold text-gray-500">{{ fmt_rupiah(report.total_lunas) }}</span>
+        </div>
+        {% if pm_chart_labels %}
+          <canvas id="paymentMethodChart" height="210"></canvas>
+        {% else %}
+          <div class="text-center text-gray-400 py-12">Belum ada transaksi pembayaran</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Orderan Perlu Pelunasan & Jatuh Tempo -->
+    <div class="card p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3 border-b pb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-base">⏳</span>
+            <div>
+              <h2 class="font-bold text-sm text-gray-800">Perlu Pelunasan</h2>
+              <p class="text-[10px] text-gray-400">Orderan & tanggal tempo</p>
             </div>
           </div>
-          {% endfor %}
+          <span class="text-xs font-bold text-red-600">
+            {% set total_unpaid = namespace(val=0) %}
+            {% for h in report.list_hutang %}{% set total_unpaid.val = total_unpaid.val + h.nominal %}{% endfor %}
+            {{ fmt_rupiah(total_unpaid.val) }}
+          </span>
         </div>
-      {% else %}
-        <div class="text-center text-green-500 py-12">
-          <div class="text-3xl mb-2">✅</div>
-          <p class="text-sm">Semua tagihan lunas!</p>
-        </div>
-      {% endif %}
+
+        {% if report.list_hutang %}
+          <div class="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+            {% for h in report.list_hutang %}
+            <div class="p-2.5 rounded-xl border border-red-100 bg-red-50/50 hover:bg-red-50 transition text-xs space-y-1">
+              <div class="flex justify-between items-start gap-2">
+                <div class="min-w-0 flex-1">
+                  <p class="font-bold text-gray-800 truncate">{{ h.barang }}</p>
+                  <p class="text-[10px] text-gray-500 truncate">{{ h.supplier or '-' }} • {{ h.kategori or 'Lainnya' }}</p>
+                </div>
+                <span class="font-bold text-red-600 shrink-0">{{ fmt_rupiah(h.nominal) }}</span>
+              </div>
+              <div class="flex items-center justify-between pt-1 border-t border-red-100/70 text-[10px]">
+                <span class="inline-flex items-center gap-1 font-semibold text-red-700 bg-white border border-red-200 px-1.5 py-0.5 rounded-md">
+                  📅 Tempo: {{ h.tempo }}
+                </span>
+                <span class="text-gray-400">{{ h.tanggal or '' }}</span>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="text-center text-green-600 py-12 space-y-1">
+            <div class="text-3xl mb-1">🎉</div>
+            <p class="text-sm font-bold">Semua Tagihan Lunas!</p>
+            <p class="text-[11px] text-gray-400">Tidak ada orderan pending</p>
+          </div>
+        {% endif %}
+      </div>
     </div>
+
   </div>
 
   <!-- Executive Quick Insights -->
@@ -181,111 +231,153 @@
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
 
     <!-- Card 1: Top 5 Sering Dibeli -->
-    <div class="card p-5 flex flex-col justify-between">
+    <div class="card p-0 overflow-hidden flex flex-col justify-between border border-slate-200">
       <div>
-        <div class="flex items-center justify-between mb-3 border-b pb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">🏆</span>
-            <h3 class="font-semibold text-sm text-gray-800">Top 5 Sering Dibeli</h3>
+        <div class="p-4 border-b bg-gradient-to-r from-blue-50/70 to-transparent flex items-center justify-between min-h-[64px]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center text-base shrink-0">🛍️</span>
+            <div class="min-w-0">
+              <h3 class="font-bold text-sm text-gray-800 truncate">Top Sering Dibeli</h3>
+              <p class="text-[10px] text-gray-400 font-medium truncate">Frekuensi belanja terbanyak</p>
+            </div>
           </div>
-          <span class="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Frekuensi</span>
+          <span class="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-semibold shrink-0">Frekuensi</span>
         </div>
-        <div class="space-y-2.5">
+        <div class="p-4 space-y-3.5">
           {% if leaderboards and leaderboards.top_frequent_items %}
+            {% set max_freq = leaderboards.top_frequent_items[0].count if leaderboards.top_frequent_items[0].count > 0 else 1 %}
             {% for it in leaderboards.top_frequent_items %}
-            <div class="flex items-center justify-between text-xs">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-amber-100 text-amber-700{% elif loop.index == 2 %}bg-slate-200 text-slate-700{% elif loop.index == 3 %}bg-amber-50 text-amber-800{% else %}bg-gray-100 text-gray-500{% endif %}">
-                  {{ loop.index }}
-                </span>
-                <div class="truncate">
-                  <p class="font-medium text-gray-800 truncate" title="{{ it.item_name }}">{{ it.item_name }}</p>
-                  <p class="text-[10px] text-gray-400">{{ it.total_qty }} unit • {{ it.category }}</p>
+            {% set pct = ((it.count / max_freq) * 100) | round | int %}
+            <div class="space-y-1.5">
+              <div class="flex items-start justify-between text-xs gap-2">
+                <div class="flex items-start gap-2 min-w-0 flex-1">
+                  <span class="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-amber-400 text-amber-950 ring-1 ring-amber-200{% elif loop.index == 2 %}bg-slate-300 text-slate-800 ring-1 ring-slate-200{% elif loop.index == 3 %}bg-amber-700/80 text-amber-100 ring-1 ring-amber-600/30{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ loop.index }}
+                  </span>
+                  <div class="min-w-0 flex-1 space-y-0.5">
+                    <p class="font-semibold text-gray-800 truncate leading-tight" title="{{ it.item_name }}">{{ it.item_name }}</p>
+                    <div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+                      <span class="bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded font-medium truncate">{{ it.category }}</span>
+                      <span>•</span>
+                      <span>{{ it.total_qty }} unit</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="font-bold text-blue-600 block leading-tight">{{ it.count }}x</span>
+                  <span class="text-[10px] text-gray-400 block mt-0.5">{{ fmt_rupiah(it.total_spent) }}</span>
                 </div>
               </div>
-              <div class="text-right shrink-0 pl-2">
-                <span class="font-bold text-blue-600 block">{{ it.count }}x</span>
-                <span class="text-[10px] text-gray-400">{{ fmt_rupiah(it.total_spent) }}</span>
+              <div class="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                <div class="bg-blue-500 h-full rounded-full" style="width: {{ pct }}%"></div>
               </div>
             </div>
             {% endfor %}
           {% else %}
-            <p class="text-xs text-gray-400 text-center py-6">Belum ada data transaksi</p>
+            <p class="text-xs text-gray-400 text-center py-8">Belum ada data transaksi</p>
           {% endif %}
         </div>
       </div>
     </div>
 
-    <!-- Card 2: Top 5 Paling Mahal (Pengeluaran Terbesar) -->
-    <div class="card p-5 flex flex-col justify-between">
+    <!-- Card 2: Top 5 Belanja Terbesar -->
+    <div class="card p-0 overflow-hidden flex flex-col justify-between border border-slate-200">
       <div>
-        <div class="flex items-center justify-between mb-3 border-b pb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">💰</span>
-            <h3 class="font-semibold text-sm text-gray-800">Top 5 Belanja Terbesar</h3>
+        <div class="p-4 border-b bg-gradient-to-r from-emerald-50/70 to-transparent flex items-center justify-between min-h-[64px]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-base shrink-0">💎</span>
+            <div class="min-w-0">
+              <h3 class="font-bold text-sm text-gray-800 truncate">Top Item Termahal</h3>
+              <p class="text-[10px] text-gray-400 font-medium truncate">Pengeluaran paling besar</p>
+            </div>
           </div>
-          <span class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Budget Share</span>
+          <span class="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold shrink-0">Budget</span>
         </div>
-        <div class="space-y-2.5">
+        <div class="p-4 space-y-3.5">
           {% if leaderboards and leaderboards.top_expensive_items %}
+            {% set max_exp = leaderboards.top_expensive_items[0].total_spent if leaderboards.top_expensive_items[0].total_spent > 0 else 1 %}
             {% for it in leaderboards.top_expensive_items %}
-            <div class="flex items-center justify-between text-xs">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-emerald-100 text-emerald-700{% elif loop.index == 2 %}bg-slate-200 text-slate-700{% elif loop.index == 3 %}bg-emerald-50 text-emerald-800{% else %}bg-gray-100 text-gray-500{% endif %}">
-                  {{ loop.index }}
-                </span>
-                <div class="truncate">
-                  <p class="font-medium text-gray-800 truncate" title="{{ it.item_name }}">{{ it.item_name }}</p>
-                  <p class="text-[10px] text-gray-400">{{ it.percentage }}% dari total</p>
+            {% set pct = ((it.total_spent / max_exp) * 100) | round | int %}
+            <div class="space-y-1.5">
+              <div class="flex items-start justify-between text-xs gap-2">
+                <div class="flex items-start gap-2 min-w-0 flex-1">
+                  <span class="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-amber-400 text-amber-950 ring-1 ring-amber-200{% elif loop.index == 2 %}bg-slate-300 text-slate-800 ring-1 ring-slate-200{% elif loop.index == 3 %}bg-amber-700/80 text-amber-100 ring-1 ring-amber-600/30{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ loop.index }}
+                  </span>
+                  <div class="min-w-0 flex-1 space-y-0.5">
+                    <p class="font-semibold text-gray-800 truncate leading-tight" title="{{ it.item_name }}">{{ it.item_name }}</p>
+                    <div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+                      <span class="bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded font-medium truncate">{{ it.category }}</span>
+                      <span>•</span>
+                      <span>{{ it.percentage }}% budget</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="font-bold text-emerald-700 block leading-tight">{{ fmt_rupiah(it.total_spent) }}</span>
+                  <span class="text-[10px] text-gray-400 block mt-0.5">@{{ fmt_rupiah(it.max_unit_price) }}</span>
                 </div>
               </div>
-              <div class="text-right shrink-0 pl-2">
-                <span class="font-bold text-emerald-700 block">{{ fmt_rupiah(it.total_spent) }}</span>
-                <span class="text-[10px] text-gray-400">{{ it.count }} transaksi</span>
+              <div class="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                <div class="bg-emerald-500 h-full rounded-full" style="width: {{ pct }}%"></div>
               </div>
             </div>
             {% endfor %}
           {% else %}
-            <p class="text-xs text-gray-400 text-center py-6">Belum ada data pengeluaran</p>
+            <p class="text-xs text-gray-400 text-center py-8">Belum ada pengeluaran</p>
           {% endif %}
         </div>
       </div>
     </div>
 
     <!-- Card 3: Top 5 Lonjakan Kenaikan Harga -->
-    <div class="card p-5 flex flex-col justify-between">
+    <div class="card p-0 overflow-hidden flex flex-col justify-between border border-slate-200">
       <div>
-        <div class="flex items-center justify-between mb-3 border-b pb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">📈</span>
-            <h3 class="font-semibold text-sm text-gray-800">Top 5 Naik Drastis</h3>
+        <div class="p-4 border-b bg-gradient-to-r from-rose-50/70 to-transparent flex items-center justify-between min-h-[64px]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center text-base shrink-0">🔥</span>
+            <div class="min-w-0">
+              <h3 class="font-bold text-sm text-gray-800 truncate">Top Naik Drastis</h3>
+              <p class="text-[10px] text-gray-400 font-medium truncate">Lonjakan harga beli bahan</p>
+            </div>
           </div>
-          <span class="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-medium">Waspada Kenaikan</span>
+          <span class="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-semibold shrink-0">Spike Alert</span>
         </div>
-        <div class="space-y-2.5">
+        <div class="p-4 space-y-3.5">
           {% if leaderboards and leaderboards.top_price_spikes %}
+            {% set max_spike = leaderboards.top_price_spikes[0].percent_change if leaderboards.top_price_spikes[0].percent_change > 0 else 100 %}
             {% for it in leaderboards.top_price_spikes %}
-            <div class="flex items-center justify-between text-xs">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 flex items-center justify-center rounded-full font-bold text-[10px] bg-rose-100 text-rose-700">
-                  {{ loop.index }}
-                </span>
-                <div class="truncate">
-                  <p class="font-medium text-gray-800 truncate" title="{{ it.item_name }}">{{ it.item_name }}</p>
-                  <p class="text-[10px] text-gray-400">{{ fmt_rupiah(it.previous_price) }} ➔ {{ fmt_rupiah(it.current_price) }}</p>
+            {% set pct = ((it.percent_change / max_spike) * 100) | round | int %}
+            <div class="space-y-1.5">
+              <div class="flex items-start justify-between text-xs gap-2">
+                <div class="flex items-start gap-2 min-w-0 flex-1">
+                  <span class="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-amber-400 text-amber-950 ring-1 ring-amber-200{% elif loop.index == 2 %}bg-slate-300 text-slate-800 ring-1 ring-slate-200{% elif loop.index == 3 %}bg-amber-700/80 text-amber-100 ring-1 ring-amber-600/30{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ loop.index }}
+                  </span>
+                  <div class="min-w-0 flex-1 space-y-0.5">
+                    <p class="font-semibold text-gray-800 truncate leading-tight" title="{{ it.item_name }}">{{ it.item_name }}</p>
+                    <div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+                      <span class="bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded font-medium truncate">{% if it.supplier != '-' %}{{ it.supplier }}{% else %}{{ it.category }}{% endif %}</span>
+                      <span>•</span>
+                      <span>{{ fmt_rupiah(it.previous_price) }} ➔ {{ fmt_rupiah(it.current_price) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="font-bold text-rose-600 block leading-tight">+{{ it.percent_change }}%</span>
+                  <span class="text-[10px] text-gray-400 block mt-0.5">+{{ fmt_rupiah(it.diff_price) }}</span>
                 </div>
               </div>
-              <div class="text-right shrink-0 pl-2">
-                <span class="font-bold text-rose-600 block">+{{ it.percent_change }}%</span>
-                <span class="text-[10px] text-rose-400">+{{ fmt_rupiah(it.diff_price) }}</span>
+              <div class="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                <div class="bg-rose-500 h-full rounded-full" style="width: {{ pct }}%"></div>
               </div>
             </div>
             {% endfor %}
           {% else %}
-            <div class="text-center py-6">
-              <span class="text-2xl block mb-1">👍</span>
-              <p class="text-xs text-green-600 font-medium">Harga bahan stabil</p>
-              <p class="text-[10px] text-gray-400">Tidak ada lonjakan kenaikan drastis</p>
+            <div class="text-center py-7">
+              <div class="text-2xl mb-1">👍</div>
+              <p class="text-xs text-emerald-600 font-semibold">Harga Bahan Stabil</p>
+              <p class="text-[10px] text-gray-400 mt-0.5">Tidak terdeteksi kenaikan harga drastis</p>
             </div>
           {% endif %}
         </div>
@@ -293,36 +385,50 @@
     </div>
 
     <!-- Card 4: Top 5 Toko / Supplier -->
-    <div class="card p-5 flex flex-col justify-between">
+    <div class="card p-0 overflow-hidden flex flex-col justify-between border border-slate-200">
       <div>
-        <div class="flex items-center justify-between mb-3 border-b pb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-lg">🏪</span>
-            <h3 class="font-semibold text-sm text-gray-800">Top 5 Toko & Supplier</h3>
+        <div class="p-4 border-b bg-gradient-to-r from-purple-50/70 to-transparent flex items-center justify-between min-h-[64px]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center text-base shrink-0">🏪</span>
+            <div class="min-w-0">
+              <h3 class="font-bold text-sm text-gray-800 truncate">Top Toko & Mitra</h3>
+              <p class="text-[10px] text-gray-400 font-medium truncate">Alokasi belanja per mitra</p>
+            </div>
           </div>
-          <span class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Vendor Utama</span>
+          <span class="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-semibold shrink-0">Mitra Toko</span>
         </div>
-        <div class="space-y-2.5">
+        <div class="p-4 space-y-3.5">
           {% if leaderboards and leaderboards.top_suppliers %}
+            {% set max_sup = leaderboards.top_suppliers[0].total_spent if leaderboards.top_suppliers[0].total_spent > 0 else 1 %}
             {% for s in leaderboards.top_suppliers %}
-            <div class="flex items-center justify-between text-xs">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-5 h-5 flex items-center justify-center rounded-full font-bold text-[10px] bg-purple-50 text-purple-700">
-                  {{ loop.index }}
-                </span>
-                <div class="truncate">
-                  <p class="font-medium text-gray-800 truncate" title="{{ s.supplier }}">{{ s.supplier }}</p>
-                  <p class="text-[10px] text-gray-400">{{ s.percentage }}% dari total</p>
+            {% set pct = ((s.total_spent / max_sup) * 100) | round | int %}
+            <div class="space-y-1.5">
+              <div class="flex items-start justify-between text-xs gap-2">
+                <div class="flex items-start gap-2 min-w-0 flex-1">
+                  <span class="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] {% if loop.index == 1 %}bg-amber-400 text-amber-950 ring-1 ring-amber-200{% elif loop.index == 2 %}bg-slate-300 text-slate-800 ring-1 ring-slate-200{% elif loop.index == 3 %}bg-amber-700/80 text-amber-100 ring-1 ring-amber-600/30{% else %}bg-slate-100 text-slate-600{% endif %}">
+                    {{ loop.index }}
+                  </span>
+                  <div class="min-w-0 flex-1 space-y-0.5">
+                    <p class="font-semibold text-gray-800 truncate leading-tight" title="{{ s.supplier }}">{{ s.supplier }}</p>
+                    <div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+                      <span class="bg-gray-100 text-gray-600 px-1.5 py-0.2 rounded font-medium truncate">{{ s.percentage }}% budget</span>
+                      <span>•</span>
+                      <span>{{ s.count }} nota</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="font-bold text-purple-700 block leading-tight">{{ fmt_rupiah(s.total_spent) }}</span>
+                  <span class="text-[10px] text-gray-400 block mt-0.5">{{ s.count }} nota</span>
                 </div>
               </div>
-              <div class="text-right shrink-0 pl-2">
-                <span class="font-bold text-purple-700 block">{{ fmt_rupiah(s.total_spent) }}</span>
-                <span class="text-[10px] text-gray-400">{{ s.count }} belanja</span>
+              <div class="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                <div class="bg-purple-500 h-full rounded-full" style="width: {{ pct }}%"></div>
               </div>
             </div>
             {% endfor %}
           {% else %}
-            <p class="text-xs text-gray-400 text-center py-6">Belum ada data supplier</p>
+            <p class="text-xs text-gray-400 text-center py-8">Belum ada data supplier</p>
           {% endif %}
         </div>
       </div>
@@ -408,12 +514,13 @@
 
 <!-- Chart.js Script -->
 <script>
+const colors = [
+  '#4f46e5','#0ea5e9','#10b981','#f59e0b','#ec4899','#8b5cf6',
+  '#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6'
+];
+
 {% if chart_labels %}
 const ctx = document.getElementById('categoryChart').getContext('2d');
-const colors = [
-  '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
-  '#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6'
-];
 new Chart(ctx, {
   type: 'doughnut',
   data: {
@@ -428,7 +535,35 @@ new Chart(ctx, {
   options: {
     responsive: true,
     plugins: {
-      legend: { position: 'bottom', labels: { padding: 12, font: { size: 11 } } },
+      legend: { position: 'bottom', labels: { padding: 10, font: { size: 10 } } },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` Rp ${ctx.parsed.toLocaleString('id-ID')}`
+        }
+      }
+    },
+    cutout: '65%',
+  }
+});
+{% endif %}
+
+{% if pm_chart_labels %}
+const pmCtx = document.getElementById('paymentMethodChart').getContext('2d');
+new Chart(pmCtx, {
+  type: 'doughnut',
+  data: {
+    labels: {{ pm_chart_labels | tojson }},
+    datasets: [{
+      data: {{ pm_chart_values | tojson }},
+      backgroundColor: colors.slice(0, {{ pm_chart_labels | length }}),
+      borderWidth: 2,
+      borderColor: '#fff',
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 10, font: { size: 10 } } },
       tooltip: {
         callbacks: {
           label: (ctx) => ` Rp ${ctx.parsed.toLocaleString('id-ID')}`

@@ -88,6 +88,17 @@ export interface SummaryMetrics {
   active_days_count: number;
 }
 
+export interface UnpaidExpenseItem {
+  id?: number;
+  barang: string;
+  supplier?: string;
+  nominal: number;
+  tempo: string;
+  tanggal?: string;
+  kategori?: string;
+  status?: string;
+}
+
 export interface MonthlyReport {
   ok: boolean;
   month: number;
@@ -97,11 +108,8 @@ export interface MonthlyReport {
   total_pengeluaran: number;
   expense_count: number;
   per_kategori: Record<string, number>;
-  list_hutang: Array<{
-    barang: string;
-    nominal: number;
-    tempo: string;
-  }>;
+  per_metode_bayar?: Record<string, number>;
+  list_hutang: UnpaidExpenseItem[];
   daily_chart: Array<{
     date: string;
     total: number;

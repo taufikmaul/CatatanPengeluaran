@@ -84,6 +84,7 @@ class MonthlyReportResponse(BaseModel):
     total_pengeluaran: float
     expense_count: int
     per_kategori: dict[str, float]
+    per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict[str, Any]]
     daily_chart: list[dict[str, Any]]
     valid_categories: list[str]
