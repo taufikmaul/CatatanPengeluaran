@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
+import { PaymentMethodChart } from "@/components/dashboard/PaymentMethodChart";
+import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
 import { DailyTrendChart } from "@/components/dashboard/DailyTrendChart";
 import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
 import { FilterBar } from "@/components/dashboard/FilterBar";
@@ -348,16 +350,33 @@ export function App() {
               onFilterUnpaid={() => setStatus("Belum Lunas")}
             />
 
-            {/* Charts Row */}
+            {/* Charts & Analytics Row 1: Category & Payment Methods */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-5">
+              <div className="lg:col-span-6">
                 <CategoryDonutChart
                   categoryData={reportData?.per_kategori || {}}
                   totalAmount={reportData?.total_lunas || 0}
                 />
               </div>
+              <div className="lg:col-span-6">
+                <PaymentMethodChart
+                  paymentData={reportData?.per_metode_bayar || {}}
+                  totalAmount={reportData?.total_pengeluaran || 0}
+                />
+              </div>
+            </div>
+
+            {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-7">
                 <DailyTrendChart data={reportData?.daily_chart || []} />
+              </div>
+              <div className="lg:col-span-5">
+                <UnpaidOrdersCard
+                  unpaidList={reportData?.list_hutang || []}
+                  onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
+                  onViewAll={() => setStatus("Belum Lunas")}
+                />
               </div>
             </div>
 

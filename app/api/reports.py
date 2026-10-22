@@ -49,6 +49,7 @@ async def get_monthly_analytics(
         total_pengeluaran=total_lunas + total_hutang,
         expense_count=report.get("expense_count", 0),
         per_kategori=report.get("per_kategori", {}),
+        per_metode_bayar=report.get("per_metode_bayar", {}),
         list_hutang=report.get("list_hutang", []),
         daily_chart=daily_chart,
         valid_categories=settings.valid_categories,
