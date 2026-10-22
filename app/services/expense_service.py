@@ -205,3 +205,99 @@ async def mark_synced_to_sheets(db: AsyncSession, expense_ids: list[int]) -> Non
         .where(Expense.id.in_(expense_ids))
         .values(sheets_synced=True)
     )
+
+
+def make_duplicate_key(expense_date: date | str, supplier: str | None, item_name: str | None, total_price: float | Decimal) -> str:
+    """Helper untuk membuat key identifikasi duplikasi pengeluaran."""
+    d_str = str(expense_date)[:10]
+    s_str = (supplier or "-").strip().lower()
+    i_str = (item_name or "").strip().lower()
+    t_val = int(round(float(total_price or 0)))
+    return f"{d_str}|{s_str}|{i_str}|{t_val}"
+
+
+async def bulk_check_duplicates(
+    db: AsyncSession,
+    items: list[dict],
+) -> set[str]:
+    """
+    Cek duplikasi secara bulk untuk list pengeluaran baru.
+    Mencari transaksi yang sudah ada dengan tanggal, supplier, nama barang, dan nominal yang sama.
+    Return: set key duplikat.
+    """
+    if not items:
+        return set()
+
+    dates = {item["expense_date"] for item in items if item.get("expense_date")}
+    if not dates:
+        return set()
+
+    min_date = min(dates)
+    max_date = max(dates)
+
+    result = await db.execute(
+        select(Expense).where(
+            and_(
+                Expense.expense_date >= min_date,
+                Expense.expense_date <= max_date,
+            )
+        )
+    )
+    existing_expenses = result.scalars().all()
+
+    existing_keys = {
+        make_duplicate_key(e.expense_date, e.supplier, e.item_name, e.total_price)
+        for e in existing_expenses
+    }
+    return existing_keys
+
+
+async def batch_insert_expenses(
+    db: AsyncSession,
+    items: list[dict],
+    sheets_synced: bool = True,
+    user_id: int | None = None,
+) -> list[Expense]:
+    """
+    Simpan sekumpulan pengeluaran (misal dari CSV) ke Postgres secara batch.
+    Flag sheets_synced default=True agar data historis impor tidak membebani Google Sheets.
+    """
+    saved = []
+    today = date.today()
+
+    for item in items:
+        raw_date = item.get("expense_date", today)
+        if isinstance(raw_date, str):
+            try:
+                expense_date = date.fromisoformat(raw_date[:10])
+            except (ValueError, TypeError):
+                expense_date = today
+        elif isinstance(raw_date, date):
+            expense_date = raw_date
+        else:
+            expense_date = today
+
+        expense = Expense(
+            expense_date=expense_date,
+            supplier=item.get("supplier") or "-",
+            item_name=item.get("item_name") or "Barang",
+            qty=Decimal(str(item.get("qty") or 1)),
+            category=item.get("category") or "Operasional",
+            unit_price=Decimal(str(item.get("unit_price") or 0)),
+            tax=Decimal(str(item.get("tax") or 0)),
+            discount=Decimal(str(item.get("discount") or 0)),
+            total_price=Decimal(str(item.get("total_price") or 0)),
+            pay_method=item.get("pay_method") or "Tunai",
+            pay_status=item.get("pay_status") or "Lunas",
+            due_date=item.get("due_date") or "-",
+            notes=item.get("notes") or "-",
+            msg_link=item.get("msg_link") or "Import CSV",
+            user_id=user_id,
+            sheets_synced=sheets_synced,
+        )
+        db.add(expense)
+        saved.append(expense)
+
+    await db.flush()
+    return saved
+

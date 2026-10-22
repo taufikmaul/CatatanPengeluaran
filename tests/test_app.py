@@ -68,6 +68,68 @@ class TestDashboard:
         assert response.status_code == 422
 
 
+class TestDashboardConfig:
+    async def test_config_page_redirects_unauthenticated(self, client):
+        response = await client.get("/dashboard/config", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/dashboard/login"
+
+    async def test_config_page_renders_for_authenticated_user(self, client, db):
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
+        response = await client.get("/dashboard/config")
+        assert response.status_code == 200
+        assert "Konfigurasi AI Engine" in response.text
+        assert "Database PostgreSQL" in response.text
+        assert "Google Sheets Sync" in response.text
+        assert "Daftar Kategori Baku" in response.text
+
+    async def test_test_ai_endpoint(self, client, monkeypatch):
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
+
+        async def fake_call_ai(text: str):
+            return {
+                "items": [
+                    {
+                        "barang": "Tepung",
+                        "qty": 1,
+                        "harga_satuan": 15000,
+                        "total_harga": 15000,
+                        "kategori": "Bahan Kue",
+                    }
+                ]
+            }
+
+        import app.dashboard.routes as d_routes
+        monkeypatch.setattr(d_routes, "call_ai_text", fake_call_ai)
+
+        response = await client.post(
+            "/dashboard/config/test-ai",
+            data={"test_text": "Beli tepung 1 pack 15rb"},
+            headers={"accept": "application/json"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert len(data["result"]["items"]) == 1
+
+    async def test_trigger_sheets_sync_endpoint(self, client, monkeypatch):
+        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
+
+        async def fake_sync(db):
+            return 3
+
+        import app.dashboard.routes as d_routes
+        monkeypatch.setattr(d_routes, "sync_to_sheets", fake_sync)
+
+        response = await client.post(
+            "/dashboard/config/trigger-sheets-sync",
+            headers={"accept": "application/json"},
+        )
+        assert response.status_code == 200
+        assert response.json()["synced_count"] == 3
+
+
+
 class TestSchemaConsistency:
     async def test_all_expected_tables_exist(self, engine):
         async with engine.connect() as conn:
