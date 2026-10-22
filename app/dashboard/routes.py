@@ -14,6 +14,7 @@ from app.models.expense import Expense
 from app.services.expense_service import (
     get_all_expenses_paginated,
     get_monthly_report,
+    get_monthly_leaderboards,
     bulk_check_duplicates,
     batch_insert_expenses,
     make_duplicate_key,
@@ -65,6 +66,7 @@ async def dashboard_index(
 
     # Data rekap bulan ini
     report = await get_monthly_report(db, current_year, current_month)
+    leaderboards = await get_monthly_leaderboards(db, current_year, current_month)
 
     # List expenses dengan filter + pagination
     expenses, total_count = await get_all_expenses_paginated(
@@ -90,6 +92,7 @@ async def dashboard_index(
             "active_tab": "overview",
             "expenses": expenses,
             "report": report,
+            "leaderboards": leaderboards,
             "total_count": total_count,
             "page": page,
             "per_page": 30,

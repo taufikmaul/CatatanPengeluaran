@@ -51,3 +51,9 @@ postgres_data/
 .vscode/
 *.swp
 secrets/
+
+# ── Node / Frontend ──
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo

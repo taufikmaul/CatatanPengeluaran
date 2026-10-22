@@ -89,7 +89,12 @@ class TestBlankOptionalValues:
 
 
 class TestBlankValuesFromEnvFile:
-    def test_env_file_with_blank_values_loads(self, tmp_path):
+    def test_env_file_with_blank_values_loads(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("DASHBOARD_PIN_CHAT_ID", raising=False)
+        monkeypatch.delenv("DASHBOARD_PIN_THREAD_ID", raising=False)
+        monkeypatch.delenv("DASHBOARD_SESSION_EXPIRE_HOURS", raising=False)
+
         env_file = tmp_path / ".env"
         env_file.write_text(
             "DASHBOARD_PIN_CHAT_ID=115334079\n"

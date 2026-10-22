@@ -3,11 +3,14 @@ app/main.py — FastAPI Application Entry Point
 Menggantikan seluruh Google Apps Script
 """
 from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from app.database.connection import init_db
 from app.bot.webhook import router as webhook_router
 from app.dashboard.routes import router as dashboard_router
+from app.api.router import api_router
 from app.scheduler.jobs import setup_scheduler
 
 
@@ -57,7 +60,25 @@ app = FastAPI(
 
 # Routers
 app.include_router(webhook_router)
+app.include_router(api_router)
 app.include_router(dashboard_router)
+
+# Serve React SPA jika build dist sudah tersedia
+frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.exists(os.path.join(frontend_dist, "assets")):
+    app.mount("/app/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="app_assets")
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+@app.get("/app", response_class=FileResponse)
+@app.get("/app/{full_path:path}", response_class=FileResponse)
+async def serve_react_app(full_path: str = ""):
+    index_file = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return JSONResponse(
+        {"status": "building", "message": "Frontend React sedang disiapkan. Silakan jalankan build di folder frontend."},
+        status_code=503,
+    )
 
 
 # ──────────────────────────────────────────────

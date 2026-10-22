@@ -237,3 +237,111 @@ class TestSheetsSyncFlags:
 
         assert expense.sheets_synced is True
         assert await get_unsynced_to_sheets(db) == []
+
+
+class TestMonthlyLeaderboards:
+    async def test_empty_month_returns_clean_defaults(self, db):
+        from app.services.expense_service import get_monthly_leaderboards
+
+        leaderboards = await get_monthly_leaderboards(db, 2026, 10)
+        assert leaderboards["top_frequent_items"] == []
+        assert leaderboards["top_expensive_items"] == []
+        assert leaderboards["top_unit_price_items"] == []
+        assert leaderboards["top_price_spikes"] == []
+        assert leaderboards["top_suppliers"] == []
+        assert leaderboards["summary_metrics"]["daily_average"] == 0.0
+        assert leaderboards["summary_metrics"]["unique_items_count"] == 0
+
+    async def test_leaderboard_aggregation_and_price_spike(self, db):
+        from app.services.expense_service import get_monthly_leaderboards
+
+        # 1. Historical expense in Sep 2026: Tepung Terigu at 10,000 / unit
+        await _add_expense(
+            db,
+            expense_date=date(2026, 9, 15),
+            supplier="Toko Murah",
+            item_name="Tepung Terigu",
+            qty=Decimal("5"),
+            unit_price=Decimal("10000"),
+            total_price=Decimal("50000"),
+        )
+
+        # 2. Expenses in Oct 2026:
+        # Tepung Terigu bought at 15,000 / unit (+50% spike!)
+        await _add_expense(
+            db,
+            expense_date=date(2026, 10, 5),
+            supplier="Toko Makmur",
+            item_name="Tepung Terigu",
+            qty=Decimal("10"),
+            unit_price=Decimal("15000"),
+            total_price=Decimal("150000"),
+        )
+        # Butter Anchor bought twice (frequent item)
+        await _add_expense(
+            db,
+            expense_date=date(2026, 10, 6),
+            supplier="Toko Makmur",
+            item_name="Butter Anchor",
+            qty=Decimal("2"),
+            unit_price=Decimal("120000"),
+            total_price=Decimal("240000"),
+        )
+        await _add_expense(
+            db,
+            expense_date=date(2026, 10, 10),
+            supplier="Toko Makmur",
+            item_name="Butter Anchor",
+            qty=Decimal("3"),
+            unit_price=Decimal("120000"),
+            total_price=Decimal("360000"),
+        )
+        # Expensive Equipment: Oven Gas
+        await _add_expense(
+            db,
+            expense_date=date(2026, 10, 12),
+            supplier="Supplier Mesin Jaya",
+            item_name="Oven Gas 2 Deck",
+            qty=Decimal("1"),
+            unit_price=Decimal("5000000"),
+            total_price=Decimal("5000000"),
+        )
+
+        leaderboards = await get_monthly_leaderboards(db, 2026, 10)
+
+        # Top Frequent: Butter Anchor should be #1 (count=2, total_qty=5)
+        top_freq = leaderboards["top_frequent_items"]
+        assert len(top_freq) >= 2
+        assert top_freq[0]["item_name"] == "Butter Anchor"
+        assert top_freq[0]["count"] == 2
+        assert top_freq[0]["total_spent"] == 600000.0
+
+        # Top Expensive: Oven Gas should be #1 (total_spent=5,000,000)
+        top_exp = leaderboards["top_expensive_items"]
+        assert top_exp[0]["item_name"] == "Oven Gas 2 Deck"
+        assert top_exp[0]["total_spent"] == 5000000.0
+
+        # Top Unit Price: Oven Gas
+        top_unit = leaderboards["top_unit_price_items"]
+        assert top_unit[0]["item_name"] == "Oven Gas 2 Deck"
+        assert top_unit[0]["unit_price"] == 5000000.0
+
+        # Price Spikes: Tepung Terigu went from 10,000 to 15,000 (+50.0%)
+        spikes = leaderboards["top_price_spikes"]
+        assert len(spikes) == 1
+        assert spikes[0]["item_name"] == "Tepung Terigu"
+        assert spikes[0]["previous_price"] == 10000.0
+        assert spikes[0]["current_price"] == 15000.0
+        assert spikes[0]["diff_price"] == 5000.0
+        assert spikes[0]["percent_change"] == 50.0
+
+        # Top Supplier: Toko Makmur or Supplier Mesin Jaya
+        top_sup = leaderboards["top_suppliers"]
+        assert any(s["supplier"] == "Supplier Mesin Jaya" for s in top_sup)
+        assert any(s["supplier"] == "Toko Makmur" for s in top_sup)
+
+        # Summary Metrics
+        summary = leaderboards["summary_metrics"]
+        assert summary["unique_items_count"] == 3  # Tepung, Butter, Oven
+        assert summary["max_single_transaction"]["item_name"] == "Oven Gas 2 Deck"
+        assert summary["max_single_transaction"]["amount"] == 5000000.0
