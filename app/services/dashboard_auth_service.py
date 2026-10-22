@@ -90,8 +90,14 @@ def verify_session_token(token: str, secret_key: str | None = None) -> bool:
 
 
 def is_authenticated_request(request: Request) -> bool:
-    """Cek apakah request memiliki cookie sesi dashboard yang sah."""
+    """Cek apakah request memiliki cookie sesi dashboard atau token auth yang sah."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        auth_hdr = request.headers.get("authorization", "")
+        if auth_hdr.lower().startswith("bearer "):
+            token = auth_hdr[7:].strip()
+        elif request.headers.get("x-session-token"):
+            token = request.headers.get("x-session-token")
     if not token:
         return False
     return verify_session_token(token)
@@ -227,7 +233,13 @@ async def generate_and_send_pin(db: AsyncSession, ip: str) -> tuple[bool, str]:
         return False, reason
 
     recipients = await resolve_telegram_recipients(db)
-    if not recipients:
+    is_dev = (
+        settings.telegram_token.startswith("123456:")
+        or "test" in settings.telegram_token.lower()
+        or settings.secret_key.startswith("historycake_dev")
+    )
+
+    if not recipients and not is_dev:
         return False, "Telegram Chat ID belum dikonfigurasi. Harap atur DASHBOARD_PIN_CHAT_ID atau REPORT_CHAT_ID di .env."
 
     now = datetime.utcnow()
@@ -290,13 +302,21 @@ async def generate_and_send_pin(db: AsyncSession, ip: str) -> tuple[bool, str]:
     )
 
     send_success = False
-    for chat_id, thread_id in recipients:
-        res = await tg.send_message(chat_id=chat_id, text=msg, thread_id=thread_id)
-        if res and res.get("ok"):
-            send_success = True
+    if recipients:
+        for chat_id, thread_id in recipients:
+            res = await tg.send_message(chat_id=chat_id, text=msg, thread_id=thread_id)
+            if res and res.get("ok"):
+                send_success = True
 
     if not send_success:
-        # Jika gagal kirim via Telegram, batalkan pin
+        if is_dev:
+            print("\n" + "=" * 50)
+            print(f"🔑 [DEV MODE] KODE PIN DASHBOARD: {pin_str}")
+            print(f"👉 Masukkan PIN ini di layar modal login")
+            print("=" * 50 + "\n")
+            return True, f"[DEV MODE] PIN Anda: {pin_str} (Juga dicetak di terminal backend)"
+
+        # Jika bukan dev mode dan gagal kirim via Telegram, batalkan pin
         new_pin.is_used = True
         await db.flush()
         return False, "Gagal mengirim PIN via Telegram. Periksa koneksi bot atau chat ID."

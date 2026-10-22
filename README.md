@@ -136,15 +136,27 @@ Untuk aktifkan:
 
 ---
 
-## 🌐 Dashboard
+## 🌐 Web Dashboard (Modern React + shadcn/ui & Jinja2)
 
-Buka browser: `https://domain-anda.com/dashboard`
+Tersedia 2 antarmuka dashboard:
+1. **React SPA Modern** (Direkomendasikan): `https://domain-anda.com/app`
+   - Ditenagai React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui.
+   - **TanStack Query v5**: Optimistic updates (0ms delay saat toggle lunas/hutang), data caching otomatis.
+   - **Visualisasi Data Interaktif**: Donut chart distribusi pengeluaran & Area chart tren harian (Recharts).
+   - **Mobile-First Experience**: Drawer bottom sheet dengan gesture swipe down (Vaul) yang nyaman di layar ponsel.
+   - **Filter & Search Real-Time**: Pencarian instan, filter bulan, tahun, kategori, dan status bayar.
+   - **Dialog Tambah/Edit Cepat**: Perhitungan otomatis `(qty * harga) + pajak - diskon`.
+   - **Import CSV & Template Download**: Langsung di dalam aplikasi web.
 
-Fitur dashboard:
-- Filter per bulan, tahun, kategori
-- Donut chart breakdown per kategori
-- Tabel data dengan pagination
-- Highlight tagihan belum lunas
+2. **Server-Rendered Jinja2** (Legacy): `https://domain-anda.com/dashboard`
+
+### 💻 Menjalankan Frontend React Lokal
+```bash
+cd frontend
+npm install
+npm run dev   # Berjalan di http://localhost:5173 dengan proxy ke FastAPI di :8000
+npm run build # Build production ke folder frontend/dist (otomatis disajikan di /app oleh FastAPI)
+```
 
 ---
 
@@ -154,10 +166,19 @@ Fitur dashboard:
 |----------|--------|-----------|
 | `/` | GET | Status app |
 | `/health` | GET | Health check |
+| `/app` | GET | Modern React + shadcn SPA Dashboard |
+| `/dashboard` | GET | Legacy Jinja2 Dashboard |
+| `/api/v1/auth/status` | GET | Cek status sesi admin |
+| `/api/v1/auth/request-pin` | POST | Minta 6-digit PIN ke Telegram |
+| `/api/v1/auth/verify-pin` | POST | Verifikasi PIN & set cookie sesi |
+| `/api/v1/expenses` | GET/POST | List & tambah catatan pengeluaran |
+| `/api/v1/expenses/{id}` | GET/PUT/DEL| Detail, update, & hapus transaksi |
+| `/api/v1/reports/monthly` | GET | Rekap bulanan, breakdown, tren harian |
+| `/api/v1/config` | GET | Status sistem, database & credentials |
+| `/api/v1/import/csv` | POST | Unggah file CSV & deteksi duplikat |
 | `/webhook` | POST | Telegram webhook |
-| `/dashboard` | GET | Dashboard web |
 | `/setup-webhook` | POST | Set ulang webhook |
-| `/docs` | GET | Swagger API docs |
+| `/docs` | GET | Swagger OpenAPI Interactive Docs |
 
 ---
 
