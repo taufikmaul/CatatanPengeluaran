@@ -50,6 +50,7 @@ postgres_data/
 .idea/
 .vscode/
 *.swp
+secrets/
 
 # ── Node / Frontend ──
 node_modules/

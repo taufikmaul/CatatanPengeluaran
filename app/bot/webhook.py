@@ -3,6 +3,7 @@ app/bot/webhook.py — FastAPI router untuk Telegram webhook
 Menggantikan doPost() di Google Apps Script
 """
 import asyncio
+import traceback
 from fastapi import APIRouter, Request, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
@@ -72,10 +73,12 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 if text == settings.bot_password:
                     await authenticate_user(db, sender_id, sender_name)
                     await db.commit()
-                    await tg.send_message(chat_id, "🔓 *Akses Diterima!* Selamat datang!", thread_id)
+                    await tg.send_message(chat_id, "🔓 *Akses Diterima! Selamat datang.*", thread_id)
+                    # Lanjut ke pipeline normal (menu tampil dari classify_intent)
+                    is_authorized = True
                 else:
                     await tg.send_message(chat_id, "🔒 *Bot Terkunci.* Masukkan password.", thread_id)
-                return {"ok": True}
+                    return {"ok": True}
 
         elif chat_type in ("group", "supergroup"):
             if thread_id == settings.allowed_thread_id:
@@ -137,7 +140,9 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             await db.commit()
 
     except Exception as e:
-        print(f"[WEBHOOK ERROR] {e}")
+        # Jangan telan exception: traceback wajib muncul di log container.
+        traceback.print_exc()
+        print(f"[WEBHOOK ERROR] {type(e).__name__}: {e}")
 
     return {"ok": True}
 

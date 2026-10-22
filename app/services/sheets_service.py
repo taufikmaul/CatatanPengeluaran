@@ -3,10 +3,15 @@ app/services/sheets_service.py — Google Sheets background sync
 Data baru di Postgres → sync ke Sheets agar tim tetap bisa pakai Sheets
 """
 import json
+import os
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.expense import Expense
+
+# Dicatat sekali saja: tanpa credential, job 5 menit akan menulis error yang sama
+# berulang kali ke log. Data tetap menunggu dengan sheets_synced = false.
+_missing_credentials_reported = False
 
 
 async def sync_to_sheets(db: AsyncSession) -> int:
@@ -15,6 +20,16 @@ async def sync_to_sheets(db: AsyncSession) -> int:
     Return jumlah row yang berhasil di-sync.
     """
     if not settings.spreadsheet_id:
+        return 0
+
+    global _missing_credentials_reported
+    if not os.path.isfile(settings.google_credentials_json):
+        if not _missing_credentials_reported:
+            print(
+                f"[SHEETS SYNC] {settings.google_credentials_json} belum ada — "
+                "sync ditunda sampai service account dipasang."
+            )
+            _missing_credentials_reported = True
         return 0
 
     from app.services.expense_service import get_unsynced_to_sheets, mark_synced_to_sheets
