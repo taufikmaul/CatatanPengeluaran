@@ -15,6 +15,8 @@ export interface Expense {
   due_date: string;
   notes: string;
   msg_link: string;
+  is_reimbursement?: boolean;
+  invoice_number?: string;
   sheets_synced: boolean;
 }
 
@@ -236,4 +238,29 @@ export interface ExpenseFormData {
   pay_status: string;
   due_date: string;
   notes: string;
+  is_reimbursement?: boolean;
+  invoice_number?: string;
+}
+
+export interface OcrExtractedItem {
+  barang?: string;
+  qty?: number;
+  harga_satuan?: number;
+  tax?: number;
+  diskon?: number;
+  total_harga?: number;
+  kategori?: string;
+  toko_supplier?: string;
+  tanggal?: string;
+  metode_bayar?: string;
+  status_pembayaran?: string;
+  no_invoice?: string;
+  is_reimbursement?: boolean;
+  keterangan?: string;
+}
+
+export interface OcrScanResponse {
+  ok: boolean;
+  message?: string;
+  items?: OcrExtractedItem[];
 }

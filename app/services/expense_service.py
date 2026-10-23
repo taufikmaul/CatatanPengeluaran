@@ -35,6 +35,14 @@ async def save_expenses(
         except (ValueError, TypeError):
             expense_date = today
 
+        is_reimb = bool(item.get("is_reimbursement", False))
+        ket = str(item.get("keterangan", ""))
+        brg = str(item.get("barang", ""))
+        if any(w in ket.lower() or w in brg.lower() for w in ("reimburse", "rembes", "ditalangi", "talangan")):
+            is_reimb = True
+
+        inv_num = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota") or "-"
+
         expense = Expense(
             expense_date=expense_date,
             supplier=item.get("toko_supplier") or "-",
@@ -49,6 +57,8 @@ async def save_expenses(
             pay_status=item.get("status_pembayaran") or "Lunas",
             due_date=item.get("jatuh_tempo") or "-",
             notes=item.get("keterangan") or "-",
+            is_reimbursement=is_reimb,
+            invoice_number=str(inv_num),
             msg_link=msg_link,
             user_id=user_id,
             sheets_synced=False,
@@ -302,8 +312,9 @@ async def get_all_expenses_paginated(
     year: int | None = None,
     search: str | None = None,
     status: str | None = None,
+    is_reimbursement: bool | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, dan status."""
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, dan reimbursement."""
     query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
 
     if category:
@@ -314,6 +325,8 @@ async def get_all_expenses_paginated(
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     if status:
         query = query.where(Expense.pay_status.ilike(f"%{status}%"))
+    if is_reimbursement is not None:
+        query = query.where(Expense.is_reimbursement == is_reimbursement)
     if search:
         search_term = f"%{search.strip()}%"
         query = query.where(
@@ -321,6 +334,7 @@ async def get_all_expenses_paginated(
                 Expense.item_name.ilike(search_term),
                 Expense.supplier.ilike(search_term),
                 Expense.notes.ilike(search_term),
+                Expense.invoice_number.ilike(search_term),
             )
         )
 
@@ -666,11 +680,11 @@ async def get_monthly_leaderboards(db: AsyncSession, year: int, month: int) -> d
     }
 
 
-async def get_unsynced_to_sheets(db: AsyncSession, limit: int = 100) -> list[Expense]:
+async def get_unsynced_to_sheets(db: AsyncSession, limit: int = 500) -> list[Expense]:
     """Ambil expense yang belum di-sync ke Google Sheets."""
     result = await db.execute(
         select(Expense)
-        .where(Expense.sheets_synced == False)  # noqa: E712
+        .where(or_(Expense.sheets_synced == False, Expense.sheets_synced.is_(None)))  # noqa: E712
         .order_by(Expense.id.asc())
         .limit(limit)
     )
@@ -775,6 +789,8 @@ async def batch_insert_expenses(
             pay_status=item.get("pay_status") or "Lunas",
             due_date=item.get("due_date") or "-",
             notes=item.get("notes") or "-",
+            is_reimbursement=bool(item.get("is_reimbursement", False)),
+            invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=user_id,
             sheets_synced=sheets_synced,

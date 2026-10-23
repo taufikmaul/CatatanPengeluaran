@@ -5,7 +5,8 @@ import json
 import os
 from typing import Any
 from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status
-from sqlalchemy import select, func
+from pathlib import Path
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
@@ -13,7 +14,11 @@ from app.models.expense import Expense
 from app.api.deps import require_auth
 from app.api.schemas import SystemConfigUpdate
 from app.services.ai_service import call_ai_text, get_system_prompt
-from app.services.sheets_service import sync_to_sheets
+from app.services.sheets_service import (
+    sync_to_sheets,
+    extract_spreadsheet_id,
+    resolve_credentials_path,
+)
 
 router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(require_auth)])
 
@@ -76,7 +81,9 @@ async def get_system_config(
     total_expenses = total_res.scalar() or 0
 
     unsynced_res = await db.execute(
-        select(func.count(Expense.id)).where(Expense.sheets_synced == False)  # noqa: E712
+        select(func.count(Expense.id)).where(
+            or_(Expense.sheets_synced == False, Expense.sheets_synced.is_(None))  # noqa: E712
+        )
     )
     unsynced_count = unsynced_res.scalar() or 0
 
@@ -86,11 +93,12 @@ async def get_system_config(
     ai_key = settings.sumopod_api_key
     ai_masked = f"{ai_key[:7]}...{ai_key[-4:]}" if len(ai_key) > 12 else "Terkonfigurasi"
 
-    creds_exist = os.path.exists(settings.google_credentials_json)
+    creds_p = resolve_credentials_path(settings.google_credentials_json)
+    creds_exist = creds_p.is_file()
     sa_email = None
     if creds_exist:
         try:
-            with open(settings.google_credentials_json, "r", encoding="utf-8") as f:
+            with open(creds_p, "r", encoding="utf-8") as f:
                 creds_data = json.load(f)
                 sa_email = creds_data.get("client_email")
         except Exception:
@@ -153,6 +161,8 @@ async def update_system_config(
         if val is not None and attr in ENV_MAP:
             env_key = ENV_MAP[attr]
             str_val = str(val).strip()
+            if attr == "spreadsheet_id":
+                str_val = extract_spreadsheet_id(str_val)
             env_updates[env_key] = str_val
             os.environ[env_key] = str_val
 
@@ -211,7 +221,8 @@ async def upload_google_credentials(
             detail="File JSON bukan Service Account Key Google yang valid (tidak ditemukan field 'client_email').",
         )
 
-    save_path = "credentials.json"
+    project_root = Path(__file__).resolve().parent.parent.parent
+    save_path = str(project_root / "credentials.json")
     try:
         with open(save_path, "wb") as f:
             f.write(content)
@@ -246,5 +257,19 @@ async def api_test_ai(
 async def api_trigger_sheets_sync(
     db: AsyncSession = Depends(get_db),
 ):
-    synced_count = await sync_to_sheets(db)
-    return {"ok": True, "synced_count": synced_count}
+    try:
+        synced_count = await sync_to_sheets(db, raise_on_error=True)
+        return {
+            "ok": True,
+            "synced_count": synced_count,
+            "message": (
+                f"Berhasil menyinkronkan {synced_count} baris data ke Google Sheets."
+                if synced_count > 0
+                else "Tidak ada data baru yang perlu disinkronkan ke Google Sheets."
+            ),
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )

@@ -171,3 +171,50 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             await tg.edit_message(chat_id, msg_id, paid_text, keyboard)
         else:
             await tg.send_message(chat_id, paid_text, thread_id, keyboard)
+
+    elif data.startswith("toggle_reimb:"):
+        from app.services.expense_service import get_expense_by_id
+
+        ids_raw = data.split(":", 1)[1]
+        expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+
+        current_states = []
+        expenses_to_update = []
+        for eid in expense_ids:
+            exp = await get_expense_by_id(db, eid)
+            if exp:
+                current_states.append(bool(exp.is_reimbursement))
+                expenses_to_update.append(exp)
+
+        # Jika ada yang belum reimbursement, tandai semua jadi reimbursement (True).
+        # Jika semua sudah reimbursement, batalkan jadi False.
+        new_state = not all(current_states) if current_states else True
+        for exp in expenses_to_update:
+            exp.is_reimbursement = new_state
+            exp.sheets_synced = False
+        await db.commit()
+
+        msg_id = cb["message"].get("message_id")
+        reimb_badge = "💼 *Status: REIMBURSEMENT (Ditalangi)*" if new_state else "🏷️ *Status: Pengeluaran Reguler (Bukan Reimburse)*"
+        btn_label = "💼 Reimburse: YA (Ubah)" if new_state else "💼 Reimburse: TIDAK (Ubah)"
+
+        reimb_text = (
+            f"{reimb_badge}\n\n"
+            f"_Berhasil diperbarui untuk {len(expenses_to_update)} item transaksi._"
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_raw}"},
+                    {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_raw}"},
+                ],
+                [
+                    {"text": btn_label, "callback_data": f"toggle_reimb:{ids_raw}"},
+                ],
+                [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}],
+            ]
+        }
+        if msg_id:
+            await tg.edit_message(chat_id, msg_id, reimb_text, keyboard)
+        else:
+            await tg.send_message(chat_id, reimb_text, thread_id, keyboard)

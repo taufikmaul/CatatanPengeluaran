@@ -494,15 +494,20 @@ class HermesAgent:
                 if insight_text:
                     insight = f"\n\n{insight_text}"
 
+        # Status reimbursement
+        is_reimb = any(getattr(e, "is_reimbursement", False) for e in (saved_expenses or []))
+        reimb_badge = "\n💼 *Status: Reimbursement (Ditalangi)*" if is_reimb else ""
+        reimb_btn = "💼 Reimburse: YA (Ubah)" if is_reimb else "💼 Tandai Reimburse"
+
         success_msg = (
             f"✅ *Berhasil Disimpan! ({len(items)} Item)*\n\n"
             f"📝 *Rincian:*\n{item_list_str}\n\n"
-            f"💰 *Total: {fmt_rupiah(total)}*\n\n"
+            f"💰 *Total: {fmt_rupiah(total)}*{reimb_badge}\n\n"
             f"_Data telah masuk ke database._"
             f"{insight}"
         )
 
-        # Susun tombol aksi cepat (Undo & Set Belum Lunas) jika ID tersedia
+        # Susun tombol aksi cepat (Undo, Set Belum Lunas, Reimbursement) jika ID tersedia
         saved_ids = [
             str(e.id) for e in (saved_expenses or [])[:10] if getattr(e, "id", None) is not None
         ]
@@ -513,6 +518,9 @@ class HermesAgent:
             inline_rows.append([
                 {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
                 {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_str}"},
+            ])
+            inline_rows.append([
+                {"text": reimb_btn, "callback_data": f"toggle_reimb:{ids_str}"},
             ])
         inline_rows.append([
             {"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}

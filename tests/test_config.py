@@ -79,7 +79,7 @@ class TestBlankOptionalValues:
             dashboard_lockout_minutes="",
         )
         assert s.dashboard_pin_expire_seconds == 300
-        assert s.dashboard_pin_cooldown_seconds == 60
+        assert s.dashboard_pin_cooldown_seconds == 30
         assert s.dashboard_pin_max_attempts == 3
         assert s.dashboard_lockout_attempts == 5
         assert s.dashboard_lockout_minutes == 15

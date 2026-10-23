@@ -269,7 +269,7 @@ export function App() {
 
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 md:px-8 py-3.5 transition-all">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        <div className="w-full max-w-[1920px] mx-auto flex items-center justify-between gap-4">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
             <span className="text-2xl md:text-3xl filter drop-shadow-sm select-none">🎂</span>
@@ -361,7 +361,7 @@ export function App() {
       </header>
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 md:px-8 py-6 space-y-6">
+      <main className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6 space-y-6">
         {activeTab === "overview" && (
           <>
             {/* Stat Cards */}

@@ -20,3 +20,12 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+export async function scanExpenseOcr(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await api.post("/expenses/ocr", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}

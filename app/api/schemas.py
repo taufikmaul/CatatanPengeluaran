@@ -21,6 +21,8 @@ class ExpenseBase(BaseModel):
     pay_status: str = "Lunas"
     due_date: str = "-"
     notes: str = "-"
+    is_reimbursement: bool = False
+    invoice_number: str = "-"
 
 
 class ExpenseCreate(ExpenseBase):
@@ -41,6 +43,8 @@ class ExpenseUpdate(BaseModel):
     pay_status: str | None = None
     due_date: str | None = None
     notes: str | None = None
+    is_reimbursement: bool | None = None
+    invoice_number: str | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -60,6 +64,8 @@ class ExpenseResponse(BaseModel):
     due_date: str
     notes: str
     msg_link: str
+    is_reimbursement: bool = False
+    invoice_number: str = "-"
     sheets_synced: bool
 
     class Config:

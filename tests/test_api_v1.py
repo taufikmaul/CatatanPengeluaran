@@ -69,24 +69,33 @@ async def test_api_expenses_crud(client, auth_cookies):
         "pay_method": "Transfer",
         "pay_status": "Lunas",
         "notes": "Persediaan weekend",
+        "is_reimbursement": True,
+        "invoice_number": "INV-2026-089",
     }
     create_res = await client.post("/api/v1/expenses", json=payload)
     assert create_res.status_code == 201
     created_data = create_res.json()
     assert created_data["item_name"] == "Butter Anchor 1kg"
+    assert created_data["is_reimbursement"] is True
+    assert created_data["invoice_number"] == "INV-2026-089"
     expense_id = created_data["id"]
 
-    # 2. Get list
-    list_res = await client.get("/api/v1/expenses")
+    # 2. Get list (including filter by is_reimbursement)
+    list_res = await client.get("/api/v1/expenses?is_reimbursement=true")
     assert list_res.status_code == 200
     list_data = list_res.json()
     assert list_data["ok"] is True
     assert any(e["id"] == expense_id for e in list_data["data"])
 
-    # 3. Update expense (e.g. toggle status)
-    update_res = await client.put(f"/api/v1/expenses/{expense_id}", json={"pay_status": "Belum Lunas"})
+    # 3. Update expense (e.g. toggle status & toggle reimbursement)
+    update_res = await client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={"pay_status": "Belum Lunas", "is_reimbursement": False, "invoice_number": "INV-EDITED"},
+    )
     assert update_res.status_code == 200
     assert update_res.json()["pay_status"] == "Belum Lunas"
+    assert update_res.json()["is_reimbursement"] is False
+    assert update_res.json()["invoice_number"] == "INV-EDITED"
 
     # 4. Monthly report check
     report_res = await client.get("/api/v1/reports/monthly?month=10&year=2026")
@@ -244,7 +253,23 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     exp = await get_expense_by_id(db, exp_id)
     assert exp.pay_status == "Lunas"
 
-    # 3. Klik Batal Simpan (Undo)
+    # 3. Klik Toggle Reimbursement (dari False -> True)
+    cb_reimb = {
+        "id": "cb-reimb",
+        "from": {"id": 111},
+        "message": {"message_id": 50, "chat": {"id": 999}},
+        "data": f"toggle_reimb:{exp_id}",
+    }
+    await handle_callback_query(cb_reimb, db)
+    exp = await get_expense_by_id(db, exp_id)
+    assert exp.is_reimbursement is True
+
+    # 3b. Klik Toggle Reimbursement lagi (dari True -> False)
+    await handle_callback_query(cb_reimb, db)
+    exp = await get_expense_by_id(db, exp_id)
+    assert exp.is_reimbursement is False
+
+    # 4. Klik Batal Simpan (Undo)
     cb_undo = {
         "id": "cb-undo",
         "from": {"id": 111},
@@ -253,6 +278,46 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     }
     await handle_callback_query(cb_undo, db)
     assert await get_expense_by_id(db, exp_id) is None
+
+
+@pytest.mark.asyncio
+async def test_api_expenses_ocr(client, auth_cookies, monkeypatch):
+    client.cookies.update(auth_cookies)
+
+    async def fake_call_ai_image(base64_img, caption=""):
+        return {
+            "items": [
+                {
+                    "tanggal": "2026-10-23",
+                    "barang": "Keju Cheddar Kraft 2kg",
+                    "qty": 3,
+                    "kategori": "Bahan Kue",
+                    "harga_satuan": 125000,
+                    "tax": 5000,
+                    "diskon": 10000,
+                    "total_harga": 370000,
+                    "toko_supplier": "TBK Makmur",
+                    "metode_bayar": "Transfer",
+                    "status_pembayaran": "Lunas",
+                    "no_invoice": "INV-OCR-001",
+                    "is_reimbursement": True,
+                    "keterangan": "Struk kasir #12",
+                }
+            ]
+        }
+
+    import app.api.expenses as api_exp
+    monkeypatch.setattr(api_exp, "call_ai_image", fake_call_ai_image)
+
+    fake_file = ("nota.jpg", b"fake_jpeg_image_content", "image/jpeg")
+    res = await client.post("/api/v1/expenses/ocr", files={"file": fake_file})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert len(data["items"]) == 1
+    assert data["items"][0]["barang"] == "Keju Cheddar Kraft 2kg"
+    assert data["items"][0]["no_invoice"] == "INV-OCR-001"
+    assert data["items"][0]["is_reimbursement"] is True
 
 
 @pytest.mark.asyncio

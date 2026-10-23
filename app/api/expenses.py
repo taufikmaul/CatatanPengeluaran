@@ -3,7 +3,8 @@ app/api/expenses.py — REST API for Expenses Management
 """
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+import base64
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
@@ -21,6 +22,7 @@ from app.services.expense_service import (
     update_expense,
     delete_expense,
 )
+from app.services.ai_service import call_ai_image
 
 router = APIRouter(prefix="/expenses", tags=["expenses"], dependencies=[Depends(require_auth)])
 
@@ -43,6 +45,8 @@ def _to_response_dict(e: Expense) -> dict:
         "due_date": e.due_date or "-",
         "notes": e.notes or "-",
         "msg_link": e.msg_link or "Web Dashboard",
+        "is_reimbursement": bool(e.is_reimbursement),
+        "invoice_number": e.invoice_number or "-",
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -56,6 +60,7 @@ async def list_expenses(
     year: int | None = Query(None),
     search: str | None = Query(None),
     status: str | None = Query(None),
+    is_reimbursement: bool | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -67,6 +72,7 @@ async def list_expenses(
         year=year,
         search=search,
         status=status,
+        is_reimbursement=is_reimbursement,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -125,6 +131,8 @@ async def create_expense(
         pay_status=payload.pay_status or "Lunas",
         due_date=payload.due_date or "-",
         notes=norm["notes"] or "-",
+        is_reimbursement=payload.is_reimbursement,
+        invoice_number=payload.invoice_number or "-",
         msg_link="Web Dashboard",
         sheets_synced=False,
     )
@@ -133,6 +141,37 @@ async def create_expense(
     await db.refresh(expense)
 
     return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.post("/ocr")
+async def scan_expense_ocr(
+    file: UploadFile = File(...),
+):
+    """Pindai gambar nota/struk/invoice dengan Vision AI untuk auto-fill form pengeluaran."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File nota kosong atau tidak dapat dibaca.",
+        )
+
+    b64_img = base64.b64encode(content).decode("utf-8")
+    extracted = await call_ai_image(
+        b64_img,
+        caption="Ekstrak data struk/nota/invoice belanja toko kue Historycake secara teliti",
+    )
+
+    if extracted.get("error") or not extracted.get("items"):
+        return {
+            "ok": False,
+            "message": extracted.get("message") or "Gagal membaca struk/nota. Pastikan foto jelas dan pencahayaan cukup.",
+            "items": [],
+        }
+
+    return {
+        "ok": True,
+        "items": extracted.get("items", []),
+    }
 
 
 @router.get("/price-history")

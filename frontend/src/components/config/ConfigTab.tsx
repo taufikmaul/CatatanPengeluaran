@@ -133,7 +133,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
     setIsSyncing(true);
     try {
       const res = await api.post("/config/sync-sheets");
-      toast.success(`Sinkronisasi selesai! ${res.data.synced_count} baris data dikirim ke Google Sheets.`);
+      if (res.data.synced_count > 0) {
+        toast.success(`Sinkronisasi selesai! ${res.data.synced_count} baris data dikirim ke Google Sheets.`);
+      } else {
+        toast.info(res.data.message || "Tidak ada data baru yang perlu disinkronkan ke Google Sheets.");
+      }
       onRefreshConfig();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Gagal sinkronisasi ke Google Sheets");

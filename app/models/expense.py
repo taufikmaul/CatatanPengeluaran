@@ -6,7 +6,7 @@ from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Integer,
-    Numeric, String, Text
+    Numeric, String, Text, text
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.connection import Base
@@ -35,6 +35,10 @@ class Expense(Base):
     due_date: Mapped[str] = mapped_column(String(50), default="-")
     notes: Mapped[str] = mapped_column(Text, default="-")
     msg_link: Mapped[str] = mapped_column(Text, default="Private Chat")
+
+    # Reimbursement & Invoice
+    is_reimbursement: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), index=True)
+    invoice_number: Mapped[str] = mapped_column(String(100), default="-", server_default="-", nullable=True)
     
     # Relasi user
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)

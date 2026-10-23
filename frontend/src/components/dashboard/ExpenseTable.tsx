@@ -124,19 +124,31 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-700">
                     {formatDateId(e.expense_date)}
                   </td>
-                  <td className="py-3 px-4 whitespace-nowrap text-slate-600 max-w-[150px] truncate">
-                    {e.supplier || "-"}
+                  <td className="py-3 px-4 whitespace-nowrap text-slate-600 max-w-[150px] lg:max-w-[220px] 2xl:max-w-[320px] truncate">
+                    <div>{e.supplier || "-"}</div>
+                    {e.invoice_number && e.invoice_number !== "-" && (
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Inv: #{e.invoice_number}
+                      </div>
+                    )}
                   </td>
-                  <td className="py-3 px-4 text-slate-800 font-semibold max-w-[200px] truncate">
-                    <button
-                      type="button"
-                      onClick={() => onInspectItemPrice?.(e.item_name)}
-                      title="Klik untuk lihat riwayat harga & perbandingan toko"
-                      className="text-left hover:text-blue-600 hover:underline inline-flex items-center gap-1 max-w-full truncate"
-                    >
-                      <span className="truncate">{e.item_name}</span>
-                      <LineChart className="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
-                    </button>
+                  <td className="py-3 px-4 text-slate-800 font-semibold max-w-[200px] lg:max-w-[320px] 2xl:max-w-[450px] truncate">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => onInspectItemPrice?.(e.item_name)}
+                        title="Klik untuk lihat riwayat harga & perbandingan toko"
+                        className="text-left hover:text-blue-600 hover:underline inline-flex items-center gap-1 max-w-full truncate"
+                      >
+                        <span className="truncate">{e.item_name}</span>
+                        <LineChart className="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
+                      </button>
+                      {e.is_reimbursement && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          💼 Reimburse
+                        </span>
+                      )}
+                    </div>
                     {e.notes && e.notes !== "-" && (
                       <div className="text-[11px] text-slate-400 font-normal truncate mt-0.5">
                         {e.notes}
@@ -233,11 +245,21 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             <div key={e.id} className="p-3.5 space-y-2 hover:bg-slate-50 transition-colors">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="font-semibold text-sm text-slate-900 leading-tight">
-                    {e.item_name}
+                  <div className="font-semibold text-sm text-slate-900 leading-tight flex items-center gap-1.5 flex-wrap">
+                    <span>{e.item_name}</span>
+                    {e.is_reimbursement && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        💼 Reimburse
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
                     {e.supplier || "-"} • {formatDateId(e.expense_date)}
+                    {e.invoice_number && e.invoice_number !== "-" && (
+                      <span className="text-[10px] text-slate-400 font-mono ml-1.5">
+                        #{e.invoice_number}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
