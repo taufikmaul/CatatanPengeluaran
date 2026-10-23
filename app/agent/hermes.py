@@ -93,6 +93,9 @@ class HermesAgent:
         elif intent == Intent.CMD_AUDIT:
             await self._handle_audit_kategori()
 
+        elif intent == Intent.CMD_ANALISIS:
+            await self._handle_ai_analysis()
+
         elif intent == Intent.CMD_MENU:
             await self._handle_menu()
 
@@ -460,27 +463,87 @@ class HermesAgent:
         if msg_id:
             await tg.edit_message(self.chat_id, msg_id, text)
 
+    async def _handle_ai_analysis(self, force_refresh: bool = False) -> None:
+        """Evaluasi keuangan mendalam menggunakan AI Financial Analysis."""
+        from app.services.ai_analysis_service import generate_ai_analysis
+
+        sent = await tg.send_message(
+            self.chat_id,
+            "🤖 *Menganalisis Keuangan via AI...*\n_Menghitung serapan anggaran, tren pengeluaran, dan anomali harga..._",
+            self.thread_id,
+        )
+        msg_id = sent["result"]["message_id"] if sent else None
+
+        now = datetime.now()
+        analysis = await generate_ai_analysis(self.db, now.year, now.month, force_refresh=force_refresh)
+
+        status_icon = "🟢" if analysis["health_status"] == "SEHAT" else ("🟡" if analysis["health_status"] == "PERLU_PERHATIAN" else "🔴")
+        status_label = analysis["health_status"].replace("_", " ")
+
+        msg = (
+            f"🤖 *ANALISIS KEUANGAN AI HISTORYCAKE*\n"
+            f"📅 Periode: *{analysis['month_name']} {analysis['year']}*\n"
+            f"Status: {status_icon} *{status_label}* (Skor: {analysis['health_score']}/100)\n\n"
+            f"📌 *Ringkasan Eksekutif:*\n{analysis['summary']}\n\n"
+        )
+
+        if analysis.get("key_insights"):
+            msg += "💡 *Insight Kunci:*\n"
+            for item in analysis["key_insights"][:3]:
+                msg += f"• {item}\n"
+            msg += "\n"
+
+        if analysis.get("price_alerts"):
+            msg += "⚠️ *Dinamika & Lonjakan Harga:*\n"
+            for alert in analysis["price_alerts"][:2]:
+                msg += f"• {alert}\n"
+            msg += "\n"
+
+        if analysis.get("actionable_recommendations"):
+            msg += "🎯 *Rekomendasi Aksi:*\n"
+            for idx, rec in enumerate(analysis["actionable_recommendations"][:3], 1):
+                msg += f"{idx}. {rec}\n"
+
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "🔄 Refresh Analisis", "callback_data": "refresh_ai_analysis"},
+                    {"text": "📊 Rekap Angka", "callback_data": "menu_rekap"},
+                ],
+                [
+                    {"text": "🌐 Buka Dashboard Lengkap", "url": settings.public_dashboard_url},
+                ],
+            ]
+        }
+
+        if msg_id:
+            await tg.edit_message(self.chat_id, msg_id, msg, keyboard)
+        else:
+            await tg.send_message(self.chat_id, msg, self.thread_id, keyboard)
+
     async def _handle_menu(self) -> None:
         """Tampilkan menu utama."""
         menu_text = (
             "📋 *MENU UTAMA*\n\n"
-            "📊 /rekap — Laporan bulan ini\n"
-            "💳 /hutang — Cek & lunasi tagihan\n"
-            "💼 /reimburse — Review talangan (reimburse)\n"
-            "🔍 /harga [nama] — Cari harga terakhir\n"
-            "✏️ /catat [detail] — Catat belanja teks\n"
-            "🔎 /audit — Cek kategori data\n"
-            "🔢 /audit hitung — Fix perhitungan\n\n"
+            "🤖 /analisis - Analisis keuangan pintar AI\n"
+            "📊 /rekap - Laporan bulan ini\n"
+            "💳 /hutang - Cek & lunasi tagihan\n"
+            "💼 /reimburse - Review talangan (reimburse)\n"
+            "🔍 /harga [nama] - Cari harga terakhir\n"
+            "✏️ /catat [detail] - Catat belanja teks\n"
+            "🔎 /audit - Cek kategori data\n"
+            "🔢 /audit hitung - Fix perhitungan\n\n"
             "💡 Atau langsung kirim *foto struk* / *voice note*!"
         )
         keyboard = {
             "inline_keyboard": [
                 [
+                    {"text": "🤖 Analisis AI", "callback_data": "menu_analisis"},
                     {"text": "📊 Rekap", "callback_data": "menu_rekap"},
                     {"text": "💳 Tagihan", "callback_data": "menu_hutang"},
-                    {"text": "🔎 Audit", "callback_data": "menu_audit"},
                 ],
                 [
+                    {"text": "🔎 Audit", "callback_data": "menu_audit"},
                     {"text": "💡 Bantuan", "callback_data": "menu_bantuan"},
                     {"text": "🌐 Dashboard", "url": settings.public_dashboard_url},
                 ],
@@ -492,9 +555,9 @@ class HermesAgent:
         """Tampilkan konfigurasi aktif."""
         msg = (
             f"⚙️ *Konfigurasi Aktif:*\n"
-            f"- Provider AI: *Sumopod AI*\n"
-            f"- Model: `{settings.sumopod_model}`\n"
-            f"- Database: *PostgreSQL*\n"
+            f"- AI Ekstraksi Struk: *Sumopod AI* (`{settings.sumopod_model}`)\n"
+            f"- AI Analisis Keuangan: *ClassAI / DeepSeek* (`{settings.ai_analysis_model}`)\n"
+            f"- Database: *PostgreSQL / SQLite*\n"
             f"- Sheets Sync: *{'Aktif' if settings.spreadsheet_id else 'Nonaktif'}*"
         )
         await tg.send_message(self.chat_id, msg, self.thread_id)

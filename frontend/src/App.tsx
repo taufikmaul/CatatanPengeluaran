@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, createExpenseBatch } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
+import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
 import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
 import { PaymentMethodChart } from "@/components/dashboard/PaymentMethodChart";
 import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
@@ -442,6 +443,13 @@ export function App() {
                     setPage(1);
                   }}
                   onOpenBudgetSettings={() => setActiveTab("config")}
+                />
+
+                {/* AI Financial Analysis & Strategic Advisor Card */}
+                <AiAnalysisCard
+                  month={month}
+                  year={year}
+                  monthName={reportData?.month_name || "Bulan Ini"}
                 />
 
                 {/* Charts & Analytics Row 1: Category & Payment Methods */}

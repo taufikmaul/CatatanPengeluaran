@@ -129,6 +129,23 @@ class MonthlyReportResponse(BaseModel):
     summary_metrics: dict[str, Any] = {}
 
 
+class AiAnalysisResponse(BaseModel):
+    ok: bool = True
+    month: int
+    year: int
+    month_name: str
+    health_status: str  # "SEHAT" | "PERLU_PERHATIAN" | "KRITIS"
+    health_score: int  # 1 - 100
+    summary: str
+    key_insights: list[str] = []
+    budget_analysis: str = ""
+    price_alerts: list[str] = []
+    actionable_recommendations: list[str] = []
+    markdown_report: str = ""
+    analyzed_at: str
+    cached: bool = False
+
+
 class MasterItemCreate(BaseModel):
     item_name: str
     category: str = "Bahan Kue"
@@ -207,6 +224,9 @@ class SystemConfigUpdate(BaseModel):
     sumopod_api_key: str | None = None
     sumopod_model: str | None = None
     sumopod_url: str | None = None
+    ai_analysis_api_key: str | None = None
+    ai_analysis_url: str | None = None
+    ai_analysis_model: str | None = None
     spreadsheet_id: str | None = None
     bot_password: str | None = None
     admin_input_password: str | None = None

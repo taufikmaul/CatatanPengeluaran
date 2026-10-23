@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     sumopod_url: str = Field("https://ai.sumopod.com/v1/chat/completions", env="SUMOPOD_URL")
     sumopod_model: str = Field("seed-2-0-mini", env="SUMOPOD_MODEL")
 
+    # AI - Financial Analysis (ClassAI / DeepSeek / Custom Router)
+    ai_analysis_api_key: str = Field("", env="AI_ANALYSIS_API_KEY")
+    ai_analysis_url: str = Field("https://router.classai.id/v1/chat/completions", env="AI_ANALYSIS_URL")
+    ai_analysis_model: str = Field("deepseek-v4.1-flash-1017", env="AI_ANALYSIS_MODEL")
+
     # Google Sheets (optional)
     spreadsheet_id: str = Field("", env="SPREADSHEET_ID")
     google_credentials_json: str = Field("credentials.json", env="GOOGLE_CREDENTIALS_JSON")

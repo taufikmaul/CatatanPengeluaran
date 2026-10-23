@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.api.deps import require_auth
-from app.api.schemas import MonthlyReportResponse
+from app.api.schemas import MonthlyReportResponse, AiAnalysisResponse
 from app.services.expense_service import (
     get_monthly_report,
     get_monthly_chart_data,
     get_monthly_leaderboards,
 )
+from app.services.ai_analysis_service import generate_ai_analysis
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_auth)])
 
@@ -125,3 +126,19 @@ async def get_leaderboard_endpoint(
         "month_name": MONTH_NAMES[cur_month - 1],
         **leaderboards,
     }
+
+
+@router.get("/ai-analysis", response_model=AiAnalysisResponse)
+async def get_ai_analysis_endpoint(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    force_refresh: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    """Endpoint untuk analisis keuangan cerdas berbasis AI."""
+    now = datetime.now()
+    cur_month = month or now.month
+    cur_year = year or now.year
+
+    analysis = await generate_ai_analysis(db, cur_year, cur_month, force_refresh=force_refresh)
+    return AiAnalysisResponse(**analysis)

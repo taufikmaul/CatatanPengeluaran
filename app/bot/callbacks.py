@@ -60,6 +60,14 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         agent = HermesAgent(db, user.id, chat_id, thread_id)
         await agent._handle_audit_kategori()
 
+    elif data in ("menu_analisis", "refresh_ai_analysis"):
+        from app.agent.hermes import HermesAgent
+        user_tg_id = cb["from"]["id"]
+        from app.utils.auth import get_or_create_user
+        user = await get_or_create_user(db, user_tg_id)
+        agent = HermesAgent(db, user.id, chat_id, thread_id)
+        await agent._handle_ai_analysis(force_refresh=(data == "refresh_ai_analysis"))
+
     elif data == "action_autofix":
         sent = await tg.send_message(
             chat_id,

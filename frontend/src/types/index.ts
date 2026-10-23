@@ -304,3 +304,20 @@ export interface OcrScanResponse {
   message?: string;
   items?: OcrExtractedItem[];
 }
+
+export interface AiAnalysisData {
+  ok: boolean;
+  month: number;
+  year: number;
+  month_name: string;
+  health_status: "SEHAT" | "PERLU_PERHATIAN" | "KRITIS";
+  health_score: number;
+  summary: string;
+  key_insights: string[];
+  budget_analysis: string;
+  price_alerts: string[];
+  actionable_recommendations: string[];
+  markdown_report: string;
+  analyzed_at: string;
+  cached: boolean;
+}

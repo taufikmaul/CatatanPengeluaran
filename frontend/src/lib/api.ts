@@ -35,3 +35,12 @@ export async function createExpenseBatch(items: ExpenseFormData[]) {
   const res = await api.post("/expenses/batch", { items });
   return res.data;
 }
+
+export async function getAiAnalysis(month?: number, year?: number, forceRefresh = false) {
+  const params = new URLSearchParams();
+  if (month) params.append("month", String(month));
+  if (year) params.append("year", String(year));
+  if (forceRefresh) params.append("force_refresh", "true");
+  const res = await api.get(`/reports/ai-analysis?${params.toString()}`);
+  return res.data;
+}
