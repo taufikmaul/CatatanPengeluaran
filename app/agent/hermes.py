@@ -68,6 +68,12 @@ class HermesAgent:
         elif intent == Intent.CMD_REKAP or intent == Intent.QUERY_REPORT:
             await self._handle_report()
 
+        elif intent == Intent.CMD_HUTANG:
+            await self._handle_hutang()
+
+        elif intent == Intent.QUERY_TREND:
+            await self._handle_trend()
+
         elif intent == Intent.CMD_HARGA or intent == Intent.QUERY_PRICE:
             keyword = param.strip() if param else text
             await self._handle_price_search(keyword)
@@ -134,10 +140,10 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
 
         # Buat balasan dengan insight
-        await self._send_save_success(msg_id, extracted["items"], extracted.get("items", []))
+        await self._send_save_success(msg_id, extracted["items"], extracted.get("items", []), saved_expenses=saved)
 
         # Update memory dengan items yang baru disimpan
         item_names = [i.get("barang", "") for i in extracted["items"]]
@@ -174,8 +180,8 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
-        await self._send_save_success(msg_id, extracted["items"])
+        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
 
     async def _handle_text_input(self, text: str, msg_link: str) -> None:
         """Handle input teks biasa atau /catat."""
@@ -201,8 +207,8 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
-        await self._send_save_success(msg_id, extracted["items"])
+        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
 
     async def _handle_report(self) -> None:
         """Generate dan kirim laporan bulanan."""
@@ -215,11 +221,32 @@ class HermesAgent:
         bulan = MONTHS[report["month"] - 1]
 
         msg = f"📊 *REKAP {bulan.upper()} {report['year']}*\n\n"
-        msg += f"💰 *Lunas: {fmt_rupiah(report['total_lunas'])}*\n\n"
-        msg += "📂 *Breakdown Kategori:*\n"
+        msg += f"💰 *Lunas: {fmt_rupiah(report['total_lunas'])}*\n"
+
+        cat_budgets = settings.category_budgets
+        eff_budget = float(settings.monthly_budget_limit or 0) or sum(cat_budgets.values())
+
+        if eff_budget > 0:
+            total_all = float(report["total_lunas"]) + sum(
+                h.get("nominal", 0) for h in report.get("list_hutang", [])
+            )
+            pct = round((total_all / eff_budget) * 100.0, 1)
+            icon_b = "🔴" if pct >= 95 else ("🟡" if pct >= 75 else "🟢")
+            msg += (
+                f"🎯 *Anggaran Total: {icon_b} {pct}%* "
+                f"({fmt_rupiah(total_all)} / {fmt_rupiah(eff_budget)})\n"
+            )
+
+        msg += "\n📂 *Breakdown Kategori:*\n"
 
         for kat, total in sorted(report["per_kategori"].items(), key=lambda x: -x[1]):
-            msg += f"▪️ {kat}: {fmt_rupiah(total)}\n"
+            cat_limit = cat_budgets.get(kat, 0)
+            if cat_limit > 0:
+                cpct = round((total / cat_limit) * 100.0, 1)
+                cicon = "🔴" if cpct >= 95 else ("🟡" if cpct >= 75 else "🟢")
+                msg += f"▪️ {kat}: {fmt_rupiah(total)} / {fmt_rupiah(cat_limit)} ({cicon} {cpct}%)\n"
+            else:
+                msg += f"▪️ {kat}: {fmt_rupiah(total)}\n"
 
         if report["list_hutang"]:
             msg += "\n⚠️ *Tagihan Belum Lunas:*\n"
@@ -232,6 +259,98 @@ class HermesAgent:
             ]]
         }
         await tg.send_message(self.chat_id, msg, self.thread_id, keyboard)
+
+    async def _handle_hutang(self) -> None:
+        """Tampilkan semua tagihan Belum Lunas beserta tombol inline pelunasan cepat."""
+        from sqlalchemy import select, or_
+        from app.models.expense import Expense
+
+        result = await self.db.execute(
+            select(Expense)
+            .where(
+                or_(
+                    Expense.pay_status.ilike("%belum%"),
+                    Expense.pay_status.ilike("%hutang%"),
+                    Expense.pay_status.ilike("%tempo%"),
+                )
+            )
+            .order_by(Expense.expense_date.asc(), Expense.id.asc())
+        )
+        unpaid_list = list(result.scalars().all())
+        if not unpaid_list:
+            await tg.send_message(
+                self.chat_id,
+                "✅ *Semua Tagihan Lunas!*\nTidak ada catatan hutang/tempo yang tertunda saat ini.",
+                self.thread_id,
+            )
+            return
+
+        total_hutang = sum(float(e.total_price or 0) for e in unpaid_list)
+        today_str = datetime.now().date().isoformat()
+        msg = (
+            f"💳 *DAFTAR TAGIHAN BELUM LUNAS*\n"
+            f"Total: *{len(unpaid_list)} tagihan ({fmt_rupiah(total_hutang)})*\n\n"
+        )
+
+        inline_rows = []
+        for idx, e in enumerate(unpaid_list[:8], start=1):
+            nominal = fmt_rupiah(float(e.total_price or 0))
+            sup = f" ({e.supplier})" if e.supplier and e.supplier != "-" else ""
+            tempo = ""
+            if e.due_date and e.due_date != "-":
+                tempo = f" 🚨 *Tempo: {e.due_date}*" if e.due_date <= today_str else f" _(Tempo: {e.due_date})_"
+            msg += f"{idx}. *#{e.id} {e.item_name}*{sup} — {nominal}{tempo}\n"
+            inline_rows.append([
+                {
+                    "text": f"✅ Tandai Lunas #{e.id} ({e.item_name[:18]})",
+                    "callback_data": f"mark_paid:{e.id}",
+                }
+            ])
+
+        if len(unpaid_list) > 8:
+            msg += f"\n_...dan {len(unpaid_list) - 8} tagihan lainnya di Dashboard._\n"
+
+        inline_rows.append([
+            {"text": "🌐 Buka Dashboard", "url": settings.public_dashboard_url}
+        ])
+        await tg.send_message(
+            self.chat_id,
+            msg,
+            self.thread_id,
+            {"inline_keyboard": inline_rows},
+        )
+
+    async def _handle_trend(self) -> None:
+        """Bandingkan tren pengeluaran bulan ini vs bulan lalu."""
+        now = datetime.now()
+        cur_report = await tools.tool_get_report(self.db, now.year, now.month)
+        if now.month == 1:
+            prev_m, prev_y = 12, now.year - 1
+        else:
+            prev_m, prev_y = now.month - 1, now.year
+        prev_report = await tools.tool_get_report(self.db, prev_y, prev_m)
+
+        MONTHS = ["Januari","Februari","Maret","April","Mei","Juni",
+                  "Juli","Agustus","September","Oktober","November","Desember"]
+        cur_name = MONTHS[now.month - 1]
+        prev_name = MONTHS[prev_m - 1]
+
+        cur_total = float(cur_report["total_lunas"])
+        prev_total = float(prev_report["total_lunas"])
+
+        msg = f"📈 *TREN PENGELUARAN ({cur_name.upper()} vs {prev_name.upper()})*\n\n"
+        msg += f"• *{cur_name} {now.year}:* {fmt_rupiah(cur_total)}\n"
+        msg += f"• *{prev_name} {prev_y}:* {fmt_rupiah(prev_total)}\n\n"
+
+        if prev_total > 0:
+            diff = cur_total - prev_total
+            pct = round((diff / prev_total) * 100.0, 1)
+            arah = f"🔴 Naik +{pct}%" if diff > 0 else f"🟢 Turun {pct}%"
+            msg += f"📊 *Perubahan MoM:* {arah} ({fmt_rupiah(abs(diff))})\n"
+        else:
+            msg += "_Belum ada data pembanding di bulan sebelumnya._\n"
+
+        await tg.send_message(self.chat_id, msg, self.thread_id)
 
     async def _handle_price_search(self, keyword: str) -> None:
         """Cari harga terakhir suatu barang."""
@@ -314,6 +433,7 @@ class HermesAgent:
         menu_text = (
             "📋 *MENU UTAMA*\n\n"
             "📊 /rekap — Laporan bulan ini\n"
+            "💳 /hutang — Cek & lunasi tagihan\n"
             "🔍 /harga [nama] — Cari harga terakhir\n"
             "✏️ /catat [detail] — Catat belanja teks\n"
             "🔎 /audit — Cek kategori data\n"
@@ -324,6 +444,7 @@ class HermesAgent:
             "inline_keyboard": [
                 [
                     {"text": "📊 Rekap", "callback_data": "menu_rekap"},
+                    {"text": "💳 Tagihan", "callback_data": "menu_hutang"},
                     {"text": "🔎 Audit", "callback_data": "menu_audit"},
                 ],
                 [
@@ -354,10 +475,11 @@ class HermesAgent:
         msg_id: int | None,
         items: list[dict],
         original_items: list[dict] | None = None,
+        saved_expenses: list | None = None,
     ) -> None:
         """
         Kirim/edit pesan sukses + tambah insight dari Hermes
-        (cek harga historis, komentar kontekstual, dll).
+        (cek harga historis, komentar kontekstual, dll) + tombol aksi cepat.
         """
         item_list_str, total = build_items_summary(items)
 
@@ -380,11 +502,23 @@ class HermesAgent:
             f"{insight}"
         )
 
-        keyboard = {
-            "inline_keyboard": [[
-                {"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}
-            ]]
-        }
+        # Susun tombol aksi cepat (Undo & Set Belum Lunas) jika ID tersedia
+        saved_ids = [
+            str(e.id) for e in (saved_expenses or [])[:10] if getattr(e, "id", None) is not None
+        ]
+        ids_str = ",".join(saved_ids)
+
+        inline_rows = []
+        if ids_str:
+            inline_rows.append([
+                {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
+                {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_str}"},
+            ])
+        inline_rows.append([
+            {"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}
+        ])
+
+        keyboard = {"inline_keyboard": inline_rows}
 
         if msg_id:
             await tg.edit_message(self.chat_id, msg_id, success_msg, keyboard)

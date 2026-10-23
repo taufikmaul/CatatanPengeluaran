@@ -30,6 +30,7 @@ ENV_MAP = {
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
     "webhook_url": "WEBHOOK_URL",
+    "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
 }
 
 
@@ -123,6 +124,8 @@ async def get_system_config(
         "sheets_creds_exists": creds_exist,
         "service_account_email": sa_email,
         "valid_categories": settings.valid_categories,
+        "monthly_budget_limit": settings.monthly_budget_limit,
+        "category_budgets": settings.category_budgets,
     }
 
 
@@ -135,6 +138,17 @@ async def update_system_config(
         return {"ok": True, "message": "Tidak ada perubahan"}
 
     env_updates: dict[str, str] = {}
+    if "category_budgets" in updates and updates["category_budgets"] is not None:
+        clean_cat_budgets = {
+            str(k): float(v)
+            for k, v in updates["category_budgets"].items()
+            if v is not None and float(v) > 0
+        }
+        json_str = json.dumps(clean_cat_budgets, ensure_ascii=False)
+        env_updates["CATEGORY_BUDGETS_JSON"] = json_str
+        os.environ["CATEGORY_BUDGETS_JSON"] = json_str
+        settings.category_budgets_json = json_str
+
     for attr, val in updates.items():
         if val is not None and attr in ENV_MAP:
             env_key = ENV_MAP[attr]

@@ -18,8 +18,12 @@ async def save_expenses(
 ) -> list[Expense]:
     """
     Simpan list item pengeluaran ke Postgres.
-    Port dari saveDataToSheet di GAS.
+    Port dari saveDataToSheet di GAS + auto-match ke MasterItem baku.
     """
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    await match_and_normalize_extracted_items(db, items)
+
     saved = []
     today = date.today()
 
@@ -169,6 +173,124 @@ async def search_last_price(db: AsyncSession, keyword: str) -> Expense | None:
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
+    """
+    Ambil riwayat pembelian suatu barang beserta statistik harga satuan
+    (termurah, rata-rata, tertinggi, terakhir) dan perbandingan harga antar toko/supplier.
+    """
+    clean_q = (item_name or "").strip()
+    if not clean_q:
+        return {
+            "item_name": "",
+            "tx_count": 0,
+            "min_price": 0.0,
+            "max_price": 0.0,
+            "avg_price": 0.0,
+            "latest_price": 0.0,
+            "cheapest_supplier": "-",
+            "suppliers_comparison": [],
+            "history": [],
+        }
+
+    # Prioritaskan exact match dulu; jika kosong baru ilike substring
+    exact_res = await db.execute(
+        select(Expense)
+        .where(func.lower(Expense.item_name) == clean_q.lower())
+        .order_by(Expense.expense_date.desc(), Expense.id.desc())
+    )
+    rows = list(exact_res.scalars().all())
+    if not rows:
+        like_res = await db.execute(
+            select(Expense)
+            .where(Expense.item_name.ilike(f"%{clean_q}%"))
+            .order_by(Expense.expense_date.desc(), Expense.id.desc())
+        )
+        rows = list(like_res.scalars().all())
+
+    if not rows:
+        return {
+            "item_name": clean_q,
+            "tx_count": 0,
+            "min_price": 0.0,
+            "max_price": 0.0,
+            "avg_price": 0.0,
+            "latest_price": 0.0,
+            "cheapest_supplier": "-",
+            "suppliers_comparison": [],
+            "history": [],
+        }
+
+    priced_rows = [r for r in rows if float(r.unit_price or 0) > 0]
+    prices = [float(r.unit_price) for r in priced_rows]
+
+    min_price = min(prices) if prices else 0.0
+    max_price = max(prices) if prices else 0.0
+    avg_price = round(sum(prices) / len(prices), 2) if prices else 0.0
+    latest_price = float(priced_rows[0].unit_price) if priced_rows else 0.0
+
+    # Perbandingan harga per toko/supplier
+    sup_map: dict[str, dict] = {}
+    cheapest_supplier = "-"
+    cheapest_val = None
+
+    for r in priced_rows:
+        up = float(r.unit_price or 0)
+        sup_raw = (r.supplier or "-").strip() or "-"
+        if cheapest_val is None or up < cheapest_val:
+            cheapest_val = up
+            cheapest_supplier = sup_raw
+
+        skey = sup_raw.lower()
+        if skey not in sup_map:
+            sup_map[skey] = {
+                "supplier": sup_raw,
+                "min_price": up,
+                "max_price": up,
+                "latest_price": up,
+                "last_date": str(r.expense_date),
+                "tx_count": 1,
+            }
+        else:
+            entry = sup_map[skey]
+            entry["tx_count"] += 1
+            if up < entry["min_price"]:
+                entry["min_price"] = up
+            if up > entry["max_price"]:
+                entry["max_price"] = up
+
+    suppliers_comparison = sorted(
+        sup_map.values(),
+        key=lambda x: (x["min_price"], -x["tx_count"]),
+    )
+
+    history = [
+        {
+            "id": r.id,
+            "expense_date": str(r.expense_date),
+            "supplier": r.supplier or "-",
+            "item_name": r.item_name,
+            "qty": float(r.qty or 1),
+            "unit_price": float(r.unit_price or 0),
+            "total_price": float(r.total_price or 0),
+            "category": r.category or "Operasional",
+            "notes": r.notes or "-",
+        }
+        for r in rows[:15]
+    ]
+
+    return {
+        "item_name": rows[0].item_name,
+        "tx_count": len(rows),
+        "min_price": min_price,
+        "max_price": max_price,
+        "avg_price": avg_price,
+        "latest_price": latest_price,
+        "cheapest_supplier": cheapest_supplier,
+        "suppliers_comparison": suppliers_comparison,
+        "history": history,
+    }
 
 
 async def get_all_expenses_paginated(
@@ -620,6 +742,10 @@ async def batch_insert_expenses(
     Simpan sekumpulan pengeluaran (misal dari CSV) ke Postgres secara batch.
     Flag sheets_synced default=True agar data historis impor tidak membebani Google Sheets.
     """
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    await match_and_normalize_extracted_items(db, items)
+
     saved = []
     today = date.today()
 

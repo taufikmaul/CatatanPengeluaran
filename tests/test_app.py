@@ -160,4 +160,11 @@ class TestSchemaConsistency:
 
     async def test_models_metadata_matches_alembic_target(self):
         """Alembic memakai Base.metadata yang sama; pastikan tabel terdaftar."""
-        assert set(Base.metadata.tables) == {"users", "expenses", "sessions", "dashboard_pins", "dashboard_access_logs"}
+        assert set(Base.metadata.tables) == {
+            "users",
+            "expenses",
+            "sessions",
+            "dashboard_pins",
+            "dashboard_access_logs",
+            "master_items",
+        }

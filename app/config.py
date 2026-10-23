@@ -39,10 +39,28 @@ class Settings(BaseSettings):
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
     auto_create_tables: bool = Field(False, env="AUTO_CREATE_TABLES")
 
-    # Scheduler
+    # Scheduler & Budget
     auto_report_time: str = Field("08:00", env="AUTO_REPORT_TIME")
     report_chat_id: str = Field("", env="REPORT_CHAT_ID")
     report_thread_id: int = Field(7, env="REPORT_THREAD_ID")
+    monthly_budget_limit: int = Field(0, env="MONTHLY_BUDGET_LIMIT")
+    category_budgets_json: str = Field("{}", env="CATEGORY_BUDGETS_JSON")
+
+    @property
+    def category_budgets(self) -> dict[str, float]:
+        """Parse anggaran per kategori dari JSON string."""
+        import json
+        try:
+            raw = json.loads(self.category_budgets_json or "{}")
+            if isinstance(raw, dict):
+                return {
+                    str(k): float(v)
+                    for k, v in raw.items()
+                    if v is not None and float(v) > 0
+                }
+        except Exception:
+            pass
+        return {}
 
     # Dashboard PIN & Security
     dashboard_pin_chat_id: str = Field("", env="DASHBOARD_PIN_CHAT_ID")

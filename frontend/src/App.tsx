@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Expense, MonthlyReport, SystemConfig, ExpenseFormData } from "@/types";
+import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
 import { PaymentMethodChart } from "@/components/dashboard/PaymentMethodChart";
@@ -10,9 +10,11 @@ import { DailyTrendChart } from "@/components/dashboard/DailyTrendChart";
 import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { ExpenseTable } from "@/components/dashboard/ExpenseTable";
+import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
+import { MasterItemsTab } from "@/components/master/MasterItemsTab";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,15 +26,14 @@ import {
   Settings,
   LogOut,
   Plus,
-  RefreshCw,
-  Sparkles,
+  PackageCheck,
 } from "lucide-react";
 
 export function App() {
   const queryClient = useQueryClient();
 
-  // Active Tab: "overview" | "import" | "config"
-  const [activeTab, setActiveTab] = useState<"overview" | "import" | "config">("overview");
+  // Active Tab: "overview" | "master" | "import" | "config"
+  const [activeTab, setActiveTab] = useState<"overview" | "master" | "import" | "config">("overview");
 
   // Filter states
   const now = new Date();
@@ -46,6 +47,8 @@ export function App() {
   // Modal & Drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [repeatingExpense, setRepeatingExpense] = useState<Expense | null>(null);
+  const [inspectedItemName, setInspectedItemName] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
 
@@ -118,6 +121,16 @@ export function App() {
     enabled: activeTab === "config" && !!authData?.authenticated,
   });
 
+  // 5. Autocomplete Suggestions (Master Items + Historical Items & Suppliers)
+  const { data: suggestionsData } = useQuery<SuggestionsResponse>({
+    queryKey: ["suggestions"],
+    queryFn: async () => {
+      const res = await api.get("/master-items/suggestions");
+      return res.data;
+    },
+    enabled: !!authData?.authenticated,
+  });
+
   // Mutasi: Create / Update Expense
   const saveMutation = useMutation({
     mutationFn: async ({
@@ -141,6 +154,8 @@ export function App() {
       );
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran");
@@ -287,6 +302,17 @@ export function App() {
               <span>Overview</span>
             </button>
             <button
+              onClick={() => setActiveTab("master")}
+              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+                activeTab === "master"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <PackageCheck className="w-3.5 h-3.5" />
+              <span>Master Item</span>
+            </button>
+            <button
               onClick={() => setIsImportOpen(true)}
               className="px-3 py-1.5 rounded-xl text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5"
             >
@@ -311,6 +337,7 @@ export function App() {
             <Button
               onClick={() => {
                 setEditingExpense(null);
+                setRepeatingExpense(null);
                 setIsFormOpen(true);
               }}
               size="sm"
@@ -347,7 +374,17 @@ export function App() {
               categoryCount={Object.keys(reportData?.per_kategori || {}).length}
               monthName={reportData?.month_name || "Bulan Ini"}
               year={year}
+              prevMonthName={reportData?.prev_month_name}
+              prevTotalLunas={reportData?.prev_total_lunas}
+              prevTotalPengeluaran={reportData?.prev_total_pengeluaran}
+              momLunasChangePct={reportData?.mom_lunas_change_pct}
+              momTotalChangePct={reportData?.mom_total_change_pct}
+              monthlyBudgetLimit={reportData?.monthly_budget_limit}
+              budgetUsedPct={reportData?.budget_used_pct}
+              categoryBudgets={reportData?.category_budgets}
+              perKategori={reportData?.per_kategori}
               onFilterUnpaid={() => setStatus("Belum Lunas")}
+              onOpenBudgetSettings={() => setActiveTab("config")}
             />
 
             {/* Charts & Analytics Row 1: Category & Payment Methods */}
@@ -428,6 +465,7 @@ export function App() {
               }}
               onOpenAddExpense={() => {
                 setEditingExpense(null);
+                setRepeatingExpense(null);
                 setIsFormOpen(true);
               }}
             />
@@ -442,18 +480,35 @@ export function App() {
               onPageChange={setPage}
               onToggleStatus={handleToggleStatus}
               onEditExpense={(item) => {
+                setRepeatingExpense(null);
                 setEditingExpense(item);
                 setIsFormOpen(true);
               }}
+              onRepeatExpense={(item) => {
+                setEditingExpense(null);
+                setRepeatingExpense(item);
+                setIsFormOpen(true);
+              }}
+              onInspectItemPrice={(name) => setInspectedItemName(name)}
               onDeleteExpense={(id) => deleteMutation.mutate(id)}
             />
           </>
         )}
 
+        {activeTab === "master" && (
+          <MasterItemsTab
+            categories={categories}
+            onInspectItemPrice={(name) => setInspectedItemName(name)}
+          />
+        )}
+
         {activeTab === "config" && (
           <ConfigTab
             config={configData || null}
-            onRefreshConfig={() => refetchConfig()}
+            onRefreshConfig={() => {
+              refetchConfig();
+              refetchReport();
+            }}
           />
         )}
       </main>
@@ -461,11 +516,23 @@ export function App() {
       {/* Expense Form Drawer / Modal */}
       <ExpenseFormDrawer
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false);
+          setRepeatingExpense(null);
+        }}
         onSubmit={handleFormSubmit}
         categories={categories}
         initialData={editingExpense}
+        repeatData={repeatingExpense}
         isSubmitting={saveMutation.isPending}
+        itemSuggestions={suggestionsData?.items || []}
+        supplierSuggestions={suggestionsData?.suppliers || []}
+      />
+
+      {/* Price History & Supplier Comparison Modal */}
+      <PriceHistoryModal
+        itemName={inspectedItemName}
+        onClose={() => setInspectedItemName(null)}
       />
 
       {/* CSV Import Modal */}

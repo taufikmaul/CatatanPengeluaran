@@ -83,6 +83,14 @@ class MonthlyReportResponse(BaseModel):
     total_lunas: float
     total_pengeluaran: float
     expense_count: int
+    prev_month_name: str | None = None
+    prev_total_lunas: float = 0.0
+    prev_total_pengeluaran: float = 0.0
+    mom_lunas_change_pct: float | None = None
+    mom_total_change_pct: float | None = None
+    monthly_budget_limit: float = 0.0
+    budget_used_pct: float | None = None
+    category_budgets: dict[str, float] = {}
     per_kategori: dict[str, float]
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict[str, Any]]
@@ -94,6 +102,40 @@ class MonthlyReportResponse(BaseModel):
     top_price_spikes: list[dict[str, Any]] = []
     top_suppliers: list[dict[str, Any]] = []
     summary_metrics: dict[str, Any] = {}
+
+
+class MasterItemCreate(BaseModel):
+    item_name: str
+    category: str = "Bahan Kue"
+    default_supplier: str = "-"
+    aliases: str = ""
+
+
+class MasterItemUpdate(BaseModel):
+    item_name: str | None = None
+    category: str | None = None
+    default_supplier: str | None = None
+    aliases: str | None = None
+
+
+class MasterItemBulkRequest(BaseModel):
+    raw_text: str
+    default_category: str = "Bahan Kue"
+
+
+class MasterItemResponse(BaseModel):
+    id: int
+    item_name: str
+    category: str
+    default_supplier: str
+    aliases: str
+    last_unit_price: float = 0.0
+    last_supplier: str = "-"
+    tx_count: int = 0
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 
 class AuthStatusResponse(BaseModel):
@@ -118,4 +160,6 @@ class SystemConfigUpdate(BaseModel):
     spreadsheet_id: str | None = None
     bot_password: str | None = None
     webhook_url: str | None = None
+    monthly_budget_limit: int | None = None
+    category_budgets: dict[str, float] | None = None
 

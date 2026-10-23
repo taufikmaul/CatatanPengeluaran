@@ -9,6 +9,7 @@ from enum import Enum
 class Intent(str, Enum):
     # Command eksplisit
     CMD_REKAP = "cmd_rekap"
+    CMD_HUTANG = "cmd_hutang"
     CMD_HARGA = "cmd_harga"
     CMD_CATAT = "cmd_catat"
     CMD_AUDIT = "cmd_audit"
@@ -32,6 +33,7 @@ class Intent(str, Enum):
 # Pola regex untuk deteksi command
 _COMMANDS = {
     r"^/rekap": Intent.CMD_REKAP,
+    r"^/hutang": Intent.CMD_HUTANG,
     r"^/audit\s+hitung": Intent.CMD_AUDIT_HITUNG,
     r"^/audit": Intent.CMD_AUDIT,
     r"^/harga": Intent.CMD_HARGA,
@@ -43,8 +45,9 @@ _COMMANDS = {
 # Pola untuk natural language (tanpa command)
 _NL_PATTERNS = {
     r"(berapa|harga|terakhir|beli)\s+(tepung|gula|mentega|telur|\w+)": Intent.QUERY_PRICE,
-    r"(rekap|laporan|total|pengeluaran|belanja).*(bulan|minggu|hari)": Intent.QUERY_REPORT,
+    r"(daftar\s+hutang|tagihan\s+belum\s+lunas|cek\s+hutang)": Intent.CMD_HUTANG,
     r"(naik|turun|trend|perbandingan|banding)": Intent.QUERY_TREND,
+    r"(rekap|laporan|total|pengeluaran|belanja).*(bulan|minggu|hari)": Intent.QUERY_REPORT,
 }
 
 

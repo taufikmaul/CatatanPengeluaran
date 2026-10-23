@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
-  Sparkles,
+  Repeat,
+  LineChart,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -24,6 +25,8 @@ interface ExpenseTableProps {
   onPageChange: (newPage: number) => void;
   onToggleStatus: (expense: Expense) => void;
   onEditExpense: (expense: Expense) => void;
+  onRepeatExpense?: (expense: Expense) => void;
+  onInspectItemPrice?: (itemName: string) => void;
   onDeleteExpense: (expenseId: number) => void;
 }
 
@@ -36,6 +39,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onPageChange,
   onToggleStatus,
   onEditExpense,
+  onRepeatExpense,
+  onInspectItemPrice,
   onDeleteExpense,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -123,7 +128,15 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     {e.supplier || "-"}
                   </td>
                   <td className="py-3 px-4 text-slate-800 font-semibold max-w-[200px] truncate">
-                    <div>{e.item_name}</div>
+                    <button
+                      type="button"
+                      onClick={() => onInspectItemPrice?.(e.item_name)}
+                      title="Klik untuk lihat riwayat harga & perbandingan toko"
+                      className="text-left hover:text-blue-600 hover:underline inline-flex items-center gap-1 max-w-full truncate"
+                    >
+                      <span className="truncate">{e.item_name}</span>
+                      <LineChart className="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
+                    </button>
                     {e.notes && e.notes !== "-" && (
                       <div className="text-[11px] text-slate-400 font-normal truncate mt-0.5">
                         {e.notes}
@@ -171,6 +184,17 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100">
+                      {onRepeatExpense && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onRepeatExpense(e)}
+                          className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                          title="Beli Lagi (Catat ulang untuk hari ini)"
+                        >
+                          <Repeat className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -233,7 +257,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   {e.category || "Operasional"}
                 </span>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => onToggleStatus(e)}
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
@@ -245,6 +269,17 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     {isLunas ? "Lunas" : "Hutang"}
                   </button>
 
+                  {onRepeatExpense && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onRepeatExpense(e)}
+                      className="h-7 w-7 text-slate-400 hover:text-emerald-600"
+                      title="Beli Lagi"
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

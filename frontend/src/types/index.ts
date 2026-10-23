@@ -107,6 +107,14 @@ export interface MonthlyReport {
   total_lunas: number;
   total_pengeluaran: number;
   expense_count: number;
+  prev_month_name?: string | null;
+  prev_total_lunas?: number;
+  prev_total_pengeluaran?: number;
+  mom_lunas_change_pct?: number | null;
+  mom_total_change_pct?: number | null;
+  monthly_budget_limit?: number;
+  budget_used_pct?: number | null;
+  category_budgets?: Record<string, number>;
   per_kategori: Record<string, number>;
   per_metode_bayar?: Record<string, number>;
   list_hutang: UnpaidExpenseItem[];
@@ -122,6 +130,36 @@ export interface MonthlyReport {
   top_price_spikes?: TopPriceSpikeItem[];
   top_suppliers?: TopSupplierItem[];
   summary_metrics?: SummaryMetrics;
+}
+
+export interface MasterItem {
+  id: number;
+  item_name: string;
+  category: string;
+  default_supplier: string;
+  aliases: string;
+  last_unit_price: number;
+  last_supplier: string;
+  tx_count: number;
+  created_at?: string;
+}
+
+export interface ItemSuggestion {
+  id?: number | null;
+  item_name: string;
+  category: string;
+  aliases?: string;
+  last_unit_price: number;
+  last_supplier: string;
+  last_date?: string | null;
+  tx_count: number;
+  is_master: boolean;
+}
+
+export interface SuggestionsResponse {
+  ok: boolean;
+  items: ItemSuggestion[];
+  suppliers: string[];
 }
 
 export interface SystemConfig {
@@ -148,6 +186,40 @@ export interface SystemConfig {
   sheets_creds_exists: boolean;
   service_account_email?: string | null;
   valid_categories: string[];
+  monthly_budget_limit?: number;
+  category_budgets?: Record<string, number>;
+}
+
+export interface SupplierPriceComparison {
+  supplier: string;
+  min_price: number;
+  max_price: number;
+  latest_price: number;
+  last_date: string;
+  tx_count: number;
+}
+
+export interface ItemPriceHistoryResponse {
+  ok: boolean;
+  item_name: string;
+  tx_count: number;
+  min_price: number;
+  max_price: number;
+  avg_price: number;
+  latest_price: number;
+  cheapest_supplier: string;
+  suppliers_comparison: SupplierPriceComparison[];
+  history: Array<{
+    id: number;
+    expense_date: string;
+    supplier: string;
+    item_name: string;
+    qty: number;
+    unit_price: number;
+    total_price: number;
+    category: string;
+    notes: string;
+  }>;
 }
 
 export interface ExpenseFormData {

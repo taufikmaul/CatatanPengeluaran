@@ -17,6 +17,7 @@ from app.api.schemas import (
 from app.services.expense_service import (
     get_all_expenses_paginated,
     get_expense_by_id,
+    get_item_price_history,
     update_expense,
     delete_expense,
 )
@@ -84,6 +85,21 @@ async def create_expense(
     payload: ExpenseCreate,
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    normalized_list = await match_and_normalize_extracted_items(
+        db,
+        [
+            {
+                "item_name": payload.item_name,
+                "category": payload.category or "Operasional",
+                "supplier": payload.supplier or "-",
+                "notes": payload.notes or "-",
+            }
+        ],
+    )
+    norm = normalized_list[0]
+
     qty = Decimal(str(payload.qty or 1))
     unit_price = Decimal(str(payload.unit_price or 0))
     tax = Decimal(str(payload.tax or 0))
@@ -97,10 +113,10 @@ async def create_expense(
 
     expense = Expense(
         expense_date=payload.expense_date,
-        supplier=payload.supplier or "-",
-        item_name=payload.item_name,
+        supplier=norm["supplier"] or "-",
+        item_name=norm["item_name"],
         qty=qty,
-        category=payload.category or "Operasional",
+        category=norm["category"] or "Operasional",
         unit_price=unit_price,
         tax=tax,
         discount=discount,
@@ -108,7 +124,7 @@ async def create_expense(
         pay_method=payload.pay_method or "Tunai",
         pay_status=payload.pay_status or "Lunas",
         due_date=payload.due_date or "-",
-        notes=payload.notes or "-",
+        notes=norm["notes"] or "-",
         msg_link="Web Dashboard",
         sheets_synced=False,
     )
@@ -117,6 +133,19 @@ async def create_expense(
     await db.refresh(expense)
 
     return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.get("/price-history")
+async def get_expense_price_history(
+    item_name: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil riwayat harga satuan & perbandingan harga antar toko untuk suatu barang."""
+    data = await get_item_price_history(db, item_name)
+    return {
+        "ok": True,
+        **data,
+    }
 
 
 @router.get("/{expense_id}", response_model=ExpenseResponse)
