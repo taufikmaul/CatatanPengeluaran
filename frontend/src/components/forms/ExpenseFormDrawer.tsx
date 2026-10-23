@@ -67,6 +67,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       supplier: "-",
       item_name: "",
       qty: 1,
+      unit: "Pcs",
       category: "Bahan Kue",
       unit_price: 0,
       shipping_fee: 0,
@@ -145,6 +146,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         supplier: initialData.supplier || "-",
         item_name: initialData.item_name || "",
         qty: initialData.qty || 1,
+        unit: initialData.unit || "Pcs",
         category: initialData.category || categories[0] || "Bahan Kue",
         unit_price: initialData.unit_price || 0,
         shipping_fee: initialData.shipping_fee || 0,
@@ -166,6 +168,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         supplier: repeatData.supplier || "-",
         item_name: repeatData.item_name || "",
         qty: repeatData.qty || 1,
+        unit: repeatData.unit || "Pcs",
         category: repeatData.category || categories[0] || "Bahan Kue",
         unit_price: repeatData.unit_price || 0,
         shipping_fee: repeatData.shipping_fee || 0,
@@ -187,6 +190,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         supplier: "-",
         item_name: "",
         qty: 1,
+        unit: "Pcs",
         category: categories[0] || "Bahan Kue",
         unit_price: 0,
         shipping_fee: 0,
@@ -216,6 +220,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     if (s.last_unit_price > 0 && (!unitPrice || Number(unitPrice) === 0)) {
       setValue("unit_price", s.last_unit_price);
     }
+    if (s.satuan_beli) {
+      setValue("unit", s.satuan_beli);
+    }
     setSelectedSuggestionHint(s);
     setShowItemDropdown(false);
   };
@@ -223,6 +230,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const applyExtractedItemToForm = (item: OcrExtractedItem) => {
     if (item.barang) setValue("item_name", item.barang, { shouldValidate: true });
     if (item.qty) setValue("qty", Number(item.qty));
+    if (item.satuan || item.unit) setValue("unit", item.satuan || item.unit);
     if (item.harga_satuan) setValue("unit_price", Number(item.harga_satuan));
     if (item.ongkir !== undefined || item.shipping_fee !== undefined) {
       setValue("shipping_fee", Number(item.ongkir ?? item.shipping_fee ?? 0));
@@ -317,6 +325,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         supplier: it.toko_supplier || currentSupplier,
         item_name: it.barang || "Barang",
         qty,
+        unit: it.satuan || it.unit || "Pcs",
         category: (it.kategori && categories.includes(it.kategori)) ? it.kategori : currentCategory,
         unit_price: unitPrice,
         shipping_fee: shippingFee,
@@ -653,6 +662,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                         </div>
                         <span className="text-[11px] text-slate-400">
                           {s.category} {s.last_supplier !== "-" ? `• ${s.last_supplier}` : ""}
+                          {s.isi_paket ? ` • ${s.satuan_beli}: ${s.isi_paket}` : (s.satuan_beli && s.satuan_beli !== "Pcs" ? ` • ${s.satuan_beli}` : "")}
                         </span>
                       </div>
                       {s.last_unit_price > 0 && (
@@ -712,9 +722,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Qty & Harga Satuan */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            {/* Qty, Satuan, & Harga Satuan */}
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-4">
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
                   Qty / Jumlah
                 </label>
@@ -725,7 +735,33 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   className="h-10 text-xs rounded-xl"
                 />
               </div>
-              <div>
+
+              <div className="col-span-3">
+                <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  Satuan Beli
+                </label>
+                <Input
+                  placeholder="Pcs, Box..."
+                  {...register("unit")}
+                  className="h-10 text-xs rounded-xl"
+                  list="expense-common-units"
+                />
+                <datalist id="expense-common-units">
+                  <option value="Box" />
+                  <option value="Pouch" />
+                  <option value="Kg" />
+                  <option value="Pcs" />
+                  <option value="Dus" />
+                  <option value="Kaleng" />
+                  <option value="Pack" />
+                  <option value="Sak" />
+                  <option value="Bal" />
+                  <option value="Botol" />
+                  <option value="Tray" />
+                </datalist>
+              </div>
+
+              <div className="col-span-5">
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
                   Harga Satuan (Rp)
                 </label>
@@ -737,6 +773,47 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 />
               </div>
             </div>
+
+            {/* Hint & Selector Satuan dari Master Item */}
+            {selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
+              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
+                  <span>ℹ️ Kemasan Master Item:</span>
+                  {selectedSuggestionHint.isi_paket && (
+                    <span className="font-medium text-blue-700">
+                      1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
+                    </span>
+                  )}
+                </div>
+                {selectedSuggestionHint.tipe_satuan === "keduanya" && (
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <span className="text-[11px] text-slate-600">Pilih Satuan Beli:</span>
+                    <button
+                      type="button"
+                      onClick={() => setValue("unit", selectedSuggestionHint.satuan_beli || "Box")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_beli || "Box").toLowerCase()
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      📦 Paket ({selectedSuggestionHint.satuan_beli || "Box"})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setValue("unit", selectedSuggestionHint.satuan_ecer || "Pouch")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                        watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_ecer || "Pouch").toLowerCase()
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      🛍️ Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Ongkir, Pajak, Biaya Lainnya, Diskon */}
             <div className="grid grid-cols-2 gap-3">

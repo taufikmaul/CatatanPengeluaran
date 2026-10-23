@@ -12,6 +12,7 @@ class ExpenseBase(BaseModel):
     supplier: str = "-"
     item_name: str
     qty: float = 1.0
+    unit: str = "Pcs"
     category: str = "Operasional"
     unit_price: float = 0.0
     shipping_fee: float = 0.0
@@ -41,6 +42,7 @@ class ExpenseUpdate(BaseModel):
     supplier: str | None = None
     item_name: str | None = None
     qty: float | None = None
+    unit: str | None = None
     category: str | None = None
     unit_price: float | None = None
     shipping_fee: float | None = None
@@ -65,6 +67,7 @@ class ExpenseResponse(BaseModel):
     supplier: str
     item_name: str
     qty: float
+    unit: str = "Pcs"
     category: str
     unit_price: float
     shipping_fee: float = 0.0
@@ -131,6 +134,10 @@ class MasterItemCreate(BaseModel):
     category: str = "Bahan Kue"
     default_supplier: str = "-"
     aliases: str = ""
+    satuan_beli: str = "Pcs"
+    tipe_satuan: str = "keduanya"
+    isi_paket: str = ""
+    satuan_ecer: str = "Pcs"
 
 
 class MasterItemUpdate(BaseModel):
@@ -138,6 +145,10 @@ class MasterItemUpdate(BaseModel):
     category: str | None = None
     default_supplier: str | None = None
     aliases: str | None = None
+    satuan_beli: str | None = None
+    tipe_satuan: str | None = None
+    isi_paket: str | None = None
+    satuan_ecer: str | None = None
 
 
 class MasterItemBulkRequest(BaseModel):
@@ -151,6 +162,10 @@ class MasterItemResponse(BaseModel):
     category: str
     default_supplier: str
     aliases: str
+    satuan_beli: str = "Pcs"
+    tipe_satuan: str = "keduanya"
+    isi_paket: str = ""
+    satuan_ecer: str = "Pcs"
     last_unit_price: float = 0.0
     last_supplier: str = "-"
     tx_count: int = 0

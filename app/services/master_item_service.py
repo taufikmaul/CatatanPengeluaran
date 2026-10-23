@@ -140,6 +140,7 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
     - Mengubah `barang` ke `MasterItem.item_name`
     - Menyesuaikan `kategori` ke `MasterItem.category` (kecuali kategori Tukar Cash)
     - Mengisi `toko_supplier` dengan `default_supplier` jika kosong/"-"
+    - Menyesuaikan `satuan` / `unit` berdasarkan MasterItem dan konteks paket/ecer
     - Menyimpan nama asli struk ke `keterangan` jika namanya berubah
     """
     if not items:
@@ -162,9 +163,24 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
         old_notes = item.get("keterangan") if "keterangan" in item else item.get("notes", "-")
         new_notes = append_original_name_to_notes(raw_name, matched.item_name, old_notes)
 
+        # Deteksi satuan paket vs ecer dari teks input / nama struk jika belum diset eksplisit
+        current_unit = (item.get("satuan") or item.get("unit") or "").strip()
+        if not current_unit or current_unit.lower() == "pcs":
+            raw_lower = raw_name.lower()
+            if any(k in raw_lower for k in ("box", "dus", "karton", "bal", "sak", "pack", "tray", "peti", "lusin")):
+                chosen_unit = matched.satuan_beli or "Box"
+            elif any(k in raw_lower for k in ("pouch", "kaleng", "kg", "gram", "gr", "butir", "botol", "ecer", "biji", "lembar")):
+                chosen_unit = matched.satuan_ecer or matched.satuan_beli or "Pcs"
+            else:
+                chosen_unit = matched.satuan_beli or "Pcs"
+        else:
+            chosen_unit = current_unit
+
         if "barang" in item:
             item["barang"] = matched.item_name
             item["keterangan"] = new_notes
+            item["satuan"] = chosen_unit
+            item["unit"] = chosen_unit
             if item.get("kategori") != "Tukar Cash" and matched.category:
                 item["kategori"] = matched.category
             if (not item.get("toko_supplier") or item.get("toko_supplier") == "-") and matched.default_supplier and matched.default_supplier != "-":
@@ -172,6 +188,8 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
         else:
             item["item_name"] = matched.item_name
             item["notes"] = new_notes
+            item["satuan"] = chosen_unit
+            item["unit"] = chosen_unit
             if item.get("category") != "Tukar Cash" and matched.category:
                 item["category"] = matched.category
             if (not item.get("supplier") or item.get("supplier") == "-") and matched.default_supplier and matched.default_supplier != "-":
@@ -186,6 +204,10 @@ async def create_master_item(
     category: str = "Bahan Kue",
     default_supplier: str = "-",
     aliases: str = "",
+    satuan_beli: str = "Pcs",
+    tipe_satuan: str = "keduanya",
+    isi_paket: str = "",
+    satuan_ecer: str = "Pcs",
 ) -> MasterItem:
     """Buat satu MasterItem baru atau update jika nama sudah ada."""
     clean_name = item_name.strip()
@@ -199,6 +221,14 @@ async def create_master_item(
             existing.default_supplier = default_supplier
         if aliases:
             existing.aliases = aliases
+        if satuan_beli:
+            existing.satuan_beli = satuan_beli
+        if tipe_satuan:
+            existing.tipe_satuan = tipe_satuan
+        if isi_paket is not None:
+            existing.isi_paket = isi_paket
+        if satuan_ecer:
+            existing.satuan_ecer = satuan_ecer
         await db.flush()
         return existing
 
@@ -207,6 +237,10 @@ async def create_master_item(
         category=category if category in settings.valid_categories else "Bahan Kue",
         default_supplier=(default_supplier or "-").strip() or "-",
         aliases=(aliases or "").strip(),
+        satuan_beli=(satuan_beli or "Pcs").strip() or "Pcs",
+        tipe_satuan=(tipe_satuan or "keduanya").strip() or "keduanya",
+        isi_paket=(isi_paket or "").strip(),
+        satuan_ecer=(satuan_ecer or "Pcs").strip() or "Pcs",
     )
     db.add(item)
     await db.flush()
@@ -225,6 +259,8 @@ async def bulk_Import_master_items(
     - `Nama Item | Kategori`
     - `Nama Item | Kategori | Alias1, Alias2`
     - `Nama Item | Kategori | Alias1, Alias2 | Supplier`
+    - `Nama Item | Kategori | Alias1, Alias2 | Supplier | Satuan Beli`
+    - `Nama Item | Kategori | Alias1, Alias2 | Supplier | Satuan Beli | Tipe Satuan | Isi Paket | Satuan Ecer`
     """
     lines = [line.strip() for line in (raw_text or "").splitlines() if line.strip()]
     added = 0
@@ -247,6 +283,10 @@ async def bulk_Import_master_items(
         cat = parts[1] if len(parts) > 1 and parts[1] in settings.valid_categories else default_category
         aliases = parts[2] if len(parts) > 2 else ""
         supplier = parts[3] if len(parts) > 3 else "-"
+        satuan_beli = parts[4] if len(parts) > 4 and parts[4] else "Pcs"
+        tipe_satuan = parts[5] if len(parts) > 5 and parts[5] in ("paket", "ecer", "keduanya") else "keduanya"
+        isi_paket = parts[6] if len(parts) > 6 else ""
+        satuan_ecer = parts[7] if len(parts) > 7 and parts[7] else "Pcs"
 
         key = name.lower()
         if key in existing_map:
@@ -257,6 +297,14 @@ async def bulk_Import_master_items(
                 m.aliases = aliases
             if supplier and supplier != "-":
                 m.default_supplier = supplier
+            if len(parts) > 4 and parts[4]:
+                m.satuan_beli = parts[4]
+            if len(parts) > 5 and parts[5]:
+                m.tipe_satuan = parts[5]
+            if len(parts) > 6:
+                m.isi_paket = parts[6]
+            if len(parts) > 7 and parts[7]:
+                m.satuan_ecer = parts[7]
             updated += 1
         else:
             new_m = MasterItem(
@@ -264,6 +312,10 @@ async def bulk_Import_master_items(
                 category=cat,
                 aliases=aliases,
                 default_supplier=supplier or "-",
+                satuan_beli=satuan_beli,
+                tipe_satuan=tipe_satuan,
+                isi_paket=isi_paket,
+                satuan_ecer=satuan_ecer,
             )
             db.add(new_m)
             existing_map[key] = new_m
@@ -433,6 +485,10 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
             "item_name": m.item_name,
             "category": m.category,
             "aliases": m.aliases or "",
+            "satuan_beli": m.satuan_beli or "Pcs",
+            "tipe_satuan": m.tipe_satuan or "keduanya",
+            "isi_paket": m.isi_paket or "",
+            "satuan_ecer": m.satuan_ecer or "Pcs",
             "last_unit_price": hist["last_unit_price"] if hist else 0.0,
             "last_supplier": (
                 hist["last_supplier"]
@@ -452,6 +508,10 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
                 "item_name": hist["item_name"],
                 "category": hist["category"],
                 "aliases": "",
+                "satuan_beli": "Pcs",
+                "tipe_satuan": "ecer",
+                "isi_paket": "",
+                "satuan_ecer": "Pcs",
                 "last_unit_price": hist["last_unit_price"],
                 "last_supplier": hist["last_supplier"],
                 "last_date": hist["last_date"],

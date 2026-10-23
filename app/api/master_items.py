@@ -51,6 +51,10 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
                 category=m.category,
                 default_supplier=m.default_supplier or "-",
                 aliases=m.aliases or "",
+                satuan_beli=m.satuan_beli or "Pcs",
+                tipe_satuan=m.tipe_satuan or "keduanya",
+                isi_paket=m.isi_paket or "",
+                satuan_ecer=m.satuan_ecer or "Pcs",
                 last_unit_price=float(h.get("last_unit_price") or 0.0),
                 last_supplier=h.get("last_supplier") or m.default_supplier or "-",
                 tx_count=int(h.get("tx_count") or 0),
@@ -89,6 +93,10 @@ async def add_master_item(
         category=payload.category,
         default_supplier=payload.default_supplier,
         aliases=payload.aliases,
+        satuan_beli=payload.satuan_beli,
+        tipe_satuan=payload.tipe_satuan,
+        isi_paket=payload.isi_paket,
+        satuan_ecer=payload.satuan_ecer,
     )
     await db.commit()
     await db.refresh(item)
@@ -98,6 +106,10 @@ async def add_master_item(
         category=item.category,
         default_supplier=item.default_supplier or "-",
         aliases=item.aliases or "",
+        satuan_beli=item.satuan_beli or "Pcs",
+        tipe_satuan=item.tipe_satuan or "keduanya",
+        isi_paket=item.isi_paket or "",
+        satuan_ecer=item.satuan_ecer or "Pcs",
         created_at=item.created_at,
     )
 
@@ -164,6 +176,14 @@ async def update_master_item(
         item.default_supplier = payload.default_supplier.strip() or "-"
     if payload.aliases is not None:
         item.aliases = payload.aliases.strip()
+    if payload.satuan_beli is not None:
+        item.satuan_beli = payload.satuan_beli.strip() or "Pcs"
+    if payload.tipe_satuan is not None:
+        item.tipe_satuan = payload.tipe_satuan.strip() or "keduanya"
+    if payload.isi_paket is not None:
+        item.isi_paket = payload.isi_paket.strip()
+    if payload.satuan_ecer is not None:
+        item.satuan_ecer = payload.satuan_ecer.strip() or "Pcs"
 
     await db.commit()
     await db.refresh(item)
@@ -173,6 +193,10 @@ async def update_master_item(
         category=item.category,
         default_supplier=item.default_supplier or "-",
         aliases=item.aliases or "",
+        satuan_beli=item.satuan_beli or "Pcs",
+        tipe_satuan=item.tipe_satuan or "keduanya",
+        isi_paket=item.isi_paket or "",
+        satuan_ecer=item.satuan_ecer or "Pcs",
         created_at=item.created_at,
     )
 

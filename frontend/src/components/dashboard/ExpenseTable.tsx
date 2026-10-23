@@ -185,8 +185,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       {e.category || "Operasional"}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-right text-slate-600 tabular-nums font-medium">
-                    {e.qty}
+                  <td className="py-3 px-4 text-right text-slate-700 tabular-nums font-medium whitespace-nowrap">
+                    <span>{e.qty}</span>
+                    <span className="text-[11px] text-slate-400 font-normal ml-1">
+                      {e.unit || "Pcs"}
+                    </span>
                   </td>
                   <td className="py-3 px-4 text-right text-slate-600 tabular-nums">
                     {formatRupiah(e.unit_price)}
@@ -329,7 +332,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     {formatRupiah(e.total_price)}
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    {e.qty} x {formatRupiah(e.unit_price)}
+                    {e.qty} {e.unit || "Pcs"} x {formatRupiah(e.unit_price)}
                   </div>
                 </div>
               </div>

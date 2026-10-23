@@ -174,6 +174,8 @@ def build_header_map(row: list[str]) -> dict[str, int]:
             mapping.setdefault("item_name", idx)
         elif any(k in name for k in ("qty", "jumlah", "kuantitas", "quantity")):
             mapping.setdefault("qty", idx)
+        elif any(k in name for k in ("satuan", "unit", "uom", "kemasan")):
+            mapping.setdefault("unit", idx)
         elif any(k in name for k in ("kategori", "category")):
             mapping.setdefault("category", idx)
         elif any(k in name for k in ("harga satuan", "harga_satuan", "unit price", "unit_price", "harga per unit")):
@@ -244,6 +246,7 @@ def map_row_to_expense(
             "supplier": get_val(header_map.get("supplier"), "-") or "-",
             "item_name": raw_item or "Barang",
             "qty": qty_dec,
+            "unit": get_val(header_map.get("unit"), "Pcs") or "Pcs",
             "category": get_val(header_map.get("category"), "Operasional") or "Operasional",
             "unit_price": unit_price_dec,
             "shipping_fee": shipping_fee_dec,

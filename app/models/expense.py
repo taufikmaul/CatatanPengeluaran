@@ -25,6 +25,7 @@ class Expense(Base):
     supplier: Mapped[str] = mapped_column(String(255), default="-")
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
     qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
+    unit: Mapped[str] = mapped_column(String(50), default="Pcs", server_default=text("'Pcs'"), nullable=False)
     category: Mapped[str] = mapped_column(String(100), nullable=True, index=True)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     shipping_fee: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0, server_default=text("0"))

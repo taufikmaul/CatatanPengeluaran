@@ -39,6 +39,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [category, setCategory] = useState(categories[0] || "Bahan Kue");
   const [aliases, setAliases] = useState("");
   const [defaultSupplier, setDefaultSupplier] = useState("");
+  const [satuanBeli, setSatuanBeli] = useState("Box");
+  const [tipeSatuan, setTipeSatuan] = useState<"keduanya" | "paket" | "ecer">("keduanya");
+  const [isiPaket, setIsiPaket] = useState("");
+  const [satuanEcer, setSatuanEcer] = useState("Pouch");
 
   // Bulk import state
   const [showBulkBox, setShowBulkBox] = useState(false);
@@ -56,6 +60,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     category: "",
     aliases: "",
     default_supplier: "",
+    satuan_beli: "Pcs",
+    tipe_satuan: "keduanya" as "keduanya" | "paket" | "ecer",
+    isi_paket: "",
+    satuan_ecer: "Pcs",
   });
 
   const { data: masterRes, isLoading } = useQuery<{
@@ -77,7 +85,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         return (
           item.item_name.toLowerCase().includes(q) ||
           (item.aliases || "").toLowerCase().includes(q) ||
-          (item.default_supplier || "").toLowerCase().includes(q)
+          (item.default_supplier || "").toLowerCase().includes(q) ||
+          (item.satuan_beli || "").toLowerCase().includes(q) ||
+          (item.isi_paket || "").toLowerCase().includes(q) ||
+          (item.satuan_ecer || "").toLowerCase().includes(q)
         );
       }
       return true;
@@ -99,6 +110,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           category,
           aliases,
           default_supplier: defaultSupplier || "-",
+          satuan_beli: satuanBeli || "Pcs",
+          tipe_satuan: tipeSatuan,
+          isi_paket: isiPaket,
+          satuan_ecer: satuanEcer || "Pcs",
         })
       ).data;
     },
@@ -107,6 +122,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       setItemName("");
       setAliases("");
       setDefaultSupplier("");
+      setIsiPaket("");
       invalidateAll();
     },
     onError: (err: any) => {
@@ -205,6 +221,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       category: item.category,
       aliases: item.aliases || "",
       default_supplier: item.default_supplier === "-" ? "" : item.default_supplier,
+      satuan_beli: item.satuan_beli || "Pcs",
+      tipe_satuan: item.tipe_satuan || "keduanya",
+      isi_paket: item.isi_paket || "",
+      satuan_ecer: item.satuan_ecer || "Pcs",
     });
   };
 
@@ -271,9 +291,9 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   Paste Daftar Nama Item Sekaligus (1 Baris = 1 Item)
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Anda bisa menempelkan daftar nama item saja per baris, atau menggunakan pemisah{" "}
+                  Format per baris:{" "}
                   <code className="bg-white px-1.5 py-0.5 rounded border text-slate-700">
-                    Nama Baku | Kategori | kata kunci struk 1, kata kunci 2
+                    Nama Baku | Kategori | Alias | Toko | Satuan Beli | Tipe (keduanya/paket/ecer) | Isi Paket | Satuan Ecer
                   </code>
                 </p>
               </div>
@@ -298,7 +318,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               placeholder={
-                "Contoh:\nTepung Terigu Cakra | Bahan Kue | cakra kembar, terigu cakra\nMentega Anchor Unsalted | Bahan Kue | anchor butter, unsalted anchor\nBox Kue 20x20 | Kemasan | dus 20x20, kotak kue 20"
+                "Contoh:\nSusu Carnation | Bahan Kue | carnation pouch, skm carnation | Toko Makmur | Box | keduanya | 6 pouch @ 2kg | Pouch\nTepung Terigu Cakra | Bahan Kue | cakra kembar, terigu cakra | Toko Roti | Sak | keduanya | 25 kg | Kg\nBox Kue 20x20 | Kemasan | dus 20x20, kotak kue 20 | Toko Plastik | Bal | paket | isi 100 pcs | Pcs"
               }
               className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -334,52 +354,68 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               if (!itemName.trim()) return;
               addMutation.mutate();
             }}
-            className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end"
+            className="space-y-3"
           >
-            <div className="md:col-span-4">
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                Nama Item Baku *
-              </label>
-              <Input
-                placeholder="Contoh: Tepung Terigu Cakra"
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                className="h-9 text-xs rounded-xl"
-                required
-              />
-            </div>
+            {/* Baris 1: Nama, Kategori, Tipe Satuan, Satuan Beli, Toko */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+              <div className="md:col-span-4">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Nama Item Baku *
+                </label>
+                <Input
+                  placeholder="Contoh: Susu Carnation"
+                  value={itemName}
+                  onChange={(e) => setItemName(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                  required
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                Kategori Default
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-              >
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Kategori Default
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                >
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="md:col-span-3">
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                Kata Kunci / Alias di Struk (Opsional)
-              </label>
-              <Input
-                placeholder="Pisahkan koma: cakra kembar, terigu cakra"
-                value={aliases}
-                onChange={(e) => setAliases(e.target.value)}
-                className="h-9 text-xs rounded-xl"
-              />
-            </div>
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Tipe Satuan
+                </label>
+                <select
+                  value={tipeSatuan}
+                  onChange={(e) => setTipeSatuan(e.target.value as any)}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                >
+                  <option value="keduanya">Paket & Ecer</option>
+                  <option value="paket">Hanya Paket</option>
+                  <option value="ecer">Hanya Ecer</option>
+                </select>
+              </div>
 
-            <div className="md:col-span-3 flex gap-2">
-              <div className="flex-1">
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Satuan Beli / Kemasan
+                </label>
+                <Input
+                  placeholder="mis: Box, Pcs, Kg"
+                  value={satuanBeli}
+                  onChange={(e) => setSatuanBeli(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="md:col-span-2">
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Toko Default
                 </label>
@@ -390,14 +426,57 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   className="h-9 text-xs rounded-xl"
                 />
               </div>
-              <Button
-                type="submit"
-                disabled={addMutation.isPending || !itemName.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9 px-3.5 text-xs font-semibold gap-1 shrink-0 self-end"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Tambah
-              </Button>
+            </div>
+
+            {/* Baris 2: Isi Paket/Kemasan, Satuan Ecer, Alias di Struk, Tombol */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
+              <div className="md:col-span-4">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Isi Kemasan / Paket (Detail)
+                </label>
+                <Input
+                  placeholder="Contoh: 1 box isi 6 pouch 2kg, atau 25 kg"
+                  value={isiPaket}
+                  onChange={(e) => setIsiPaket(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Satuan Eceran
+                </label>
+                <Input
+                  placeholder="mis: Pouch, Kaleng, Kg"
+                  value={satuanEcer}
+                  onChange={(e) => setSatuanEcer(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                  disabled={tipeSatuan === "paket"}
+                />
+              </div>
+
+              <div className="md:col-span-4">
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Kata Kunci / Alias di Struk (Opsional)
+                </label>
+                <Input
+                  placeholder="Pisahkan koma: carnation pouch, skm carnation"
+                  value={aliases}
+                  onChange={(e) => setAliases(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <Button
+                  type="submit"
+                  disabled={addMutation.isPending || !itemName.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9 px-3.5 text-xs font-semibold gap-1 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Tambah Item
+                </Button>
+              </div>
             </div>
           </form>
         </CardContent>
@@ -437,6 +516,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                 <th className="py-3 px-4">Nama Item Baku</th>
                 <th className="py-3 px-4">Kategori</th>
+                <th className="py-3 px-4">Satuan & Kemasan</th>
                 <th className="py-3 px-4">Kata Kunci / Alias Struk</th>
                 <th className="py-3 px-4">Toko Default</th>
                 <th className="py-3 px-4 text-right">Harga Terakhir</th>
@@ -447,13 +527,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <tbody className="divide-y divide-slate-100 text-xs">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400">
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
                     Memuat katalog item baku...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400">
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
                     Belum ada item baku yang terdaftar. Tambahkan di atas atau klik{" "}
                     <strong>"Paste Daftar Item Massal"</strong>.
                   </td>
@@ -503,6 +583,94 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                           <Badge variant="outline" className="text-[10px] font-medium">
                             {item.category}
                           </Badge>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <div className="space-y-1.5 min-w-[210px]">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block">Tipe</label>
+                                <select
+                                  value={editForm.tipe_satuan}
+                                  onChange={(e) =>
+                                    setEditForm({ ...editForm, tipe_satuan: e.target.value as any })
+                                  }
+                                  className="h-7 w-full rounded border border-slate-200 bg-white px-1.5 text-[11px]"
+                                >
+                                  <option value="keduanya">Paket & Ecer</option>
+                                  <option value="paket">Hanya Paket</option>
+                                  <option value="ecer">Hanya Ecer</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500 block">Satuan Beli</label>
+                                <Input
+                                  value={editForm.satuan_beli}
+                                  onChange={(e) =>
+                                    setEditForm({ ...editForm, satuan_beli: e.target.value })
+                                  }
+                                  placeholder="Box / Pcs"
+                                  className="h-7 text-[11px] rounded px-1.5"
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 block">Isi Paket</label>
+                                <Input
+                                  value={editForm.isi_paket}
+                                  onChange={(e) =>
+                                    setEditForm({ ...editForm, isi_paket: e.target.value })
+                                  }
+                                  placeholder="mis. 6 pouch @ 2kg"
+                                  className="h-7 text-[11px] rounded px-1.5"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500 block">Satuan Ecer</label>
+                                <Input
+                                  value={editForm.satuan_ecer}
+                                  onChange={(e) =>
+                                    setEditForm({ ...editForm, satuan_ecer: e.target.value })
+                                  }
+                                  placeholder="mis. Pouch"
+                                  className="h-7 text-[11px] rounded px-1.5"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5 min-w-[140px]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-800 text-xs">
+                                {item.satuan_beli || "Pcs"}
+                              </span>
+                              {item.tipe_satuan === "keduanya" ? (
+                                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                                  Paket & Ecer
+                                </Badge>
+                              ) : item.tipe_satuan === "paket" ? (
+                                <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                                  Paket
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                                  Ecer
+                                </Badge>
+                              )}
+                            </div>
+                            {item.isi_paket && (
+                              <div className="text-[11px] text-slate-500 font-normal">
+                                Isi: <span className="text-slate-700 font-medium">{item.isi_paket}</span>
+                              </div>
+                            )}
+                            {item.tipe_satuan === "keduanya" && item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
+                              <div className="text-[10px] text-slate-400">
+                                Ecer: <span className="text-slate-600 font-medium">{item.satuan_ecer}</span>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-4 text-slate-500">

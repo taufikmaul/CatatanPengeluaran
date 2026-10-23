@@ -5,6 +5,7 @@ export interface Expense {
   supplier: string;
   item_name: string;
   qty: number;
+  unit?: string;
   category: string;
   unit_price: number;
   shipping_fee?: number;
@@ -145,6 +146,10 @@ export interface MasterItem {
   category: string;
   default_supplier: string;
   aliases: string;
+  satuan_beli?: string;
+  tipe_satuan?: "paket" | "ecer" | "keduanya";
+  isi_paket?: string;
+  satuan_ecer?: string;
   last_unit_price: number;
   last_supplier: string;
   tx_count: number;
@@ -156,6 +161,10 @@ export interface ItemSuggestion {
   item_name: string;
   category: string;
   aliases?: string;
+  satuan_beli?: string;
+  tipe_satuan?: "paket" | "ecer" | "keduanya";
+  isi_paket?: string;
+  satuan_ecer?: string;
   last_unit_price: number;
   last_supplier: string;
   last_date?: string | null;
@@ -237,6 +246,7 @@ export interface ItemPriceHistoryResponse {
     supplier: string;
     item_name: string;
     qty: number;
+    unit?: string;
     unit_price: number;
     total_price: number;
     category: string;
@@ -249,6 +259,7 @@ export interface ExpenseFormData {
   supplier: string;
   item_name: string;
   qty: number;
+  unit?: string;
   category: string;
   unit_price: number;
   shipping_fee?: number;
@@ -268,6 +279,8 @@ export interface ExpenseFormData {
 export interface OcrExtractedItem {
   barang?: string;
   qty?: number;
+  satuan?: string;
+  unit?: string;
   harga_satuan?: number;
   ongkir?: number;
   shipping_fee?: number;

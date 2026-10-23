@@ -264,7 +264,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                   Total Biaya Transaksi
                 </span>
                 <span className="text-xs text-slate-400">
-                  {expense.qty} x {formatRupiah(expense.unit_price)}
+                  {expense.qty} {expense.unit || "Pcs"} x {formatRupiah(expense.unit_price)}
                   {Number(expense.shipping_fee) > 0 ? ` + Ongkir ${formatRupiah(expense.shipping_fee)}` : ""}
                   {Number(expense.tax) > 0 ? ` + Pajak ${formatRupiah(expense.tax)}` : ""}
                   {Number(expense.other_fee) > 0 ? ` + Biaya Lain ${formatRupiah(expense.other_fee)}` : ""}

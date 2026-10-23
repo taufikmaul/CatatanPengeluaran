@@ -68,9 +68,12 @@ def build_items_summary(items: list[dict]) -> tuple[str, float]:
             meta.append(f"Nota: {inv}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
+        satuan = (item.get("satuan") or item.get("unit") or "").strip()
+        unit_label = f" {satuan}" if satuan and satuan.lower() != "pcs" else "x"
+
         lines.append(
             f"{i}. {item.get('barang', 'Item')} "
-            f"({fmt_qty(qty)}x @{fmt_rupiah(harga)}) — {fmt_rupiah(total_item)}{meta_str}"
+            f"({fmt_qty(qty)}{unit_label} @{fmt_rupiah(harga)}) : {fmt_rupiah(total_item)}{meta_str}"
         )
     return "\n".join(lines), total
 
@@ -85,6 +88,7 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
     for i, exp in enumerate(expenses, 1):
         if isinstance(exp, dict):
             raw_qty = exp.get("qty", 1)
+            satuan = (exp.get("satuan") or exp.get("unit") or "").strip()
             harga = float(exp.get("harga_satuan", 0) or exp.get("unit_price", 0) or 0)
             item_total = float(exp.get("total_harga", 0) or exp.get("total_price", 0) or 0)
             name = exp.get("barang") or exp.get("item_name") or "Item"
@@ -92,6 +96,7 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
             inv = exp.get("no_invoice") or exp.get("invoice_number") or exp.get("no_nota")
         else:
             raw_qty = getattr(exp, "qty", 1)
+            satuan = (getattr(exp, "unit", "") or "").strip()
             harga = float(getattr(exp, "unit_price", 0) or 0)
             item_total = float(getattr(exp, "total_price", 0) or 0)
             name = getattr(exp, "item_name", "Item")
@@ -114,9 +119,10 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
             meta.append(f"Nota: {inv}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
+        unit_label = f" {satuan}" if satuan and satuan.lower() != "pcs" else "x"
         line = (
             f"{i}. {name} "
-            f"({fmt_qty(qty)}x @{fmt_rupiah(harga)}) — {fmt_rupiah(item_total)}{meta_str}"
+            f"({fmt_qty(qty)}{unit_label} @{fmt_rupiah(harga)}) : {fmt_rupiah(item_total)}{meta_str}"
         )
         if strikethrough:
             line = f"~{line}~"

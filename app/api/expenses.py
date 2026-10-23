@@ -37,6 +37,7 @@ def _to_response_dict(e: Expense) -> dict:
         "supplier": e.supplier or "-",
         "item_name": e.item_name or "-",
         "qty": float(e.qty or 1),
+        "unit": getattr(e, "unit", "Pcs") or "Pcs",
         "category": e.category or "Operasional",
         "unit_price": float(e.unit_price or 0),
         "shipping_fee": float(e.shipping_fee or 0),
@@ -106,6 +107,7 @@ async def create_expense(
                 "category": payload.category or "Operasional",
                 "supplier": payload.supplier or "-",
                 "notes": payload.notes or "-",
+                "unit": payload.unit or "Pcs",
             }
         ],
     )
@@ -129,6 +131,7 @@ async def create_expense(
         supplier=norm["supplier"] or "-",
         item_name=norm["item_name"],
         qty=qty,
+        unit=norm.get("unit") or payload.unit or "Pcs",
         category=norm["category"] or "Operasional",
         unit_price=unit_price,
         shipping_fee=shipping_fee,
@@ -183,6 +186,7 @@ async def create_expense_batch(
             "supplier": it.supplier or "-",
             "item_name": it.item_name,
             "qty": qty,
+            "unit": it.unit or "Pcs",
             "category": it.category or "Operasional",
             "unit_price": unit_price,
             "shipping_fee": shipping_fee,

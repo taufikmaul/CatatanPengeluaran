@@ -178,8 +178,8 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
                         <td className="py-2 px-3 text-slate-700 font-medium truncate max-w-[160px]">
                           {h.supplier}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-slate-600">
-                          {h.qty}
+                        <td className="py-2 px-3 text-right tabular-nums text-slate-600 whitespace-nowrap">
+                          {h.qty} {h.unit || "Pcs"}
                         </td>
                         <td className="py-2 px-3 text-right tabular-nums font-semibold text-slate-900">
                           {formatRupiah(h.unit_price)}
