@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import {
   Save,
   Bot,
@@ -153,6 +154,21 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
     }
   };
 
+  const [isSyncingTelegram, setIsSyncingTelegram] = useState(false);
+
+  const handleSyncTelegramUsers = async () => {
+    setIsSyncingTelegram(true);
+    try {
+      const res = await api.post("/config/sync-telegram-users");
+      toast.success(res.data.message || `Berhasil menyinkronkan ${res.data.updated_count} transaksi dari Telegram!`);
+      onRefreshConfig();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Gagal menyinkronkan user dari Telegram");
+    } finally {
+      setIsSyncingTelegram(false);
+    }
+  };
+
   const handleTestAi = async () => {
     if (!aiTestText.trim()) return;
     setIsAiTesting(true);
@@ -194,15 +210,30 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
           </div>
         </div>
 
-        <Button
-          size="sm"
-          onClick={handleSyncSheets}
-          disabled={isSyncing}
-          className="rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white gap-2 font-medium h-9 w-full md:w-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-          {isSyncing ? "Menyinkronkan..." : "Sync ke Google Sheets Sekarang"}
-        </Button>
+        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleSyncTelegramUsers}
+            disabled={isSyncingTelegram}
+            className="rounded-xl text-xs border-sky-300 text-sky-700 hover:bg-sky-50 gap-2 font-medium h-9 w-full md:w-auto"
+          >
+            <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+            {isSyncingTelegram ? "Menyinkronkan User..." : "Sync User dari Link Telegram"}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSyncSheets}
+            disabled={isSyncing}
+            className="rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white gap-2 font-medium h-9 w-full md:w-auto"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Menyinkronkan..." : "Sync ke Google Sheets Sekarang"}
+          </Button>
+        </div>
       </div>
 
       <form onSubmit={handleSaveConfig} className="space-y-6">

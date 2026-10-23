@@ -298,3 +298,19 @@ async def api_trigger_sheets_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=err_msg,
         )
+
+
+@router.post("/sync-telegram-users")
+async def api_trigger_telegram_users_sync(
+    db: AsyncSession = Depends(get_db),
+):
+    """Sinkronisasi penginput transaksi dari tautan pesan Telegram."""
+    from app.services.telegram_sync_service import sync_telegram_users_from_links
+
+    res = await sync_telegram_users_from_links(db)
+    if not res.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "Gagal menyinkronkan user dari Telegram."),
+        )
+    return res
