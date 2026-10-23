@@ -5,7 +5,13 @@ Port dari handleCallbackQuery di GAS
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot import telegram_client as tg
 from app.agent import tools
-from app.utils.formatters import fmt_rupiah
+from app.utils.formatters import (
+    fmt_rupiah,
+    format_expense_items_summary,
+    build_expense_action_keyboard,
+    extract_insight_from_text,
+    extract_items_block_from_text,
+)
 from app.config import settings
 
 
@@ -100,83 +106,130 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         await tg.send_message(chat_id, "🔄 Silakan kirim ulang foto/voice/teks.", thread_id)
 
     elif data.startswith("undo_save:"):
-        from app.services.expense_service import delete_expense
+        from app.services.expense_service import get_expense_by_id, delete_expense
 
         ids_raw = data.split(":", 1)[1]
         expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+
+        # Ambil detail items sebelum dihapus agar tetap tersimpan di teks chat untuk pencarian
+        expenses_to_delete = []
+        for eid in expense_ids:
+            exp = await get_expense_by_id(db, eid)
+            if exp:
+                expenses_to_delete.append(exp)
+
         deleted_count = 0
-        for eid in expense_ids:
-            if await delete_expense(db, eid):
+        for exp in expenses_to_delete:
+            if await delete_expense(db, exp.id):
                 deleted_count += 1
+        # Hapus juga ID yang mungkin belum ter-fetch
+        for eid in expense_ids:
+            if eid not in [e.id for e in expenses_to_delete]:
+                if await delete_expense(db, eid):
+                    deleted_count += 1
         await db.commit()
 
+        items_summary, total_val = format_expense_items_summary(expenses_to_delete, strikethrough=True)
+        if not items_summary:
+            items_summary = extract_items_block_from_text(cb.get("message", {}).get("text", ""))
+
         msg_id = cb["message"].get("message_id")
+        items_block = f"\n\n📝 *Item yang Dibatalkan:*\n{items_summary}" if items_summary else ""
+        total_block = f"\n\n💰 *Total Dibatalkan: {fmt_rupiah(total_val)}*" if total_val > 0 else ""
+
         cancel_text = (
-            f"🗑️ *Simpan Dibatalkan!*\n"
-            f"Berhasil menghapus *{deleted_count} item* yang baru saja dicatat dari database."
-        )
-        if msg_id:
-            await tg.edit_message(chat_id, msg_id, cancel_text)
-        else:
-            await tg.send_message(chat_id, cancel_text, thread_id)
-
-    elif data.startswith("unpaid_save:"):
-        from app.services.expense_service import update_expense
-
-        ids_raw = data.split(":", 1)[1]
-        expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
-        updated_names = []
-        for eid in expense_ids:
-            exp = await update_expense(db, eid, {"pay_status": "Belum Lunas"})
-            if exp:
-                updated_names.append(f"• {exp.item_name} ({fmt_rupiah(float(exp.total_price or 0))})")
-        await db.commit()
-
-        msg_id = cb["message"].get("message_id")
-        items_info = "\n".join(updated_names) if updated_names else f"{len(expense_ids)} item"
-        unpaid_text = (
-            f"⏳ *Status Diubah ke Belum Lunas (Hutang)*\n\n"
-            f"{items_info}\n\n"
-            f"_Klik tombol di bawah jika tagihan ini sudah dilunasi._"
-        )
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Tandai Lunas", "callback_data": f"mark_paid:{ids_raw}"},
-                    {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_raw}"},
-                ],
-                [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}],
-            ]
-        }
-        if msg_id:
-            await tg.edit_message(chat_id, msg_id, unpaid_text, keyboard)
-        else:
-            await tg.send_message(chat_id, unpaid_text, thread_id, keyboard)
-
-    elif data.startswith("mark_paid:"):
-        from app.services.expense_service import update_expense
-
-        ids_raw = data.split(":", 1)[1]
-        expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
-        paid_names = []
-        for eid in expense_ids:
-            exp = await update_expense(db, eid, {"pay_status": "Lunas"})
-            if exp:
-                paid_names.append(f"• {exp.item_name} ({fmt_rupiah(float(exp.total_price or 0))})")
-        await db.commit()
-
-        msg_id = cb["message"].get("message_id")
-        items_info = "\n".join(paid_names) if paid_names else f"{len(expense_ids)} transaksi"
-        paid_text = (
-            f"✅ *Tagihan Telah Dilunasi!*\n\n"
-            f"{items_info}\n\n"
-            f"_Status pembayaran di database telah diperbarui menjadi Lunas._"
+            f"🗑️ *Pencatatan Dibatalkan!*\n"
+            f"_{deleted_count} item telah dihapus dari database._"
+            f"{items_block}"
+            f"{total_block}"
         )
         keyboard = {
             "inline_keyboard": [
                 [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}]
             ]
         }
+        if msg_id:
+            await tg.edit_message(chat_id, msg_id, cancel_text, keyboard)
+        else:
+            await tg.send_message(chat_id, cancel_text, thread_id, keyboard)
+
+    elif data.startswith("unpaid_save:"):
+        from app.services.expense_service import update_expense, get_expense_by_id
+
+        ids_raw = data.split(":", 1)[1]
+        expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        updated_expenses = []
+        for eid in expense_ids:
+            exp = await update_expense(db, eid, {"pay_status": "Belum Lunas"})
+            if exp:
+                updated_expenses.append(exp)
+        await db.commit()
+
+        items_summary, total_val = format_expense_items_summary(updated_expenses)
+        if not items_summary:
+            items_summary = extract_items_block_from_text(cb.get("message", {}).get("text", ""))
+
+        is_reimb = any(bool(e.is_reimbursement) for e in updated_expenses)
+        reimb_label = "💼 Ya (Ditalangi)" if is_reimb else "🏷️ Tidak (Reguler)"
+        insight = extract_insight_from_text(cb.get("message", {}).get("text", ""))
+
+        msg_id = cb["message"].get("message_id")
+        unpaid_text = (
+            f"⏳ *Status: BELUM LUNAS (HUTANG)*\n\n"
+            f"📝 *Rincian:*\n{items_summary}\n\n"
+            f"💰 *Total: {fmt_rupiah(total_val)}*\n"
+            f"💳 *Status Bayar:* ⏳ Belum Lunas (Hutang)\n"
+            f"💼 *Status Reimburse:* {reimb_label}\n\n"
+            f"_Klik tombol 'Tandai Lunas' di bawah jika tagihan ini sudah dibayar._"
+            f"{insight}"
+        )
+        keyboard = build_expense_action_keyboard(
+            ids_raw,
+            is_paid=False,
+            is_reimb=is_reimb,
+            dashboard_url=settings.public_dashboard_url,
+        )
+        if msg_id:
+            await tg.edit_message(chat_id, msg_id, unpaid_text, keyboard)
+        else:
+            await tg.send_message(chat_id, unpaid_text, thread_id, keyboard)
+
+    elif data.startswith("mark_paid:"):
+        from app.services.expense_service import update_expense, get_expense_by_id
+
+        ids_raw = data.split(":", 1)[1]
+        expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        updated_expenses = []
+        for eid in expense_ids:
+            exp = await update_expense(db, eid, {"pay_status": "Lunas"})
+            if exp:
+                updated_expenses.append(exp)
+        await db.commit()
+
+        items_summary, total_val = format_expense_items_summary(updated_expenses)
+        if not items_summary:
+            items_summary = extract_items_block_from_text(cb.get("message", {}).get("text", ""))
+
+        is_reimb = any(bool(e.is_reimbursement) for e in updated_expenses)
+        reimb_label = "💼 Ya (Ditalangi)" if is_reimb else "🏷️ Tidak (Reguler)"
+        insight = extract_insight_from_text(cb.get("message", {}).get("text", ""))
+
+        msg_id = cb["message"].get("message_id")
+        paid_text = (
+            f"✅ *Status: LUNAS (Telah Dilunasi)*\n\n"
+            f"📝 *Rincian:*\n{items_summary}\n\n"
+            f"💰 *Total: {fmt_rupiah(total_val)}*\n"
+            f"💳 *Status Bayar:* ✅ Lunas\n"
+            f"💼 *Status Reimburse:* {reimb_label}\n\n"
+            f"_Status pembayaran di database telah diperbarui menjadi Lunas._"
+            f"{insight}"
+        )
+        keyboard = build_expense_action_keyboard(
+            ids_raw,
+            is_paid=True,
+            is_reimb=is_reimb,
+            dashboard_url=settings.public_dashboard_url,
+        )
         if msg_id:
             await tg.edit_message(chat_id, msg_id, paid_text, keyboard)
         else:
@@ -206,26 +259,35 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             exp.sheets_synced = False
         await db.commit()
 
-        msg_id = cb["message"].get("message_id")
-        reimb_badge = "💼 *Status: REIMBURSEMENT (Ditalangi)*" if new_state else "🏷️ *Status: Pengeluaran Reguler (Bukan Reimburse)*"
-        btn_label = "💼 Reimburse: YA (Ubah)" if new_state else "💼 Reimburse: TIDAK (Ubah)"
+        items_summary, total_val = format_expense_items_summary(expenses_to_update)
+        if not items_summary:
+            items_summary = extract_items_block_from_text(cb.get("message", {}).get("text", ""))
 
-        reimb_text = (
-            f"{reimb_badge}\n\n"
-            f"_Berhasil diperbarui untuk {len(expenses_to_update)} item transaksi._"
+        is_paid = not any(
+            str(e.pay_status or "Lunas").lower() in ("belum lunas", "hutang", "tempo")
+            for e in expenses_to_update
         )
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_raw}"},
-                    {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_raw}"},
-                ],
-                [
-                    {"text": btn_label, "callback_data": f"toggle_reimb:{ids_raw}"},
-                ],
-                [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}],
-            ]
-        }
+        pay_label = "✅ Lunas" if is_paid else "⏳ Belum Lunas (Hutang)"
+        reimb_header = "💼 *Status: REIMBURSEMENT (Ditalangi)*" if new_state else "🏷️ *Status: BUKAN REIMBURSEMENT (Reguler)*"
+        reimb_label = "💼 Ya (Ditalangi)" if new_state else "🏷️ Tidak (Reguler)"
+        insight = extract_insight_from_text(cb.get("message", {}).get("text", ""))
+
+        msg_id = cb["message"].get("message_id")
+        reimb_text = (
+            f"{reimb_header}\n\n"
+            f"📝 *Rincian:*\n{items_summary}\n\n"
+            f"💰 *Total: {fmt_rupiah(total_val)}*\n"
+            f"💳 *Status Bayar:* {pay_label}\n"
+            f"💼 *Status Reimburse:* {reimb_label}\n\n"
+            f"_Data transaksi berhasil diperbarui di database._"
+            f"{insight}"
+        )
+        keyboard = build_expense_action_keyboard(
+            ids_raw,
+            is_paid=is_paid,
+            is_reimb=new_state,
+            dashboard_url=settings.public_dashboard_url,
+        )
         if msg_id:
             await tg.edit_message(chat_id, msg_id, reimb_text, keyboard)
         else:
@@ -276,7 +338,9 @@ async def _handle_reimb_user_paid(
     groups = await group_reimbursements_by_user(db, remaining)
     text, keyboard = build_admin_review(groups)
     total_paid = sum(float(e.total_price or 0) for e in paid)
-    text = f"✅ _{len(paid)} talangan ({fmt_rupiah(total_paid)}) ditandai sudah diganti._\n\n" + text
+    paid_items_lines = "\n".join([f"• {e.item_name} ({fmt_rupiah(float(e.total_price or 0))})" for e in paid[:10]])
+    paid_header = f"✅ *{len(paid)} talangan ({fmt_rupiah(total_paid)}) ditandai sudah diganti:*\n{paid_items_lines}\n\n" if paid else ""
+    text = paid_header + text
 
     msg_id = cb["message"].get("message_id")
     if msg_id:

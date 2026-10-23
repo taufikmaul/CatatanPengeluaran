@@ -8,7 +8,13 @@ from app.agent.intent import Intent, classify_intent
 from app.agent.memory import get_user_context, update_user_context, add_conversation_turn
 from app.agent import tools
 from app.bot import telegram_client as tg
-from app.utils.formatters import fmt_rupiah, fmt_date_id, build_items_summary, build_progress_text
+from app.utils.formatters import (
+    fmt_rupiah,
+    fmt_date_id,
+    build_items_summary,
+    build_progress_text,
+    build_expense_action_keyboard,
+)
 from app.config import settings
 
 
@@ -521,15 +527,21 @@ class HermesAgent:
                 if insight_text:
                     insight = f"\n\n{insight_text}"
 
-        # Status reimbursement
+        # Status reimbursement & pembayaran
         is_reimb = any(getattr(e, "is_reimbursement", False) for e in (saved_expenses or []))
-        reimb_badge = "\n💼 *Status: Reimbursement (Ditalangi)*" if is_reimb else ""
-        reimb_btn = "💼 Reimburse: YA (Ubah)" if is_reimb else "💼 Tandai Reimburse"
+        is_paid = not any(
+            str(getattr(e, "pay_status", "Lunas") or "Lunas").lower() in ("belum lunas", "hutang", "tempo")
+            for e in (saved_expenses or [])
+        )
+        pay_label = "✅ Lunas" if is_paid else "⏳ Belum Lunas (Hutang)"
+        reimb_label = "💼 Ya (Ditalangi)" if is_reimb else "🏷️ Tidak (Reguler)"
 
         success_msg = (
             f"✅ *Berhasil Disimpan! ({len(items)} Item)*\n\n"
             f"📝 *Rincian:*\n{item_list_str}\n\n"
-            f"💰 *Total: {fmt_rupiah(total)}*{reimb_badge}\n\n"
+            f"💰 *Total: {fmt_rupiah(total)}*\n"
+            f"💳 *Status Bayar:* {pay_label}\n"
+            f"💼 *Status Reimburse:* {reimb_label}\n\n"
             f"_Data telah masuk ke database._"
             f"{insight}"
         )
@@ -539,21 +551,12 @@ class HermesAgent:
             str(e.id) for e in (saved_expenses or [])[:10] if getattr(e, "id", None) is not None
         ]
         ids_str = ",".join(saved_ids)
-
-        inline_rows = []
-        if ids_str:
-            inline_rows.append([
-                {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
-                {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_str}"},
-            ])
-            inline_rows.append([
-                {"text": reimb_btn, "callback_data": f"toggle_reimb:{ids_str}"},
-            ])
-        inline_rows.append([
-            {"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}
-        ])
-
-        keyboard = {"inline_keyboard": inline_rows}
+        keyboard = build_expense_action_keyboard(
+            ids_str,
+            is_paid=is_paid,
+            is_reimb=is_reimb,
+            dashboard_url=settings.public_dashboard_url,
+        )
 
         if msg_id:
             await tg.edit_message(self.chat_id, msg_id, success_msg, keyboard)

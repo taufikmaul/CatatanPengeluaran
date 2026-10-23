@@ -361,3 +361,115 @@ class TestSchedulerReimburseReminder:
             # Check DM message to Rina
             rina_calls = [c for c in mock_send.call_args_list if c[1].get("chat_id") == 121212 or (c[0] and c[0][0] == 121212)]
             assert len(rina_calls) == 1
+
+
+# ──────────────────────────────────────────────
+# 6. Tests for Preserving Items in Chat for Telegram Search
+# ──────────────────────────────────────────────
+
+class TestItemSearchPreservationInCallbacks:
+    @pytest.mark.asyncio
+    async def test_items_preserved_across_all_callback_actions(self, db: AsyncSession, monkeypatch):
+        """Pastikan rincian nama barang, harga, toko, nota tidak hilang saat tombol Telegram diklik."""
+        from app.services.expense_service import save_expenses, get_expense_by_id
+        from app.bot import telegram_client as tg
+
+        edited = []
+
+        async def fake_ans(cb_id, text=""):
+            return None
+
+        async def fake_edit(chat_id, msg_id, text, reply_markup=None, parse_mode="Markdown"):
+            edited.append({"text": text, "markup": reply_markup})
+
+        monkeypatch.setattr(tg, "answer_callback_query", fake_ans)
+        monkeypatch.setattr(tg, "edit_message", fake_edit)
+
+        saved = await save_expenses(
+            db,
+            [
+                {
+                    "tanggal": "2026-10-23",
+                    "barang": "Mentega Anchor 200g",
+                    "qty": 2,
+                    "harga_satuan": 45000,
+                    "total_harga": 90000,
+                    "toko_supplier": "TBK Makmur",
+                    "no_invoice": "INV-789",
+                },
+                {
+                    "tanggal": "2026-10-23",
+                    "barang": "Pewarna Hijau Koepoe",
+                    "qty": 1,
+                    "harga_satuan": 8500,
+                    "total_harga": 8500,
+                    "toko_supplier": "TBK Makmur",
+                    "no_invoice": "INV-789",
+                },
+            ],
+        )
+        await db.commit()
+        ids_str = f"{saved[0].id},{saved[1].id}"
+
+        # 1. Action: toggle_reimb
+        cb_reimb = {
+            "id": "cb-1",
+            "from": {"id": 1001},
+            "message": {"message_id": 101, "chat": {"id": 2002}, "text": "Dummy previous message"},
+            "data": f"toggle_reimb:{ids_str}",
+        }
+        await handle_callback_query(cb_reimb, db)
+        text_reimb = edited[-1]["text"]
+        assert "Mentega Anchor 200g" in text_reimb
+        assert "Pewarna Hijau Koepoe" in text_reimb
+        assert "TBK Makmur" in text_reimb
+        assert "INV-789" in text_reimb
+        assert "REIMBURSEMENT" in text_reimb
+        assert "Rp 98.500" in text_reimb
+
+        # 2. Action: unpaid_save
+        cb_unpaid = {
+            "id": "cb-2",
+            "from": {"id": 1001},
+            "message": {"message_id": 101, "chat": {"id": 2002}, "text": text_reimb},
+            "data": f"unpaid_save:{ids_str}",
+        }
+        await handle_callback_query(cb_unpaid, db)
+        text_unpaid = edited[-1]["text"]
+        assert "Mentega Anchor 200g" in text_unpaid
+        assert "Pewarna Hijau Koepoe" in text_unpaid
+        assert "TBK Makmur" in text_unpaid
+        assert "Belum Lunas" in text_unpaid
+        assert "Rp 98.500" in text_unpaid
+
+        # 3. Action: mark_paid
+        cb_paid = {
+            "id": "cb-3",
+            "from": {"id": 1001},
+            "message": {"message_id": 101, "chat": {"id": 2002}, "text": text_unpaid},
+            "data": f"mark_paid:{ids_str}",
+        }
+        await handle_callback_query(cb_paid, db)
+        text_paid = edited[-1]["text"]
+        assert "Mentega Anchor 200g" in text_paid
+        assert "Pewarna Hijau Koepoe" in text_paid
+        assert "Lunas" in text_paid
+        assert "Rp 98.500" in text_paid
+
+        # 4. Action: undo_save
+        cb_undo = {
+            "id": "cb-4",
+            "from": {"id": 1001},
+            "message": {"message_id": 101, "chat": {"id": 2002}, "text": text_paid},
+            "data": f"undo_save:{ids_str}",
+        }
+        await handle_callback_query(cb_undo, db)
+        text_undo = edited[-1]["text"]
+        assert "Mentega Anchor 200g" in text_undo
+        assert "Pewarna Hijau Koepoe" in text_undo
+        assert "Dibatalkan" in text_undo
+        assert "Rp 98.500" in text_undo
+
+        # Pastikan data di database terhapus
+        assert await get_expense_by_id(db, saved[0].id) is None
+        assert await get_expense_by_id(db, saved[1].id) is None

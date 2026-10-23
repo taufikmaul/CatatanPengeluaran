@@ -241,6 +241,9 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     await handle_callback_query(cb_unpaid, db)
     exp = await get_expense_by_id(db, exp_id)
     assert exp.pay_status == "Belum Lunas"
+    assert "Gula Pasir" in edited_messages[-1]["text"]
+    assert "Belum Lunas" in edited_messages[-1]["text"]
+    assert "Rp 17.500" in edited_messages[-1]["text"]
 
     # 2. Klik Tandai Lunas
     cb_paid = {
@@ -252,6 +255,8 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     await handle_callback_query(cb_paid, db)
     exp = await get_expense_by_id(db, exp_id)
     assert exp.pay_status == "Lunas"
+    assert "Gula Pasir" in edited_messages[-1]["text"]
+    assert "Lunas" in edited_messages[-1]["text"]
 
     # 3. Klik Toggle Reimbursement (dari False -> True)
     cb_reimb = {
@@ -263,13 +268,16 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     await handle_callback_query(cb_reimb, db)
     exp = await get_expense_by_id(db, exp_id)
     assert exp.is_reimbursement is True
+    assert "Gula Pasir" in edited_messages[-1]["text"]
+    assert "REIMBURSEMENT" in edited_messages[-1]["text"]
 
     # 3b. Klik Toggle Reimbursement lagi (dari True -> False)
     await handle_callback_query(cb_reimb, db)
     exp = await get_expense_by_id(db, exp_id)
     assert exp.is_reimbursement is False
+    assert "Gula Pasir" in edited_messages[-1]["text"]
 
-    # 4. Klik Batal Simpan (Undo)
+    # 4. Klik Batal Simpan (Undo) - item names MUST be preserved in text for searchability
     cb_undo = {
         "id": "cb-undo",
         "from": {"id": 111},
@@ -278,6 +286,8 @@ async def test_telegram_quick_action_callbacks(db, monkeypatch):
     }
     await handle_callback_query(cb_undo, db)
     assert await get_expense_by_id(db, exp_id) is None
+    assert "Gula Pasir" in edited_messages[-1]["text"]
+    assert "Dibatalkan" in edited_messages[-1]["text"]
 
 
 @pytest.mark.asyncio
