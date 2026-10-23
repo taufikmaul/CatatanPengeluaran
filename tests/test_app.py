@@ -32,7 +32,7 @@ class TestUtilityEndpoints:
         assert response.status_code == 200
         assert body["status"] == "running"
         assert body["agent"] == "Hermes"
-        assert body["dashboard"] == "/dashboard"
+        assert body["dashboard"] == "/app"
 
     async def test_health_check(self, client):
         response = await client.get("/health")
@@ -40,93 +40,17 @@ class TestUtilityEndpoints:
         assert response.json() == {"status": "ok"}
 
 
-class TestDashboard:
-    async def test_redirects_unauthenticated_to_login(self, client):
+class TestDashboardRedirects:
+    async def test_dashboard_redirects_to_app(self, client):
         response = await client.get("/dashboard", follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"] == "/dashboard/login"
+        assert response.status_code == 307
+        assert response.headers["location"] == "/app"
 
-    async def test_renders_with_empty_database(self, client, db):
-        # Dashboard memanggil get_monthly_report + pagination lewat dependency
-        # yang sudah di-override ke DB test.
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        response = await client.get("/dashboard")
-
-        assert response.status_code == 200
-        assert "Catatan Pengeluaran" in response.text
-        assert "Historycake Dashboard" in response.text
-
-    async def test_accepts_filter_query_params(self, client, db):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        response = await client.get("/dashboard?month=9&year=2025")
-        assert response.status_code == 200
-        assert "September" in response.text
-
-    async def test_rejects_invalid_page(self, client, db):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        response = await client.get("/dashboard?page=0")
-        assert response.status_code == 422
-
-
-class TestDashboardConfig:
-    async def test_config_page_redirects_unauthenticated(self, client):
-        response = await client.get("/dashboard/config", follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"] == "/dashboard/login"
-
-    async def test_config_page_renders_for_authenticated_user(self, client, db):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        response = await client.get("/dashboard/config")
-        assert response.status_code == 200
-        assert "Konfigurasi AI Engine" in response.text
-        assert "Database PostgreSQL" in response.text
-        assert "Google Sheets Sync" in response.text
-        assert "Daftar Kategori Baku" in response.text
-
-    async def test_test_ai_endpoint(self, client, monkeypatch):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-
-        async def fake_call_ai(text: str):
-            return {
-                "items": [
-                    {
-                        "barang": "Tepung",
-                        "qty": 1,
-                        "harga_satuan": 15000,
-                        "total_harga": 15000,
-                        "kategori": "Bahan Kue",
-                    }
-                ]
-            }
-
-        import app.dashboard.routes as d_routes
-        monkeypatch.setattr(d_routes, "call_ai_text", fake_call_ai)
-
-        response = await client.post(
-            "/dashboard/config/test-ai",
-            data={"test_text": "Beli tepung 1 pack 15rb"},
-            headers={"accept": "application/json"},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["ok"] is True
-        assert len(data["result"]["items"]) == 1
-
-    async def test_trigger_sheets_sync_endpoint(self, client, monkeypatch):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-
-        async def fake_sync(db):
-            return 3
-
-        import app.dashboard.routes as d_routes
-        monkeypatch.setattr(d_routes, "sync_to_sheets", fake_sync)
-
-        response = await client.post(
-            "/dashboard/config/trigger-sheets-sync",
-            headers={"accept": "application/json"},
-        )
-        assert response.status_code == 200
-        assert response.json()["synced_count"] == 3
+    async def test_dashboard_subpath_redirects_to_app(self, client):
+        for path in ["/dashboard/login", "/dashboard/config", "/dashboard/import"]:
+            response = await client.get(path, follow_redirects=False)
+            assert response.status_code == 307
+            assert response.headers["location"] == "/app"
 
 
 
@@ -160,4 +84,11 @@ class TestSchemaConsistency:
 
     async def test_models_metadata_matches_alembic_target(self):
         """Alembic memakai Base.metadata yang sama; pastikan tabel terdaftar."""
-        assert set(Base.metadata.tables) == {"users", "expenses", "sessions", "dashboard_pins", "dashboard_access_logs"}
+        assert set(Base.metadata.tables) == {
+            "users",
+            "expenses",
+            "sessions",
+            "dashboard_pins",
+            "dashboard_access_logs",
+            "master_items",
+        }

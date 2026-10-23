@@ -16,7 +16,7 @@ from app.config import settings
 def get_system_prompt(extra: str = "") -> str:
     today = date.today().isoformat()
     categories = "\n".join(f"- {c}" for c in settings.valid_categories)
-    return f"""Anda asisten keuangan pintar untuk toko kue Historycake. Ekstrak data belanja/mutasi ke JSON murni.
+    return f"""Anda asisten keuangan pintar untuk toko kue Historycake. Ekstrak data belanja/mutasi/invoice ke JSON murni.
 Tanggal hari ini: {today}.
 
 Perhatikan Aturan Khusus Klasifikasi Kategori:
@@ -30,9 +30,11 @@ Perhatikan Aturan Khusus Klasifikasi Kategori:
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
 - Status Pembayaran asumsikan "Lunas" kecuali disebut sebaliknya.
+- Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
+- Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
 {extra}
 WAJIB HANYA KELUARKAN JSON VALID. Format Wajib:
-{{ "items": [ {{ "tanggal": "YYYY-MM-DD", "barang": "Nama", "qty": 1, "kategori": "Bahan Kue", "harga_satuan": 0, "tax": 0, "diskon": 0, "total_harga": 0, "toko_supplier": "Toko", "metode_bayar": "Tunai", "status_pembayaran": "Lunas", "jatuh_tempo": "-", "keterangan": "-" }} ] }}"""
+{{ "items": [ {{ "tanggal": "YYYY-MM-DD", "barang": "Nama", "qty": 1, "kategori": "Bahan Kue", "harga_satuan": 0, "tax": 0, "diskon": 0, "total_harga": 0, "toko_supplier": "Toko", "metode_bayar": "Tunai", "status_pembayaran": "Lunas", "jatuh_tempo": "-", "keterangan": "-", "no_invoice": "-", "is_reimbursement": false }} ] }}"""
 
 
 # ──────────────────────────────────────────────

@@ -36,9 +36,44 @@ async def get_monthly_analytics(
     daily_chart = await get_monthly_chart_data(db, cur_year, cur_month)
     leaderboards = await get_monthly_leaderboards(db, cur_year, cur_month)
 
-    # Total pengeluaran (lunas + belum lunas)
+    # Hitung bulan sebelumnya untuk perbandingan MoM (Month-over-Month)
+    if cur_month == 1:
+        prev_month, prev_year = 12, cur_year - 1
+    else:
+        prev_month, prev_year = cur_month - 1, cur_year
+
+    prev_report = await get_monthly_report(db, prev_year, prev_month)
+    prev_total_lunas = float(prev_report.get("total_lunas", 0))
+    prev_total_hutang = sum(item.get("nominal", 0) for item in prev_report.get("list_hutang", []))
+    prev_total_pengeluaran = prev_total_lunas + prev_total_hutang
+
+    # Total pengeluaran (lunas + belum lunas) bulan ini
     total_hutang = sum(item.get("nominal", 0) for item in report.get("list_hutang", []))
     total_lunas = float(report.get("total_lunas", 0))
+    total_pengeluaran = total_lunas + total_hutang
+
+    mom_lunas_change_pct = (
+        round(((total_lunas - prev_total_lunas) / prev_total_lunas) * 100.0, 1)
+        if prev_total_lunas > 0
+        else None
+    )
+    mom_total_change_pct = (
+        round(((total_pengeluaran - prev_total_pengeluaran) / prev_total_pengeluaran) * 100.0, 1)
+        if prev_total_pengeluaran > 0
+        else None
+    )
+
+    cat_budgets = settings.category_budgets
+    budget_limit = float(settings.monthly_budget_limit or 0)
+    # Jika anggaran total belum diisi manual tapi anggaran per kategori diisi, gunakan total kategori
+    if budget_limit <= 0 and cat_budgets:
+        budget_limit = float(sum(cat_budgets.values()))
+
+    budget_used_pct = (
+        round((total_pengeluaran / budget_limit) * 100.0, 1)
+        if budget_limit > 0
+        else None
+    )
 
     return MonthlyReportResponse(
         ok=True,
@@ -46,13 +81,23 @@ async def get_monthly_analytics(
         year=cur_year,
         month_name=MONTH_NAMES[cur_month - 1],
         total_lunas=total_lunas,
-        total_pengeluaran=total_lunas + total_hutang,
+        total_pengeluaran=total_pengeluaran,
         expense_count=report.get("expense_count", 0),
+        prev_month_name=MONTH_NAMES[prev_month - 1],
+        prev_total_lunas=prev_total_lunas,
+        prev_total_pengeluaran=prev_total_pengeluaran,
+        mom_lunas_change_pct=mom_lunas_change_pct,
+        mom_total_change_pct=mom_total_change_pct,
+        monthly_budget_limit=budget_limit,
+        budget_used_pct=budget_used_pct,
+        category_budgets=cat_budgets,
         per_kategori=report.get("per_kategori", {}),
         per_metode_bayar=report.get("per_metode_bayar", {}),
         list_hutang=report.get("list_hutang", []),
         daily_chart=daily_chart,
         valid_categories=settings.valid_categories,
+        reimburse_pending_count=int(report.get("reimburse_pending_count", 0)),
+        reimburse_pending_total=float(report.get("reimburse_pending_total", 0.0)),
         top_frequent_items=leaderboards.get("top_frequent_items", []),
         top_expensive_items=leaderboards.get("top_expensive_items", []),
         top_unit_price_items=leaderboards.get("top_unit_price_items", []),

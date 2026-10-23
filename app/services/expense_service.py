@@ -18,8 +18,12 @@ async def save_expenses(
 ) -> list[Expense]:
     """
     Simpan list item pengeluaran ke Postgres.
-    Port dari saveDataToSheet di GAS.
+    Port dari saveDataToSheet di GAS + auto-match ke MasterItem baku.
     """
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    await match_and_normalize_extracted_items(db, items)
+
     saved = []
     today = date.today()
 
@@ -30,6 +34,14 @@ async def save_expenses(
             expense_date = date.fromisoformat(str(raw_date)[:10])
         except (ValueError, TypeError):
             expense_date = today
+
+        is_reimb = bool(item.get("is_reimbursement", False))
+        ket = str(item.get("keterangan", ""))
+        brg = str(item.get("barang", ""))
+        if any(w in ket.lower() or w in brg.lower() for w in ("reimburse", "rembes", "ditalangi", "talangan")):
+            is_reimb = True
+
+        inv_num = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota") or "-"
 
         expense = Expense(
             expense_date=expense_date,
@@ -45,6 +57,8 @@ async def save_expenses(
             pay_status=item.get("status_pembayaran") or "Lunas",
             due_date=item.get("jatuh_tempo") or "-",
             notes=item.get("keterangan") or "-",
+            is_reimbursement=is_reimb,
+            invoice_number=str(inv_num),
             msg_link=msg_link,
             user_id=user_id,
             sheets_synced=False,
@@ -121,10 +135,16 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     per_kategori: dict[str, float] = {}
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
+    reimburse_pending_count = 0
+    reimburse_pending_total = 0.0
 
     for e in expenses:
         nominal = float(e.total_price or 0)
         status = (e.pay_status or "").lower()
+
+        if bool(e.is_reimbursement) and not e.reimbursed_at:
+            reimburse_pending_count += 1
+            reimburse_pending_total += nominal
 
         # Agregasi Metode Pembayaran
         metode = (e.pay_method or "Tunai").strip() or "Tunai"
@@ -151,6 +171,8 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
         "list_hutang": list_hutang,
+        "reimburse_pending_count": reimburse_pending_count,
+        "reimburse_pending_total": reimburse_pending_total,
         "expense_count": len(expenses),
         "month": month,
         "year": year,
@@ -171,6 +193,124 @@ async def search_last_price(db: AsyncSession, keyword: str) -> Expense | None:
     return result.scalar_one_or_none()
 
 
+async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
+    """
+    Ambil riwayat pembelian suatu barang beserta statistik harga satuan
+    (termurah, rata-rata, tertinggi, terakhir) dan perbandingan harga antar toko/supplier.
+    """
+    clean_q = (item_name or "").strip()
+    if not clean_q:
+        return {
+            "item_name": "",
+            "tx_count": 0,
+            "min_price": 0.0,
+            "max_price": 0.0,
+            "avg_price": 0.0,
+            "latest_price": 0.0,
+            "cheapest_supplier": "-",
+            "suppliers_comparison": [],
+            "history": [],
+        }
+
+    # Prioritaskan exact match dulu; jika kosong baru ilike substring
+    exact_res = await db.execute(
+        select(Expense)
+        .where(func.lower(Expense.item_name) == clean_q.lower())
+        .order_by(Expense.expense_date.desc(), Expense.id.desc())
+    )
+    rows = list(exact_res.scalars().all())
+    if not rows:
+        like_res = await db.execute(
+            select(Expense)
+            .where(Expense.item_name.ilike(f"%{clean_q}%"))
+            .order_by(Expense.expense_date.desc(), Expense.id.desc())
+        )
+        rows = list(like_res.scalars().all())
+
+    if not rows:
+        return {
+            "item_name": clean_q,
+            "tx_count": 0,
+            "min_price": 0.0,
+            "max_price": 0.0,
+            "avg_price": 0.0,
+            "latest_price": 0.0,
+            "cheapest_supplier": "-",
+            "suppliers_comparison": [],
+            "history": [],
+        }
+
+    priced_rows = [r for r in rows if float(r.unit_price or 0) > 0]
+    prices = [float(r.unit_price) for r in priced_rows]
+
+    min_price = min(prices) if prices else 0.0
+    max_price = max(prices) if prices else 0.0
+    avg_price = round(sum(prices) / len(prices), 2) if prices else 0.0
+    latest_price = float(priced_rows[0].unit_price) if priced_rows else 0.0
+
+    # Perbandingan harga per toko/supplier
+    sup_map: dict[str, dict] = {}
+    cheapest_supplier = "-"
+    cheapest_val = None
+
+    for r in priced_rows:
+        up = float(r.unit_price or 0)
+        sup_raw = (r.supplier or "-").strip() or "-"
+        if cheapest_val is None or up < cheapest_val:
+            cheapest_val = up
+            cheapest_supplier = sup_raw
+
+        skey = sup_raw.lower()
+        if skey not in sup_map:
+            sup_map[skey] = {
+                "supplier": sup_raw,
+                "min_price": up,
+                "max_price": up,
+                "latest_price": up,
+                "last_date": str(r.expense_date),
+                "tx_count": 1,
+            }
+        else:
+            entry = sup_map[skey]
+            entry["tx_count"] += 1
+            if up < entry["min_price"]:
+                entry["min_price"] = up
+            if up > entry["max_price"]:
+                entry["max_price"] = up
+
+    suppliers_comparison = sorted(
+        sup_map.values(),
+        key=lambda x: (x["min_price"], -x["tx_count"]),
+    )
+
+    history = [
+        {
+            "id": r.id,
+            "expense_date": str(r.expense_date),
+            "supplier": r.supplier or "-",
+            "item_name": r.item_name,
+            "qty": float(r.qty or 1),
+            "unit_price": float(r.unit_price or 0),
+            "total_price": float(r.total_price or 0),
+            "category": r.category or "Operasional",
+            "notes": r.notes or "-",
+        }
+        for r in rows[:15]
+    ]
+
+    return {
+        "item_name": rows[0].item_name,
+        "tx_count": len(rows),
+        "min_price": min_price,
+        "max_price": max_price,
+        "avg_price": avg_price,
+        "latest_price": latest_price,
+        "cheapest_supplier": cheapest_supplier,
+        "suppliers_comparison": suppliers_comparison,
+        "history": history,
+    }
+
+
 async def get_all_expenses_paginated(
     db: AsyncSession,
     page: int = 1,
@@ -180,8 +320,9 @@ async def get_all_expenses_paginated(
     year: int | None = None,
     search: str | None = None,
     status: str | None = None,
+    is_reimbursement: bool | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, dan status."""
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, dan reimbursement."""
     query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
 
     if category:
@@ -192,6 +333,8 @@ async def get_all_expenses_paginated(
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     if status:
         query = query.where(Expense.pay_status.ilike(f"%{status}%"))
+    if is_reimbursement is not None:
+        query = query.where(Expense.is_reimbursement == is_reimbursement)
     if search:
         search_term = f"%{search.strip()}%"
         query = query.where(
@@ -199,6 +342,7 @@ async def get_all_expenses_paginated(
                 Expense.item_name.ilike(search_term),
                 Expense.supplier.ilike(search_term),
                 Expense.notes.ilike(search_term),
+                Expense.invoice_number.ilike(search_term),
             )
         )
 
@@ -544,11 +688,11 @@ async def get_monthly_leaderboards(db: AsyncSession, year: int, month: int) -> d
     }
 
 
-async def get_unsynced_to_sheets(db: AsyncSession, limit: int = 100) -> list[Expense]:
+async def get_unsynced_to_sheets(db: AsyncSession, limit: int = 500) -> list[Expense]:
     """Ambil expense yang belum di-sync ke Google Sheets."""
     result = await db.execute(
         select(Expense)
-        .where(Expense.sheets_synced == False)  # noqa: E712
+        .where(or_(Expense.sheets_synced == False, Expense.sheets_synced.is_(None)))  # noqa: E712
         .order_by(Expense.id.asc())
         .limit(limit)
     )
@@ -620,6 +764,10 @@ async def batch_insert_expenses(
     Simpan sekumpulan pengeluaran (misal dari CSV) ke Postgres secara batch.
     Flag sheets_synced default=True agar data historis impor tidak membebani Google Sheets.
     """
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    await match_and_normalize_extracted_items(db, items)
+
     saved = []
     today = date.today()
 
@@ -649,6 +797,8 @@ async def batch_insert_expenses(
             pay_status=item.get("pay_status") or "Lunas",
             due_date=item.get("due_date") or "-",
             notes=item.get("notes") or "-",
+            is_reimbursement=bool(item.get("is_reimbursement", False)),
+            invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=user_id,
             sheets_synced=sheets_synced,
@@ -659,3 +809,79 @@ async def batch_insert_expenses(
     await db.flush()
     return saved
 
+
+
+# ──────────────────────────────────────────────
+# Reimbursement (talangan) per user
+# ──────────────────────────────────────────────
+
+async def get_outstanding_reimbursements(
+    db: AsyncSession,
+    user_id: int | None = None,
+) -> list[Expense]:
+    """Ambil talangan (reimbursement) yang belum diganti.
+
+    user_id=None → semua user (untuk admin). Selain itu hanya milik user tersebut.
+    """
+    query = (
+        select(Expense)
+        .where(Expense.is_reimbursement == True)  # noqa: E712
+        .where(Expense.reimbursed_at.is_(None))
+        .order_by(Expense.expense_date.asc(), Expense.id.asc())
+    )
+    if user_id is not None:
+        query = query.where(Expense.user_id == user_id)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def group_reimbursements_by_user(
+    db: AsyncSession,
+    expenses: list[Expense],
+) -> list[dict]:
+    """Kelompokkan talangan per user → [{user_id, telegram_id, name, items, total}]."""
+    user_ids = {e.user_id for e in expenses if e.user_id is not None}
+    users: dict[int, User] = {}
+    if user_ids:
+        res = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users = {u.id: u for u in res.scalars().all()}
+
+    groups: dict[int | None, dict] = {}
+    for e in expenses:
+        g = groups.get(e.user_id)
+        if g is None:
+            u = users.get(e.user_id) if e.user_id is not None else None
+            g = {
+                "user_id": e.user_id,
+                "telegram_id": u.telegram_id if u else None,
+                "name": (u.name if u and u.name else None) or ("Tanpa User (Web)" if e.user_id is None else f"User #{e.user_id}"),
+                "items": [],
+                "total": 0.0,
+            }
+            groups[e.user_id] = g
+        g["items"].append(e)
+        g["total"] += float(e.total_price or 0)
+
+    return sorted(groups.values(), key=lambda g: -g["total"])
+
+
+async def mark_reimbursed(
+    db: AsyncSession,
+    expense_ids: list[int],
+) -> list[Expense]:
+    """Tandai talangan sudah diganti. Hanya memproses item reimbursement yang belum diganti."""
+    if not expense_ids:
+        return []
+    res = await db.execute(
+        select(Expense)
+        .where(Expense.id.in_(expense_ids))
+        .where(Expense.is_reimbursement == True)  # noqa: E712
+        .where(Expense.reimbursed_at.is_(None))
+    )
+    items = list(res.scalars().all())
+    now = datetime.utcnow()
+    for e in items:
+        e.reimbursed_at = now
+        e.sheets_synced = False
+    await db.flush()
+    return items

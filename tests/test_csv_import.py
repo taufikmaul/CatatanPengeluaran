@@ -247,22 +247,18 @@ async def client(db: AsyncSession):
     app.dependency_overrides.clear()
 
 
-class TestDashboardImportEndpoints:
-    async def test_import_page_unauthenticated_redirects(self, client):
-        res = await client.get("/dashboard/import", follow_redirects=False)
-        assert res.status_code == 303
-        assert res.headers["location"] == "/dashboard/login"
+class TestApiImportEndpoints:
+    async def test_import_unauthenticated_returns_401(self, client):
+        res = await client.get("/api/v1/import/template")
+        assert res.status_code == 401
 
-    async def test_import_page_authenticated_renders(self, client):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        res = await client.get("/dashboard/import")
-        assert res.status_code == 200
-        assert "Upload File CSV Pengeluaran" in res.text
-        assert "Download Template CSV" in res.text
+        files = {"file": ("test.csv", b"col1\nval1", "text/csv")}
+        post_res = await client.post("/api/v1/import/csv", files=files)
+        assert post_res.status_code == 401
 
     async def test_download_template_csv(self, client):
         client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        res = await client.get("/dashboard/import/template")
+        res = await client.get("/api/v1/import/template")
         assert res.status_code == 200
         assert res.headers["content-type"].startswith("text/csv")
         assert "Timestamp,Tanggal Nota,Toko / Supplier" in res.text
@@ -277,10 +273,9 @@ class TestDashboardImportEndpoints:
         ).encode("utf-8")
 
         files = {"file": ("data_test.csv", csv_content, "text/csv")}
-        headers = {"accept": "application/json"}
-        res = await client.post("/dashboard/import", files=files, headers=headers)
+        res = await client.post("/api/v1/import/csv", files=files)
 
-        assert res.status_code == 201
+        assert res.status_code == 200
         data = res.json()
         assert data["ok"] is True
         assert data["result"]["inserted_count"] == 2
@@ -301,15 +296,15 @@ class TestDashboardImportEndpoints:
         ).encode("utf-8")
 
         files1 = {"file": ("data_batch1.csv", csv_content, "text/csv")}
-        res1 = await client.post("/dashboard/import", files=files1, headers={"accept": "application/json"})
+        res1 = await client.post("/api/v1/import/csv", files=files1)
         assert res1.json()["result"]["inserted_count"] == 1
 
         # Upload file yang sama lagi dengan skip_duplicates=True
         files2 = {"file": ("data_batch2.csv", csv_content, "text/csv")}
         data2 = {"skip_duplicates": "true"}
-        res2 = await client.post("/dashboard/import", files=files2, data=data2, headers={"accept": "application/json"})
+        res2 = await client.post("/api/v1/import/csv", files=files2, data=data2)
 
-        assert res2.status_code == 201
+        assert res2.status_code == 200
         res_data2 = res2.json()["result"]
         assert res_data2["inserted_count"] == 0
         assert res_data2["duplicate_count"] == 1
@@ -317,6 +312,6 @@ class TestDashboardImportEndpoints:
     async def test_post_import_rejects_non_csv(self, client):
         client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
         files = {"file": ("image.png", b"fake-png-bytes", "image/png")}
-        res = await client.post("/dashboard/import", files=files, headers={"accept": "application/json"})
+        res = await client.post("/api/v1/import/csv", files=files)
         assert res.status_code == 400
-        assert "Format file tidak valid" in res.json()["error"]
+        assert "Format file tidak valid" in res.json()["detail"]

@@ -19,6 +19,7 @@ import {
   EyeOff,
   Database,
   ExternalLink,
+  Target,
 } from "lucide-react";
 
 interface ConfigTabProps {
@@ -39,6 +40,8 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [sumopodUrl, setSumopodUrl] = useState("https://ai.sumopod.com/v1/chat/completions");
 
   const [spreadsheetId, setSpreadsheetId] = useState("");
+  const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState<number>(0);
+  const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>({});
 
   // UI helpers
   const [showTokens, setShowTokens] = useState(false);
@@ -65,6 +68,8 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setSumopodUrl(config.ai_url || "https://ai.sumopod.com/v1/chat/completions");
 
       setSpreadsheetId(config.spreadsheet_id || "");
+      setMonthlyBudgetLimit(config.monthly_budget_limit || 0);
+      setCategoryBudgets(config.category_budgets || {});
     }
   }, [config]);
 
@@ -81,6 +86,8 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         spreadsheet_id: spreadsheetId.trim(),
         bot_password: botPassword,
         webhook_url: webhookUrl.trim(),
+        monthly_budget_limit: Number(monthlyBudgetLimit) || 0,
+        category_budgets: categoryBudgets,
       };
 
       if (telegramToken.trim()) payload.telegram_token = telegramToken.trim();
@@ -126,10 +133,18 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
     setIsSyncing(true);
     try {
       const res = await api.post("/config/sync-sheets");
-      toast.success(`Sinkronisasi selesai! ${res.data.synced_count} baris data dikirim ke Google Sheets.`);
+      if (res.data.synced_count > 0) {
+        toast.success(`Sinkronisasi selesai! ${res.data.synced_count} baris data dikirim ke Google Sheets.`);
+      } else {
+        toast.info(res.data.message || "Tidak ada data baru yang perlu disinkronkan ke Google Sheets.");
+      }
       onRefreshConfig();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Gagal sinkronisasi ke Google Sheets");
+      const errorMsg =
+        (typeof err.response?.data?.detail === "string" && err.response.data.detail.trim()) ||
+        err.response?.data?.message ||
+        "Gagal sinkronisasi ke Google Sheets. Pastikan spreadsheet telah di-share ke email Service Account dengan akses Editor.";
+      toast.error(errorMsg);
     } finally {
       setIsSyncing(false);
     }
@@ -279,6 +294,84 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="https://domain-anda.com/webhook"
                   className="h-10 text-xs rounded-xl"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 1.5 Target Anggaran Bulanan (Keseluruhan & Per Kategori) */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="p-4 md:p-5 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Target className="w-5 h-5 text-emerald-600" />
+                Target Anggaran Bulanan (Keseluruhan & Per Kategori)
+              </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const totalCat = Object.values(categoryBudgets).reduce(
+                    (acc, val) => acc + (Number(val) || 0),
+                    0
+                  );
+                  setMonthlyBudgetLimit(totalCat);
+                  toast.info("Target keseluruhan disamakan dengan total anggaran kategori");
+                }}
+                className="h-8 rounded-xl text-xs font-semibold"
+              >
+                Σ Samakan Total dengan Jumlah Kategori
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+            <div className="p-3.5 bg-emerald-50/50 border border-emerald-200/70 rounded-2xl">
+              <label className="text-xs font-bold text-emerald-950 block mb-1">
+                Plafon Anggaran Keseluruhan Bulanan (Rp)
+              </label>
+              <Input
+                type="number"
+                step="any"
+                value={monthlyBudgetLimit || ""}
+                onChange={(e) => setMonthlyBudgetLimit(Number(e.target.value) || 0)}
+                placeholder="Contoh: 20000000 (Kosongkan/0 jika ingin dihitung otomatis dari jumlah kategori)"
+                className="h-10 text-xs rounded-xl bg-white"
+              />
+              <span className="text-[11px] text-emerald-700 mt-1 block">
+                Jika diisi 0, plafon keseluruhan otomatis menggunakan hasil penjumlahan anggaran kategori di bawah.
+              </span>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-2">
+                Anggaran Per Kategori (Rp) — Isi hanya kategori yang ingin dibatasi:
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {(config.valid_categories || []).map((cat) => (
+                  <div
+                    key={cat}
+                    className="p-2.5 rounded-xl border border-slate-200/80 bg-slate-50/50 space-y-1"
+                  >
+                    <label className="text-[11px] font-semibold text-slate-700 block truncate">
+                      {cat}
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={categoryBudgets[cat] || ""}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        setCategoryBudgets((prev) => ({
+                          ...prev,
+                          [cat]: val,
+                        }));
+                      }}
+                      placeholder="0 (Tanpa batas)"
+                      className="h-8 text-xs rounded-lg bg-white"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </CardContent>

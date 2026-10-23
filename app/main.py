@@ -5,11 +5,10 @@ Menggantikan seluruh Google Apps Script
 from contextlib import asynccontextmanager
 import os
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from app.database.connection import init_db
 from app.bot.webhook import router as webhook_router
-from app.dashboard.routes import router as dashboard_router
 from app.api.router import api_router
 from app.scheduler.jobs import setup_scheduler
 
@@ -61,7 +60,12 @@ app = FastAPI(
 # Routers
 app.include_router(webhook_router)
 app.include_router(api_router)
-app.include_router(dashboard_router)
+
+# Redirect legacy /dashboard to modern React SPA
+@app.get("/dashboard", include_in_schema=False)
+@app.get("/dashboard/{full_path:path}", include_in_schema=False)
+async def redirect_legacy_dashboard(full_path: str = ""):
+    return RedirectResponse(url="/app", status_code=307)
 
 # Serve React SPA jika build dist sudah tersedia
 frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
@@ -92,7 +96,7 @@ async def root():
         "status": "running",
         "agent": "Hermes",
         "docs": "/docs",
-        "dashboard": "/dashboard",
+        "dashboard": "/app",
     }
 
 

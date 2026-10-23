@@ -39,20 +39,50 @@ class Settings(BaseSettings):
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
     auto_create_tables: bool = Field(False, env="AUTO_CREATE_TABLES")
 
-    # Scheduler
+    # Scheduler & Budget
     auto_report_time: str = Field("08:00", env="AUTO_REPORT_TIME")
     report_chat_id: str = Field("", env="REPORT_CHAT_ID")
     report_thread_id: int = Field(7, env="REPORT_THREAD_ID")
+    monthly_budget_limit: int = Field(0, env="MONTHLY_BUDGET_LIMIT")
+    category_budgets_json: str = Field("{}", env="CATEGORY_BUDGETS_JSON")
+
+    @property
+    def category_budgets(self) -> dict[str, float]:
+        """Parse anggaran per kategori dari JSON string."""
+        import json
+        try:
+            raw = json.loads(self.category_budgets_json or "{}")
+            if isinstance(raw, dict):
+                return {
+                    str(k): float(v)
+                    for k, v in raw.items()
+                    if v is not None and float(v) > 0
+                }
+        except Exception:
+            pass
+        return {}
 
     # Dashboard PIN & Security
     dashboard_pin_chat_id: str = Field("", env="DASHBOARD_PIN_CHAT_ID")
     dashboard_pin_thread_id: int | None = Field(None, env="DASHBOARD_PIN_THREAD_ID")
     dashboard_session_expire_hours: int = Field(24, env="DASHBOARD_SESSION_EXPIRE_HOURS")
     dashboard_pin_expire_seconds: int = Field(300, env="DASHBOARD_PIN_EXPIRE_SECONDS")
-    dashboard_pin_cooldown_seconds: int = Field(60, env="DASHBOARD_PIN_COOLDOWN_SECONDS")
+    dashboard_pin_cooldown_seconds: int = Field(30, env="DASHBOARD_PIN_COOLDOWN_SECONDS")
     dashboard_pin_max_attempts: int = Field(3, env="DASHBOARD_PIN_MAX_ATTEMPTS")
     dashboard_lockout_attempts: int = Field(5, env="DASHBOARD_LOCKOUT_ATTEMPTS")
     dashboard_lockout_minutes: int = Field(15, env="DASHBOARD_LOCKOUT_MINUTES")
+
+    # Admin Telegram (boleh menandai reimburse "Sudah Diganti").
+    # Daftar Telegram user ID dipisah koma. Jika kosong, fallback ke DASHBOARD_PIN_CHAT_ID.
+    admin_telegram_ids: str = Field("", env="ADMIN_TELEGRAM_IDS")
+
+    def is_admin_telegram(self, telegram_id: int | str | None) -> bool:
+        """Cek apakah Telegram user ID termasuk admin/owner."""
+        if telegram_id is None:
+            return False
+        raw = self.admin_telegram_ids or self.dashboard_pin_chat_id or ""
+        ids = {p.strip() for p in str(raw).split(",") if p.strip()}
+        return str(telegram_id).strip() in ids
 
     # Kategori yang valid (fix, tidak perlu dari env)
     valid_categories: list[str] = [
@@ -68,13 +98,16 @@ class Settings(BaseSettings):
         Prioritas: DASHBOARD_URL → turunan WEBHOOK_URL → localhost (dev).
         """
         if self.dashboard_url:
-            return self.dashboard_url.rstrip("/") + "/dashboard"
+            url = self.dashboard_url.rstrip("/")
+            if url.endswith("/app"):
+                return url
+            return url + "/app"
         if self.webhook_url.startswith(("http://", "https://")):
             base = self.webhook_url.rstrip("/")
             if base.endswith("/webhook"):
                 base = base[: -len("/webhook")]
-            return base + "/dashboard"
-        return f"http://localhost:{self.app_port}/dashboard"
+            return base + "/app"
+        return f"http://localhost:{self.app_port}/app"
 
     @model_validator(mode="before")
     @classmethod

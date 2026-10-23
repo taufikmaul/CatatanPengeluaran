@@ -3,13 +3,15 @@ app/api/expenses.py — REST API for Expenses Management
 """
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+import base64
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
 from app.api.deps import require_auth
 from app.api.schemas import (
     ExpenseCreate,
+    ExpenseBatchCreate,
     ExpenseUpdate,
     ExpenseResponse,
     ExpenseListResponse,
@@ -17,9 +19,12 @@ from app.api.schemas import (
 from app.services.expense_service import (
     get_all_expenses_paginated,
     get_expense_by_id,
+    get_item_price_history,
     update_expense,
     delete_expense,
+    batch_insert_expenses,
 )
+from app.services.ai_service import call_ai_image
 
 router = APIRouter(prefix="/expenses", tags=["expenses"], dependencies=[Depends(require_auth)])
 
@@ -42,6 +47,9 @@ def _to_response_dict(e: Expense) -> dict:
         "due_date": e.due_date or "-",
         "notes": e.notes or "-",
         "msg_link": e.msg_link or "Web Dashboard",
+        "is_reimbursement": bool(e.is_reimbursement),
+        "invoice_number": e.invoice_number or "-",
+        "reimbursed_at": e.reimbursed_at,
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -55,6 +63,7 @@ async def list_expenses(
     year: int | None = Query(None),
     search: str | None = Query(None),
     status: str | None = Query(None),
+    is_reimbursement: bool | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -66,6 +75,7 @@ async def list_expenses(
         year=year,
         search=search,
         status=status,
+        is_reimbursement=is_reimbursement,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -84,6 +94,21 @@ async def create_expense(
     payload: ExpenseCreate,
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    normalized_list = await match_and_normalize_extracted_items(
+        db,
+        [
+            {
+                "item_name": payload.item_name,
+                "category": payload.category or "Operasional",
+                "supplier": payload.supplier or "-",
+                "notes": payload.notes or "-",
+            }
+        ],
+    )
+    norm = normalized_list[0]
+
     qty = Decimal(str(payload.qty or 1))
     unit_price = Decimal(str(payload.unit_price or 0))
     tax = Decimal(str(payload.tax or 0))
@@ -97,10 +122,10 @@ async def create_expense(
 
     expense = Expense(
         expense_date=payload.expense_date,
-        supplier=payload.supplier or "-",
-        item_name=payload.item_name,
+        supplier=norm["supplier"] or "-",
+        item_name=norm["item_name"],
         qty=qty,
-        category=payload.category or "Operasional",
+        category=norm["category"] or "Operasional",
         unit_price=unit_price,
         tax=tax,
         discount=discount,
@@ -108,7 +133,9 @@ async def create_expense(
         pay_method=payload.pay_method or "Tunai",
         pay_status=payload.pay_status or "Lunas",
         due_date=payload.due_date or "-",
-        notes=payload.notes or "-",
+        notes=norm["notes"] or "-",
+        is_reimbursement=payload.is_reimbursement,
+        invoice_number=payload.invoice_number or "-",
         msg_link="Web Dashboard",
         sheets_synced=False,
     )
@@ -117,6 +144,105 @@ async def create_expense(
     await db.refresh(expense)
 
     return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.post("/batch", response_model=list[ExpenseResponse], status_code=status.HTTP_201_CREATED)
+async def create_expense_batch(
+    payload: ExpenseBatchCreate | list[ExpenseCreate],
+    db: AsyncSession = Depends(get_db),
+):
+    """Simpan sekumpulan pengeluaran sekaligus (misal hasil scan OCR nota multi-item)."""
+    items_in = payload.items if isinstance(payload, ExpenseBatchCreate) else payload
+    if not items_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Daftar pengeluaran kosong.",
+        )
+
+    dict_items = []
+    for it in items_in:
+        qty = Decimal(str(it.qty or 1))
+        unit_price = Decimal(str(it.unit_price or 0))
+        tax = Decimal(str(it.tax or 0))
+        discount = Decimal(str(it.discount or 0))
+        if it.total_price > 0:
+            total_price = Decimal(str(it.total_price))
+        else:
+            total_price = (qty * unit_price) + tax - discount
+
+        dict_items.append({
+            "expense_date": it.expense_date,
+            "supplier": it.supplier or "-",
+            "item_name": it.item_name,
+            "qty": qty,
+            "category": it.category or "Operasional",
+            "unit_price": unit_price,
+            "tax": tax,
+            "discount": discount,
+            "total_price": total_price,
+            "pay_method": it.pay_method or "Tunai",
+            "pay_status": it.pay_status or "Lunas",
+            "due_date": it.due_date or "-",
+            "notes": it.notes or "-",
+            "is_reimbursement": it.is_reimbursement,
+            "invoice_number": it.invoice_number or "-",
+            "msg_link": "Web Dashboard",
+        })
+
+    saved = await batch_insert_expenses(
+        db,
+        dict_items,
+        sheets_synced=False,
+    )
+    await db.commit()
+    for e in saved:
+        await db.refresh(e)
+
+    return [ExpenseResponse(**_to_response_dict(e)) for e in saved]
+
+
+@router.post("/ocr")
+async def scan_expense_ocr(
+    file: UploadFile = File(...),
+):
+    """Pindai gambar nota/struk/invoice dengan Vision AI untuk auto-fill form pengeluaran."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File nota kosong atau tidak dapat dibaca.",
+        )
+
+    b64_img = base64.b64encode(content).decode("utf-8")
+    extracted = await call_ai_image(
+        b64_img,
+        caption="Ekstrak data struk/nota/invoice belanja toko kue Historycake secara teliti",
+    )
+
+    if extracted.get("error") or not extracted.get("items"):
+        return {
+            "ok": False,
+            "message": extracted.get("message") or "Gagal membaca struk/nota. Pastikan foto jelas dan pencahayaan cukup.",
+            "items": [],
+        }
+
+    return {
+        "ok": True,
+        "items": extracted.get("items", []),
+    }
+
+
+@router.get("/price-history")
+async def get_expense_price_history(
+    item_name: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil riwayat harga satuan & perbandingan harga antar toko untuk suatu barang."""
+    data = await get_item_price_history(db, item_name)
+    return {
+        "ok": True,
+        **data,
+    }
 
 
 @router.get("/{expense_id}", response_model=ExpenseResponse)
