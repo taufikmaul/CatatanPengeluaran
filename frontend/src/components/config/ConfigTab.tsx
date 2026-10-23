@@ -140,7 +140,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       }
       onRefreshConfig();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Gagal sinkronisasi ke Google Sheets");
+      const errorMsg =
+        (typeof err.response?.data?.detail === "string" && err.response.data.detail.trim()) ||
+        err.response?.data?.message ||
+        "Gagal sinkronisasi ke Google Sheets. Pastikan spreadsheet telah di-share ke email Service Account dengan akses Editor.";
+      toast.error(errorMsg);
     } finally {
       setIsSyncing(false);
     }

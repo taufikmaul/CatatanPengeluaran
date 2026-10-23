@@ -18,6 +18,7 @@ from app.services.sheets_service import (
     sync_to_sheets,
     extract_spreadsheet_id,
     resolve_credentials_path,
+    get_service_account_email,
 )
 
 router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(require_auth)])
@@ -269,7 +270,29 @@ async def api_trigger_sheets_sync(
             ),
         }
     except Exception as e:
+        err_msg = str(e).strip()
+        if not err_msg:
+            creds_path = resolve_credentials_path(settings.google_credentials_json)
+            sa_email = get_service_account_email(creds_path)
+            email_hint = f" '{sa_email}'" if sa_email else ""
+            if isinstance(e, PermissionError):
+                err_msg = (
+                    f"Akses Google Sheets ditolak (403 Forbidden). Pastikan spreadsheet telah dibagikan (Share) "
+                    f"ke email Service Account{email_hint} dengan hak akses Editor."
+                )
+            elif isinstance(e, FileNotFoundError):
+                clean_sheet_id = extract_spreadsheet_id(settings.spreadsheet_id)
+                err_msg = (
+                    f"Spreadsheet dengan ID '{clean_sheet_id}' tidak ditemukan (404 Not Found). "
+                    "Periksa kembali Spreadsheet ID Anda dan pastikan Service Account memiliki akses."
+                )
+            else:
+                err_msg = (
+                    f"Gagal menyinkronkan data ke Google Sheets ({type(e).__name__}). "
+                    f"Pastikan spreadsheet dibagikan ke Service Account{email_hint} sebagai Editor."
+                )
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            detail=err_msg,
         )

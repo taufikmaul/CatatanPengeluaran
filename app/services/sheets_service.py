@@ -108,6 +108,17 @@ async def sync_to_sheets(
 
         try:
             doc = gc.open_by_key(clean_sheet_id)
+        except PermissionError as e:
+            email_hint = f" '{sa_email}'" if sa_email else ""
+            raise PermissionError(
+                f"Akses Google Sheets ditolak (403 Forbidden). Pastikan spreadsheet telah dibagikan (Share) "
+                f"ke email Service Account{email_hint} dengan hak akses Editor."
+            ) from e
+        except (gspread.exceptions.SpreadsheetNotFound, FileNotFoundError) as e:
+            raise FileNotFoundError(
+                f"Spreadsheet dengan ID '{clean_sheet_id}' tidak ditemukan (404 Not Found). "
+                "Periksa kembali Spreadsheet ID Anda dan pastikan Service Account memiliki akses."
+            ) from e
         except gspread.exceptions.APIError as e:
             status_code = getattr(getattr(e, "response", None), "status_code", None)
             if status_code == 403:
@@ -121,12 +132,8 @@ async def sync_to_sheets(
                     f"Spreadsheet dengan ID '{clean_sheet_id}' tidak ditemukan (404 Not Found). "
                     "Periksa kembali Spreadsheet ID Anda dan pastikan Service Account memiliki akses."
                 ) from e
-            raise RuntimeError(f"Gagal membuka spreadsheet Google ({e}): {e}") from e
-        except gspread.exceptions.SpreadsheetNotFound as e:
-            raise FileNotFoundError(
-                f"Spreadsheet dengan ID '{clean_sheet_id}' tidak ditemukan. "
-                "Periksa kembali Spreadsheet ID Anda."
-            ) from e
+            err_text = str(e).strip() or f"API Error {status_code}"
+            raise RuntimeError(f"Gagal membuka spreadsheet Google ({err_text})") from e
 
         # Cari tab worksheet 'Pengeluaran'
         sheet = None
@@ -206,5 +213,24 @@ async def sync_to_sheets(
     except Exception as e:
         print(f"[SHEETS SYNC ERROR] {e}")
         if raise_on_error:
+            if isinstance(e, PermissionError):
+                email_hint = f" '{sa_email}'" if sa_email else ""
+                msg = str(e).strip() or (
+                    f"Akses Google Sheets ditolak (403 Forbidden). Pastikan spreadsheet telah dibagikan (Share) "
+                    f"ke email Service Account{email_hint} dengan hak akses Editor."
+                )
+                raise PermissionError(msg) from e
+            elif isinstance(e, (gspread.exceptions.SpreadsheetNotFound, FileNotFoundError)):
+                clean_sheet_id = extract_spreadsheet_id(settings.spreadsheet_id)
+                msg = str(e).strip() or (
+                    f"Spreadsheet dengan ID '{clean_sheet_id}' tidak ditemukan (404 Not Found). "
+                    "Periksa kembali Spreadsheet ID Anda dan pastikan Service Account memiliki akses."
+                )
+                raise FileNotFoundError(msg) from e
+            elif not str(e).strip():
+                raise RuntimeError(
+                    f"Gagal menyinkronkan data ke Google Sheets ({type(e).__name__}). "
+                    "Periksa Spreadsheet ID dan pastikan Service Account memiliki akses Editor."
+                ) from e
             raise
         return 0

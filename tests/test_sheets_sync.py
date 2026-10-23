@@ -214,6 +214,38 @@ class TestSyncToSheetsExecution:
         mock_sheet.append_row.assert_called_once()
         mock_sheet.append_rows.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_sync_raises_informative_permission_error_when_gspread_raises_empty_error(
+        self, db: AsyncSession, monkeypatch, tmp_path
+    ):
+        from app.config import settings
+        creds_file = tmp_path / "creds.json"
+        creds_file.write_text('{"client_email": "bot@iam.gserviceaccount.com"}')
+
+        monkeypatch.setattr(settings, "spreadsheet_id", "some_sheet_id")
+        monkeypatch.setattr(settings, "google_credentials_json", str(creds_file))
+
+        exp = Expense(
+            expense_date=date(2026, 10, 22),
+            item_name="Cokelat",
+            total_price=Decimal("10000"),
+            sheets_synced=False,
+        )
+        db.add(exp)
+        await db.commit()
+
+        mock_gc = MagicMock()
+        mock_gc.open_by_key.side_effect = PermissionError()
+
+        with patch("gspread.authorize", return_value=mock_gc):
+            with patch("google.oauth2.service_account.Credentials.from_service_account_file"):
+                with pytest.raises(PermissionError) as exc_info:
+                    await sync_to_sheets(db, raise_on_error=True)
+
+        assert str(exc_info.value) != ""
+        assert "Akses Google Sheets ditolak" in str(exc_info.value)
+        assert "bot@iam.gserviceaccount.com" in str(exc_info.value)
+
 
 class TestSyncSheetsApiEndpoint:
     @pytest.mark.asyncio
@@ -228,6 +260,17 @@ class TestSyncSheetsApiEndpoint:
         assert res.status_code == 400
         data = res.json()
         assert "belum ada" in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_api_sync_sheets_handles_empty_permission_error(self, client, auth_cookies):
+        client.cookies.update(auth_cookies)
+
+        with patch("app.api.config.sync_to_sheets", side_effect=PermissionError()):
+            res = await client.post("/api/v1/config/sync-sheets")
+            assert res.status_code == 400
+            data = res.json()
+            assert data["detail"] != ""
+            assert "Akses Google Sheets ditolak" in data["detail"]
 
     @pytest.mark.asyncio
     async def test_api_sync_sheets_success_returns_count(self, client, auth_cookies, monkeypatch):
