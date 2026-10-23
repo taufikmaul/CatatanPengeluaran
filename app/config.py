@@ -86,13 +86,16 @@ class Settings(BaseSettings):
         Prioritas: DASHBOARD_URL → turunan WEBHOOK_URL → localhost (dev).
         """
         if self.dashboard_url:
-            return self.dashboard_url.rstrip("/") + "/dashboard"
+            url = self.dashboard_url.rstrip("/")
+            if url.endswith("/app"):
+                return url
+            return url + "/app"
         if self.webhook_url.startswith(("http://", "https://")):
             base = self.webhook_url.rstrip("/")
             if base.endswith("/webhook"):
                 base = base[: -len("/webhook")]
-            return base + "/dashboard"
-        return f"http://localhost:{self.app_port}/dashboard"
+            return base + "/app"
+        return f"http://localhost:{self.app_port}/app"
 
     @model_validator(mode="before")
     @classmethod

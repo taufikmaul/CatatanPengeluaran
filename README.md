@@ -487,17 +487,15 @@ dahulu (idempoten).
 
 ## 🌐 Web Dashboard (Modern React + shadcn/ui & Jinja2)
 
-Tersedia 2 antarmuka dashboard:
-1. **React SPA Modern** (Direkomendasikan): `https://domain-anda.com/app`
-   - Ditenagai React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui.
-   - **TanStack Query v5**: Optimistic updates (0ms delay saat toggle lunas/hutang), data caching otomatis.
-   - **Visualisasi Data Interaktif**: Donut chart distribusi pengeluaran & Area chart tren harian (Recharts).
-   - **Mobile-First Experience**: Drawer bottom sheet dengan gesture swipe down (Vaul) yang nyaman di layar ponsel.
-   - **Filter & Search Real-Time**: Pencarian instan, filter bulan, tahun, kategori, dan status bayar.
-   - **Dialog Tambah/Edit Cepat**: Perhitungan otomatis `(qty * harga) + pajak - diskon`.
-   - **Import CSV & Template Download**: Langsung di dalam aplikasi web.
-
-2. **Server-Rendered Jinja2** (Legacy): `https://domain-anda.com/dashboard`
+Antarmuka web dashboard terpusat:
+- **React SPA Modern**: `https://domain-anda.com/app` (akses ke `/dashboard` otomatis dialihkan ke `/app`)
+  - Ditenagai React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui.
+  - **TanStack Query v5**: Optimistic updates (0ms delay saat toggle lunas/hutang), data caching otomatis.
+  - **Visualisasi Data Interaktif**: Donut chart distribusi pengeluaran & Area chart tren harian (Recharts).
+  - **Mobile-First Experience**: Drawer bottom sheet dengan gesture swipe down (Vaul) yang nyaman di layar ponsel.
+  - **Filter & Search Real-Time**: Pencarian instan, filter bulan, tahun, kategori, dan status bayar.
+  - **Dialog Tambah/Edit Cepat**: Perhitungan otomatis `(qty * harga) + pajak - diskon`.
+  - **Import CSV & Template Download**: Langsung di dalam aplikasi web.
 
 ### 💻 Menjalankan Frontend React Lokal
 ```bash
@@ -516,7 +514,7 @@ npm run build # Build production ke folder frontend/dist (otomatis disajikan di 
 | `/` | GET | Status app |
 | `/health` | GET | Health check |
 | `/app` | GET | Modern React + shadcn SPA Dashboard |
-| `/dashboard` | GET | Legacy Jinja2 Dashboard |
+| `/dashboard` | GET | Redirect 307 ke `/app` |
 | `/api/v1/auth/status` | GET | Cek status sesi admin |
 | `/api/v1/auth/request-pin` | POST | Minta 6-digit PIN ke Telegram |
 | `/api/v1/auth/verify-pin` | POST | Verifikasi PIN & set cookie sesi |

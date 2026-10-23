@@ -247,62 +247,43 @@ class TestPinVerificationAndAntiBruteForce:
 
 
 class TestDashboardEndpoints:
-    async def test_unauthenticated_dashboard_redirects_to_login(self, client):
+    async def test_legacy_dashboard_redirects_to_app(self, client):
         response = await client.get("/dashboard", follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"] == "/dashboard/login"
+        assert response.status_code == 307
+        assert response.headers["location"] == "/app"
 
-    async def test_login_page_renders_cleanly(self, client):
-        response = await client.get("/dashboard/login")
-        assert response.status_code == 200
-        assert "Verifikasi PIN" in response.text
-        assert "Minta Kode PIN via Telegram" in response.text
-
-    async def test_authenticated_user_accessing_login_redirects_to_dashboard(self, client):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        response = await client.get("/dashboard/login", follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"] == "/dashboard"
-
-    async def test_request_pin_endpoint(self, client):
+    async def test_api_auth_request_and_verify_pin_flow(self, client, db):
         with patch.object(settings, "dashboard_pin_chat_id", "12345678"), \
              patch("app.bot.telegram_client.send_message", new_callable=AsyncMock) as mock_send:
             mock_send.return_value = {"ok": True}
 
-            response = await client.post("/dashboard/request-pin", follow_redirects=False)
-            assert response.status_code == 303
-            assert "/dashboard/login?sent=1" in response.headers["location"]
+            # 1. Request PIN via API
+            response = await client.post("/api/v1/auth/request-pin")
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
 
-    async def test_verify_pin_endpoint_sets_cookie_on_success(self, client, db):
-        with patch.object(settings, "dashboard_pin_chat_id", "12345678"), \
-             patch("app.bot.telegram_client.send_message", new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = {"ok": True}
-
-            # Request pin
-            await client.post("/dashboard/request-pin")
+            # 2. Extract PIN sent to Telegram
             sent_text = mock_send.call_args.kwargs["text"]
             import re
             pin = re.search(r"`(\d{6})`", sent_text).group(1)
 
-            # Submit valid PIN
-            res = await client.post("/dashboard/verify-pin", data={"pin": pin}, follow_redirects=False)
-            assert res.status_code == 303
-            assert res.headers["location"] == "/dashboard"
-            assert SESSION_COOKIE_NAME in res.cookies
+            # 3. Verify valid PIN via API
+            verify_res = await client.post("/api/v1/auth/verify-pin", json={"pin": pin})
+            assert verify_res.status_code == 200
+            assert verify_res.json()["ok"] is True
+            assert SESSION_COOKIE_NAME in verify_res.cookies
 
-            # Now access dashboard with this cookie
-            dash_res = await client.get("/dashboard")
-            assert dash_res.status_code == 200
-            assert "Catatan Pengeluaran" in dash_res.text
+            # 4. Check status with cookie
+            status_res = await client.get("/api/v1/auth/status")
+            assert status_res.status_code == 200
+            assert status_res.json()["authenticated"] is True
 
-    async def test_logout_clears_cookie(self, client):
-        client.cookies.set(SESSION_COOKIE_NAME, create_session_token())
-        res = await client.get("/dashboard/logout", follow_redirects=False)
-        assert res.status_code == 303
-        assert "/dashboard/login?logout=1" in res.headers["location"]
+            # 5. Logout clears auth
+            logout_res = await client.post("/api/v1/auth/logout")
+            assert logout_res.status_code == 200
+            assert logout_res.json()["ok"] is True
 
-        # Cookie should be expired / removed
-        client.cookies.delete(SESSION_COOKIE_NAME)
-        dash_res = await client.get("/dashboard", follow_redirects=False)
-        assert dash_res.status_code == 303
-        assert dash_res.headers["location"] == "/dashboard/login"
+            client.cookies.delete(SESSION_COOKIE_NAME)
+            status_after = await client.get("/api/v1/auth/status")
+            assert status_after.status_code == 200
+            assert status_after.json()["authenticated"] is False

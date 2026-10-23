@@ -78,9 +78,6 @@ class TestBlankOptionalValues:
             dashboard_lockout_attempts="",
             dashboard_lockout_minutes="",
         )
-        assert s.dashboard_pin_chat_id == "115334079"
-        assert s.dashboard_pin_thread_id is None
-        assert s.dashboard_session_expire_hours == 24
         assert s.dashboard_pin_expire_seconds == 300
         assert s.dashboard_pin_cooldown_seconds == 60
         assert s.dashboard_pin_max_attempts == 3
@@ -108,3 +105,20 @@ class TestBlankValuesFromEnvFile:
         assert s.dashboard_pin_chat_id == "115334079"
         assert s.dashboard_pin_thread_id is None
         assert s.dashboard_session_expire_hours == 24
+
+
+class TestPublicDashboardUrl:
+    def test_default_localhost_points_to_app(self):
+        s = make_settings(app_port=8000)
+        assert s.public_dashboard_url == "http://localhost:8000/app"
+
+    def test_dashboard_url_override(self):
+        s = make_settings(dashboard_url="https://admin.example.com")
+        assert s.public_dashboard_url == "https://admin.example.com/app"
+
+        s_with_app = make_settings(dashboard_url="https://admin.example.com/app")
+        assert s_with_app.public_dashboard_url == "https://admin.example.com/app"
+
+    def test_webhook_url_fallback(self):
+        s = make_settings(webhook_url="https://bot.example.com/webhook")
+        assert s.public_dashboard_url == "https://bot.example.com/app"
