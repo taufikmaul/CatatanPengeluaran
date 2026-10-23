@@ -367,7 +367,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-2">
-                Anggaran Per Kategori (Rp) — Isi hanya kategori yang ingin dibatasi:
+                Anggaran Per Kategori (Rp) : Isi hanya kategori yang ingin dibatasi:
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {(config.valid_categories || []).map((cat) => (
