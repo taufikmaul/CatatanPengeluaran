@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, createExpenseBatch } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
@@ -42,6 +42,7 @@ export function App() {
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [status, setStatus] = useState<string>("");
+  const [isReimbursement, setIsReimbursement] = useState<boolean | null>(null);
   const [page, setPage] = useState<number>(1);
 
   // Modal & Drawer states
@@ -93,7 +94,7 @@ export function App() {
     isLoading: isExpensesLoading,
     refetch: refetchExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, month, year, category, search, status],
+    queryKey: ["expenses", page, month, year, category, search, status, isReimbursement],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -104,6 +105,7 @@ export function App() {
       if (category) params.append("category", category);
       if (search) params.append("search", search);
       if (status) params.append("status", status);
+      if (isReimbursement !== null) params.append("is_reimbursement", String(isReimbursement));
 
       const res = await api.get(`/expenses?${params.toString()}`);
       return res.data;
@@ -159,6 +161,23 @@ export function App() {
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran");
+    },
+  });
+
+  // Mutasi: Batch Create Expenses (dari Scan Nota OCR)
+  const batchSaveMutation = useMutation({
+    mutationFn: async (items: ExpenseFormData[]) => {
+      return await createExpenseBatch(items);
+    },
+    onSuccess: (saved) => {
+      toast.success(`${saved.length} catatan pengeluaran berhasil disimpan sekaligus! 🎉`);
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran batch");
     },
   });
 
@@ -383,7 +402,13 @@ export function App() {
               budgetUsedPct={reportData?.budget_used_pct}
               categoryBudgets={reportData?.category_budgets}
               perKategori={reportData?.per_kategori}
+              reimbursePendingCount={reportData?.reimburse_pending_count || 0}
+              reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
               onFilterUnpaid={() => setStatus("Belum Lunas")}
+              onFilterReimburse={() => {
+                setIsReimbursement(true);
+                setPage(1);
+              }}
               onOpenBudgetSettings={() => setActiveTab("config")}
             />
 
@@ -436,6 +461,7 @@ export function App() {
               selectedCategory={category}
               search={search}
               status={status}
+              isReimbursement={isReimbursement}
               categories={categories}
               onMonthChange={(m) => {
                 setMonth(m);
@@ -457,10 +483,15 @@ export function App() {
                 setStatus(st);
                 setPage(1);
               }}
+              onReimbursementChange={(val) => {
+                setIsReimbursement(val);
+                setPage(1);
+              }}
               onReset={() => {
                 setCategory("");
                 setSearch("");
                 setStatus("");
+                setIsReimbursement(null);
                 setPage(1);
               }}
               onOpenAddExpense={() => {
@@ -521,10 +552,11 @@ export function App() {
           setRepeatingExpense(null);
         }}
         onSubmit={handleFormSubmit}
+        onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
         categories={categories}
         initialData={editingExpense}
         repeatData={repeatingExpense}
-        isSubmitting={saveMutation.isPending}
+        isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}
         itemSuggestions={suggestionsData?.items || []}
         supplierSuggestions={suggestionsData?.suppliers || []}
       />

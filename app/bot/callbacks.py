@@ -36,6 +36,16 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         agent = HermesAgent(db, user.id, chat_id, thread_id)
         await agent._handle_hutang()
 
+    elif data == "menu_reimburse":
+        from app.agent.hermes import HermesAgent
+        from app.utils.auth import get_or_create_user
+        user = await get_or_create_user(db, cb["from"]["id"])
+        agent = HermesAgent(db, user.id, chat_id, thread_id)
+        await agent._handle_reimburse()
+
+    elif data.startswith("reimb_user:"):
+        await _handle_reimb_user_paid(cb, db, chat_id, thread_id, data)
+
     elif data == "menu_audit":
         from app.agent.hermes import HermesAgent
         user_tg_id = cb["from"]["id"]
@@ -191,6 +201,8 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         new_state = not all(current_states) if current_states else True
         for exp in expenses_to_update:
             exp.is_reimbursement = new_state
+            if not new_state:
+                exp.reimbursed_at = None
             exp.sheets_synced = False
         await db.commit()
 
@@ -218,3 +230,56 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             await tg.edit_message(chat_id, msg_id, reimb_text, keyboard)
         else:
             await tg.send_message(chat_id, reimb_text, thread_id, keyboard)
+
+
+async def _handle_reimb_user_paid(
+    cb: dict, db: AsyncSession, chat_id: int, thread_id: int | None, data: str
+) -> None:
+    """Admin menandai seluruh talangan milik satu user sudah diganti, lalu DM user tersebut."""
+    from app.services.expense_service import (
+        get_outstanding_reimbursements,
+        group_reimbursements_by_user,
+        mark_reimbursed,
+    )
+    from app.bot.reimburse import build_admin_review, build_paid_notification
+    from app.models.user import User
+
+    if not settings.is_admin_telegram(cb["from"]["id"]):
+        await tg.send_message(
+            chat_id,
+            "⛔ *Akses ditolak.* Hanya admin/owner yang dapat menandai talangan sudah diganti.",
+            thread_id,
+        )
+        return
+
+    raw_uid = data.split(":", 1)[1].strip()
+    if not raw_uid.isdigit():
+        return
+    uid = int(raw_uid)
+
+    if uid == 0:
+        outstanding = [e for e in await get_outstanding_reimbursements(db) if e.user_id is None]
+    else:
+        outstanding = await get_outstanding_reimbursements(db, user_id=uid)
+
+    paid = await mark_reimbursed(db, [e.id for e in outstanding])
+    await db.commit()
+
+    # Notifikasi DM ke pemilik talangan (abaikan jika user belum pernah chat bot / gagal kirim)
+    if paid and uid:
+        owner = await db.get(User, uid)
+        if owner and owner.telegram_id and owner.telegram_id != chat_id:
+            await tg.send_message(owner.telegram_id, build_paid_notification(paid))
+
+    # Perbarui pesan review admin dengan sisa talangan
+    remaining = await get_outstanding_reimbursements(db)
+    groups = await group_reimbursements_by_user(db, remaining)
+    text, keyboard = build_admin_review(groups)
+    total_paid = sum(float(e.total_price or 0) for e in paid)
+    text = f"✅ _{len(paid)} talangan ({fmt_rupiah(total_paid)}) ditandai sudah diganti._\n\n" + text
+
+    msg_id = cb["message"].get("message_id")
+    if msg_id:
+        await tg.edit_message(chat_id, msg_id, text, keyboard)
+    else:
+        await tg.send_message(chat_id, text, thread_id, keyboard)

@@ -96,6 +96,8 @@ async def get_monthly_analytics(
         list_hutang=report.get("list_hutang", []),
         daily_chart=daily_chart,
         valid_categories=settings.valid_categories,
+        reimburse_pending_count=int(report.get("reimburse_pending_count", 0)),
+        reimburse_pending_total=float(report.get("reimburse_pending_total", 0.0)),
         top_frequent_items=leaderboards.get("top_frequent_items", []),
         top_expensive_items=leaderboards.get("top_expensive_items", []),
         top_unit_price_items=leaderboards.get("top_unit_price_items", []),

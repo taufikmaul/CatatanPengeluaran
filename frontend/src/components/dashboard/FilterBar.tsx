@@ -9,12 +9,14 @@ interface FilterBarProps {
   selectedCategory: string;
   search: string;
   status: string;
+  isReimbursement?: boolean | null;
   categories: string[];
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
   onCategoryChange: (category: string) => void;
   onSearchChange: (search: string) => void;
   onStatusChange: (status: string) => void;
+  onReimbursementChange?: (val: boolean | null) => void;
   onReset: () => void;
   onOpenAddExpense: () => void;
 }
@@ -30,12 +32,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   selectedCategory,
   search,
   status,
+  isReimbursement,
   categories,
   onMonthChange,
   onYearChange,
   onCategoryChange,
   onSearchChange,
   onStatusChange,
+  onReimbursementChange,
   onReset,
   onOpenAddExpense,
 }) => {
@@ -146,8 +150,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </button>
         </div>
 
+        {/* Reimbursement Filter Pill */}
+        {onReimbursementChange && (
+          <button
+            type="button"
+            onClick={() => onReimbursementChange(isReimbursement ? null : true)}
+            className={`h-8 px-2.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
+              isReimbursement
+                ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span>🏷️</span>
+            <span>Talangan</span>
+            {isReimbursement && (
+              <span className="bg-white/20 text-[10px] px-1 rounded-full">Aktif</span>
+            )}
+          </button>
+        )}
+
         {/* Reset button */}
-        {(selectedCategory || search || status) && (
+        {(selectedCategory || search || status || isReimbursement) && (
           <Button
             variant="ghost"
             size="sm"

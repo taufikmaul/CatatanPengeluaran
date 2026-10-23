@@ -23,7 +23,10 @@ interface StatCardsProps {
   budgetUsedPct?: number | null;
   categoryBudgets?: Record<string, number>;
   perKategori?: Record<string, number>;
+  reimbursePendingCount?: number;
+  reimbursePendingTotal?: number;
   onFilterUnpaid?: () => void;
+  onFilterReimburse?: () => void;
   onOpenBudgetSettings?: () => void;
 }
 
@@ -45,7 +48,10 @@ export const StatCards: React.FC<StatCardsProps> = ({
   budgetUsedPct,
   categoryBudgets = {},
   perKategori = {},
+  reimbursePendingCount = 0,
+  reimbursePendingTotal = 0,
   onFilterUnpaid,
+  onFilterReimburse,
   onOpenBudgetSettings,
 }) => {
   const renderMomBadge = (pct?: number | null, prevVal?: number) => {
@@ -139,6 +145,35 @@ export const StatCards: React.FC<StatCardsProps> = ({
 
   return (
     <div className="space-y-3">
+      {/* Banner Notifikasi Reimbursement / Talangan Pending */}
+      {reimbursePendingCount > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          onClick={onFilterReimburse}
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border border-purple-200/90 rounded-2xl cursor-pointer hover:border-purple-300 transition-all shadow-xs"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-1.5 bg-white rounded-xl shadow-2xs">🏷️</span>
+            <div>
+              <p className="text-xs font-bold text-purple-900 flex items-center gap-2">
+                <span>{reimbursePendingCount} Pengeluaran Talangan Belum Diganti</span>
+                <span className="bg-purple-200/80 text-purple-800 text-[10px] px-2 py-0.5 rounded-full font-semibold">
+                  Perlu Reimburse
+                </span>
+              </p>
+              <p className="text-[11px] text-purple-700 mt-0.5">
+                Total talangan pending: <span className="font-semibold text-purple-950">{formatRupiah(reimbursePendingTotal)}</span>.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-purple-700 bg-white px-3 py-1.5 rounded-xl border border-purple-200 self-start sm:self-auto hover:bg-purple-50">
+            Lihat Data Talangan &rarr;
+          </span>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {cards.map((card, i) => {
           const Icon = card.icon;

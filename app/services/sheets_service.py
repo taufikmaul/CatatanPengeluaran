@@ -139,13 +139,14 @@ async def sync_to_sheets(
                     sheet = ws
                     break
 
-            # Jika belum ada tab Pengeluaran, buat otomatis dengan 15 header standar
+            # Jika belum ada tab Pengeluaran, buat otomatis dengan 18 header standar
             if sheet is None:
                 sheet = doc.add_worksheet(title="Pengeluaran", rows=1000, cols=20)
                 headers = [
                     "Timestamp", "Tanggal Nota", "Toko / Supplier", "Barang", "Qty",
                     "Kategori", "Harga Satuan", "Tax", "Diskon", "Total Harga",
-                    "Metode Bayar", "Status Pembayaran", "Jatuh Tempo", "Keterangan", "Link Pesan"
+                    "Metode Bayar", "Status Pembayaran", "Jatuh Tempo", "Keterangan", "Link Pesan",
+                    "No. Invoice", "Reimbursement", "Tgl Reimburse"
                 ]
                 sheet.append_row(headers, value_input_option="USER_ENTERED")
 
@@ -167,6 +168,10 @@ async def sync_to_sheets(
             else:
                 expense_date_str = ""
 
+            reimb_str = "Ya" if getattr(e, "is_reimbursement", False) else "Tidak"
+            reimb_at = getattr(e, "reimbursed_at", None)
+            reimb_at_str = reimb_at.strftime("%Y-%m-%d %H:%M:%S") if isinstance(reimb_at, datetime) else (str(reimb_at) if reimb_at else "-")
+
             rows_to_append.append([
                 created_at_str,
                 expense_date_str,
@@ -183,6 +188,9 @@ async def sync_to_sheets(
                 str(e.due_date or "-"),
                 str(e.notes or "-"),
                 str(e.msg_link or "Private Chat"),
+                str(getattr(e, "invoice_number", "-") or "-"),
+                reimb_str,
+                reimb_at_str,
             ])
 
         if rows_to_append:

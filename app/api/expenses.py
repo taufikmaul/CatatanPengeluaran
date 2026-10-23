@@ -11,6 +11,7 @@ from app.models.expense import Expense
 from app.api.deps import require_auth
 from app.api.schemas import (
     ExpenseCreate,
+    ExpenseBatchCreate,
     ExpenseUpdate,
     ExpenseResponse,
     ExpenseListResponse,
@@ -21,6 +22,7 @@ from app.services.expense_service import (
     get_item_price_history,
     update_expense,
     delete_expense,
+    batch_insert_expenses,
 )
 from app.services.ai_service import call_ai_image
 
@@ -47,6 +49,7 @@ def _to_response_dict(e: Expense) -> dict:
         "msg_link": e.msg_link or "Web Dashboard",
         "is_reimbursement": bool(e.is_reimbursement),
         "invoice_number": e.invoice_number or "-",
+        "reimbursed_at": e.reimbursed_at,
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -141,6 +144,61 @@ async def create_expense(
     await db.refresh(expense)
 
     return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.post("/batch", response_model=list[ExpenseResponse], status_code=status.HTTP_201_CREATED)
+async def create_expense_batch(
+    payload: ExpenseBatchCreate | list[ExpenseCreate],
+    db: AsyncSession = Depends(get_db),
+):
+    """Simpan sekumpulan pengeluaran sekaligus (misal hasil scan OCR nota multi-item)."""
+    items_in = payload.items if isinstance(payload, ExpenseBatchCreate) else payload
+    if not items_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Daftar pengeluaran kosong.",
+        )
+
+    dict_items = []
+    for it in items_in:
+        qty = Decimal(str(it.qty or 1))
+        unit_price = Decimal(str(it.unit_price or 0))
+        tax = Decimal(str(it.tax or 0))
+        discount = Decimal(str(it.discount or 0))
+        if it.total_price > 0:
+            total_price = Decimal(str(it.total_price))
+        else:
+            total_price = (qty * unit_price) + tax - discount
+
+        dict_items.append({
+            "expense_date": it.expense_date,
+            "supplier": it.supplier or "-",
+            "item_name": it.item_name,
+            "qty": qty,
+            "category": it.category or "Operasional",
+            "unit_price": unit_price,
+            "tax": tax,
+            "discount": discount,
+            "total_price": total_price,
+            "pay_method": it.pay_method or "Tunai",
+            "pay_status": it.pay_status or "Lunas",
+            "due_date": it.due_date or "-",
+            "notes": it.notes or "-",
+            "is_reimbursement": it.is_reimbursement,
+            "invoice_number": it.invoice_number or "-",
+            "msg_link": "Web Dashboard",
+        })
+
+    saved = await batch_insert_expenses(
+        db,
+        dict_items,
+        sheets_synced=False,
+    )
+    await db.commit()
+    for e in saved:
+        await db.refresh(e)
+
+    return [ExpenseResponse(**_to_response_dict(e)) for e in saved]
 
 
 @router.post("/ocr")

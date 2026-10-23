@@ -71,6 +71,9 @@ class HermesAgent:
         elif intent == Intent.CMD_HUTANG:
             await self._handle_hutang()
 
+        elif intent == Intent.CMD_REIMBURSE:
+            await self._handle_reimburse()
+
         elif intent == Intent.QUERY_TREND:
             await self._handle_trend()
 
@@ -320,6 +323,29 @@ class HermesAgent:
             {"inline_keyboard": inline_rows},
         )
 
+    async def _handle_reimburse(self) -> None:
+        """Review talangan: admin melihat semua user (dengan tombol ganti), user biasa hanya miliknya."""
+        from app.models.user import User
+        from app.services.expense_service import (
+            get_outstanding_reimbursements,
+            group_reimbursements_by_user,
+        )
+        from app.bot.reimburse import build_admin_review, build_user_review
+
+        user = await self.db.get(User, self.user_id) if self.user_id else None
+        is_admin = bool(user and settings.is_admin_telegram(user.telegram_id))
+
+        if is_admin:
+            items = await get_outstanding_reimbursements(self.db)
+            groups = await group_reimbursements_by_user(self.db, items)
+            text, keyboard = build_admin_review(groups)
+        else:
+            items = await get_outstanding_reimbursements(self.db, user_id=self.user_id)
+            groups = await group_reimbursements_by_user(self.db, items)
+            text, keyboard = build_user_review(groups[0] if groups else None)
+
+        await tg.send_message(self.chat_id, text, self.thread_id, keyboard)
+
     async def _handle_trend(self) -> None:
         """Bandingkan tren pengeluaran bulan ini vs bulan lalu."""
         now = datetime.now()
@@ -434,6 +460,7 @@ class HermesAgent:
             "📋 *MENU UTAMA*\n\n"
             "📊 /rekap — Laporan bulan ini\n"
             "💳 /hutang — Cek & lunasi tagihan\n"
+            "💼 /reimburse — Review talangan (reimburse)\n"
             "🔍 /harga [nama] — Cari harga terakhir\n"
             "✏️ /catat [detail] — Catat belanja teks\n"
             "🔎 /audit — Cek kategori data\n"

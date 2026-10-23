@@ -6,6 +6,9 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Send, KeyRound, ShieldAlert, CheckCircle2 } from "lucide-react";
 
+const PIN_COOLDOWN_SECONDS = 30;
+const COOLDOWN_STORAGE_KEY = "dashboard_pin_cooldown_until";
+
 interface LoginModalProps {
   isOpen: boolean;
   onSuccess: () => void;
@@ -18,16 +21,66 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
   const [cooldown, setCooldown] = useState(0);
   const [pinSent, setPinSent] = useState(false);
 
-  // Timer cooldown
+  // Inisialisasi sisa cooldown dari localStorage saat modal aktif
   useEffect(() => {
-    if (cooldown <= 0) return;
+    if (!isOpen) return;
+    try {
+      const stored = localStorage.getItem(COOLDOWN_STORAGE_KEY);
+      if (stored) {
+        const target = parseInt(stored, 10);
+        const remaining = Math.ceil((target - Date.now()) / 1000);
+        if (remaining > 0) {
+          setCooldown(remaining);
+          setPinSent(true);
+        } else {
+          localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // Abaikan jika localStorage tidak dapat diakses
+    }
+  }, [isOpen]);
+
+  // Timer cooldown interval per detik
+  useEffect(() => {
+    if (cooldown <= 0) {
+      try {
+        localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+      } catch {
+        // Abaikan
+      }
+      return;
+    }
+
     const interval = setInterval(() => {
-      setCooldown((c) => Math.max(0, c - 1));
+      setCooldown((c) => {
+        if (c <= 1) {
+          try {
+            localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+          } catch {
+            // Abaikan
+          }
+          return 0;
+        }
+        return c - 1;
+      });
     }, 1000);
+
     return () => clearInterval(interval);
   }, [cooldown]);
 
+  const startCooldown = (seconds: number = PIN_COOLDOWN_SECONDS) => {
+    setCooldown(seconds);
+    try {
+      localStorage.setItem(COOLDOWN_STORAGE_KEY, String(Date.now() + seconds * 1000));
+    } catch {
+      // Abaikan
+    }
+  };
+
   const handleRequestPin = async () => {
+    if (cooldown > 0 || isRequesting) return;
+
     setIsRequesting(true);
     try {
       const res = await api.post("/auth/request-pin");
@@ -42,9 +95,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       }
 
       setPinSent(true);
-      setCooldown(60);
+      startCooldown(PIN_COOLDOWN_SECONDS);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || "Gagal meminta kode PIN");
+      const errorMsg = err.response?.data?.error || "Gagal meminta kode PIN";
+      toast.error(errorMsg);
+
+      // Jika response mengandung waktu tunggu, sinkronkan cooldown
+      const match = errorMsg.match(/tunggu\s+(\d+)\s+detik/i);
+      if (match) {
+        const waitSec = parseInt(match[1], 10);
+        startCooldown(waitSec);
+        setPinSent(true);
+      }
     } finally {
       setIsRequesting(false);
     }
@@ -92,11 +154,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
               </p>
               <Button
                 onClick={handleRequestPin}
-                disabled={isRequesting}
+                disabled={isRequesting || cooldown > 0}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 gap-2"
               >
                 <Send className="w-4 h-4" />
-                {isRequesting ? "Mengirim ke Telegram..." : "Minta PIN ke Telegram"}
+                {isRequesting
+                  ? "Mengirim ke Telegram..."
+                  : cooldown > 0
+                  ? `Tunggu ${cooldown} detik`
+                  : "Minta PIN ke Telegram"}
               </Button>
             </div>
           ) : (
@@ -140,7 +206,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
 
           <div className="p-3 bg-amber-50/60 border border-amber-200/60 rounded-xl flex items-center gap-2 text-[11px] text-amber-800">
             <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Kode PIN hanya berlaku selama 5 menit untuk alasan keamanan.</span>
+            <span>Kode PIN berlaku 5 menit. Permintaan PIN dibatasi interval 30 detik untuk keamanan.</span>
           </div>
         </div>
       </DialogContent>

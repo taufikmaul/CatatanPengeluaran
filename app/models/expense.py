@@ -39,6 +39,8 @@ class Expense(Base):
     # Reimbursement & Invoice
     is_reimbursement: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"), index=True)
     invoice_number: Mapped[str] = mapped_column(String(100), default="-", server_default="-", nullable=True)
+    # Waktu talangan diganti oleh admin/owner (NULL = belum diganti)
+    reimbursed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     
     # Relasi user
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)

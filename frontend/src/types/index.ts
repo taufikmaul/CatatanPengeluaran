@@ -17,6 +17,7 @@ export interface Expense {
   msg_link: string;
   is_reimbursement?: boolean;
   invoice_number?: string;
+  reimbursed_at?: string | null;
   sheets_synced: boolean;
 }
 
@@ -126,6 +127,8 @@ export interface MonthlyReport {
     count: number;
   }>;
   valid_categories: string[];
+  reimburse_pending_count?: number;
+  reimburse_pending_total?: number;
   top_frequent_items?: TopFrequentItem[];
   top_expensive_items?: TopExpensiveItem[];
   top_unit_price_items?: TopUnitPriceItem[];

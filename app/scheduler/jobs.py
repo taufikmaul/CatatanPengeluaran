@@ -163,6 +163,60 @@ async def job_send_unpaid_reminder() -> None:
 
 
 # ──────────────────────────────────────────────
+# Job 4: Pengingat Mingguan Reimburse per User (Senin jam 09:30 WIB)
+# ──────────────────────────────────────────────
+
+async def job_send_weekly_reimburse_reminder() -> None:
+    """Kirim pengingat mingguan talangan belum diganti ke masing-masing user via DM dan ringkasan ke admin."""
+    try:
+        async with AsyncSessionLocal() as db:
+            from app.services.expense_service import (
+                get_outstanding_reimbursements,
+                group_reimbursements_by_user,
+            )
+            from app.bot.reimburse import build_user_review, build_admin_review
+            from app.bot.telegram_client import send_message
+
+            items = await get_outstanding_reimbursements(db)
+            if not items:
+                return
+
+            groups = await group_reimbursements_by_user(db, items)
+
+            # 1. Kirim review talangan ke masing-masing user via DM pribadi
+            for g in groups:
+                if g.get("telegram_id"):
+                    msg_text, reply_markup = build_user_review(g, is_reminder=True)
+                    await send_message(
+                        chat_id=int(g["telegram_id"]),
+                        text=msg_text,
+                        reply_markup=reply_markup,
+                    )
+
+            # 2. Kirim ringkasan admin jika ada admin chat ID / report chat ID
+            admin_targets: set[int] = set()
+            if settings.dashboard_pin_chat_id and settings.dashboard_pin_chat_id.strip().lstrip("-").isdigit():
+                admin_targets.add(int(settings.dashboard_pin_chat_id.strip()))
+            if settings.admin_telegram_ids:
+                for a in settings.admin_telegram_ids.split(","):
+                    if a.strip().lstrip("-").isdigit():
+                        admin_targets.add(int(a.strip()))
+
+            admin_text, admin_keyboard = build_admin_review(groups)
+            for target_id in admin_targets:
+                await send_message(
+                    chat_id=target_id,
+                    text=f"⏰ *PENGINGAT MINGGUAN TALANGAN USER*\n\n" + admin_text,
+                    reply_markup=admin_keyboard,
+                )
+
+            print(f"[SCHEDULER] Weekly reimburse reminder sent ({len(items)} items, {len(groups)} users)")
+
+    except Exception as e:
+        print(f"[SCHEDULER ERROR] job_send_weekly_reimburse_reminder: {e}")
+
+
+# ──────────────────────────────────────────────
 # Setup & Start Scheduler
 # ──────────────────────────────────────────────
 
@@ -205,6 +259,19 @@ def setup_scheduler() -> AsyncIOScheduler:
             timezone="Asia/Jakarta",
         ),
         id="unpaid_reminder",
+        replace_existing=True,
+    )
+
+    # Job 4: Pengingat mingguan reimburse ke user & admin — setiap Senin jam 09:30 WIB
+    scheduler.add_job(
+        job_send_weekly_reimburse_reminder,
+        trigger=CronTrigger(
+            day_of_week="mon",
+            hour=9,
+            minute=30,
+            timezone="Asia/Jakarta",
+        ),
+        id="reimburse_reminder",
         replace_existing=True,
     )
 

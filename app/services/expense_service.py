@@ -135,10 +135,16 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     per_kategori: dict[str, float] = {}
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
+    reimburse_pending_count = 0
+    reimburse_pending_total = 0.0
 
     for e in expenses:
         nominal = float(e.total_price or 0)
         status = (e.pay_status or "").lower()
+
+        if bool(e.is_reimbursement) and not e.reimbursed_at:
+            reimburse_pending_count += 1
+            reimburse_pending_total += nominal
 
         # Agregasi Metode Pembayaran
         metode = (e.pay_method or "Tunai").strip() or "Tunai"
@@ -165,6 +171,8 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
         "list_hutang": list_hutang,
+        "reimburse_pending_count": reimburse_pending_count,
+        "reimburse_pending_total": reimburse_pending_total,
         "expense_count": len(expenses),
         "month": month,
         "year": year,
@@ -801,3 +809,79 @@ async def batch_insert_expenses(
     await db.flush()
     return saved
 
+
+
+# ──────────────────────────────────────────────
+# Reimbursement (talangan) per user
+# ──────────────────────────────────────────────
+
+async def get_outstanding_reimbursements(
+    db: AsyncSession,
+    user_id: int | None = None,
+) -> list[Expense]:
+    """Ambil talangan (reimbursement) yang belum diganti.
+
+    user_id=None → semua user (untuk admin). Selain itu hanya milik user tersebut.
+    """
+    query = (
+        select(Expense)
+        .where(Expense.is_reimbursement == True)  # noqa: E712
+        .where(Expense.reimbursed_at.is_(None))
+        .order_by(Expense.expense_date.asc(), Expense.id.asc())
+    )
+    if user_id is not None:
+        query = query.where(Expense.user_id == user_id)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def group_reimbursements_by_user(
+    db: AsyncSession,
+    expenses: list[Expense],
+) -> list[dict]:
+    """Kelompokkan talangan per user → [{user_id, telegram_id, name, items, total}]."""
+    user_ids = {e.user_id for e in expenses if e.user_id is not None}
+    users: dict[int, User] = {}
+    if user_ids:
+        res = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users = {u.id: u for u in res.scalars().all()}
+
+    groups: dict[int | None, dict] = {}
+    for e in expenses:
+        g = groups.get(e.user_id)
+        if g is None:
+            u = users.get(e.user_id) if e.user_id is not None else None
+            g = {
+                "user_id": e.user_id,
+                "telegram_id": u.telegram_id if u else None,
+                "name": (u.name if u and u.name else None) or ("Tanpa User (Web)" if e.user_id is None else f"User #{e.user_id}"),
+                "items": [],
+                "total": 0.0,
+            }
+            groups[e.user_id] = g
+        g["items"].append(e)
+        g["total"] += float(e.total_price or 0)
+
+    return sorted(groups.values(), key=lambda g: -g["total"])
+
+
+async def mark_reimbursed(
+    db: AsyncSession,
+    expense_ids: list[int],
+) -> list[Expense]:
+    """Tandai talangan sudah diganti. Hanya memproses item reimbursement yang belum diganti."""
+    if not expense_ids:
+        return []
+    res = await db.execute(
+        select(Expense)
+        .where(Expense.id.in_(expense_ids))
+        .where(Expense.is_reimbursement == True)  # noqa: E712
+        .where(Expense.reimbursed_at.is_(None))
+    )
+    items = list(res.scalars().all())
+    now = datetime.utcnow()
+    for e in items:
+        e.reimbursed_at = now
+        e.sheets_synced = False
+    await db.flush()
+    return items

@@ -29,6 +29,10 @@ class ExpenseCreate(ExpenseBase):
     pass
 
 
+class ExpenseBatchCreate(BaseModel):
+    items: list[ExpenseCreate]
+
+
 class ExpenseUpdate(BaseModel):
     expense_date: date | None = None
     supplier: str | None = None
@@ -45,6 +49,7 @@ class ExpenseUpdate(BaseModel):
     notes: str | None = None
     is_reimbursement: bool | None = None
     invoice_number: str | None = None
+    reimbursed_at: datetime | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -66,6 +71,7 @@ class ExpenseResponse(BaseModel):
     msg_link: str
     is_reimbursement: bool = False
     invoice_number: str = "-"
+    reimbursed_at: datetime | None = None
     sheets_synced: bool
 
     class Config:
@@ -102,6 +108,8 @@ class MonthlyReportResponse(BaseModel):
     list_hutang: list[dict[str, Any]]
     daily_chart: list[dict[str, Any]]
     valid_categories: list[str]
+    reimburse_pending_count: int = 0
+    reimburse_pending_total: float = 0.0
     top_frequent_items: list[dict[str, Any]] = []
     top_expensive_items: list[dict[str, Any]] = []
     top_unit_price_items: list[dict[str, Any]] = []

@@ -30,6 +30,7 @@ interface ExpenseFormDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: ExpenseFormData, expenseId?: number) => void;
+  onBatchSubmit?: (items: ExpenseFormData[]) => void;
   categories: string[];
   initialData?: Expense | null;
   repeatData?: Expense | null;
@@ -42,6 +43,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  onBatchSubmit,
   categories,
   initialData,
   repeatData,
@@ -263,6 +265,49 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     onClose();
   };
 
+  const handleBatchSaveAll = () => {
+    if (!onBatchSubmit || ocrExtractedItems.length === 0) return;
+    const currentExpenseDate = watch("expense_date") || new Date().toISOString().split("T")[0];
+    const currentSupplier = watch("supplier") || "-";
+    const currentCategory = watch("category") || "Bahan Kue";
+    const currentPayMethod = watch("pay_method") || "Transfer";
+    const currentPayStatus = watch("pay_status") || "Lunas";
+    const currentDueDate = watch("due_date") || "-";
+    const currentNotes = watch("notes") || "-";
+    const currentInvoice = watch("invoice_number") || "-";
+    const currentIsReimb = watch("is_reimbursement") || false;
+
+    const batch: ExpenseFormData[] = ocrExtractedItems.map((it) => {
+      const qty = Number(it.qty || 1);
+      const unitPrice = Number(it.harga_satuan || 0);
+      const tax = Number(it.tax || 0);
+      const discount = Number(it.diskon || 0);
+      const tot = Number(it.total_harga || 0);
+      const totalPrice = tot > 0 ? tot : (qty * unitPrice) + tax - discount;
+
+      return {
+        expense_date: it.tanggal || currentExpenseDate,
+        supplier: it.toko_supplier || currentSupplier,
+        item_name: it.barang || "Barang",
+        qty,
+        category: (it.kategori && categories.includes(it.kategori)) ? it.kategori : currentCategory,
+        unit_price: unitPrice,
+        tax,
+        discount,
+        total_price: totalPrice,
+        pay_method: it.metode_bayar || currentPayMethod,
+        pay_status: it.status_pembayaran || currentPayStatus,
+        due_date: currentDueDate,
+        notes: (it.keterangan && it.keterangan !== "-") ? it.keterangan : currentNotes,
+        invoice_number: (it.no_invoice && it.no_invoice !== "-") ? it.no_invoice : currentInvoice,
+        is_reimbursement: it.is_reimbursement !== undefined ? Boolean(it.is_reimbursement) : currentIsReimb,
+      };
+    });
+
+    onBatchSubmit(batch);
+    onClose();
+  };
+
   const calculatedTotal = watch("total_price");
   const isUnpaid = payStatus.toLowerCase().includes("belum") || payStatus.toLowerCase().includes("hutang");
 
@@ -439,6 +484,24 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                           </button>
                         ))}
                       </div>
+
+                      {onBatchSubmit && (
+                        <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-emerald-700">
+                            Total {ocrExtractedItems.length} item terbaca di nota ini.
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isSubmitting}
+                            onClick={handleBatchSaveAll}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-8 px-3 shadow-sm font-semibold flex items-center gap-1.5"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

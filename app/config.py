@@ -67,10 +67,22 @@ class Settings(BaseSettings):
     dashboard_pin_thread_id: int | None = Field(None, env="DASHBOARD_PIN_THREAD_ID")
     dashboard_session_expire_hours: int = Field(24, env="DASHBOARD_SESSION_EXPIRE_HOURS")
     dashboard_pin_expire_seconds: int = Field(300, env="DASHBOARD_PIN_EXPIRE_SECONDS")
-    dashboard_pin_cooldown_seconds: int = Field(60, env="DASHBOARD_PIN_COOLDOWN_SECONDS")
+    dashboard_pin_cooldown_seconds: int = Field(30, env="DASHBOARD_PIN_COOLDOWN_SECONDS")
     dashboard_pin_max_attempts: int = Field(3, env="DASHBOARD_PIN_MAX_ATTEMPTS")
     dashboard_lockout_attempts: int = Field(5, env="DASHBOARD_LOCKOUT_ATTEMPTS")
     dashboard_lockout_minutes: int = Field(15, env="DASHBOARD_LOCKOUT_MINUTES")
+
+    # Admin Telegram (boleh menandai reimburse "Sudah Diganti").
+    # Daftar Telegram user ID dipisah koma. Jika kosong, fallback ke DASHBOARD_PIN_CHAT_ID.
+    admin_telegram_ids: str = Field("", env="ADMIN_TELEGRAM_IDS")
+
+    def is_admin_telegram(self, telegram_id: int | str | None) -> bool:
+        """Cek apakah Telegram user ID termasuk admin/owner."""
+        if telegram_id is None:
+            return False
+        raw = self.admin_telegram_ids or self.dashboard_pin_chat_id or ""
+        ids = {p.strip() for p in str(raw).split(",") if p.strip()}
+        return str(telegram_id).strip() in ids
 
     # Kategori yang valid (fix, tidak perlu dari env)
     valid_categories: list[str] = [

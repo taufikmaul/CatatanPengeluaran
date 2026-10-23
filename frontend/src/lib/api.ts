@@ -1,4 +1,5 @@
 import axios from "axios";
+import { ExpenseFormData } from "@/types";
 
 export const api = axios.create({
   baseURL: "/api/v1",
@@ -27,5 +28,10 @@ export async function scanExpenseOcr(file: File) {
   const res = await api.post("/expenses/ocr", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+  return res.data;
+}
+
+export async function createExpenseBatch(items: ExpenseFormData[]) {
+  const res = await api.post("/expenses/batch", { items });
   return res.data;
 }

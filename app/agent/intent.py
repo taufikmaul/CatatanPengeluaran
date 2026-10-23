@@ -16,6 +16,7 @@ class Intent(str, Enum):
     CMD_AUDIT_HITUNG = "cmd_audit_hitung"
     CMD_MENU = "cmd_menu"
     CMD_CONFIG = "cmd_config"
+    CMD_REIMBURSE = "cmd_reimburse"
 
     # Input media
     SCAN_RECEIPT = "scan_receipt"    # foto struk
@@ -40,10 +41,12 @@ _COMMANDS = {
     r"^/catat": Intent.CMD_CATAT,
     r"^/(menu|help|start)": Intent.CMD_MENU,
     r"^/config": Intent.CMD_CONFIG,
+    r"^/(reimburse|reimbursement|talangan)": Intent.CMD_REIMBURSE,
 }
 
 # Pola untuk natural language (tanpa command)
 _NL_PATTERNS = {
+    r"(cek|lihat|daftar|review)\s+(reimburse|reimbursement|talangan|rembes)": Intent.CMD_REIMBURSE,
     r"(berapa|harga|terakhir|beli)\s+(tepung|gula|mentega|telur|\w+)": Intent.QUERY_PRICE,
     r"(daftar\s+hutang|tagihan\s+belum\s+lunas|cek\s+hutang)": Intent.CMD_HUTANG,
     r"(naik|turun|trend|perbandingan|banding)": Intent.QUERY_TREND,
