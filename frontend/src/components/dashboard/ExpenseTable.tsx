@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { Expense } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
+import { parseTelegramLink } from "@/lib/telegram";
+import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +16,8 @@ import {
   Inbox,
   Repeat,
   LineChart,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -28,6 +32,8 @@ interface ExpenseTableProps {
   onRepeatExpense?: (expense: Expense) => void;
   onInspectItemPrice?: (itemName: string) => void;
   onDeleteExpense: (expenseId: number) => void;
+  onViewExpense?: (expense: Expense) => void;
+  canDelete?: boolean;
 }
 
 export const ExpenseTable: React.FC<ExpenseTableProps> = ({
@@ -42,6 +48,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onRepeatExpense,
   onInspectItemPrice,
   onDeleteExpense,
+  onViewExpense,
+  canDelete = true,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -115,6 +123,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             {expenses.map((e) => {
               const catColor = getCategoryColor(e.category);
               const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
+              const tgMeta = parseTelegramLink(e.msg_link);
 
               return (
                 <tr
@@ -147,6 +156,20 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                           💼 Reimburse
                         </span>
+                      )}
+                      {tgMeta.isUrl && (
+                        <a
+                          href={tgMeta.url!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(ev) => ev.stopPropagation()}
+                          title={`Buka pesan Telegram (${tgMeta.badgeLabel}) untuk cross check`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-sky-50 text-sky-700 hover:bg-sky-100 hover:text-sky-800 border border-sky-200 transition-colors shrink-0"
+                        >
+                          <TelegramIcon className="w-2.5 h-2.5 text-[#229ED9]" />
+                          <span>Telegram</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
                       )}
                     </div>
                     {e.notes && e.notes !== "-" && (
@@ -196,6 +219,29 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1 opacity-80 group-hover:opacity-100">
+                      {onViewExpense && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onViewExpense(e)}
+                          className="h-7 w-7 text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                          title="Lihat detail lengkap transaksi"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      {tgMeta.isUrl && (
+                        <a
+                          href={tgMeta.url!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-[#229ED9] hover:bg-sky-50 transition-colors"
+                          title={`Buka pesan di Telegram (${tgMeta.badgeLabel})`}
+                        >
+                          <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+                        </a>
+                      )}
                       {onRepeatExpense && (
                         <Button
                           variant="ghost"
@@ -216,16 +262,18 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(e.id)}
-                        disabled={deletingId === e.id}
-                        className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                        title="Hapus data"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(e.id)}
+                          disabled={deletingId === e.id}
+                          className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          title="Hapus data"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -240,6 +288,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         {expenses.map((e) => {
           const catColor = getCategoryColor(e.category);
           const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
+          const tgMeta = parseTelegramLink(e.msg_link);
 
           return (
             <div key={e.id} className="p-3.5 space-y-2 hover:bg-slate-50 transition-colors">
@@ -251,6 +300,19 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                         💼 Reimburse
                       </span>
+                    )}
+                    {tgMeta.isUrl && (
+                      <a
+                        href={tgMeta.url!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 active:scale-95"
+                        title={`Cross check chat Telegram (${tgMeta.badgeLabel})`}
+                      >
+                        <TelegramIcon className="w-2.5 h-2.5 text-[#229ED9]" />
+                        <span>Telegram</span>
+                        <ExternalLink className="w-2 h-2 opacity-60" />
+                      </a>
                     )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
@@ -291,6 +353,30 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     {isLunas ? "Lunas" : "Hutang"}
                   </button>
 
+                  {onViewExpense && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onViewExpense(e)}
+                      className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                      title="Lihat Detail Transaksi"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+
+                  {tgMeta.isUrl && (
+                    <a
+                      href={tgMeta.url!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-[#229ED9] hover:bg-sky-50 active:scale-95"
+                      title={`Buka Telegram (${tgMeta.badgeLabel})`}
+                    >
+                      <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+                    </a>
+                  )}
+
                   {onRepeatExpense && (
                     <Button
                       variant="ghost"
@@ -310,14 +396,17 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDelete(e.id)}
-                    className="h-7 w-7 text-slate-400 hover:text-red-600"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  {canDelete && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(e.id)}
+                      className="h-7 w-7 text-slate-400 hover:text-red-600"
+                      title="Hapus data"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

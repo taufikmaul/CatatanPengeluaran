@@ -42,7 +42,7 @@ async def test_api_auth_status_authenticated(client, auth_cookies):
     assert res.status_code == 200
     data = res.json()
     assert data["authenticated"] is True
-    assert data["user"] == "Admin"
+    assert data["user"] in ("Admin", "Owner / Super Admin")
 
 
 @pytest.mark.asyncio
@@ -423,3 +423,100 @@ async def test_hermes_hutang_and_trend_handlers(db, monkeypatch):
     sent_messages.clear()
     await agent.process(text="pengeluaran bulan ini naik atau turun dibanding bulan lalu?")
     assert any("TREN PENGELUARAN" in m["text"] for m in sent_messages)
+
+
+@pytest.mark.asyncio
+async def test_api_expenses_msg_link_create_and_update(client, auth_cookies):
+    """Test pembuatan dan update msg_link untuk cross check Telegram."""
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat transaksi dengan link Telegram
+    tg_url = "https://t.me/c/2481928371/7/9981"
+    payload = {
+        "expense_date": "2026-10-23",
+        "supplier": "TBK Megah",
+        "item_name": "Coklat Bubuk Tulip 1kg",
+        "qty": 2,
+        "category": "Bahan Baku",
+        "unit_price": 60000,
+        "total_price": 120000,
+        "msg_link": tg_url,
+    }
+    res = await client.post("/api/v1/expenses", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["msg_link"] == tg_url
+    expense_id = data["id"]
+
+    # 2. Update msg_link
+    updated_url = "https://t.me/c/2481928371/7/9982"
+    update_res = await client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={"msg_link": updated_url},
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["msg_link"] == updated_url
+
+
+def test_build_msg_link_variations():
+    """Test build_msg_link dengan berbagai tipe chat Telegram."""
+    from app.bot.telegram_client import build_msg_link
+
+    # Supergroup dengan thread topic
+    link = build_msg_link(-1002481928371, "supergroup", 7, 501)
+    assert link == "https://t.me/c/2481928371/7/501"
+
+    # Supergroup tanpa thread
+    link_no_thread = build_msg_link(-1002481928371, "supergroup", None, 502)
+    assert link_no_thread == "https://t.me/c/2481928371/502"
+
+    # Group dengan username publik
+    link_username = build_msg_link(-1002481928371, "supergroup", 7, 503, chat_username="historycake_ops")
+    assert link_username == "https://t.me/historycake_ops/7/503"
+
+    # Private chat
+    link_private = build_msg_link(12345678, "private", None, 504)
+    assert link_private == "tg://user?id=12345678"
+
+
+@pytest.mark.asyncio
+async def test_api_expenses_shipping_and_other_fee(client, auth_cookies):
+    """Test penambahan kolom ongkir (shipping_fee) dan biaya lainnya (other_fee)."""
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat transaksi dengan ongkir dan biaya lainnya, auto-calculate total_price
+    # (qty: 2 * 45000) + shipping: 15000 + tax: 0 + other_fee: 2500 - discount: 5000 = 102500
+    payload = {
+        "expense_date": "2026-10-23",
+        "supplier": "Shopee TBK Baking",
+        "item_name": "Keju Cheddar Prochiz 2kg",
+        "qty": 2,
+        "category": "Bahan Baku",
+        "unit_price": 45000,
+        "shipping_fee": 15000,
+        "tax": 0,
+        "other_fee": 2500,
+        "discount": 5000,
+        "total_price": 0,  # otomatis dihitung
+    }
+    res = await client.post("/api/v1/expenses", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert data["shipping_fee"] == 15000
+    assert data["other_fee"] == 2500
+    assert data["discount"] == 5000
+    assert data["total_price"] == 102500
+    expense_id = data["id"]
+
+    # 2. Update shipping_fee dan other_fee
+    update_res = await client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={"shipping_fee": 20000, "other_fee": 3000, "total_price": 108000},
+    )
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+    assert updated_data["shipping_fee"] == 20000
+    assert updated_data["other_fee"] == 3000
+    assert updated_data["total_price"] == 108000
+
+

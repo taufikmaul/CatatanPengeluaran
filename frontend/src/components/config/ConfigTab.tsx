@@ -33,6 +33,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [pinChatId, setPinChatId] = useState("");
   const [allowedThreadId, setAllowedThreadId] = useState(7);
   const [botPassword, setBotPassword] = useState("12345");
+  const [adminInputPassword, setAdminInputPassword] = useState("input123");
   const [webhookUrl, setWebhookUrl] = useState("");
 
   const [sumopodApiKey, setSumopodApiKey] = useState("");
@@ -61,6 +62,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setPinChatId(config.dashboard_pin_chat_id || "");
       setAllowedThreadId(config.allowed_thread_id || 7);
       setBotPassword(config.bot_password || "12345");
+      setAdminInputPassword(config.admin_input_password || "input123");
       setWebhookUrl(config.webhook_url || "");
 
       setSumopodApiKey(config.sumopod_api_key || "");
@@ -85,6 +87,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         sumopod_url: sumopodUrl,
         spreadsheet_id: spreadsheetId.trim(),
         bot_password: botPassword,
+        admin_input_password: adminInputPassword.trim(),
         webhook_url: webhookUrl.trim(),
         monthly_budget_limit: Number(monthlyBudgetLimit) || 0,
         category_budgets: categoryBudgets,
@@ -281,6 +284,25 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="Password untuk otorisasi user di Telegram"
                   className="h-10 text-xs rounded-xl"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-amber-800 block mb-1 flex items-center justify-between">
+                  <span>Password Akses Admin Input (Web)</span>
+                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">
+                    Input & Koreksi
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={adminInputPassword}
+                  onChange={(e) => setAdminInputPassword(e.target.value)}
+                  placeholder="Password untuk login staf Admin Input di Web"
+                  className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Akses staf: bisa catat & koreksi transaksi, tanpa tombol hapus & tanpa grafik.
+                </span>
               </div>
 
               <div className="md:col-span-2">

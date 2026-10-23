@@ -14,7 +14,9 @@ class ExpenseBase(BaseModel):
     qty: float = 1.0
     category: str = "Operasional"
     unit_price: float = 0.0
+    shipping_fee: float = 0.0
     tax: float = 0.0
+    other_fee: float = 0.0
     discount: float = 0.0
     total_price: float = 0.0
     pay_method: str = "Tunai"
@@ -23,6 +25,7 @@ class ExpenseBase(BaseModel):
     notes: str = "-"
     is_reimbursement: bool = False
     invoice_number: str = "-"
+    msg_link: str = "Web Dashboard"
 
 
 class ExpenseCreate(ExpenseBase):
@@ -40,7 +43,9 @@ class ExpenseUpdate(BaseModel):
     qty: float | None = None
     category: str | None = None
     unit_price: float | None = None
+    shipping_fee: float | None = None
     tax: float | None = None
+    other_fee: float | None = None
     discount: float | None = None
     total_price: float | None = None
     pay_method: str | None = None
@@ -50,6 +55,7 @@ class ExpenseUpdate(BaseModel):
     is_reimbursement: bool | None = None
     invoice_number: str | None = None
     reimbursed_at: datetime | None = None
+    msg_link: str | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -61,8 +67,10 @@ class ExpenseResponse(BaseModel):
     qty: float
     category: str
     unit_price: float
-    tax: float
-    discount: float
+    shipping_fee: float = 0.0
+    tax: float = 0.0
+    other_fee: float = 0.0
+    discount: float = 0.0
     total_price: float
     pay_method: str
     pay_status: str
@@ -152,13 +160,26 @@ class MasterItemResponse(BaseModel):
         from_attributes = True
 
 
+class AuthPermissions(BaseModel):
+    can_edit: bool = True
+    can_delete: bool = False
+    can_view_charts: bool = False
+    can_manage_config: bool = False
+
+
 class AuthStatusResponse(BaseModel):
     authenticated: bool
     user: str | None = None
+    role: str | None = None
+    permissions: AuthPermissions | None = None
 
 
 class PinVerifyRequest(BaseModel):
     pin: str
+
+
+class AdminInputLoginRequest(BaseModel):
+    password: str
 
 
 class SystemConfigUpdate(BaseModel):
@@ -173,6 +194,7 @@ class SystemConfigUpdate(BaseModel):
     sumopod_url: str | None = None
     spreadsheet_id: str | None = None
     bot_password: str | None = None
+    admin_input_password: str | None = None
     webhook_url: str | None = None
     monthly_budget_limit: int | None = None
     category_budgets: dict[str, float] | None = None

@@ -115,11 +115,32 @@ async def set_webhook(url: str) -> dict:
         return res.json()
 
 
-def build_msg_link(chat_id: int, chat_type: str, thread_id: int | None, msg_id: int) -> str:
+def build_msg_link(
+    chat_id: int,
+    chat_type: str,
+    thread_id: int | None,
+    msg_id: int,
+    chat_username: str | None = None,
+) -> str:
     """Build link langsung ke pesan Telegram."""
+    if chat_username:
+        if thread_id:
+            return f"https://t.me/{chat_username}/{thread_id}/{msg_id}"
+        return f"https://t.me/{chat_username}/{msg_id}"
+
     if chat_type in ("supergroup", "group"):
-        clean_id = str(chat_id).replace("-100", "")
+        clean_id = str(chat_id)
+        if clean_id.startswith("-100"):
+            clean_id = clean_id[4:]
+        elif clean_id.startswith("-"):
+            clean_id = clean_id[1:]
         if thread_id:
             return f"https://t.me/c/{clean_id}/{thread_id}/{msg_id}"
         return f"https://t.me/c/{clean_id}/{msg_id}"
+
+    if chat_type == "private":
+        if chat_id:
+            return f"tg://user?id={chat_id}"
+        return "Private Chat"
+
     return "Private Chat"

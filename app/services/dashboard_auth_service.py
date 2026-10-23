@@ -35,13 +35,14 @@ def get_client_ip(request: Request) -> str:
     return "127.0.0.1"
 
 
-def create_session_token(secret_key: str | None = None, expire_hours: int | None = None) -> str:
-    """Buat signed session token dengan HMAC-SHA256."""
+def create_session_token(role: str = "admin", secret_key: str | None = None, expire_hours: int | None = None) -> str:
+    """Buat signed session token dengan HMAC-SHA256 yang memuat role ('admin' atau 'admin_input')."""
     key = secret_key or settings.secret_key
     exp_hours = expire_hours or settings.dashboard_session_expire_hours
     now_ts = int(time.time())
     payload = {
-        "sub": "dashboard_admin",
+        "sub": f"dashboard_{role}",
+        "role": role,
         "iat": now_ts,
         "exp": now_ts + (exp_hours * 3600),
         "nonce": secrets.token_hex(16),
@@ -56,15 +57,15 @@ def create_session_token(secret_key: str | None = None, expire_hours: int | None
     return f"{b64_payload}.{signature}"
 
 
-def verify_session_token(token: str, secret_key: str | None = None) -> bool:
-    """Validasi signature dan tanggal kedaluwarsa session token."""
+def get_token_payload(token: str, secret_key: str | None = None) -> dict | None:
+    """Dekode dan validasi token HMAC, kembalikan payload dictionary jika sah."""
     if not token or "." not in token:
-        return False
+        return None
     key = secret_key or settings.secret_key
     try:
         parts = token.split(".")
         if len(parts) != 2:
-            return False
+            return None
         b64_payload, signature = parts
         expected_sig = hmac.new(
             key.encode("utf-8"),
@@ -72,7 +73,7 @@ def verify_session_token(token: str, secret_key: str | None = None) -> bool:
             hashlib.sha256,
         ).hexdigest()
         if not hmac.compare_digest(signature, expected_sig):
-            return False
+            return None
 
         # Tambahkan padding jika diperlukan
         padding = 4 - (len(b64_payload) % 4)
@@ -83,24 +84,47 @@ def verify_session_token(token: str, secret_key: str | None = None) -> bool:
         payload = json.loads(payload_bytes.decode("utf-8"))
 
         if payload.get("exp", 0) < int(time.time()):
-            return False
-        return True
+            return None
+        return payload
     except Exception:
-        return False
+        return None
+
+
+def verify_session_token(token: str, secret_key: str | None = None) -> bool:
+    """Validasi signature dan tanggal kedaluwarsa session token."""
+    return get_token_payload(token, secret_key=secret_key) is not None
+
+
+def get_authenticated_role(request: Request) -> str | None:
+    """Ambil role user yang terautentikasi ('admin' atau 'admin_input'), atau None jika belum login."""
+    token = None
+    auth_hdr = request.headers.get("authorization", "")
+    if auth_hdr.lower().startswith("bearer "):
+        token = auth_hdr[7:].strip()
+    elif request.headers.get("x-session-token"):
+        token = request.headers.get("x-session-token")
+    if not token:
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+
+    payload = get_token_payload(token)
+    if not payload:
+        return None
+
+    role = payload.get("role")
+    if not role:
+        sub = payload.get("sub", "")
+        if "admin_input" in sub:
+            role = "admin_input"
+        else:
+            role = "admin"
+    return role
 
 
 def is_authenticated_request(request: Request) -> bool:
     """Cek apakah request memiliki cookie sesi dashboard atau token auth yang sah."""
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token:
-        auth_hdr = request.headers.get("authorization", "")
-        if auth_hdr.lower().startswith("bearer "):
-            token = auth_hdr[7:].strip()
-        elif request.headers.get("x-session-token"):
-            token = request.headers.get("x-session-token")
-    if not token:
-        return False
-    return verify_session_token(token)
+    return get_authenticated_role(request) is not None
 
 
 async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
@@ -387,3 +411,34 @@ async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, s
     remaining_attempts = pin_record.max_attempts - pin_record.attempts
     await db.flush()
     return False, f"PIN salah. Sisa kesempatan mencoba: {remaining_attempts} kali."
+
+
+async def verify_admin_input_password(db: AsyncSession, ip: str, password: str) -> tuple[bool, str]:
+    """
+    Verifikasi password login khusus Admin Input dengan proteksi brute force (IP lockout & logging).
+    """
+    locked, remaining = await is_ip_locked_out(db, ip)
+    if locked:
+        rem_min = max(1, (remaining + 59) // 60)
+        db.add(DashboardAccessLog(ip_address=ip, action="lockout", details="Blocked by lockout", created_at=datetime.utcnow()))
+        await db.flush()
+        return False, f"Akses diblokir sementara karena terlalu banyak percobaan salah. Silakan coba {rem_min} menit lagi."
+
+    now = datetime.utcnow()
+    clean_pwd = (password or "").strip()
+    expected_pwd = (settings.admin_input_password or "input123").strip()
+
+    if not clean_pwd:
+        return False, "Password tidak boleh kosong."
+
+    # Perbandingan waktu konstan untuk mencegah timing attacks
+    is_correct = hmac.compare_digest(clean_pwd, expected_pwd)
+
+    if is_correct:
+        db.add(DashboardAccessLog(ip_address=ip, action="verify_success", details="Admin input login successful", created_at=now))
+        await db.flush()
+        return True, "Login Admin Input berhasil."
+
+    db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details="Admin input wrong password", created_at=now))
+    await db.flush()
+    return False, "Password Admin Input salah. Silakan periksa kembali."

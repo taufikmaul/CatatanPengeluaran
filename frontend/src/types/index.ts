@@ -7,7 +7,9 @@ export interface Expense {
   qty: number;
   category: string;
   unit_price: number;
+  shipping_fee?: number;
   tax: number;
+  other_fee?: number;
   discount: number;
   total_price: number;
   pay_method: string;
@@ -161,6 +163,20 @@ export interface ItemSuggestion {
   is_master: boolean;
 }
 
+export interface AuthPermissions {
+  can_edit: boolean;
+  can_delete: boolean;
+  can_view_charts: boolean;
+  can_manage_config: boolean;
+}
+
+export interface AuthStatusResponse {
+  authenticated: boolean;
+  user?: string | null;
+  role?: "admin" | "admin_input" | null;
+  permissions?: AuthPermissions | null;
+}
+
 export interface SuggestionsResponse {
   ok: boolean;
   items: ItemSuggestion[];
@@ -179,6 +195,7 @@ export interface SystemConfig {
   report_chat_id: string;
   report_thread_id: number;
   bot_password?: string;
+  admin_input_password?: string;
   webhook_url?: string;
   ai_provider: string;
   ai_url: string;
@@ -234,7 +251,9 @@ export interface ExpenseFormData {
   qty: number;
   category: string;
   unit_price: number;
+  shipping_fee?: number;
   tax: number;
+  other_fee?: number;
   discount: number;
   total_price: number;
   pay_method: string;
@@ -243,13 +262,18 @@ export interface ExpenseFormData {
   notes: string;
   is_reimbursement?: boolean;
   invoice_number?: string;
+  msg_link?: string;
 }
 
 export interface OcrExtractedItem {
   barang?: string;
   qty?: number;
   harga_satuan?: number;
+  ongkir?: number;
+  shipping_fee?: number;
   tax?: number;
+  biaya_lainnya?: number;
+  other_fee?: number;
   diskon?: number;
   total_harga?: number;
   kategori?: string;

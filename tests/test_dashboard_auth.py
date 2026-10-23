@@ -287,3 +287,103 @@ class TestDashboardEndpoints:
             status_after = await client.get("/api/v1/auth/status")
             assert status_after.status_code == 200
             assert status_after.json()["authenticated"] is False
+
+
+class TestAdminInputAccessAndRestrictions:
+    """Test suite khusus untuk hak akses dan pembatasan peran Admin Input."""
+
+    async def test_admin_input_login_wrong_password_rejected(self, client):
+        response = await client.post(
+            "/api/v1/auth/login-admin-input",
+            json={"password": "wrong_password_123"},
+        )
+        assert response.status_code == 400
+        assert response.json()["ok"] is False
+
+    async def test_admin_input_login_success_and_permissions(self, client):
+        with patch.object(settings, "admin_input_password", "input123"):
+            response = await client.post(
+                "/api/v1/auth/login-admin-input",
+                json={"password": "input123"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["ok"] is True
+            assert data["role"] == "admin_input"
+            assert SESSION_COOKIE_NAME in response.cookies
+
+            # Cek endpoint /status
+            status_res = await client.get("/api/v1/auth/status")
+            assert status_res.status_code == 200
+            s_data = status_res.json()
+            assert s_data["authenticated"] is True
+            assert s_data["role"] == "admin_input"
+            assert s_data["permissions"]["can_edit"] is True
+            assert s_data["permissions"]["can_delete"] is False
+            assert s_data["permissions"]["can_view_charts"] is False
+            assert s_data["permissions"]["can_manage_config"] is False
+
+    async def test_admin_input_can_create_and_correct_expense_but_cannot_delete(self, client, db):
+        with patch.object(settings, "admin_input_password", "input123"):
+            # 1. Login sebagai Admin Input
+            login_res = await client.post(
+                "/api/v1/auth/login-admin-input",
+                json={"password": "input123"},
+            )
+            assert login_res.status_code == 200
+            token = login_res.json()["token"]
+
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # 2. Bisa membuat transaksi pengeluaran baru
+            create_res = await client.post(
+                "/api/v1/expenses",
+                json={
+                    "expense_date": "2026-10-23",
+                    "item_name": "Tepung Terigu Segitiga",
+                    "qty": 5,
+                    "unit_price": 12000,
+                    "total_price": 60000,
+                    "category": "Bahan Baku",
+                    "supplier": "Toko Bahan Kue Berkah",
+                },
+                headers=headers,
+            )
+            assert create_res.status_code == 201
+            expense_id = create_res.json()["id"]
+
+            # 3. BISA melakukan koreksi transaksi (PUT /expenses/{id})
+            update_res = await client.put(
+                f"/api/v1/expenses/{expense_id}",
+                json={
+                    "qty": 6,
+                    "total_price": 72000,
+                    "notes": "Koreksi jumlah sak tepung oleh admin input",
+                },
+                headers=headers,
+            )
+            assert update_res.status_code == 200
+            assert update_res.json()["qty"] == 6.0
+            assert update_res.json()["total_price"] == 72000.0
+
+            # 4. TIDAK BISA menghapus transaksi (DELETE /expenses/{id} dilarang / 403 Forbidden)
+            delete_res = await client.delete(
+                f"/api/v1/expenses/{expense_id}",
+                headers=headers,
+            )
+            assert delete_res.status_code == 403
+            assert "Akses ditolak" in delete_res.json()["detail"] or "Owner" in delete_res.json()["detail"]
+
+            # 5. TIDAK BISA mengakses konfigurasi sistem (GET /config -> 403 Forbidden)
+            config_res = await client.get("/api/v1/config", headers=headers)
+            assert config_res.status_code == 403
+
+            # 6. Verifikasi bahwa Owner (admin) BISA menghapus transaksi yang sama
+            owner_token = create_session_token(role="admin")
+            owner_headers = {"Authorization": f"Bearer {owner_token}"}
+            owner_del_res = await client.delete(
+                f"/api/v1/expenses/{expense_id}",
+                headers=owner_headers,
+            )
+            assert owner_del_res.status_code == 200
+            assert owner_del_res.json()["ok"] is True

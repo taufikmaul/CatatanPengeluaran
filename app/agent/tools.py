@@ -108,10 +108,12 @@ async def tool_audit_calculations(db: AsyncSession) -> dict:
     for e in all_expenses:
         qty = float(e.qty or 1)
         harga = float(e.unit_price or 0)
+        shipping = float(e.shipping_fee or 0)
         tax = float(e.tax or 0)
+        other = float(e.other_fee or 0)
         diskon = float(e.discount or 0)
         total_tercatat = float(e.total_price or 0)
-        total_seharusnya = (qty * harga) + tax - diskon
+        total_seharusnya = (qty * harga) + shipping + tax + other - diskon
 
         if abs(total_tercatat - total_seharusnya) > 1:
             e.total_price = Decimal(str(round(total_seharusnya, 2)))

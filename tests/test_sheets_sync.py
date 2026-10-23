@@ -161,9 +161,9 @@ class TestSyncToSheetsExecution:
         mock_sheet.append_rows.assert_called_once()
         appended_values = mock_sheet.append_rows.call_args[0][0]
         assert len(appended_values) == 2
-        assert len(appended_values[0]) == 18
+        assert len(appended_values[0]) == 20
         assert appended_values[0][3] == "Cokelat Bubuk 1kg"
-        assert appended_values[0][15] == "-"
+        assert appended_values[0][15] == "Untuk adonan brownies"
         assert appended_values[1][3] == "Mika 10x10"
         assert appended_values[1][15] == "-"
 

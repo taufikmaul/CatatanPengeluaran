@@ -178,8 +178,12 @@ def build_header_map(row: list[str]) -> dict[str, int]:
             mapping.setdefault("category", idx)
         elif any(k in name for k in ("harga satuan", "harga_satuan", "unit price", "unit_price", "harga per unit")):
             mapping.setdefault("unit_price", idx)
+        elif any(k in name for k in ("ongkir", "ongkos kirim", "pengiriman", "shipping", "biaya kirim")):
+            mapping.setdefault("shipping_fee", idx)
         elif any(k in name for k in ("tax", "pajak", "ppn")):
             mapping.setdefault("tax", idx)
+        elif any(k in name for k in ("biaya lainnya", "biaya lain", "biaya layanan", "biaya admin", "other fee", "service fee", "handling fee", "biaya aplikasi")):
+            mapping.setdefault("other_fee", idx)
         elif any(k in name for k in ("diskon", "discount", "potongan")):
             mapping.setdefault("discount", idx)
         elif any(k in name for k in ("total harga", "total_harga", "total", "subtotal", "nominal")):
@@ -229,7 +233,9 @@ def map_row_to_expense(
             qty_dec = Decimal("1")
 
         unit_price_dec = parse_rupiah(get_val(header_map.get("unit_price"), "0"))
+        shipping_fee_dec = parse_rupiah(get_val(header_map.get("shipping_fee"), "0"))
         tax_dec = parse_rupiah(get_val(header_map.get("tax"), "0"))
+        other_fee_dec = parse_rupiah(get_val(header_map.get("other_fee"), "0"))
         discount_dec = parse_rupiah(get_val(header_map.get("discount"), "0"))
         total_price_dec = parse_rupiah(get_val(header_map.get("total_price"), "0"))
 
@@ -240,7 +246,9 @@ def map_row_to_expense(
             "qty": qty_dec,
             "category": get_val(header_map.get("category"), "Operasional") or "Operasional",
             "unit_price": unit_price_dec,
+            "shipping_fee": shipping_fee_dec,
             "tax": tax_dec,
+            "other_fee": other_fee_dec,
             "discount": discount_dec,
             "total_price": total_price_dec,
             "pay_method": get_val(header_map.get("pay_method"), "Tunai") or "Tunai",
@@ -302,23 +310,25 @@ def map_row_to_expense(
 def audit_calculation(data: dict) -> dict:
     """
     Verifikasi dan rekalkulasi rumus matematika:
-    total_price = (qty * unit_price) + tax - discount
+    total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
     Port dari auditCalculations() di kode.gs.
     """
     qty = data.get("qty") or Decimal("1")
     unit_price = data.get("unit_price") or Decimal("0")
+    shipping_fee = data.get("shipping_fee") or Decimal("0")
     tax = data.get("tax") or Decimal("0")
+    other_fee = data.get("other_fee") or Decimal("0")
     discount = data.get("discount") or Decimal("0")
     total_price = data.get("total_price") or Decimal("0")
 
-    expected_total = (qty * unit_price) + tax - discount
+    expected_total = (qty * unit_price) + shipping_fee + tax + other_fee - discount
 
     # Jika total_price kosong/nol tapi ada qty & unit_price
     if total_price <= 0 and expected_total > 0:
         data["total_price"] = expected_total
     # Jika unit_price nol tapi ada total_price & qty
     elif unit_price <= 0 and total_price > 0 and qty > 0:
-        calculated_unit = (total_price - tax + discount) / qty
+        calculated_unit = (total_price - shipping_fee - tax - other_fee + discount) / qty
         data["unit_price"] = calculated_unit.quantize(Decimal("0.01"))
     # Jika ada selisih perhitungan lebih dari 1 Rupiah dan unit_price > 0
     elif unit_price > 0 and abs(total_price - expected_total) > Decimal("1.00"):

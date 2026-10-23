@@ -151,7 +151,7 @@ async def sync_to_sheets(
                 sheet = doc.add_worksheet(title="Pengeluaran", rows=1000, cols=20)
                 headers = [
                     "Timestamp", "Tanggal Nota", "Toko / Supplier", "Barang", "Qty",
-                    "Kategori", "Harga Satuan", "Tax", "Diskon", "Total Harga",
+                    "Kategori", "Harga Satuan", "Ongkir", "Tax", "Biaya Lainnya", "Diskon", "Total Harga",
                     "Metode Bayar", "Status Pembayaran", "Jatuh Tempo", "Keterangan", "Link Pesan",
                     "No. Invoice", "Reimbursement", "Tgl Reimburse"
                 ]
@@ -187,7 +187,9 @@ async def sync_to_sheets(
                 float(e.qty if e.qty is not None else 1),
                 e.category or "Operasional",
                 float(e.unit_price if e.unit_price is not None else 0),
+                float(e.shipping_fee if getattr(e, "shipping_fee", None) is not None else 0),
                 float(e.tax if e.tax is not None else 0),
+                float(e.other_fee if getattr(e, "other_fee", None) is not None else 0),
                 float(e.discount if e.discount is not None else 0),
                 float(e.total_price if e.total_price is not None else 0),
                 e.pay_method or "Tunai",

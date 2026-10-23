@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
-from app.api.deps import require_auth
+from app.api.deps import require_auth, require_admin_role
 from app.api.schemas import (
     ExpenseCreate,
     ExpenseBatchCreate,
@@ -39,7 +39,9 @@ def _to_response_dict(e: Expense) -> dict:
         "qty": float(e.qty or 1),
         "category": e.category or "Operasional",
         "unit_price": float(e.unit_price or 0),
+        "shipping_fee": float(e.shipping_fee or 0),
         "tax": float(e.tax or 0),
+        "other_fee": float(e.other_fee or 0),
         "discount": float(e.discount or 0),
         "total_price": float(e.total_price or 0),
         "pay_method": e.pay_method or "Tunai",
@@ -111,14 +113,16 @@ async def create_expense(
 
     qty = Decimal(str(payload.qty or 1))
     unit_price = Decimal(str(payload.unit_price or 0))
+    shipping_fee = Decimal(str(payload.shipping_fee or 0))
     tax = Decimal(str(payload.tax or 0))
+    other_fee = Decimal(str(payload.other_fee or 0))
     discount = Decimal(str(payload.discount or 0))
 
     # Jika total_price tidak diset manual, hitung otomatis
     if payload.total_price > 0:
         total_price = Decimal(str(payload.total_price))
     else:
-        total_price = (qty * unit_price) + tax - discount
+        total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
 
     expense = Expense(
         expense_date=payload.expense_date,
@@ -127,7 +131,9 @@ async def create_expense(
         qty=qty,
         category=norm["category"] or "Operasional",
         unit_price=unit_price,
+        shipping_fee=shipping_fee,
         tax=tax,
+        other_fee=other_fee,
         discount=discount,
         total_price=total_price,
         pay_method=payload.pay_method or "Tunai",
@@ -136,7 +142,7 @@ async def create_expense(
         notes=norm["notes"] or "-",
         is_reimbursement=payload.is_reimbursement,
         invoice_number=payload.invoice_number or "-",
-        msg_link="Web Dashboard",
+        msg_link=payload.msg_link or "Web Dashboard",
         sheets_synced=False,
     )
     db.add(expense)
@@ -163,12 +169,14 @@ async def create_expense_batch(
     for it in items_in:
         qty = Decimal(str(it.qty or 1))
         unit_price = Decimal(str(it.unit_price or 0))
+        shipping_fee = Decimal(str(it.shipping_fee or 0))
         tax = Decimal(str(it.tax or 0))
+        other_fee = Decimal(str(it.other_fee or 0))
         discount = Decimal(str(it.discount or 0))
         if it.total_price > 0:
             total_price = Decimal(str(it.total_price))
         else:
-            total_price = (qty * unit_price) + tax - discount
+            total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
 
         dict_items.append({
             "expense_date": it.expense_date,
@@ -177,7 +185,9 @@ async def create_expense_batch(
             "qty": qty,
             "category": it.category or "Operasional",
             "unit_price": unit_price,
+            "shipping_fee": shipping_fee,
             "tax": tax,
+            "other_fee": other_fee,
             "discount": discount,
             "total_price": total_price,
             "pay_method": it.pay_method or "Tunai",
@@ -186,7 +196,7 @@ async def create_expense_batch(
             "notes": it.notes or "-",
             "is_reimbursement": it.is_reimbursement,
             "invoice_number": it.invoice_number or "-",
-            "msg_link": "Web Dashboard",
+            "msg_link": it.msg_link or "Web Dashboard",
         })
 
     saved = await batch_insert_expenses(
@@ -278,7 +288,7 @@ async def update_expense_endpoint(
     return ExpenseResponse(**_to_response_dict(expense))
 
 
-@router.delete("/{expense_id}")
+@router.delete("/{expense_id}", dependencies=[Depends(require_admin_role)])
 async def delete_expense_endpoint(
     expense_id: int,
     db: AsyncSession = Depends(get_db),

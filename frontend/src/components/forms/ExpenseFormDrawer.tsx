@@ -24,7 +24,10 @@ import {
   CheckCircle2,
   Receipt,
   FileSearch,
+  ExternalLink,
 } from "lucide-react";
+import { parseTelegramLink } from "@/lib/telegram";
+import { TelegramIcon } from "@/components/ui/TelegramIcon";
 
 interface ExpenseFormDrawerProps {
   isOpen: boolean;
@@ -66,7 +69,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       qty: 1,
       category: "Bahan Kue",
       unit_price: 0,
+      shipping_fee: 0,
       tax: 0,
+      other_fee: 0,
       discount: 0,
       total_price: 0,
       pay_method: "Transfer",
@@ -75,6 +80,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       notes: "-",
       invoice_number: "-",
       is_reimbursement: false,
+      msg_link: "Web Dashboard",
     },
   });
 
@@ -95,9 +101,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const supplierVal = watch("supplier") || "";
   const qty = watch("qty") || 0;
   const unitPrice = watch("unit_price") || 0;
+  const shippingFee = watch("shipping_fee") || 0;
   const tax = watch("tax") || 0;
+  const otherFee = watch("other_fee") || 0;
   const discount = watch("discount") || 0;
   const payStatus = watch("pay_status") || "Lunas";
+  const msgLinkVal = watch("msg_link") || "";
+  const initialTgMeta = parseTelegramLink(initialData?.msg_link);
 
   // Filter suggestions based on input
   const filteredItemSuggestions = useMemo(() => {
@@ -114,9 +124,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   // Auto-calculate total price when components change
   useEffect(() => {
-    const calc = Number(qty) * Number(unitPrice) + Number(tax) - Number(discount);
+    const calc = Number(qty) * Number(unitPrice) + Number(shippingFee) + Number(tax) + Number(otherFee) - Number(discount);
     setValue("total_price", Math.max(0, calc));
-  }, [qty, unitPrice, tax, discount, setValue]);
+  }, [qty, unitPrice, shippingFee, tax, otherFee, discount, setValue]);
 
   // Set form values when editing or repeating an order
   useEffect(() => {
@@ -137,7 +147,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         qty: initialData.qty || 1,
         category: initialData.category || categories[0] || "Bahan Kue",
         unit_price: initialData.unit_price || 0,
+        shipping_fee: initialData.shipping_fee || 0,
         tax: initialData.tax || 0,
+        other_fee: initialData.other_fee || 0,
         discount: initialData.discount || 0,
         total_price: initialData.total_price || 0,
         pay_method: initialData.pay_method || "Transfer",
@@ -146,6 +158,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         notes: initialData.notes || "-",
         invoice_number: initialData.invoice_number || "-",
         is_reimbursement: Boolean(initialData.is_reimbursement),
+        msg_link: initialData.msg_link || "Web Dashboard",
       });
     } else if (repeatData) {
       reset({
@@ -155,7 +168,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         qty: repeatData.qty || 1,
         category: repeatData.category || categories[0] || "Bahan Kue",
         unit_price: repeatData.unit_price || 0,
+        shipping_fee: repeatData.shipping_fee || 0,
         tax: repeatData.tax || 0,
+        other_fee: repeatData.other_fee || 0,
         discount: repeatData.discount || 0,
         total_price: repeatData.total_price || 0,
         pay_method: repeatData.pay_method || "Transfer",
@@ -164,6 +179,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         notes: "-",
         invoice_number: "-",
         is_reimbursement: Boolean(repeatData.is_reimbursement),
+        msg_link: "Web Dashboard",
       });
     } else {
       reset({
@@ -173,7 +189,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         qty: 1,
         category: categories[0] || "Bahan Kue",
         unit_price: 0,
+        shipping_fee: 0,
         tax: 0,
+        other_fee: 0,
         discount: 0,
         total_price: 0,
         pay_method: "Transfer",
@@ -182,6 +200,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         notes: "-",
         invoice_number: "-",
         is_reimbursement: false,
+        msg_link: "Web Dashboard",
       });
     }
   }, [initialData, repeatData, reset, categories, isOpen]);
@@ -205,7 +224,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     if (item.barang) setValue("item_name", item.barang, { shouldValidate: true });
     if (item.qty) setValue("qty", Number(item.qty));
     if (item.harga_satuan) setValue("unit_price", Number(item.harga_satuan));
+    if (item.ongkir !== undefined || item.shipping_fee !== undefined) {
+      setValue("shipping_fee", Number(item.ongkir ?? item.shipping_fee ?? 0));
+    }
     if (item.tax !== undefined) setValue("tax", Number(item.tax));
+    if (item.biaya_lainnya !== undefined || item.other_fee !== undefined) {
+      setValue("other_fee", Number(item.biaya_lainnya ?? item.other_fee ?? 0));
+    }
     if (item.diskon !== undefined) setValue("discount", Number(item.diskon));
     if (item.total_harga) setValue("total_price", Number(item.total_harga));
     if (item.toko_supplier) setValue("supplier", item.toko_supplier);
@@ -280,10 +305,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     const batch: ExpenseFormData[] = ocrExtractedItems.map((it) => {
       const qty = Number(it.qty || 1);
       const unitPrice = Number(it.harga_satuan || 0);
+      const shippingFee = Number(it.shipping_fee ?? it.ongkir ?? 0);
       const tax = Number(it.tax || 0);
+      const otherFee = Number(it.other_fee ?? it.biaya_lainnya ?? 0);
       const discount = Number(it.diskon || 0);
       const tot = Number(it.total_harga || 0);
-      const totalPrice = tot > 0 ? tot : (qty * unitPrice) + tax - discount;
+      const totalPrice = tot > 0 ? tot : (qty * unitPrice) + shippingFee + tax + otherFee - discount;
 
       return {
         expense_date: it.tanggal || currentExpenseDate,
@@ -292,7 +319,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         qty,
         category: (it.kategori && categories.includes(it.kategori)) ? it.kategori : currentCategory,
         unit_price: unitPrice,
+        shipping_fee: shippingFee,
         tax,
+        other_fee: otherFee,
         discount,
         total_price: totalPrice,
         pay_method: it.metode_bayar || currentPayMethod,
@@ -301,6 +330,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         notes: (it.keterangan && it.keterangan !== "-") ? it.keterangan : currentNotes,
         invoice_number: (it.no_invoice && it.no_invoice !== "-") ? it.no_invoice : currentInvoice,
         is_reimbursement: it.is_reimbursement !== undefined ? Boolean(it.is_reimbursement) : currentIsReimb,
+        msg_link: "Web Dashboard",
       };
     });
 
@@ -508,6 +538,38 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             )}
 
+            {/* Telegram Cross-Check Banner for existing expense */}
+            {initialData && initialTgMeta.isUrl && (
+              <div className="p-3.5 bg-gradient-to-r from-sky-50 via-blue-50/70 to-indigo-50/50 border border-sky-200/90 rounded-2xl flex items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#229ED9] text-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-500/20">
+                    <TelegramIcon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-bold text-sky-950">Chat Telegram Asli</span>
+                      <span className="text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.2 rounded-md">
+                        {initialTgMeta.badgeLabel}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-sky-700 truncate block mt-0.5 max-w-[220px] sm:max-w-[280px]">
+                      {initialData.msg_link}
+                    </span>
+                  </div>
+                </div>
+                <a
+                  href={initialData.msg_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#229ED9] hover:bg-[#1d8ec4] text-white text-xs font-semibold shrink-0 shadow-sm transition-all active:scale-95"
+                  title="Buka pesan Telegram di tab baru"
+                >
+                  <span>Cross Check</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
@@ -676,17 +738,42 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Tax & Diskon */}
+            {/* Ongkir, Pajak, Biaya Lainnya, Diskon */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Pajak / Biaya Layanan (Rp)
+                  Ongkir / Pengiriman (Rp)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  {...register("shipping_fee", { valueAsNumber: true })}
+                  className="h-9 text-xs rounded-xl"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  Pajak (PPN/PB1) (Rp)
                 </label>
                 <Input
                   type="number"
                   step="any"
                   {...register("tax", { valueAsNumber: true })}
                   className="h-9 text-xs rounded-xl"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  Biaya Lainnya (Admin/App) (Rp)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  {...register("other_fee", { valueAsNumber: true })}
+                  className="h-9 text-xs rounded-xl"
+                  placeholder="0"
                 />
               </div>
               <div>
@@ -698,6 +785,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   step="any"
                   {...register("discount", { valueAsNumber: true })}
                   className="h-9 text-xs rounded-xl"
+                  placeholder="0"
                 />
               </div>
             </div>
@@ -764,6 +852,36 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 {...register("notes")}
                 className="h-10 text-xs rounded-xl"
               />
+            </div>
+
+            {/* Link Chat Telegram / Sumber Transaksi */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                  <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+                  <span>Link Chat Telegram / Sumber</span>
+                </label>
+                {msgLinkVal && parseTelegramLink(msgLinkVal).isUrl && (
+                  <a
+                    href={msgLinkVal}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
+                    title="Uji buka link pesan Telegram di tab baru"
+                  >
+                    <span>Uji Buka Link</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              <Input
+                placeholder="mis: https://t.me/c/... atau Web Dashboard"
+                {...register("msg_link")}
+                className="h-10 text-xs rounded-xl"
+              />
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Tautan pesan Telegram untuk mempermudah cross check bukti dan foto struk asli.
+              </span>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

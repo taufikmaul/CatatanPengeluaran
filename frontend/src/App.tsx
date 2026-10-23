@@ -10,6 +10,7 @@ import { DailyTrendChart } from "@/components/dashboard/DailyTrendChart";
 import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
 import { FilterBar } from "@/components/dashboard/FilterBar";
 import { ExpenseTable } from "@/components/dashboard/ExpenseTable";
+import { ExpenseDetailModal } from "@/components/dashboard/ExpenseDetailModal";
 import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import confetti from "canvas-confetti";
+import { formatRupiah } from "@/lib/formatters";
 import {
   BarChart3,
   Upload,
@@ -48,6 +50,7 @@ export function App() {
   // Modal & Drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   const [repeatingExpense, setRepeatingExpense] = useState<Expense | null>(null);
   const [inspectedItemName, setInspectedItemName] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -68,6 +71,19 @@ export function App() {
       setIsLoginOpen(true);
     }
   }, [authData]);
+
+  // Perizinan & Peran Pengguna (Admin Input vs Owner/Admin Utama)
+  const userRole = authData?.role || (authData?.authenticated ? "admin" : null);
+  const canDelete = authData?.permissions?.can_delete ?? (userRole === "admin");
+  const canViewCharts = authData?.permissions?.can_view_charts ?? (userRole === "admin");
+  const canManageConfig = authData?.permissions?.can_manage_config ?? (userRole === "admin");
+
+  // Jika admin_input mencoba membuka tab konfigurasi sistem, kembalikan ke overview
+  useEffect(() => {
+    if (userRole === "admin_input" && activeTab === "config") {
+      setActiveTab("overview");
+    }
+  }, [userRole, activeTab]);
 
   // Listen for 401 unauthorized event
   useEffect(() => {
@@ -235,6 +251,9 @@ export function App() {
   // Mutasi: Delete Expense
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
+      if (!canDelete) {
+        throw new Error("Admin Input tidak memiliki izin menghapus transaksi. Hubungi Owner.");
+      }
       return (await api.delete(`/expenses/${id}`)).data;
     },
     onSuccess: () => {
@@ -243,7 +262,7 @@ export function App() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.detail || "Gagal menghapus pengeluaran");
+      toast.error(err.response?.data?.detail || err.message || "Gagal menghapus pengeluaran");
     },
   });
 
@@ -297,12 +316,18 @@ export function App() {
                 <h1 className="font-bold text-base md:text-lg text-slate-900 leading-tight">
                   Catatan Pengeluaran
                 </h1>
-                <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-semibold text-rose-600 border-rose-200 bg-rose-50/50">
-                  Historycake
-                </Badge>
+                {userRole === "admin_input" ? (
+                  <Badge variant="outline" className="inline-flex text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50">
+                    ✍️ Admin Input
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-semibold text-rose-600 border-rose-200 bg-rose-50/50">
+                    Historycake
+                  </Badge>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 font-medium">
-                FastAPI • PostgreSQL • React + shadcn
+                {userRole === "admin_input" ? "Mode Input & Koreksi Transaksi" : "FastAPI • PostgreSQL • React + shadcn"}
               </p>
             </div>
           </div>
@@ -318,7 +343,7 @@ export function App() {
               }`}
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>Overview</span>
+              <span>{userRole === "admin_input" ? "Transaksi" : "Overview"}</span>
             </button>
             <button
               onClick={() => setActiveTab("master")}
@@ -331,24 +356,28 @@ export function App() {
               <PackageCheck className="w-3.5 h-3.5" />
               <span>Master Item</span>
             </button>
-            <button
-              onClick={() => setIsImportOpen(true)}
-              className="px-3 py-1.5 rounded-xl text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Import</span> CSV
-            </button>
-            <button
-              onClick={() => setActiveTab("config")}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
-                activeTab === "config"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Sistem</span>
-            </button>
+            {canManageConfig && (
+              <>
+                <button
+                  onClick={() => setIsImportOpen(true)}
+                  className="px-3 py-1.5 rounded-xl text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Import</span> CSV
+                </button>
+                <button
+                  onClick={() => setActiveTab("config")}
+                  className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${
+                    activeTab === "config"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Sistem</span>
+                </button>
+              </>
+            )}
           </nav>
 
           {/* Actions */}
@@ -383,76 +412,146 @@ export function App() {
       <main className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6 space-y-6">
         {activeTab === "overview" && (
           <>
-            {/* Stat Cards */}
-            <StatCards
-              totalLunas={reportData?.total_lunas || 0}
-              totalPengeluaran={reportData?.total_pengeluaran || 0}
-              expenseCount={reportData?.expense_count || 0}
-              unpaidCount={reportData?.list_hutang?.length || 0}
-              unpaidTotal={totalUnpaidNominal}
-              categoryCount={Object.keys(reportData?.per_kategori || {}).length}
-              monthName={reportData?.month_name || "Bulan Ini"}
-              year={year}
-              prevMonthName={reportData?.prev_month_name}
-              prevTotalLunas={reportData?.prev_total_lunas}
-              prevTotalPengeluaran={reportData?.prev_total_pengeluaran}
-              momLunasChangePct={reportData?.mom_lunas_change_pct}
-              momTotalChangePct={reportData?.mom_total_change_pct}
-              monthlyBudgetLimit={reportData?.monthly_budget_limit}
-              budgetUsedPct={reportData?.budget_used_pct}
-              categoryBudgets={reportData?.category_budgets}
-              perKategori={reportData?.per_kategori}
-              reimbursePendingCount={reportData?.reimburse_pending_count || 0}
-              reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
-              onFilterUnpaid={() => setStatus("Belum Lunas")}
-              onFilterReimburse={() => {
-                setIsReimbursement(true);
-                setPage(1);
-              }}
-              onOpenBudgetSettings={() => setActiveTab("config")}
-            />
-
-            {/* Charts & Analytics Row 1: Category & Payment Methods */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-6">
-                <CategoryDonutChart
-                  categoryData={reportData?.per_kategori || {}}
-                  totalAmount={reportData?.total_lunas || 0}
+            {/* Tampilan Header & Statistik Sesuai Role Pengguna */}
+            {canViewCharts ? (
+              <>
+                {/* Stat Cards Lengkap untuk Owner */}
+                <StatCards
+                  totalLunas={reportData?.total_lunas || 0}
+                  totalPengeluaran={reportData?.total_pengeluaran || 0}
+                  expenseCount={reportData?.expense_count || 0}
+                  unpaidCount={reportData?.list_hutang?.length || 0}
+                  unpaidTotal={totalUnpaidNominal}
+                  categoryCount={Object.keys(reportData?.per_kategori || {}).length}
+                  monthName={reportData?.month_name || "Bulan Ini"}
+                  year={year}
+                  prevMonthName={reportData?.prev_month_name}
+                  prevTotalLunas={reportData?.prev_total_lunas}
+                  prevTotalPengeluaran={reportData?.prev_total_pengeluaran}
+                  momLunasChangePct={reportData?.mom_lunas_change_pct}
+                  momTotalChangePct={reportData?.mom_total_change_pct}
+                  monthlyBudgetLimit={reportData?.monthly_budget_limit}
+                  budgetUsedPct={reportData?.budget_used_pct}
+                  categoryBudgets={reportData?.category_budgets}
+                  perKategori={reportData?.per_kategori}
+                  reimbursePendingCount={reportData?.reimburse_pending_count || 0}
+                  reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
+                  onFilterUnpaid={() => setStatus("Belum Lunas")}
+                  onFilterReimburse={() => {
+                    setIsReimbursement(true);
+                    setPage(1);
+                  }}
+                  onOpenBudgetSettings={() => setActiveTab("config")}
                 />
-              </div>
-              <div className="lg:col-span-6">
-                <PaymentMethodChart
-                  paymentData={reportData?.per_metode_bayar || {}}
-                  totalAmount={reportData?.total_pengeluaran || 0}
-                />
-              </div>
-            </div>
 
-            {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-7">
-                <DailyTrendChart data={reportData?.daily_chart || []} />
-              </div>
-              <div className="lg:col-span-5">
-                <UnpaidOrdersCard
-                  unpaidList={reportData?.list_hutang || []}
-                  onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
-                  onViewAll={() => setStatus("Belum Lunas")}
-                />
-              </div>
-            </div>
+                {/* Charts & Analytics Row 1: Category & Payment Methods */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-6">
+                    <CategoryDonutChart
+                      categoryData={reportData?.per_kategori || {}}
+                      totalAmount={reportData?.total_lunas || 0}
+                    />
+                  </div>
+                  <div className="lg:col-span-6">
+                    <PaymentMethodChart
+                      paymentData={reportData?.per_metode_bayar || {}}
+                      totalAmount={reportData?.total_pengeluaran || 0}
+                    />
+                  </div>
+                </div>
 
-            {/* Leaderboard & Top Stats Section */}
-            <LeaderboardCards
-              topFrequentItems={reportData?.top_frequent_items || []}
-              topExpensiveItems={reportData?.top_expensive_items || []}
-              topUnitPriceItems={reportData?.top_unit_price_items || []}
-              topPriceSpikes={reportData?.top_price_spikes || []}
-              topSuppliers={reportData?.top_suppliers || []}
-              summaryMetrics={reportData?.summary_metrics}
-              monthName={reportData?.month_name || "Bulan Ini"}
-              year={year}
-            />
+                {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  <div className="lg:col-span-7">
+                    <DailyTrendChart data={reportData?.daily_chart || []} />
+                  </div>
+                  <div className="lg:col-span-5">
+                    <UnpaidOrdersCard
+                      unpaidList={reportData?.list_hutang || []}
+                      onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
+                      onViewAll={() => setStatus("Belum Lunas")}
+                    />
+                  </div>
+                </div>
+
+                {/* Leaderboard & Top Stats Section */}
+                <LeaderboardCards
+                  topFrequentItems={reportData?.top_frequent_items || []}
+                  topExpensiveItems={reportData?.top_expensive_items || []}
+                  topUnitPriceItems={reportData?.top_unit_price_items || []}
+                  topPriceSpikes={reportData?.top_price_spikes || []}
+                  topSuppliers={reportData?.top_suppliers || []}
+                  summaryMetrics={reportData?.summary_metrics}
+                  monthName={reportData?.month_name || "Bulan Ini"}
+                  year={year}
+                />
+              </>
+            ) : (
+              /* Tampilan Ringkas & Cepat Khusus Admin Input (Tanpa Banyak Grafik Statistik) */
+              <div className="space-y-4">
+                {/* Banner Status Admin Input */}
+                <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 border border-amber-200/90 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-xl shrink-0">
+                      ✍️
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm md:text-base font-bold text-slate-900">
+                          Workspace Admin Input Historycake
+                        </h2>
+                        <Badge variant="outline" className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50">
+                          Input & Koreksi
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Anda dapat mencatat pengeluaran baru dan melakukan koreksi data transaksi. Fitur hapus data & konfigurasi sistem dibatasi.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setEditingExpense(null);
+                      setRepeatingExpense(null);
+                      setIsFormOpen(true);
+                    }}
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0 w-full md:w-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Catat Pengeluaran Baru</span>
+                  </Button>
+                </div>
+
+                {/* 3 Ringkasan Angka Utama (Minimalis tanpa chart berat) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
+                    <div className="text-xs font-medium text-slate-500">
+                      Total Transaksi ({reportData?.month_name || "Bulan Ini"})
+                    </div>
+                    <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">
+                      {reportData?.expense_count || 0}
+                      <span className="text-xs font-normal text-slate-400 ml-1.5">transaksi</span>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
+                    <div className="text-xs font-medium text-slate-500">Total Pengeluaran Tercatat</div>
+                    <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">
+                      {formatRupiah(reportData?.total_pengeluaran || 0)}
+                    </div>
+                  </div>
+                  <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs">
+                    <div className="text-xs font-medium text-slate-500">Tagihan Belum Lunas</div>
+                    <div className="text-2xl font-bold text-rose-600 mt-1 tabular-nums">
+                      {reportData?.list_hutang?.length || 0}
+                      <span className="text-xs font-normal text-slate-400 ml-1.5">
+                        ({formatRupiah(totalUnpaidNominal)})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Filter Bar */}
             <FilterBar
@@ -522,6 +621,8 @@ export function App() {
               }}
               onInspectItemPrice={(name) => setInspectedItemName(name)}
               onDeleteExpense={(id) => deleteMutation.mutate(id)}
+              onViewExpense={(item) => setViewingExpense(item)}
+              canDelete={canDelete}
             />
           </>
         )}
@@ -533,7 +634,7 @@ export function App() {
           />
         )}
 
-        {activeTab === "config" && (
+        {activeTab === "config" && canManageConfig && (
           <ConfigTab
             config={configData || null}
             onRefreshConfig={() => {
@@ -559,6 +660,23 @@ export function App() {
         isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}
         itemSuggestions={suggestionsData?.items || []}
         supplierSuggestions={suggestionsData?.suppliers || []}
+      />
+
+      {/* Expense Detail Modal with Telegram Cross-Check */}
+      <ExpenseDetailModal
+        isOpen={!!viewingExpense}
+        onClose={() => setViewingExpense(null)}
+        expense={viewingExpense}
+        onEditExpense={(expense) => {
+          setViewingExpense(null);
+          setRepeatingExpense(null);
+          setEditingExpense(expense);
+          setIsFormOpen(true);
+        }}
+        onInspectItemPrice={(name) => {
+          setViewingExpense(null);
+          setInspectedItemName(name);
+        }}
       />
 
       {/* Price History & Supplier Comparison Modal */}

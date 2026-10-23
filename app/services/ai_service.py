@@ -32,9 +32,17 @@ Instruksi Tambahan:
 - Status Pembayaran asumsikan "Lunas" kecuali disebut sebaliknya.
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
+
+Aturan Biaya & Diskon (Khususnya Marketplace seperti Shopee/Tokopedia/TikTok):
+- "ongkir": Ongkos kirim BERSIH yang benar-benar ditagihkan/dibayar (ongkir asli dikurangi voucher diskon gratis ongkir). Jika gratis ongkir penuh, isi 0.
+- "diskon": HANYA diskon produk / voucher belanja toko. JANGAN memasukkan diskon gratis ongkir ke kolom "diskon" barang!
+- "tax": Pajak resmi (PPN/PB1). Jika tidak ada isi 0.
+- "biaya_lainnya": Biaya layanan aplikasi/platform, biaya penanganan, biaya admin, proteksi/asuransi pengiriman. Dipisah dari pajak!
+- Jika satu nota/keranjang berisi beberapa barang (multi-item), masukkan nilai "ongkir" dan "biaya_lainnya" hanya pada item pertama (atau item utama), sedangkan item lainnya diisi 0 agar tidak terhitung ganda (double count).
+- Rumus per baris: total_harga = (qty * harga_satuan) + ongkir + tax + biaya_lainnya - diskon.
 {extra}
 WAJIB HANYA KELUARKAN JSON VALID. Format Wajib:
-{{ "items": [ {{ "tanggal": "YYYY-MM-DD", "barang": "Nama", "qty": 1, "kategori": "Bahan Kue", "harga_satuan": 0, "tax": 0, "diskon": 0, "total_harga": 0, "toko_supplier": "Toko", "metode_bayar": "Tunai", "status_pembayaran": "Lunas", "jatuh_tempo": "-", "keterangan": "-", "no_invoice": "-", "is_reimbursement": false }} ] }}"""
+{{ "items": [ {{ "tanggal": "YYYY-MM-DD", "barang": "Nama", "qty": 1, "kategori": "Bahan Kue", "harga_satuan": 0, "ongkir": 0, "tax": 0, "biaya_lainnya": 0, "diskon": 0, "total_harga": 0, "toko_supplier": "Toko", "metode_bayar": "Tunai", "status_pembayaran": "Lunas", "jatuh_tempo": "-", "keterangan": "-", "no_invoice": "-", "is_reimbursement": false }} ] }}"""
 
 
 # ──────────────────────────────────────────────

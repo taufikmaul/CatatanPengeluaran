@@ -59,9 +59,10 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
         ).strip()
         text = (message.get("text") or "").strip()
         msg_id = message["message_id"]
+        chat_username = message.get("chat", {}).get("username")
 
         # Build msg link
-        msg_link = tg.build_msg_link(chat_id, chat_type, thread_id, msg_id)
+        msg_link = tg.build_msg_link(chat_id, chat_type, thread_id, msg_id, chat_username=chat_username)
 
         # ── Autentikasi ──
         is_authorized = False

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.models.expense import Expense
-from app.api.deps import require_auth
+from app.api.deps import require_admin_role
 from app.api.schemas import SystemConfigUpdate
 from app.services.ai_service import call_ai_text, get_system_prompt
 from app.services.sheets_service import (
@@ -21,7 +21,7 @@ from app.services.sheets_service import (
     get_service_account_email,
 )
 
-router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(require_admin_role)])
 
 ENV_MAP = {
     "telegram_token": "TELEGRAM_TOKEN",
@@ -35,6 +35,7 @@ ENV_MAP = {
     "sumopod_url": "SUMOPOD_URL",
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
+    "admin_input_password": "ADMIN_INPUT_PASSWORD",
     "webhook_url": "WEBHOOK_URL",
     "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
 }
@@ -120,6 +121,7 @@ async def get_system_config(
         "report_chat_id": settings.report_chat_id or "",
         "report_thread_id": settings.report_thread_id,
         "bot_password": settings.bot_password,
+        "admin_input_password": settings.admin_input_password,
         "webhook_url": settings.webhook_url or "",
         # AI
         "ai_provider": "Sumopod AI",

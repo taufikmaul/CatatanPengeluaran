@@ -50,9 +50,11 @@ async def save_expenses(
             qty=Decimal(str(item.get("qty") or 1)),
             category=item.get("kategori") or "Operasional",
             unit_price=Decimal(str(item.get("harga_satuan") or 0)),
-            tax=Decimal(str(item.get("tax") or 0)),
-            discount=Decimal(str(item.get("diskon") or 0)),
-            total_price=Decimal(str(item.get("total_harga") or 0)),
+            shipping_fee=Decimal(str(item.get("ongkir") or item.get("shipping_fee") or 0)),
+            tax=Decimal(str(item.get("tax") or item.get("pajak") or 0)),
+            other_fee=Decimal(str(item.get("biaya_lainnya") or item.get("other_fee") or 0)),
+            discount=Decimal(str(item.get("diskon") or item.get("discount") or 0)),
+            total_price=Decimal(str(item.get("total_harga") or item.get("total_price") or 0)),
             pay_method=item.get("metode_bayar") or "Tunai",
             pay_status=item.get("status_pembayaran") or "Lunas",
             due_date=item.get("jatuh_tempo") or "-",
@@ -373,7 +375,7 @@ async def update_expense(
     for field, val in updates.items():
         if hasattr(expense, field):
             # Khusus konversi jika perlu
-            if field in ("qty", "unit_price", "tax", "discount", "total_price") and val is not None:
+            if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price") and val is not None:
                 val = Decimal(str(val))
             elif field == "expense_date" and isinstance(val, str):
                 try:
@@ -790,9 +792,11 @@ async def batch_insert_expenses(
             qty=Decimal(str(item.get("qty") or 1)),
             category=item.get("category") or "Operasional",
             unit_price=Decimal(str(item.get("unit_price") or 0)),
-            tax=Decimal(str(item.get("tax") or 0)),
-            discount=Decimal(str(item.get("discount") or 0)),
-            total_price=Decimal(str(item.get("total_price") or 0)),
+            shipping_fee=Decimal(str(item.get("shipping_fee") or item.get("ongkir") or 0)),
+            tax=Decimal(str(item.get("tax") or item.get("pajak") or 0)),
+            other_fee=Decimal(str(item.get("other_fee") or item.get("biaya_lainnya") or 0)),
+            discount=Decimal(str(item.get("discount") or item.get("diskon") or 0)),
+            total_price=Decimal(str(item.get("total_price") or item.get("total_harga") or 0)),
             pay_method=item.get("pay_method") or "Tunai",
             pay_status=item.get("pay_status") or "Lunas",
             due_date=item.get("due_date") or "-",
