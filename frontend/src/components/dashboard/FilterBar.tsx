@@ -2,6 +2,7 @@ import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, RotateCcw, Plus, Filter } from "lucide-react";
+import { ExpenseUser } from "@/types";
 
 interface FilterBarProps {
   month: number;
@@ -10,6 +11,8 @@ interface FilterBarProps {
   search: string;
   status: string;
   isReimbursement?: boolean | null;
+  users?: ExpenseUser[];
+  selectedUserId?: number | null;
   categories: string[];
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
@@ -17,6 +20,7 @@ interface FilterBarProps {
   onSearchChange: (search: string) => void;
   onStatusChange: (status: string) => void;
   onReimbursementChange?: (val: boolean | null) => void;
+  onUserChange?: (userId: number | null) => void;
   onReset: () => void;
   onOpenAddExpense: () => void;
 }
@@ -33,6 +37,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   search,
   status,
   isReimbursement,
+  users = [],
+  selectedUserId,
   categories,
   onMonthChange,
   onYearChange,
@@ -40,6 +46,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onSearchChange,
   onStatusChange,
   onReimbursementChange,
+  onUserChange,
   onReset,
   onOpenAddExpense,
 }) => {
@@ -50,7 +57,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input
-            placeholder="Cari nama barang, supplier, catatan..."
+            placeholder="Cari nama barang, supplier, invoice, penginput..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-9 pr-4 h-10 rounded-xl bg-slate-50/50 border-slate-200 focus:bg-white text-sm"
@@ -121,6 +128,22 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </option>
           ))}
         </select>
+
+        {/* User Filter Dropdown */}
+        {users && users.length > 0 && (
+          <select
+            value={selectedUserId !== null && selectedUserId !== undefined ? String(selectedUserId) : ""}
+            onChange={(e) => onUserChange?.(e.target.value ? Number(e.target.value) : null)}
+            className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[150px] truncate"
+          >
+            <option value="">Semua Penginput</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                👤 {u.name}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* Status Pills */}
         <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg ml-auto md:ml-0">

@@ -325,8 +325,9 @@ async def get_all_expenses_paginated(
     search: str | None = None,
     status: str | None = None,
     is_reimbursement: bool | None = None,
+    user_id: int | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, dan reimbursement."""
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, dan user."""
     query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
 
     if category:
@@ -339,14 +340,17 @@ async def get_all_expenses_paginated(
         query = query.where(Expense.pay_status.ilike(f"%{status}%"))
     if is_reimbursement is not None:
         query = query.where(Expense.is_reimbursement == is_reimbursement)
+    if user_id is not None:
+        query = query.where(Expense.user_id == user_id)
     if search:
         search_term = f"%{search.strip()}%"
-        query = query.where(
+        query = query.outerjoin(User, Expense.user_id == User.id).where(
             or_(
                 Expense.item_name.ilike(search_term),
                 Expense.supplier.ilike(search_term),
                 Expense.notes.ilike(search_term),
                 Expense.invoice_number.ilike(search_term),
+                User.name.ilike(search_term),
             )
         )
 
@@ -356,6 +360,14 @@ async def get_all_expenses_paginated(
     query = query.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     return result.scalars().all(), total
+
+
+async def get_all_expense_users(db: AsyncSession) -> list[User]:
+    """Ambil seluruh user yang terdaftar untuk filter dan atribusi penginput nota."""
+    result = await db.execute(
+        select(User).order_by(func.coalesce(User.name, "").asc(), User.id.asc())
+    )
+    return result.scalars().all()
 
 
 async def get_expense_by_id(db: AsyncSession, expense_id: int) -> Expense | None:
@@ -807,7 +819,7 @@ async def batch_insert_expenses(
             is_reimbursement=bool(item.get("is_reimbursement", False)),
             invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
             msg_link=item.get("msg_link") or "Import CSV",
-            user_id=user_id,
+            user_id=item.get("user_id") or user_id,
             sheets_synced=sheets_synced,
         )
         db.add(expense)

@@ -21,7 +21,16 @@ export interface Expense {
   is_reimbursement?: boolean;
   invoice_number?: string;
   reimbursed_at?: string | null;
+  user_id?: number | null;
+  user_name?: string | null;
   sheets_synced: boolean;
+}
+
+export interface ExpenseUser {
+  id: number;
+  name: string;
+  telegram_id?: number | null;
+  is_auth?: boolean;
 }
 
 export interface ExpenseListResponse {
@@ -274,6 +283,7 @@ export interface ExpenseFormData {
   is_reimbursement?: boolean;
   invoice_number?: string;
   msg_link?: string;
+  user_id?: number | null;
 }
 
 export interface OcrExtractedItem {

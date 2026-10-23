@@ -18,6 +18,7 @@ import {
   LineChart,
   Eye,
   ExternalLink,
+  User as UserIcon,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -109,7 +110,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           <thead className="bg-slate-50/80 text-slate-500 border-b border-slate-100 font-medium">
             <tr>
               <th className="py-3 px-4">Tanggal</th>
-              <th className="py-3 px-4">Toko / Supplier</th>
+              <th className="py-3 px-4">Toko & Penginput</th>
               <th className="py-3 px-4">Barang / Deskripsi</th>
               <th className="py-3 px-4">Kategori</th>
               <th className="py-3 px-4 text-right">Qty</th>
@@ -133,13 +134,31 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <td className="py-3 px-4 whitespace-nowrap font-medium text-slate-700">
                     {formatDateId(e.expense_date)}
                   </td>
-                  <td className="py-3 px-4 whitespace-nowrap text-slate-600 max-w-[150px] lg:max-w-[220px] 2xl:max-w-[320px] truncate">
-                    <div>{e.supplier || "-"}</div>
-                    {e.invoice_number && e.invoice_number !== "-" && (
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Inv: #{e.invoice_number}
-                      </div>
-                    )}
+                  <td className="py-3 px-4 whitespace-nowrap text-slate-600 max-w-[170px] lg:max-w-[240px] 2xl:max-w-[320px]">
+                    <div className="truncate font-medium text-slate-800">{e.supplier || "-"}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-normal mt-0.5 flex-wrap">
+                      {e.invoice_number && e.invoice_number !== "-" && (
+                        <span className="font-mono text-slate-600 bg-slate-100/90 px-1 py-0.5 rounded border border-slate-200/60 shrink-0">
+                          #{e.invoice_number}
+                        </span>
+                      )}
+                      {e.user_name ? (
+                        <span
+                          title={`Diinput oleh ${e.user_name}`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-medium text-[10px] truncate max-w-[130px] shrink-0"
+                        >
+                          <UserIcon className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                          <span className="truncate">{e.user_name}</span>
+                        </span>
+                      ) : (
+                        <span
+                          title="Diinput via Web Dashboard / Import"
+                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] text-slate-400 shrink-0"
+                        >
+                          <span className="opacity-70">Web/Import</span>
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-3 px-4 text-slate-800 font-semibold max-w-[200px] lg:max-w-[320px] 2xl:max-w-[450px] truncate">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -318,11 +337,19 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       </a>
                     )}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {e.supplier || "-"} • {formatDateId(e.expense_date)}
+                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{e.supplier || "-"}</span>
+                    <span>•</span>
+                    <span>{formatDateId(e.expense_date)}</span>
                     {e.invoice_number && e.invoice_number !== "-" && (
-                      <span className="text-[10px] text-slate-400 font-mono ml-1.5">
+                      <span className="text-[10px] text-slate-600 font-mono bg-slate-100/90 px-1 py-0.2 rounded border border-slate-200/60">
                         #{e.invoice_number}
+                      </span>
+                    )}
+                    {e.user_name && (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-medium">
+                        <UserIcon className="w-2.5 h-2.5 text-indigo-500" />
+                        <span>{e.user_name}</span>
                       </span>
                     )}
                   </div>

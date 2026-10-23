@@ -15,10 +15,12 @@ from app.api.schemas import (
     ExpenseUpdate,
     ExpenseResponse,
     ExpenseListResponse,
+    ExpenseUserResponse,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
     get_expense_by_id,
+    get_all_expense_users,
     get_item_price_history,
     update_expense,
     delete_expense,
@@ -30,6 +32,12 @@ router = APIRouter(prefix="/expenses", tags=["expenses"], dependencies=[Depends(
 
 
 def _to_response_dict(e: Expense) -> dict:
+    user_name = None
+    if getattr(e, "user", None) and e.user and e.user.name:
+        user_name = e.user.name
+    elif getattr(e, "user_id", None):
+        user_name = f"User #{e.user_id}"
+
     return {
         "id": e.id,
         "created_at": e.created_at,
@@ -53,6 +61,8 @@ def _to_response_dict(e: Expense) -> dict:
         "is_reimbursement": bool(e.is_reimbursement),
         "invoice_number": e.invoice_number or "-",
         "reimbursed_at": e.reimbursed_at,
+        "user_id": e.user_id,
+        "user_name": user_name,
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -67,6 +77,7 @@ async def list_expenses(
     search: str | None = Query(None),
     status: str | None = Query(None),
     is_reimbursement: bool | None = Query(None),
+    user_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -79,6 +90,7 @@ async def list_expenses(
         search=search,
         status=status,
         is_reimbursement=is_reimbursement,
+        user_id=user_id,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -146,11 +158,17 @@ async def create_expense(
         is_reimbursement=payload.is_reimbursement,
         invoice_number=payload.invoice_number or "-",
         msg_link=payload.msg_link or "Web Dashboard",
+        user_id=payload.user_id,
         sheets_synced=False,
     )
     db.add(expense)
     await db.commit()
     await db.refresh(expense)
+    if expense.user_id:
+        try:
+            await db.refresh(expense, ["user"])
+        except Exception:
+            pass
 
     return ExpenseResponse(**_to_response_dict(expense))
 
@@ -201,6 +219,7 @@ async def create_expense_batch(
             "is_reimbursement": it.is_reimbursement,
             "invoice_number": it.invoice_number or "-",
             "msg_link": it.msg_link or "Web Dashboard",
+            "user_id": it.user_id,
         })
 
     saved = await batch_insert_expenses(
@@ -211,6 +230,11 @@ async def create_expense_batch(
     await db.commit()
     for e in saved:
         await db.refresh(e)
+        if e.user_id:
+            try:
+                await db.refresh(e, ["user"])
+            except Exception:
+                pass
 
     return [ExpenseResponse(**_to_response_dict(e)) for e in saved]
 
@@ -244,6 +268,23 @@ async def scan_expense_ocr(
         "ok": True,
         "items": extracted.get("items", []),
     }
+
+
+@router.get("/users/list", response_model=list[ExpenseUserResponse])
+async def list_expense_users(
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil daftar user terdaftar untuk pilihan filter atau penginput nota."""
+    users = await get_all_expense_users(db)
+    return [
+        ExpenseUserResponse(
+            id=u.id,
+            name=u.name or f"User #{u.telegram_id}",
+            telegram_id=u.telegram_id,
+            is_auth=bool(u.is_auth),
+        )
+        for u in users
+    ]
 
 
 @router.get("/price-history")
@@ -289,6 +330,11 @@ async def update_expense_endpoint(
 
     await db.commit()
     await db.refresh(expense)
+    if expense.user_id:
+        try:
+            await db.refresh(expense, ["user"])
+        except Exception:
+            pass
     return ExpenseResponse(**_to_response_dict(expense))
 
 

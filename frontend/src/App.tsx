@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createExpenseBatch } from "@/lib/api";
-import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, SuggestionsResponse } from "@/types";
+import { api, createExpenseBatch, getExpenseUsers } from "@/lib/api";
+import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
 import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
@@ -46,6 +46,7 @@ export function App() {
   const [search, setSearch] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [isReimbursement, setIsReimbursement] = useState<boolean | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [page, setPage] = useState<number>(1);
 
   // Modal & Drawer states
@@ -111,7 +112,7 @@ export function App() {
     isLoading: isExpensesLoading,
     refetch: refetchExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, month, year, category, search, status, isReimbursement],
+    queryKey: ["expenses", page, month, year, category, search, status, isReimbursement, selectedUserId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -123,10 +124,18 @@ export function App() {
       if (search) params.append("search", search);
       if (status) params.append("status", status);
       if (isReimbursement !== null) params.append("is_reimbursement", String(isReimbursement));
+      if (selectedUserId !== null) params.append("user_id", String(selectedUserId));
 
       const res = await api.get(`/expenses?${params.toString()}`);
       return res.data;
     },
+    enabled: !!authData?.authenticated,
+  });
+
+  // 3b. Expense Users Query
+  const { data: usersData = [] } = useQuery<ExpenseUser[]>({
+    queryKey: ["expense-users"],
+    queryFn: async () => getExpenseUsers(),
     enabled: !!authData?.authenticated,
   });
 
@@ -569,6 +578,8 @@ export function App() {
               search={search}
               status={status}
               isReimbursement={isReimbursement}
+              users={usersData}
+              selectedUserId={selectedUserId}
               categories={categories}
               onMonthChange={(m) => {
                 setMonth(m);
@@ -594,11 +605,16 @@ export function App() {
                 setIsReimbursement(val);
                 setPage(1);
               }}
+              onUserChange={(uid) => {
+                setSelectedUserId(uid);
+                setPage(1);
+              }}
               onReset={() => {
                 setCategory("");
                 setSearch("");
                 setStatus("");
                 setIsReimbursement(null);
+                setSelectedUserId(null);
                 setPage(1);
               }}
               onOpenAddExpense={() => {

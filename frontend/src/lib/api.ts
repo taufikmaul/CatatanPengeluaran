@@ -44,3 +44,8 @@ export async function getAiAnalysis(month?: number, year?: number, forceRefresh 
   const res = await api.get(`/reports/ai-analysis?${params.toString()}`);
   return res.data;
 }
+
+export async function getExpenseUsers() {
+  const res = await api.get("/expenses/users/list");
+  return res.data;
+}

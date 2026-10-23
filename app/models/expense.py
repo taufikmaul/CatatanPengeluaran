@@ -8,8 +8,12 @@ from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Integer,
     Numeric, String, Text, text
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.connection import Base
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Expense(Base):
@@ -46,7 +50,8 @@ class Expense(Base):
     reimbursed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
     
     # Relasi user
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="selectin")
     
     # Untuk Google Sheets sync
     sheets_synced: Mapped[bool] = mapped_column(Boolean, default=False)

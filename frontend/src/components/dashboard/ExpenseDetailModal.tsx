@@ -29,6 +29,7 @@ import {
   AlertCircle,
   HelpCircle,
   Laptop,
+  User as UserIcon,
 } from "lucide-react";
 
 interface ExpenseDetailModalProps {
@@ -127,6 +128,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-sky-700 mt-0.5">
+                      {expense.user_name ? `Nota ini dikirim oleh ${expense.user_name}. ` : ""}
                       Klik tombol di bawah untuk cross check langsung dengan pesan & foto nota asli.
                     </p>
                   </div>
@@ -324,6 +326,37 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 <span className="font-semibold text-slate-800 text-xs">
                   {expense.pay_method || "Tunai"}
                 </span>
+              </div>
+            </div>
+
+            {/* Penginput Invoice / Nota */}
+            <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5 sm:col-span-2">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                <UserIcon className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400 text-[11px] block font-medium">Diinput Oleh</span>
+                  {expense.user_name ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      User Terdaftar
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                      Web Dashboard / Import
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="font-bold text-slate-900 text-sm">
+                    {expense.user_name || "Tanpa Atribusi User"}
+                  </span>
+                  {expense.user_id && (
+                    <span className="text-[11px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                      User #{expense.user_id}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 

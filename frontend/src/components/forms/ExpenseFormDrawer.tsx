@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { Expense, ExpenseFormData, ItemSuggestion, OcrExtractedItem } from "@/types";
+import { Expense, ExpenseFormData, ExpenseUser, ItemSuggestion, OcrExtractedItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
-import { scanExpenseOcr } from "@/lib/api";
+import { scanExpenseOcr, getExpenseUsers } from "@/lib/api";
 import {
   Sparkles,
   CalendarClock,
@@ -82,8 +82,19 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       invoice_number: "-",
       is_reimbursement: false,
       msg_link: "Web Dashboard",
+      user_id: null,
     },
   });
+
+  const [usersList, setUsersList] = useState<ExpenseUser[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      getExpenseUsers().then((res) => {
+        if (Array.isArray(res)) setUsersList(res);
+      }).catch(() => {});
+    }
+  }, [isOpen]);
 
   const [activeTab, setActiveTab] = useState<"form" | "ocr">("form");
   const [ocrFile, setOcrFile] = useState<File | null>(null);
@@ -161,6 +172,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         invoice_number: initialData.invoice_number || "-",
         is_reimbursement: Boolean(initialData.is_reimbursement),
         msg_link: initialData.msg_link || "Web Dashboard",
+        user_id: initialData.user_id ?? null,
       });
     } else if (repeatData) {
       reset({
@@ -183,6 +195,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         invoice_number: "-",
         is_reimbursement: Boolean(repeatData.is_reimbursement),
         msg_link: "Web Dashboard",
+        user_id: repeatData.user_id ?? null,
       });
     } else {
       reset({
@@ -205,6 +218,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         invoice_number: "-",
         is_reimbursement: false,
         msg_link: "Web Dashboard",
+        user_id: null,
       });
     }
   }, [initialData, repeatData, reset, categories, isOpen]);
@@ -340,6 +354,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         invoice_number: (it.no_invoice && it.no_invoice !== "-") ? it.no_invoice : currentInvoice,
         is_reimbursement: it.is_reimbursement !== undefined ? Boolean(it.is_reimbursement) : currentIsReimb,
         msg_link: "Web Dashboard",
+        user_id: watch("user_id") || null,
       };
     });
 
@@ -720,6 +735,29 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   </div>
                 </label>
               </div>
+            </div>
+
+            {/* Penginput Invoice (User) */}
+            <div>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">
+                Penginput Invoice (User)
+              </label>
+              <select
+                {...register("user_id", {
+                  setValueAs: (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+                })}
+                className="w-full h-10 px-3 text-xs rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Tanpa Atribusi / Otomatis (Web Dashboard)</option>
+                {usersList.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} {u.telegram_id ? `(@${u.telegram_id})` : ""}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] text-slate-400 mt-0.5 block">
+                Pilih user pemilik nota atau yang menginputkan transaksi ini.
+              </span>
             </div>
 
             {/* Qty, Satuan, & Harga Satuan */}

@@ -27,6 +27,7 @@ class ExpenseBase(BaseModel):
     is_reimbursement: bool = False
     invoice_number: str = "-"
     msg_link: str = "Web Dashboard"
+    user_id: int | None = None
 
 
 class ExpenseCreate(ExpenseBase):
@@ -58,6 +59,7 @@ class ExpenseUpdate(BaseModel):
     invoice_number: str | None = None
     reimbursed_at: datetime | None = None
     msg_link: str | None = None
+    user_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -83,10 +85,19 @@ class ExpenseResponse(BaseModel):
     is_reimbursement: bool = False
     invoice_number: str = "-"
     reimbursed_at: datetime | None = None
+    user_id: int | None = None
+    user_name: str | None = None
     sheets_synced: bool
 
     class Config:
         from_attributes = True
+
+
+class ExpenseUserResponse(BaseModel):
+    id: int
+    name: str
+    telegram_id: int | None = None
+    is_auth: bool = False
 
 
 class ExpenseListResponse(BaseModel):
