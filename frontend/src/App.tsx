@@ -18,6 +18,7 @@ import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
 import { LoginModal } from "@/components/auth/LoginModal";
+import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/dashboard-01/dashboard-sidebar";
 import { DashboardHeader } from "@/components/dashboard-01/dashboard-header";
@@ -103,10 +104,12 @@ export function App() {
   }, [authData]);
 
   // Perizinan & Peran Pengguna (Admin Input vs Owner/Admin Utama)
-  const userRole = authData?.role || (authData?.authenticated ? "admin" : null);
-  const canDelete = authData?.permissions?.can_delete ?? (userRole === "admin");
-  const canViewCharts = authData?.permissions?.can_view_charts ?? (userRole === "admin");
-  const canManageConfig = authData?.permissions?.can_manage_config ?? (userRole === "admin");
+  // Default adalah Owner (admin) kecuali jika akun secara spesifik memiliki role 'admin_input'
+  const isExplicitAdminInput = authData?.role === "admin_input";
+  const userRole = isExplicitAdminInput ? "admin_input" : (authData?.role || "admin");
+  const canDelete = authData?.permissions?.can_delete ?? (!isExplicitAdminInput);
+  const canViewCharts = authData?.permissions?.can_view_charts ?? (!isExplicitAdminInput);
+  const canManageConfig = authData?.permissions?.can_manage_config ?? (!isExplicitAdminInput);
 
   // Jika admin_input mencoba membuka tab konfigurasi sistem, kembalikan ke overview
   useEffect(() => {
@@ -407,83 +410,236 @@ export function App() {
                 {/* Tampilan Header & Statistik Sesuai Role Pengguna */}
                 {canViewCharts ? (
                   <>
-                    {/* Stat Cards Lengkap untuk Owner */}
-                    <StatCards
-                      totalLunas={reportData?.total_lunas || 0}
-                      totalPengeluaran={reportData?.total_pengeluaran || 0}
-                      expenseCount={reportData?.expense_count || 0}
-                      unpaidCount={reportData?.list_hutang?.length || 0}
-                      unpaidTotal={totalUnpaidNominal}
-                      categoryCount={Object.keys(reportData?.per_kategori || {}).length}
-                      monthName={reportData?.month_name || "Bulan Ini"}
-                      year={year}
-                      prevMonthName={reportData?.prev_month_name}
-                      prevTotalLunas={reportData?.prev_total_lunas}
-                      prevTotalPengeluaran={reportData?.prev_total_pengeluaran}
-                      momLunasChangePct={reportData?.mom_lunas_change_pct}
-                      momTotalChangePct={reportData?.mom_total_change_pct}
-                      monthlyBudgetLimit={reportData?.monthly_budget_limit}
-                      budgetUsedPct={reportData?.budget_used_pct}
-                      categoryBudgets={reportData?.category_budgets}
-                      perKategori={reportData?.per_kategori}
-                      reimbursePendingCount={reportData?.reimburse_pending_count || 0}
-                      reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
-                      onFilterUnpaid={() => setStatus("Belum Lunas")}
-                      onFilterReimburse={() => {
-                        setIsReimbursement(true);
-                        setPage(1);
-                      }}
-                      onOpenBudgetSettings={() => setActiveTab("config")}
-                    />
-
-                    {/* AI Financial Analysis & Strategic Advisor Card */}
-                    <AiAnalysisCard
-                      month={month}
-                      year={year}
-                      monthName={reportData?.month_name || "Bulan Ini"}
-                    />
-
-                    {/* Charts & Analytics Row 1: Category & Payment Methods */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                      <div className="lg:col-span-6">
-                        <CategoryDonutChart
-                          categoryData={reportData?.per_kategori || {}}
-                          totalAmount={reportData?.total_lunas || 0}
-                        />
-                      </div>
-                      <div className="lg:col-span-6">
-                        <PaymentMethodChart
-                          paymentData={reportData?.per_metode_bayar || {}}
-                          totalAmount={reportData?.total_pengeluaran || 0}
-                        />
-                      </div>
+                    {/* 1. Tampilan Khusus Mobile Owner (Simple, Ergonomis & Cepat) */}
+                    <div className="block md:hidden">
+                      <OwnerMobileView
+                        reportData={reportData}
+                        expenses={expensesData?.data || []}
+                        isExpensesLoading={isExpensesLoading}
+                        page={page}
+                        totalPages={expensesData?.total_pages || 1}
+                        totalCount={expensesData?.total || 0}
+                        onPageChange={setPage}
+                        onToggleStatus={handleToggleStatus}
+                        onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
+                        onEditExpense={(item) => {
+                          setRepeatingExpense(null);
+                          setEditingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onRepeatExpense={(item) => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onInspectItemPrice={(name) => setInspectedItemName(name)}
+                        onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                        onViewExpense={(item) => setViewingExpense(item)}
+                        canDelete={canDelete}
+                        month={month}
+                        year={year}
+                        category={category}
+                        search={search}
+                        status={status}
+                        isReimbursement={isReimbursement}
+                        users={usersData}
+                        selectedUserId={selectedUserId}
+                        categories={categories}
+                        onCategoryChange={(c) => {
+                          setCategory(c);
+                          setPage(1);
+                        }}
+                        onSearchChange={(s) => {
+                          setSearch(s);
+                          setPage(1);
+                        }}
+                        onStatusChange={(st) => {
+                          setStatus(st);
+                          setPage(1);
+                        }}
+                        onReimbursementChange={(val) => {
+                          setIsReimbursement(val);
+                          setPage(1);
+                        }}
+                        onUserChange={(uid) => {
+                          setSelectedUserId(uid);
+                          setPage(1);
+                        }}
+                        onResetFilters={() => {
+                          setCategory("");
+                          setSearch("");
+                          setStatus("");
+                          setIsReimbursement(null);
+                          setSelectedUserId(null);
+                          setPage(1);
+                        }}
+                        onOpenAddExpense={() => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(null);
+                          setIsFormOpen(true);
+                        }}
+                      />
                     </div>
 
-                    {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                      <div className="lg:col-span-7">
-                        <DailyTrendChart data={reportData?.daily_chart || []} />
-                      </div>
-                      <div className="lg:col-span-5">
-                        <UnpaidOrdersCard
-                          unpaidList={reportData?.list_hutang || []}
-                          onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
-                          onViewAll={() => setStatus("Belum Lunas")}
-                        />
-                      </div>
-                    </div>
+                    {/* 2. Tampilan Desktop (md: ke atas) Tetap Lengkap & Kaya Data */}
+                    <div className="hidden md:block space-y-6">
+                      {/* Stat Cards Lengkap untuk Owner */}
+                      <StatCards
+                        totalLunas={reportData?.total_lunas || 0}
+                        totalPengeluaran={reportData?.total_pengeluaran || 0}
+                        expenseCount={reportData?.expense_count || 0}
+                        unpaidCount={reportData?.list_hutang?.length || 0}
+                        unpaidTotal={totalUnpaidNominal}
+                        categoryCount={Object.keys(reportData?.per_kategori || {}).length}
+                        monthName={reportData?.month_name || "Bulan Ini"}
+                        year={year}
+                        prevMonthName={reportData?.prev_month_name}
+                        prevTotalLunas={reportData?.prev_total_lunas}
+                        prevTotalPengeluaran={reportData?.prev_total_pengeluaran}
+                        momLunasChangePct={reportData?.mom_lunas_change_pct}
+                        momTotalChangePct={reportData?.mom_total_change_pct}
+                        monthlyBudgetLimit={reportData?.monthly_budget_limit}
+                        budgetUsedPct={reportData?.budget_used_pct}
+                        categoryBudgets={reportData?.category_budgets}
+                        perKategori={reportData?.per_kategori}
+                        reimbursePendingCount={reportData?.reimburse_pending_count || 0}
+                        reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
+                        onFilterUnpaid={() => setStatus("Belum Lunas")}
+                        onFilterReimburse={() => {
+                          setIsReimbursement(true);
+                          setPage(1);
+                        }}
+                        onOpenBudgetSettings={() => setActiveTab("config")}
+                      />
 
-                    {/* Leaderboard & Top Stats Section */}
-                    <LeaderboardCards
-                      topFrequentItems={reportData?.top_frequent_items || []}
-                      topExpensiveItems={reportData?.top_expensive_items || []}
-                      topUnitPriceItems={reportData?.top_unit_price_items || []}
-                      topPriceSpikes={reportData?.top_price_spikes || []}
-                      topSuppliers={reportData?.top_suppliers || []}
-                      summaryMetrics={reportData?.summary_metrics}
-                      monthName={reportData?.month_name || "Bulan Ini"}
-                      year={year}
-                    />
+                      {/* AI Financial Analysis & Strategic Advisor Card */}
+                      <AiAnalysisCard
+                        month={month}
+                        year={year}
+                        monthName={reportData?.month_name || "Bulan Ini"}
+                      />
+
+                      {/* Charts & Analytics Row 1: Category & Payment Methods */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                        <div className="lg:col-span-6">
+                          <CategoryDonutChart
+                            categoryData={reportData?.per_kategori || {}}
+                            totalAmount={reportData?.total_lunas || 0}
+                          />
+                        </div>
+                        <div className="lg:col-span-6">
+                          <PaymentMethodChart
+                            paymentData={reportData?.per_metode_bayar || {}}
+                            totalAmount={reportData?.total_pengeluaran || 0}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                        <div className="lg:col-span-7">
+                          <DailyTrendChart data={reportData?.daily_chart || []} />
+                        </div>
+                        <div className="lg:col-span-5">
+                          <UnpaidOrdersCard
+                            unpaidList={reportData?.list_hutang || []}
+                            onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
+                            onViewAll={() => setStatus("Belum Lunas")}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Leaderboard & Top Stats Section */}
+                      <LeaderboardCards
+                        topFrequentItems={reportData?.top_frequent_items || []}
+                        topExpensiveItems={reportData?.top_expensive_items || []}
+                        topUnitPriceItems={reportData?.top_unit_price_items || []}
+                        topPriceSpikes={reportData?.top_price_spikes || []}
+                        topSuppliers={reportData?.top_suppliers || []}
+                        summaryMetrics={reportData?.summary_metrics}
+                        monthName={reportData?.month_name || "Bulan Ini"}
+                        year={year}
+                      />
+
+                      {/* Desktop Filter Bar */}
+                      <FilterBar
+                        month={month}
+                        year={year}
+                        selectedCategory={category}
+                        search={search}
+                        status={status}
+                        isReimbursement={isReimbursement}
+                        users={usersData}
+                        selectedUserId={selectedUserId}
+                        categories={categories}
+                        onMonthChange={(m) => {
+                          setMonth(m);
+                          setPage(1);
+                        }}
+                        onYearChange={(y) => {
+                          setYear(y);
+                          setPage(1);
+                        }}
+                        onCategoryChange={(c) => {
+                          setCategory(c);
+                          setPage(1);
+                        }}
+                        onSearchChange={(s) => {
+                          setSearch(s);
+                          setPage(1);
+                        }}
+                        onStatusChange={(st) => {
+                          setStatus(st);
+                          setPage(1);
+                        }}
+                        onReimbursementChange={(val) => {
+                          setIsReimbursement(val);
+                          setPage(1);
+                        }}
+                        onUserChange={(uid) => {
+                          setSelectedUserId(uid);
+                          setPage(1);
+                        }}
+                        onReset={() => {
+                          setCategory("");
+                          setSearch("");
+                          setStatus("");
+                          setIsReimbursement(null);
+                          setSelectedUserId(null);
+                          setPage(1);
+                        }}
+                        onOpenAddExpense={() => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(null);
+                          setIsFormOpen(true);
+                        }}
+                      />
+
+                      {/* Desktop Expense Data Table */}
+                      <ExpenseTable
+                        expenses={expensesData?.data || []}
+                        isLoading={isExpensesLoading}
+                        page={page}
+                        totalPages={expensesData?.total_pages || 1}
+                        totalCount={expensesData?.total || 0}
+                        onPageChange={setPage}
+                        onToggleStatus={handleToggleStatus}
+                        onEditExpense={(item) => {
+                          setRepeatingExpense(null);
+                          setEditingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onRepeatExpense={(item) => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onInspectItemPrice={(name) => setInspectedItemName(name)}
+                        onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                        onViewExpense={(item) => setViewingExpense(item)}
+                        canDelete={canDelete}
+                      />
+                    </div>
                   </>
                 ) : (
                   /* Tampilan Ringkas & Cepat Khusus Admin Input */
@@ -523,113 +679,113 @@ export function App() {
                     </div>
 
                     {/* Ringkasan Angka Utama */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
-                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                          Total Transaksi ({reportData?.month_name || "Bulan Ini"})
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+                          Total Transaksi
                         </div>
-                        <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+                        <div className="text-sm sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
                           {reportData?.expense_count || 0}
-                          <span className="text-xs font-normal text-slate-400 ml-1.5">transaksi</span>
+                          <span className="hidden sm:inline text-xs font-normal text-slate-400 ml-1.5">item</span>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
-                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Pengeluaran Tercatat</div>
-                        <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Total Belanja</div>
+                        <div className="text-xs sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums truncate">
                           {formatRupiah(reportData?.total_pengeluaran || 0)}
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
-                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400">Tagihan Belum Lunas</div>
-                        <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 tabular-nums">
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Belum Lunas</div>
+                        <div className="text-xs sm:text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 tabular-nums truncate">
                           {reportData?.list_hutang?.length || 0}
-                          <span className="text-xs font-normal text-slate-400 ml-1.5">
+                          <span className="hidden sm:inline text-xs font-normal text-slate-400 ml-1.5">
                             ({formatRupiah(totalUnpaidNominal)})
                           </span>
                         </div>
                       </div>
                     </div>
+
+                    {/* Admin Input Filter Bar */}
+                    <FilterBar
+                      month={month}
+                      year={year}
+                      selectedCategory={category}
+                      search={search}
+                      status={status}
+                      isReimbursement={isReimbursement}
+                      users={usersData}
+                      selectedUserId={selectedUserId}
+                      categories={categories}
+                      onMonthChange={(m) => {
+                        setMonth(m);
+                        setPage(1);
+                      }}
+                      onYearChange={(y) => {
+                        setYear(y);
+                        setPage(1);
+                      }}
+                      onCategoryChange={(c) => {
+                        setCategory(c);
+                        setPage(1);
+                      }}
+                      onSearchChange={(s) => {
+                        setSearch(s);
+                        setPage(1);
+                      }}
+                      onStatusChange={(st) => {
+                        setStatus(st);
+                        setPage(1);
+                      }}
+                      onReimbursementChange={(val) => {
+                        setIsReimbursement(val);
+                        setPage(1);
+                      }}
+                      onUserChange={(uid) => {
+                        setSelectedUserId(uid);
+                        setPage(1);
+                      }}
+                      onReset={() => {
+                        setCategory("");
+                        setSearch("");
+                        setStatus("");
+                        setIsReimbursement(null);
+                        setSelectedUserId(null);
+                        setPage(1);
+                      }}
+                      onOpenAddExpense={() => {
+                        setEditingExpense(null);
+                        setRepeatingExpense(null);
+                        setIsFormOpen(true);
+                      }}
+                    />
+
+                    {/* Admin Input Expense Table */}
+                    <ExpenseTable
+                      expenses={expensesData?.data || []}
+                      isLoading={isExpensesLoading}
+                      page={page}
+                      totalPages={expensesData?.total_pages || 1}
+                      totalCount={expensesData?.total || 0}
+                      onPageChange={setPage}
+                      onToggleStatus={handleToggleStatus}
+                      onEditExpense={(item) => {
+                        setRepeatingExpense(null);
+                        setEditingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onRepeatExpense={(item) => {
+                        setEditingExpense(null);
+                        setRepeatingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onInspectItemPrice={(name) => setInspectedItemName(name)}
+                      onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                      canDelete={canDelete}
+                    />
                   </div>
                 )}
-
-                {/* Filter Bar */}
-                <FilterBar
-                  month={month}
-                  year={year}
-                  selectedCategory={category}
-                  search={search}
-                  status={status}
-                  isReimbursement={isReimbursement}
-                  users={usersData}
-                  selectedUserId={selectedUserId}
-                  categories={categories}
-                  onMonthChange={(m) => {
-                    setMonth(m);
-                    setPage(1);
-                  }}
-                  onYearChange={(y) => {
-                    setYear(y);
-                    setPage(1);
-                  }}
-                  onCategoryChange={(c) => {
-                    setCategory(c);
-                    setPage(1);
-                  }}
-                  onSearchChange={(s) => {
-                    setSearch(s);
-                    setPage(1);
-                  }}
-                  onStatusChange={(st) => {
-                    setStatus(st);
-                    setPage(1);
-                  }}
-                  onReimbursementChange={(val) => {
-                    setIsReimbursement(val);
-                    setPage(1);
-                  }}
-                  onUserChange={(uid) => {
-                    setSelectedUserId(uid);
-                    setPage(1);
-                  }}
-                  onReset={() => {
-                    setCategory("");
-                    setSearch("");
-                    setStatus("");
-                    setIsReimbursement(null);
-                    setSelectedUserId(null);
-                    setPage(1);
-                  }}
-                  onOpenAddExpense={() => {
-                    setEditingExpense(null);
-                    setRepeatingExpense(null);
-                    setIsFormOpen(true);
-                  }}
-                />
-
-                {/* Expense Data Table */}
-                <ExpenseTable
-                  expenses={expensesData?.data || []}
-                  isLoading={isExpensesLoading}
-                  page={page}
-                  totalPages={expensesData?.total_pages || 1}
-                  totalCount={expensesData?.total || 0}
-                  onPageChange={setPage}
-                  onToggleStatus={handleToggleStatus}
-                  onEditExpense={(item) => {
-                    setRepeatingExpense(null);
-                    setEditingExpense(item);
-                    setIsFormOpen(true);
-                  }}
-                  onRepeatExpense={(item) => {
-                    setEditingExpense(null);
-                    setRepeatingExpense(item);
-                    setIsFormOpen(true);
-                  }}
-                  onInspectItemPrice={(name) => setInspectedItemName(name)}
-                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                  onViewExpense={(item) => setViewingExpense(item)}
-                  canDelete={canDelete}
-                />
               </>
             )}
 

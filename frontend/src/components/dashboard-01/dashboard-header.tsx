@@ -96,24 +96,24 @@ export function DashboardHeader({
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-4 md:px-6 transition-all">
       {/* Left: Sidebar Trigger & Page Title */}
-      <div className="flex items-center gap-3">
-        <SidebarTrigger className="h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
-        <Separator orientation="vertical" className="h-5 bg-slate-200 dark:bg-slate-800 hidden sm:block" />
-        <div className="flex items-center gap-2">
-          <h1 className="font-bold text-base md:text-lg text-slate-900 dark:text-slate-100 leading-tight">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <SidebarTrigger className="h-9 w-9 shrink-0 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
+        <Separator orientation="vertical" className="h-5 bg-slate-200 dark:bg-slate-800 hidden sm:block shrink-0" />
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h1 className="font-bold text-sm sm:text-base md:text-lg text-slate-900 dark:text-slate-100 leading-tight truncate">
             {titleMap[activeTab] || "Dashboard"}
           </h1>
           {userRole === "admin_input" ? (
             <Badge
               variant="outline"
-              className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 hidden sm:inline-flex"
+              className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 hidden sm:inline-flex shrink-0"
             >
               Mode Input
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden sm:inline-flex"
+              className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden sm:inline-flex shrink-0"
             >
               {MONTH_NAMES[month - 1]} {year}
             </Badge>
@@ -122,20 +122,23 @@ export function DashboardHeader({
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {/* Quick Month & Year Picker */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
               size="sm"
-              className="h-9 px-3 rounded-xl border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 gap-1.5"
+              className="h-9 px-2 sm:px-3 rounded-xl border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 gap-1 sm:gap-1.5"
             >
-              <Calendar className="w-3.5 h-3.5 text-slate-500" />
-              <span>
+              <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="hidden sm:inline">
                 {MONTH_NAMES[month - 1]} {year}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <span className="sm:hidden text-[11px]">
+                {MONTH_NAMES[month - 1].slice(0, 3)} '{String(year).slice(-2)}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -304,15 +307,14 @@ export function DashboardHeader({
           )}
         </Button>
 
-        {/* Primary Action Button */}
+        {/* Primary Action Button (Desktop/Tablet only, on mobile FAB is used) */}
         <Button
           onClick={onOpenAddExpense}
           size="sm"
-          className="h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs gap-1.5"
+          className="hidden sm:inline-flex h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs gap-1.5"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Catat Pengeluaran</span>
-          <span className="sm:hidden">Catat</span>
+          <span>Catat Pengeluaran</span>
         </Button>
       </div>
     </header>

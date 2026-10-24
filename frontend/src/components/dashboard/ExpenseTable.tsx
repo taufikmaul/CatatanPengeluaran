@@ -63,7 +63,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm space-y-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
         <div className="flex justify-between items-center mb-4">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-5 w-24" />
@@ -77,12 +77,12 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   if (expenses.length === 0) {
     return (
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-12 text-center shadow-sm">
-        <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-12 text-center shadow-sm">
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
           <Inbox className="w-6 h-6" />
         </div>
-        <h3 className="text-base font-semibold text-slate-800 mb-1">Tidak ada transaksi ditemukan</h3>
-        <p className="text-xs text-slate-500 max-w-sm mx-auto">
+        <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Tidak ada transaksi ditemukan</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
           Coba sesuaikan filter bulan, tahun, atau kata kunci pencarian Anda untuk melihat catatan pengeluaran.
         </p>
       </div>
@@ -90,11 +90,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   }
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col">
       {/* Table Header count summary */}
-      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-800">Daftar Transaksi</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Daftar Transaksi</span>
           <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
             {totalCount} item
           </Badge>
@@ -306,48 +306,35 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       </div>
 
       {/* Mobile View: Cards */}
-      <div className="block md:hidden divide-y divide-slate-100">
+      <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
         {expenses.map((e) => {
           const catColor = getCategoryColor(e.category);
           const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
           const tgMeta = parseTelegramLink(e.msg_link);
 
           return (
-            <div key={e.id} className="p-3.5 space-y-2 hover:bg-slate-50 transition-colors">
+            <div key={e.id} className="p-4 space-y-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-semibold text-sm text-slate-900 leading-tight flex items-center gap-1.5 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug flex items-center gap-1.5 flex-wrap">
                     <span>{e.item_name}</span>
                     {e.is_reimbursement && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                        💼 Reimburse
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        💼 Talangan
                       </span>
                     )}
-                    {tgMeta.isUrl && (
-                      <a
-                        href={tgMeta.url!}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 active:scale-95"
-                        title={`Cross check chat Telegram (${tgMeta.badgeLabel})`}
-                      >
-                        <TelegramIcon className="w-2.5 h-2.5 text-[#229ED9]" />
-                        <span>Telegram</span>
-                        <ExternalLink className="w-2 h-2 opacity-60" />
-                      </a>
-                    )}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                    <span>{e.supplier || "-"}</span>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{e.supplier || "-"}</span>
                     <span>•</span>
                     <span>{formatDateId(e.expense_date)}</span>
                     {e.invoice_number && e.invoice_number !== "-" && (
-                      <span className="text-[10px] text-slate-600 font-mono bg-slate-100/90 px-1 py-0.2 rounded border border-slate-200/60">
+                      <span className="text-[10px] text-slate-600 dark:text-slate-300 font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded border border-slate-200/60 dark:border-slate-700">
                         #{e.invoice_number}
                       </span>
                     )}
                     {e.user_name && (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/70 font-medium">
+                      <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-900 font-medium">
                         <UserIcon className="w-2.5 h-2.5 text-indigo-500" />
                         <span>{e.user_name}</span>
                       </span>
@@ -355,86 +342,102 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="font-bold text-sm text-slate-900 tabular-nums">
+                  <div className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 tabular-nums">
                     {formatRupiah(e.total_price)}
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    {e.qty} {e.unit || "Pcs"} x {formatRupiah(e.unit_price)}
+                  <div className="text-[11px] text-slate-400 tabular-nums">
+                    {e.qty} {e.unit || "Pcs"} × {formatRupiah(e.unit_price)}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/80">
                 <span
-                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border ${catColor.bg} ${catColor.border}`}
+                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${catColor.bg} ${catColor.border} dark:bg-slate-800 dark:border-slate-700`}
                 >
                   {e.category || "Operasional"}
                 </span>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
                   <button
+                    type="button"
                     onClick={() => onToggleStatus(e)}
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                    className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all active:scale-95 ${
                       isLunas
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : "bg-rose-50 text-rose-700 border-rose-200"
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                        : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
                     }`}
                   >
-                    {isLunas ? "Lunas" : "Hutang"}
+                    {isLunas ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>Lunas</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0 animate-pulse" />
+                        <span>Hutang</span>
+                      </>
+                    )}
                   </button>
-
-                  {onViewExpense && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onViewExpense(e)}
-                      className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                      title="Lihat Detail Transaksi"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
 
                   {tgMeta.isUrl && (
                     <a
                       href={tgMeta.url!}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-[#229ED9] hover:bg-sky-50 active:scale-95"
+                      className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/50 text-[#229ED9] hover:bg-sky-100 flex items-center justify-center gap-1 active:scale-95"
                       title={`Buka Telegram (${tgMeta.badgeLabel})`}
                     >
-                      <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+                      <TelegramIcon className="w-4 h-4 text-[#229ED9]" />
+                      <ExternalLink className="w-3 h-3 opacity-60" />
                     </a>
+                  )}
+
+                  {onViewExpense && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => onViewExpense(e)}
+                      className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600"
+                      title="Lihat Detail Transaksi"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                   )}
 
                   {onRepeatExpense && (
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="icon"
                       onClick={() => onRepeatExpense(e)}
-                      className="h-7 w-7 text-slate-400 hover:text-emerald-600"
+                      className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-emerald-600"
                       title="Beli Lagi"
                     >
-                      <Repeat className="w-3.5 h-3.5" />
+                      <Repeat className="w-4 h-4" />
                     </Button>
                   )}
+
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="icon"
                     onClick={() => onEditExpense(e)}
-                    className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                    className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600"
+                    title="Edit transaksi"
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    <Edit2 className="w-4 h-4" />
                   </Button>
+
                   {canDelete && (
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="icon"
                       onClick={() => handleDelete(e.id)}
-                      className="h-7 w-7 text-slate-400 hover:text-red-600"
+                      disabled={deletingId === e.id}
+                      className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-600"
                       title="Hapus data"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   )}
                 </div>
