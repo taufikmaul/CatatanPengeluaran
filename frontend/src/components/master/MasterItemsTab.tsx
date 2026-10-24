@@ -25,7 +25,7 @@ import {
 
 interface MasterItemsTabProps {
   categories: string[];
-  onInspectItemPrice?: (itemName: string) => void;
+  onInspectItemPrice?: (itemName: string, itemId?: number) => void;
 }
 
 export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
@@ -555,7 +555,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                         ) : (
                           <button
                             type="button"
-                            onClick={() => onInspectItemPrice?.(item.item_name)}
+                            onClick={() => onInspectItemPrice?.(item.item_name, item.id)}
                             className="hover:text-blue-600 hover:underline inline-flex items-center gap-1.5 text-left"
                             title="Klik untuk lihat riwayat harga & perbandingan toko"
                           >

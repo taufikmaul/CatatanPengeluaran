@@ -14,26 +14,29 @@ import { Award, Store, TrendingDown, History, Package } from "lucide-react";
 
 interface PriceHistoryModalProps {
   itemName: string | null;
+  itemId?: number | null;
   onClose: () => void;
 }
 
 export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
   itemName,
+  itemId,
   onClose,
 }) => {
   const { data, isLoading } = useQuery<ItemPriceHistoryResponse>({
-    queryKey: ["price-history", itemName],
+    queryKey: ["price-history", itemId, itemName],
     queryFn: async () => {
-      const res = await api.get(
-        `/expenses/price-history?item_name=${encodeURIComponent(itemName || "")}`
-      );
+      const params = new URLSearchParams();
+      if (itemId) params.append("item_id", String(itemId));
+      if (itemName) params.append("item_name", itemName);
+      const res = await api.get(`/expenses/price-history?${params.toString()}`);
       return res.data;
     },
-    enabled: !!itemName,
+    enabled: !!(itemName || itemId),
   });
 
   return (
-    <Dialog open={!!itemName} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={!!(itemName || itemId)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-6">
         <DialogHeader className="mb-2">
           <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">

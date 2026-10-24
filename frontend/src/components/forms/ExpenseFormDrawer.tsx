@@ -83,6 +83,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       is_reimbursement: false,
       msg_link: "Web Dashboard",
       user_id: null,
+      master_item_id: null,
     },
   });
 
@@ -173,6 +174,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         is_reimbursement: Boolean(initialData.is_reimbursement),
         msg_link: initialData.msg_link || "Web Dashboard",
         user_id: initialData.user_id ?? null,
+        master_item_id: initialData.master_item_id ?? null,
       });
     } else if (repeatData) {
       reset({
@@ -196,6 +198,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         is_reimbursement: Boolean(repeatData.is_reimbursement),
         msg_link: "Web Dashboard",
         user_id: repeatData.user_id ?? null,
+        master_item_id: repeatData.master_item_id ?? null,
       });
     } else {
       reset({
@@ -219,12 +222,16 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         is_reimbursement: false,
         msg_link: "Web Dashboard",
         user_id: null,
+        master_item_id: null,
       });
     }
   }, [initialData, repeatData, reset, categories, isOpen]);
 
   const handleSelectSuggestion = (s: ItemSuggestion) => {
     setValue("item_name", s.item_name, { shouldValidate: true });
+    if (s.is_master && s.id) {
+      setValue("master_item_id", s.id);
+    }
     if (s.category && categories.includes(s.category)) {
       setValue("category", s.category);
     }

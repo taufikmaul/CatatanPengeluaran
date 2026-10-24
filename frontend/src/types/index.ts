@@ -23,6 +23,7 @@ export interface Expense {
   reimbursed_at?: string | null;
   user_id?: number | null;
   user_name?: string | null;
+  master_item_id?: number | null;
   sheets_synced: boolean;
 }
 
@@ -242,6 +243,7 @@ export interface SupplierPriceComparison {
 export interface ItemPriceHistoryResponse {
   ok: boolean;
   item_name: string;
+  master_item_id?: number | null;
   tx_count: number;
   min_price: number;
   max_price: number;
@@ -260,6 +262,7 @@ export interface ItemPriceHistoryResponse {
     total_price: number;
     category: string;
     notes: string;
+    master_item_id?: number | null;
   }>;
 }
 
@@ -284,6 +287,7 @@ export interface ExpenseFormData {
   invoice_number?: string;
   msg_link?: string;
   user_id?: number | null;
+  master_item_id?: number | null;
 }
 
 export interface OcrExtractedItem {

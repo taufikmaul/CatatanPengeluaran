@@ -31,7 +31,7 @@ interface ExpenseTableProps {
   onToggleStatus: (expense: Expense) => void;
   onEditExpense: (expense: Expense) => void;
   onRepeatExpense?: (expense: Expense) => void;
-  onInspectItemPrice?: (itemName: string) => void;
+  onInspectItemPrice?: (itemName: string, itemId?: number | null) => void;
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
   canDelete?: boolean;
@@ -164,7 +164,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => onInspectItemPrice?.(e.item_name)}
+                        onClick={() => onInspectItemPrice?.(e.item_name, e.master_item_id)}
                         title="Klik untuk lihat riwayat harga & perbandingan toko"
                         className="text-left hover:text-blue-600 hover:underline inline-flex items-center gap-1 max-w-full truncate"
                       >

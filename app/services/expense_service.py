@@ -64,6 +64,7 @@ async def save_expenses(
             invoice_number=str(inv_num),
             msg_link=msg_link,
             user_id=user_id,
+            master_item_id=item.get("master_item_id"),
             sheets_synced=False,
         )
         db.add(expense)
@@ -196,15 +197,46 @@ async def search_last_price(db: AsyncSession, keyword: str) -> Expense | None:
     return result.scalar_one_or_none()
 
 
-async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
+async def get_item_price_history(
+    db: AsyncSession,
+    item_name: str | None = None,
+    master_item_id: int | None = None,
+) -> dict:
     """
     Ambil riwayat pembelian suatu barang beserta statistik harga satuan
     (termurah, rata-rata, tertinggi, terakhir) dan perbandingan harga antar toko/supplier.
+    Mendukung pencarian via ID Item Baku (produk ID) maupun nama barang/alias.
     """
+    from app.models.master_item import MasterItem
+
+    matched_master = None
+    if master_item_id:
+        m_res = await db.execute(select(MasterItem).where(MasterItem.id == master_item_id))
+        matched_master = m_res.scalar_one_or_none()
+
     clean_q = (item_name or "").strip()
-    if not clean_q:
+    if not matched_master and clean_q:
+        # Cari MasterItem berdasarkan nama baku atau alias
+        m_res = await db.execute(
+            select(MasterItem).where(func.lower(MasterItem.item_name) == clean_q.lower())
+        )
+        matched_master = m_res.scalar_one_or_none()
+        if not matched_master:
+            all_m_res = await db.execute(select(MasterItem))
+            all_masters = list(all_m_res.scalars().all())
+            for m in all_masters:
+                aliases = [a.strip().lower() for a in (m.aliases or "").split(",") if a.strip()]
+                if clean_q.lower() in aliases:
+                    matched_master = m
+                    break
+
+    target_master_id = matched_master.id if matched_master else master_item_id
+    display_name = matched_master.item_name if matched_master else clean_q
+
+    if not target_master_id and not clean_q:
         return {
             "item_name": "",
+            "master_item_id": None,
             "tx_count": 0,
             "min_price": 0.0,
             "max_price": 0.0,
@@ -215,14 +247,24 @@ async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
             "history": [],
         }
 
-    # Prioritaskan exact match dulu; jika kosong baru ilike substring
+    # Cari data transaksi: prioritaskan relasi master_item_id dan nama item
+    conditions = []
+    if target_master_id:
+        conditions.append(Expense.master_item_id == target_master_id)
+    if display_name:
+        conditions.append(func.lower(Expense.item_name) == display_name.lower())
+    if clean_q and clean_q.lower() != display_name.lower():
+        conditions.append(func.lower(Expense.item_name) == clean_q.lower())
+
     exact_res = await db.execute(
         select(Expense)
-        .where(func.lower(Expense.item_name) == clean_q.lower())
+        .where(or_(*conditions))
         .order_by(Expense.expense_date.desc(), Expense.id.desc())
     )
     rows = list(exact_res.scalars().all())
-    if not rows:
+
+    # Jika belum ada hasil dan terdapat clean_q, coba substring (ilike)
+    if not rows and clean_q:
         like_res = await db.execute(
             select(Expense)
             .where(Expense.item_name.ilike(f"%{clean_q}%"))
@@ -232,7 +274,8 @@ async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
 
     if not rows:
         return {
-            "item_name": clean_q,
+            "item_name": display_name or clean_q,
+            "master_item_id": target_master_id,
             "tx_count": 0,
             "min_price": 0.0,
             "max_price": 0.0,
@@ -298,12 +341,14 @@ async def get_item_price_history(db: AsyncSession, item_name: str) -> dict:
             "total_price": float(r.total_price or 0),
             "category": r.category or "Operasional",
             "notes": r.notes or "-",
+            "master_item_id": r.master_item_id,
         }
-        for r in rows[:15]
+        for r in rows[:50]
     ]
 
     return {
-        "item_name": rows[0].item_name,
+        "item_name": display_name or rows[0].item_name,
+        "master_item_id": target_master_id,
         "tx_count": len(rows),
         "min_price": min_price,
         "max_price": max_price,
@@ -397,6 +442,14 @@ async def update_expense(
                 except (ValueError, TypeError):
                     continue
             setattr(expense, field, val)
+
+    # Auto-match ke master_item_id jika nama barang berubah tanpa eksplisit master_item_id
+    if "item_name" in updates and "master_item_id" not in updates and expense.item_name:
+        from app.services.master_item_service import list_master_items, find_best_master_match
+        master_items = await list_master_items(db)
+        matched = find_best_master_match(expense.item_name, master_items)
+        if matched:
+            expense.master_item_id = matched.id
 
     # Tandai sheets_synced = False agar perubahan tersinkron ulang jika perlu
     expense.sheets_synced = False
@@ -820,6 +873,7 @@ async def batch_insert_expenses(
             invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=item.get("user_id") or user_id,
+            master_item_id=item.get("master_item_id"),
             sheets_synced=sheets_synced,
         )
         db.add(expense)

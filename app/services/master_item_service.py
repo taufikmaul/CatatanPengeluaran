@@ -151,11 +151,15 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
         return items
 
     for item in items:
-        raw_name = (item.get("barang") or item.get("item_name") or "").strip()
-        if not raw_name:
-            continue
+        matched = None
+        req_mid = item.get("master_item_id")
+        if req_mid:
+            matched = next((m for m in master_items if m.id == req_mid), None)
 
-        matched = find_best_master_match(raw_name, master_items)
+        raw_name = (item.get("barang") or item.get("item_name") or "").strip()
+        if not matched and raw_name:
+            matched = find_best_master_match(raw_name, master_items)
+
         if not matched:
             continue
 
@@ -176,6 +180,7 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
         else:
             chosen_unit = current_unit
 
+        item["master_item_id"] = matched.id
         if "barang" in item:
             item["barang"] = matched.item_name
             item["keterangan"] = new_notes
@@ -348,17 +353,29 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
         if not matched:
             continue
 
+        changed = False
+        if exp.master_item_id != matched.id:
+            exp.master_item_id = matched.id
+            changed = True
+
         if raw_name != matched.item_name:
             exp.notes = append_original_name_to_notes(raw_name, matched.item_name, exp.notes)
             exp.item_name = matched.item_name
-            if exp.category != "Tukar Cash" and matched.category:
-                exp.category = matched.category
             exp.sheets_synced = False
+            changed = True
+
+        if exp.category != "Tukar Cash" and matched.category and exp.category != matched.category:
+            exp.category = matched.category
+            exp.sheets_synced = False
+            changed = True
+
+        if changed:
             updated_items.append({
                 "id": exp.id,
                 "old_name": raw_name,
                 "new_name": matched.item_name,
                 "category": exp.category,
+                "master_item_id": matched.id,
             })
 
     await db.flush()
@@ -445,28 +462,50 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     )
     recent_expenses = result.scalars().all()
 
+    history_by_master_id: dict[int, dict] = {}
     history_by_name: dict[str, dict] = {}
     supplier_counts: dict[str, dict] = {}
 
     for e in recent_expenses:
         name = (e.item_name or "").strip()
+        sup = (e.supplier or "").strip()
+        price = float(e.unit_price or 0)
+        dt_str = str(e.expense_date)
+
+        # 1. Catat histori berdasarkan master_item_id (produk id)
+        if e.master_item_id:
+            mid = e.master_item_id
+            if mid not in history_by_master_id:
+                history_by_master_id[mid] = {
+                    "item_name": name,
+                    "category": e.category or "Bahan Kue",
+                    "last_unit_price": price,
+                    "last_supplier": sup or "-",
+                    "last_date": dt_str,
+                    "tx_count": 1,
+                }
+            else:
+                history_by_master_id[mid]["tx_count"] += 1
+                if history_by_master_id[mid]["last_unit_price"] <= 0 and price > 0:
+                    history_by_master_id[mid]["last_unit_price"] = price
+
+        # 2. Catat histori berdasarkan nama item
         if name and name != "-":
             key = name.lower()
             if key not in history_by_name:
                 history_by_name[key] = {
                     "item_name": name,
                     "category": e.category or "Bahan Kue",
-                    "last_unit_price": float(e.unit_price or 0),
-                    "last_supplier": e.supplier or "-",
-                    "last_date": str(e.expense_date),
+                    "last_unit_price": price,
+                    "last_supplier": sup or "-",
+                    "last_date": dt_str,
                     "tx_count": 1,
                 }
             else:
                 history_by_name[key]["tx_count"] += 1
-                if history_by_name[key]["last_unit_price"] <= 0 and float(e.unit_price or 0) > 0:
-                    history_by_name[key]["last_unit_price"] = float(e.unit_price or 0)
+                if history_by_name[key]["last_unit_price"] <= 0 and price > 0:
+                    history_by_name[key]["last_unit_price"] = price
 
-        sup = (e.supplier or "").strip()
         if sup and sup != "-":
             skey = sup.lower()
             if skey not in supplier_counts:
@@ -476,10 +515,10 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
 
     suggestions_map: dict[str, dict] = {}
 
-    # 1. Masukkan semua MasterItem terlebih dahulu (prioritas utama)
+    # 1. Masukkan semua MasterItem terlebih dahulu (prioritas utama, dicocokkan via ID lalu nama)
     for m in master_items:
         key = m.item_name.strip().lower()
-        hist = history_by_name.get(key)
+        hist = history_by_master_id.get(m.id) or history_by_name.get(key)
         suggestions_map[key] = {
             "id": m.id,
             "item_name": m.item_name,

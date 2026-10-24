@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.master_item import MasterItem
 
 
 class Expense(Base):
@@ -52,6 +53,12 @@ class Expense(Base):
     # Relasi user
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id], lazy="selectin")
+
+    # Relasi master item (katalog item baku)
+    master_item_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("master_items.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    master_item: Mapped["MasterItem | None"] = relationship("MasterItem", foreign_keys=[master_item_id], lazy="selectin")
     
     # Untuk Google Sheets sync
     sheets_synced: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -28,6 +28,7 @@ class ExpenseBase(BaseModel):
     invoice_number: str = "-"
     msg_link: str = "Web Dashboard"
     user_id: int | None = None
+    master_item_id: int | None = None
 
 
 class ExpenseCreate(ExpenseBase):
@@ -60,6 +61,7 @@ class ExpenseUpdate(BaseModel):
     reimbursed_at: datetime | None = None
     msg_link: str | None = None
     user_id: int | None = None
+    master_item_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -87,6 +89,7 @@ class ExpenseResponse(BaseModel):
     reimbursed_at: datetime | None = None
     user_id: int | None = None
     user_name: str | None = None
+    master_item_id: int | None = None
     sheets_synced: bool
 
     class Config:

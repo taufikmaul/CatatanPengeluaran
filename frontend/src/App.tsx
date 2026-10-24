@@ -52,6 +52,12 @@ export function App() {
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   const [repeatingExpense, setRepeatingExpense] = useState<Expense | null>(null);
   const [inspectedItemName, setInspectedItemName] = useState<string | null>(null);
+  const [inspectedItemId, setInspectedItemId] = useState<number | null>(null);
+
+  const handleInspectItemPrice = (name: string, id?: number | null) => {
+    setInspectedItemName(name);
+    setInspectedItemId(id || null);
+  };
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
 
@@ -432,7 +438,7 @@ export function App() {
                           setRepeatingExpense(item);
                           setIsFormOpen(true);
                         }}
-                        onInspectItemPrice={(name) => setInspectedItemName(name)}
+                        onInspectItemPrice={handleInspectItemPrice}
                         onDeleteExpense={(id) => deleteMutation.mutate(id)}
                         onViewExpense={(item) => setViewingExpense(item)}
                         canDelete={canDelete}
@@ -634,7 +640,7 @@ export function App() {
                           setRepeatingExpense(item);
                           setIsFormOpen(true);
                         }}
-                        onInspectItemPrice={(name) => setInspectedItemName(name)}
+                        onInspectItemPrice={handleInspectItemPrice}
                         onDeleteExpense={(id) => deleteMutation.mutate(id)}
                         onViewExpense={(item) => setViewingExpense(item)}
                         canDelete={canDelete}
@@ -779,7 +785,7 @@ export function App() {
                         setRepeatingExpense(item);
                         setIsFormOpen(true);
                       }}
-                      onInspectItemPrice={(name) => setInspectedItemName(name)}
+                      onInspectItemPrice={handleInspectItemPrice}
                       onDeleteExpense={(id) => deleteMutation.mutate(id)}
                       onViewExpense={(item) => setViewingExpense(item)}
                       canDelete={canDelete}
@@ -792,7 +798,7 @@ export function App() {
             {activeTab === "master" && (
               <MasterItemsTab
                 categories={categories}
-                onInspectItemPrice={(name) => setInspectedItemName(name)}
+                onInspectItemPrice={handleInspectItemPrice}
               />
             )}
 
@@ -836,16 +842,20 @@ export function App() {
             setEditingExpense(expense);
             setIsFormOpen(true);
           }}
-          onInspectItemPrice={(name) => {
+          onInspectItemPrice={(name, id) => {
             setViewingExpense(null);
-            setInspectedItemName(name);
+            handleInspectItemPrice(name, id);
           }}
         />
 
         {/* Price History & Supplier Comparison Modal */}
         <PriceHistoryModal
           itemName={inspectedItemName}
-          onClose={() => setInspectedItemName(null)}
+          itemId={inspectedItemId}
+          onClose={() => {
+            setInspectedItemName(null);
+            setInspectedItemId(null);
+          }}
         />
 
         {/* CSV Import Modal */}

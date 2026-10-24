@@ -3,7 +3,7 @@ app/api/master_items.py — REST API untuk Katalog Nama Item Baku (Master Item)
 & Saran Autocomplete Form Pengeluaran.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.api.deps import require_auth
@@ -36,14 +36,20 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
     items = await list_master_items(db)
     suggestions = await get_item_and_supplier_suggestions(db)
 
-    hist_map = {
+    # Indeks histori berdasarkan ID MasterItem (produk ID) dan fallback nama
+    hist_by_id = {
+        s["id"]: s
+        for s in suggestions.get("items", [])
+        if s.get("id") is not None
+    }
+    hist_by_name = {
         s["item_name"].strip().lower(): s
         for s in suggestions.get("items", [])
     }
 
     data = []
     for m in items:
-        h = hist_map.get(m.item_name.strip().lower(), {})
+        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
         data.append(
             MasterItemResponse(
                 id=m.id,
@@ -168,14 +174,36 @@ async def update_master_item(
     if not item:
         raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
 
+    old_name = item.item_name
+    name_changed = False
+    new_name = None
     if payload.item_name is not None and payload.item_name.strip():
-        item.item_name = payload.item_name.strip()
+        new_name = payload.item_name.strip()
+        if new_name != old_name:
+            name_changed = True
+            item.item_name = new_name
+
+    # Simpan nama lama ke aliases agar input dengan nama lama tetap cocok otomatis
+    if name_changed:
+        current_aliases = [a.strip() for a in (item.aliases or "").split(",") if a.strip()]
+        if old_name.lower() not in [a.lower() for a in current_aliases]:
+            current_aliases.append(old_name)
+            item.aliases = ", ".join(current_aliases)
+
+    category_changed = False
     if payload.category is not None and payload.category.strip():
+        if payload.category.strip() != item.category:
+            category_changed = True
         item.category = payload.category.strip()
+
     if payload.default_supplier is not None:
         item.default_supplier = payload.default_supplier.strip() or "-"
     if payload.aliases is not None:
-        item.aliases = payload.aliases.strip()
+        # Jika aliases diupdate eksplisit, pastikan old_name tetap ada jika nama berubah
+        new_aliases = [a.strip() for a in (payload.aliases or "").split(",") if a.strip()]
+        if name_changed and old_name.lower() not in [a.lower() for a in new_aliases]:
+            new_aliases.append(old_name)
+        item.aliases = ", ".join(new_aliases)
     if payload.satuan_beli is not None:
         item.satuan_beli = payload.satuan_beli.strip() or "Pcs"
     if payload.tipe_satuan is not None:
@@ -184,6 +212,28 @@ async def update_master_item(
         item.isi_paket = payload.isi_paket.strip()
     if payload.satuan_ecer is not None:
         item.satuan_ecer = payload.satuan_ecer.strip() or "Pcs"
+
+    # Sinkronisasi order/transaksi yang terhubung ke produk ini
+    from app.models.expense import Expense
+    from sqlalchemy import or_
+
+    exp_query = select(Expense).where(
+        or_(
+            Expense.master_item_id == item.id,
+            func.lower(Expense.item_name) == old_name.lower(),
+        )
+    )
+    exp_res = await db.execute(exp_query)
+    linked_expenses = exp_res.scalars().all()
+
+    for exp in linked_expenses:
+        exp.master_item_id = item.id
+        if name_changed and new_name:
+            exp.item_name = new_name
+            exp.sheets_synced = False
+        if category_changed and exp.category != "Tukar Cash":
+            exp.category = item.category
+            exp.sheets_synced = False
 
     await db.commit()
     await db.refresh(item)
@@ -210,6 +260,15 @@ async def delete_master_item(
     item = res.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
+
+    # Unlink expenses agar transaksi historis tetap ada
+    from app.models.expense import Expense
+    from sqlalchemy import update
+    await db.execute(
+        update(Expense)
+        .where(Expense.master_item_id == item_id)
+        .values(master_item_id=None)
+    )
 
     await db.delete(item)
     await db.commit()

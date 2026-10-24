@@ -56,7 +56,7 @@ export interface OwnerMobileViewProps {
   onMarkPaidById?: (id: number) => void;
   onEditExpense: (expense: Expense) => void;
   onRepeatExpense?: (expense: Expense) => void;
-  onInspectItemPrice?: (itemName: string) => void;
+  onInspectItemPrice?: (itemName: string, itemId?: number | null) => void;
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
   canDelete?: boolean;
@@ -695,7 +695,7 @@ export function OwnerMobileView({
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button
                             type="button"
-                            onClick={() => onInspectItemPrice?.(e.item_name)}
+                            onClick={() => onInspectItemPrice?.(e.item_name, e.master_item_id)}
                             className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left hover:text-blue-600 dark:hover:text-blue-400"
                             title="Klik untuk riwayat harga item ini"
                           >

@@ -63,6 +63,7 @@ def _to_response_dict(e: Expense) -> dict:
         "reimbursed_at": e.reimbursed_at,
         "user_id": e.user_id,
         "user_name": user_name,
+        "master_item_id": getattr(e, "master_item_id", None),
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -120,6 +121,7 @@ async def create_expense(
                 "supplier": payload.supplier or "-",
                 "notes": payload.notes or "-",
                 "unit": payload.unit or "Pcs",
+                "master_item_id": payload.master_item_id,
             }
         ],
     )
@@ -159,6 +161,7 @@ async def create_expense(
         invoice_number=payload.invoice_number or "-",
         msg_link=payload.msg_link or "Web Dashboard",
         user_id=payload.user_id,
+        master_item_id=norm.get("master_item_id") or payload.master_item_id,
         sheets_synced=False,
     )
     db.add(expense)
@@ -220,6 +223,7 @@ async def create_expense_batch(
             "invoice_number": it.invoice_number or "-",
             "msg_link": it.msg_link or "Web Dashboard",
             "user_id": it.user_id,
+            "master_item_id": it.master_item_id,
         })
 
     saved = await batch_insert_expenses(
@@ -289,11 +293,19 @@ async def list_expense_users(
 
 @router.get("/price-history")
 async def get_expense_price_history(
-    item_name: str = Query(..., min_length=1),
+    item_name: str | None = Query(None),
+    item_id: int | None = Query(None),
+    master_item_id: int | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Ambil riwayat harga satuan & perbandingan harga antar toko untuk suatu barang."""
-    data = await get_item_price_history(db, item_name)
+    target_id = item_id or master_item_id
+    if not target_id and not (item_name and item_name.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Harus menyertakan item_name atau item_id/master_item_id.",
+        )
+    data = await get_item_price_history(db, item_name=item_name or "", master_item_id=target_id)
     return {
         "ok": True,
         **data,
