@@ -118,6 +118,7 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
 
         ids_raw = data.split(":", 1)[1]
         expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        sender_actor = f"telegram:{cb['from']['id']}"
 
         # Ambil detail items sebelum dihapus agar tetap tersimpan di teks chat untuk pencarian
         expenses_to_delete = []
@@ -128,12 +129,12 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
 
         deleted_count = 0
         for exp in expenses_to_delete:
-            if await delete_expense(db, exp.id):
+            if await delete_expense(db, exp.id, actor=sender_actor):
                 deleted_count += 1
         # Hapus juga ID yang mungkin belum ter-fetch
         for eid in expense_ids:
             if eid not in [e.id for e in expenses_to_delete]:
-                if await delete_expense(db, eid):
+                if await delete_expense(db, eid, actor=sender_actor):
                     deleted_count += 1
         await db.commit()
 
@@ -166,9 +167,10 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
 
         ids_raw = data.split(":", 1)[1]
         expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        sender_actor = f"telegram:{cb['from']['id']}"
         updated_expenses = []
         for eid in expense_ids:
-            exp = await update_expense(db, eid, {"pay_status": "Belum Lunas"})
+            exp = await update_expense(db, eid, {"pay_status": "Belum Lunas"}, actor=sender_actor)
             if exp:
                 updated_expenses.append(exp)
         await db.commit()
@@ -207,9 +209,10 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
 
         ids_raw = data.split(":", 1)[1]
         expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        sender_actor = f"telegram:{cb['from']['id']}"
         updated_expenses = []
         for eid in expense_ids:
-            exp = await update_expense(db, eid, {"pay_status": "Lunas"})
+            exp = await update_expense(db, eid, {"pay_status": "Lunas"}, actor=sender_actor)
             if exp:
                 updated_expenses.append(exp)
         await db.commit()
@@ -244,10 +247,11 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             await tg.send_message(chat_id, paid_text, thread_id, keyboard)
 
     elif data.startswith("toggle_reimb:"):
-        from app.services.expense_service import get_expense_by_id
+        from app.services.expense_service import get_expense_by_id, update_expense
 
         ids_raw = data.split(":", 1)[1]
         expense_ids = [int(x) for x in ids_raw.split(",") if x.strip().isdigit()]
+        sender_actor = f"telegram:{cb['from']['id']}"
 
         current_states = []
         expenses_to_update = []
@@ -261,10 +265,10 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         # Jika semua sudah reimbursement, batalkan jadi False.
         new_state = not all(current_states) if current_states else True
         for exp in expenses_to_update:
-            exp.is_reimbursement = new_state
+            updates = {"is_reimbursement": new_state}
             if not new_state:
-                exp.reimbursed_at = None
-            exp.sheets_synced = False
+                updates["reimbursed_at"] = None
+            await update_expense(db, exp.id, updates, actor=sender_actor)
         await db.commit()
 
         items_summary, total_val = format_expense_items_summary(expenses_to_update)
@@ -332,7 +336,7 @@ async def _handle_reimb_user_paid(
     else:
         outstanding = await get_outstanding_reimbursements(db, user_id=uid)
 
-    paid = await mark_reimbursed(db, [e.id for e in outstanding])
+    paid = await mark_reimbursed(db, [e.id for e in outstanding], actor=f"telegram:{cb['from']['id']}")
     await db.commit()
 
     # Notifikasi DM ke pemilik talangan (abaikan jika user belum pernah chat bot / gagal kirim)

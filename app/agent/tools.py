@@ -5,7 +5,7 @@ Setiap tool adalah fungsi async yang bisa dipanggil oleh orchestrator
 from datetime import datetime, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services import ai_service, expense_service
-from app.utils.validators import audit_calculations, is_valid_category
+from app.utils.validators import audit_calculations, is_valid_category, validate_non_zero_expenses
 from app.config import settings
 
 
@@ -16,19 +16,22 @@ from app.config import settings
 async def tool_extract_text(text: str) -> dict:
     """Ekstrak item belanja dari teks biasa via AI."""
     result = await ai_service.call_ai_text(text)
-    return audit_calculations(result)
+    audited = audit_calculations(result)
+    return validate_non_zero_expenses(audited)
 
 
 async def tool_extract_image(base64_image: str, caption: str = "") -> dict:
     """Ekstrak item belanja dari foto struk via AI."""
     result = await ai_service.call_ai_image(base64_image, caption)
-    return audit_calculations(result)
+    audited = audit_calculations(result)
+    return validate_non_zero_expenses(audited)
 
 
 async def tool_extract_voice(base64_audio: str) -> dict:
     """Ekstrak item belanja dari voice note via AI."""
     result = await ai_service.call_ai_voice(base64_audio)
-    return audit_calculations(result)
+    audited = audit_calculations(result)
+    return validate_non_zero_expenses(audited)
 
 
 # ──────────────────────────────────────────────
@@ -40,9 +43,10 @@ async def tool_save_expenses(
     items: list[dict],
     msg_link: str = "Private Chat",
     user_id: int | None = None,
+    actor: str = "system",
 ) -> list:
     """Simpan item pengeluaran ke Postgres."""
-    return await expense_service.save_expenses(db, items, msg_link, user_id)
+    return await expense_service.save_expenses(db, items, msg_link, user_id, actor=actor)
 
 
 async def tool_check_duplicate(db: AsyncSession, items: list[dict]) -> bool:

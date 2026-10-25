@@ -62,7 +62,9 @@ async def api_import_csv(
 
     inserted_expenses = []
     if to_insert:
-        inserted_expenses = await batch_insert_expenses(db, to_insert, sheets_synced=True)
+        inserted_expenses = await batch_insert_expenses(
+            db, to_insert, sheets_synced=True, actor="import:csv"
+        )
         await db.commit()
 
     return {

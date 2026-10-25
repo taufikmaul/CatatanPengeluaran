@@ -1,5 +1,5 @@
 import axios from "axios";
-import { ExpenseFormData } from "@/types";
+import { ExpenseFormData, ExpenseLog } from "@/types";
 
 export const api = axios.create({
   baseURL: "/api/v1",
@@ -91,6 +91,16 @@ export async function copyMonthlyBudget(
     source_year: sourceYear,
     source_month: sourceMonth,
   });
+  return res.data;
+}
+
+export async function getExpenseLogs(expenseId: number): Promise<ExpenseLog[]> {
+  const res = await api.get(`/expenses/${expenseId}/logs`);
+  return res.data;
+}
+
+export async function getRecentExpenseLogs(limit: number = 50): Promise<ExpenseLog[]> {
+  const res = await api.get(`/expenses/logs/recent?limit=${limit}`);
   return res.data;
 }
 

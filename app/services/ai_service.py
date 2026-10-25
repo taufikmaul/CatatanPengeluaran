@@ -27,6 +27,18 @@ Perhatikan Aturan Khusus Klasifikasi Kategori:
 5. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
 {categories}
 
+Aturan Prioritas Tanggal Pemesanan (PENTING untuk mencegah false double input):
+- Pada struk, nota, invoice, atau screenshot marketplace (Shopee, Tokopedia, TikTok Shop, Grab, Gojek, dll), WAJIB LIHAT DAN UTAMAKAN "TANGGAL PEMESANAN" / "WAKTU PESANAN" / "TANGGAL TRANSAKSI" / "TANGGAL NOTA" terlebih dahulu sebagai nilai "tanggal" (format YYYY-MM-DD).
+- Konversikan waktu/tanggal pesanan tersebut (misal: "24-10-2026 15:30" atau "24 Okt 2026") menjadi "YYYY-MM-DD" (contoh: "2026-10-24").
+- JANGAN langsung menetapkan tanggal hari ini ({today}) jika pada dokumen/gambar/teks terdapat tanggal pemesanan atau tanggal transaksi. Hal ini SANGAT PENTING agar pembelian barang yang sama di tanggal berbeda tidak keliru terdeteksi sebagai double input.
+- HANYA gunakan tanggal hari ini ({today}) sebagai fallback bila tanggal pemesanan/transaksi sama sekali tidak tertera.
+
+Aturan Nilai Pengeluaran (TIDAK BOLEH 0 ATAU MINUS):
+- Nominal pengeluaran TIDAK BOLEH bernilai 0 apalagi minus/negatif.
+- Pastikan total_harga > 0 dan harga_satuan > 0.
+- Jika ada diskon besar atau voucher, total_harga tidak boleh menjadi 0 atau negatif.
+- Baris promo gratis, voucher belanja, atau cashback bernilai 0 atau minus JANGAN dimasukkan sebagai baris pengeluaran.
+
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
 - Status Pembayaran asumsikan "Lunas" kecuali disebut sebaliknya.
@@ -85,6 +97,26 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                 parsed = {"items": parsed}
             elif "barang" in parsed:
                 parsed = {"items": [parsed]}
+            else:
+                parsed = {"items": []}
+
+        # Normalisasi tanggal pemesanan jika AI memakai key alternatif
+        normalized_items = []
+        for item in parsed.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            order_date = (
+                item.get("tanggal_pemesanan")
+                or item.get("waktu_pesanan")
+                or item.get("tgl_pesanan")
+                or item.get("tgl_pemesanan")
+                or item.get("order_date")
+                or item.get("tanggal")
+            )
+            if order_date:
+                item["tanggal"] = str(order_date)[:10]
+            normalized_items.append(item)
+        parsed["items"] = normalized_items
 
         return parsed
 

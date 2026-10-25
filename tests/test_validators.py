@@ -7,6 +7,7 @@ from app.utils.validators import (
     audit_calculations,
     is_valid_category,
     validate_category,
+    validate_non_zero_expenses,
 )
 
 
@@ -94,3 +95,34 @@ class TestIsValidCategory:
 
     def test_category_list_is_not_empty(self):
         assert len(settings.valid_categories) == 11
+
+
+class TestValidateNonZeroExpenses:
+    def test_removes_zero_and_negative_items(self):
+        data = {
+            "items": [
+                {"barang": "Tepung", "total_harga": 15000},
+                {"barang": "Bonus Voucher", "total_harga": 0},
+                {"barang": "Diskon Salah", "total_harga": -5000},
+            ]
+        }
+        result = validate_non_zero_expenses(data)
+        assert len(result["items"]) == 1
+        assert result["items"][0]["barang"] == "Tepung"
+        assert result.get("error") is not True
+
+    def test_returns_error_when_all_items_zero_or_negative(self):
+        data = {
+            "items": [
+                {"barang": "Item Gratis", "total_harga": 0},
+                {"barang": "Item Minus", "total_harga": -1000},
+            ]
+        }
+        result = validate_non_zero_expenses(data)
+        assert result.get("error") is True
+        assert "tidak boleh" in result.get("message", "").lower()
+        assert len(result["items"]) == 0
+
+    def test_preserves_error_dict(self):
+        data = {"error": True, "message": "Sudah error"}
+        assert validate_non_zero_expenses(data) == data

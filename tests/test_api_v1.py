@@ -520,3 +520,87 @@ async def test_api_expenses_shipping_and_other_fee(client, auth_cookies):
     assert updated_data["total_price"] == 108000
 
 
+@pytest.mark.asyncio
+async def test_api_expenses_rejects_zero_or_negative_expense(client, auth_cookies):
+    """Test penolakan pengeluaran dengan nominal 0 atau minus."""
+    client.cookies.update(auth_cookies)
+
+    # 1. Total 0 ditolak
+    payload_zero = {
+        "item_name": "Bonus Gratis",
+        "qty": 1,
+        "unit_price": 0,
+        "total_price": 0,
+    }
+    res_zero = await client.post("/api/v1/expenses", json=payload_zero)
+    assert res_zero.status_code == 400
+    assert "tidak boleh" in res_zero.json()["detail"].lower()
+
+    # 2. Total negatif ditolak
+    payload_neg = {
+        "item_name": "Diskon Salah",
+        "qty": 1,
+        "unit_price": 10000,
+        "discount": 15000,
+        "total_price": 0,  # rumus menghasilkan -5000
+    }
+    res_neg = await client.post("/api/v1/expenses", json=payload_neg)
+    assert res_neg.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_api_expense_activity_logs(client, auth_cookies):
+    """Test pencatatan dan query log aksi pengeluaran (CREATE, UPDATE, DELETE)."""
+    client.cookies.update(auth_cookies)
+
+    # 1. CREATE
+    payload = {
+        "expense_date": "2026-10-26",
+        "supplier": "Toko Loyang Jaya",
+        "item_name": "Loyang Brownies 20x10",
+        "qty": 5,
+        "unit_price": 25000,
+        "total_price": 125000,
+    }
+    create_res = await client.post("/api/v1/expenses", json=payload)
+    assert create_res.status_code == 201
+    expense_id = create_res.json()["id"]
+
+    # 2. Query log untuk expense ini (harus ada log CREATE)
+    logs_res = await client.get(f"/api/v1/expenses/{expense_id}/logs")
+    assert logs_res.status_code == 200
+    logs = logs_res.json()
+    assert len(logs) == 1
+    assert logs[0]["action"] == "CREATE"
+    assert "dashboard" in logs[0]["actor"]
+
+    # 3. UPDATE
+    update_res = await client.put(
+        f"/api/v1/expenses/{expense_id}",
+        json={"pay_status": "Belum Lunas", "notes": "Hutang tempo 14 hari"},
+    )
+    assert update_res.status_code == 200
+
+    # Query log lagi (harus ada log STATUS_CHANGE / UPDATE)
+    logs_after_update = (await client.get(f"/api/v1/expenses/{expense_id}/logs")).json()
+    assert len(logs_after_update) == 2
+    assert logs_after_update[0]["action"] in ("UPDATE", "STATUS_CHANGE")
+    assert "pay_status" in logs_after_update[0]["details"]
+
+    # 4. Global recent logs endpoint
+    recent_res = await client.get("/api/v1/expenses/logs/recent?limit=20")
+    assert recent_res.status_code == 200
+    recent_logs = recent_res.json()
+    assert any(l["expense_id"] == expense_id for l in recent_logs)
+
+    # 5. DELETE
+    del_res = await client.delete(f"/api/v1/expenses/{expense_id}")
+    assert del_res.status_code == 200
+
+    # Verifikasi log DELETE tercatat
+    logs_after_delete = (await client.get(f"/api/v1/expenses/{expense_id}/logs")).json()
+    assert len(logs_after_delete) == 3
+    assert logs_after_delete[0]["action"] == "DELETE"
+
+
+

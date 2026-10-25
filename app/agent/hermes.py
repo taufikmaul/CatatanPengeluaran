@@ -140,9 +140,12 @@ class HermesAgent:
         extracted = await tools.tool_extract_image(base64_img, caption)
 
         if extracted.get("error") or not extracted.get("items"):
+            err_msg = extracted.get("message") or "❌ Gagal membaca struk. Coba foto lebih jelas."
+            if not err_msg.startswith("❌"):
+                err_msg = f"❌ {err_msg}"
             keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Gagal membaca struk. Coba foto lebih jelas.", keyboard)
+                await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi data...")
@@ -152,7 +155,13 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        saved = await tools.tool_save_expenses(
+            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+        )
+        if not saved:
+            if msg_id:
+                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+            return
 
         # Buat balasan dengan insight
         await self._send_save_success(msg_id, extracted["items"], extracted.get("items", []), saved_expenses=saved)
@@ -180,19 +189,28 @@ class HermesAgent:
         extracted = await tools.tool_extract_voice(base64_audio)
 
         if extracted.get("error") or not extracted.get("items"):
+            err_msg = extracted.get("message") or "❌ Gagal memproses suara."
+            if not err_msg.startswith("❌"):
+                err_msg = f"❌ {err_msg}"
             keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Gagal memproses suara.", keyboard)
+                await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
         if await tools.tool_check_duplicate(self.db, extracted["items"]):
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*")
+                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*\nTransaksi ini sudah pernah tercatat.")
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        saved = await tools.tool_save_expenses(
+            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+        )
+        if not saved:
+            if msg_id:
+                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+            return
         await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
 
     async def _handle_text_input(self, text: str, msg_link: str) -> None:
@@ -214,12 +232,27 @@ class HermesAgent:
         extracted = await tools.tool_extract_text(text)
 
         if extracted.get("error") or not extracted.get("items"):
+            err_msg = extracted.get("message") or "❌ Gagal memproses teks. Coba format ulang."
+            if not err_msg.startswith("❌"):
+                err_msg = f"❌ {err_msg}"
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Gagal memproses teks. Coba format ulang.")
+                await tg.edit_message(self.chat_id, msg_id, err_msg)
+            return
+
+        await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
+        if await tools.tool_check_duplicate(self.db, extracted["items"]):
+            if msg_id:
+                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*\nTransaksi ini sudah pernah tercatat.")
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(self.db, extracted["items"], msg_link, self.user_id)
+        saved = await tools.tool_save_expenses(
+            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+        )
+        if not saved:
+            if msg_id:
+                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+            return
         await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
 
     async def _handle_report(self) -> None:

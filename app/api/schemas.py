@@ -112,6 +112,18 @@ class ExpenseListResponse(BaseModel):
     total_pages: int
 
 
+class ExpenseLogResponse(BaseModel):
+    id: int
+    expense_id: int | None = None
+    action: str
+    actor: str
+    details: str | None = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class MonthlyReportResponse(BaseModel):
     ok: bool = True
     month: int

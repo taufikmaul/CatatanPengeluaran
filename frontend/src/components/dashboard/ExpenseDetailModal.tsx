@@ -1,7 +1,8 @@
-import React, { useState } from "react";
-import { Expense } from "@/types";
+import React, { useState, useEffect } from "react";
+import { Expense, ExpenseLog } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink, copyToClipboard } from "@/lib/telegram";
+import { getExpenseLogs } from "@/lib/api";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,9 @@ import {
   HelpCircle,
   Laptop,
   User as UserIcon,
+  History,
+  Activity,
+  ArrowRight,
 } from "lucide-react";
 
 interface ExpenseDetailModalProps {
@@ -48,12 +52,71 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
   onInspectItemPrice,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [logs, setLogs] = useState<ExpenseLog[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && expense?.id) {
+      setIsLoadingLogs(true);
+      getExpenseLogs(expense.id)
+        .then((data) => setLogs(data || []))
+        .catch(() => setLogs([]))
+        .finally(() => setIsLoadingLogs(false));
+    } else {
+      setLogs([]);
+    }
+  }, [isOpen, expense?.id]);
 
   if (!expense) return null;
 
   const tgInfo = parseTelegramLink(expense.msg_link);
   const catColor = getCategoryColor(expense.category);
   const isLunas = (expense.pay_status || "").toLowerCase().includes("lunas");
+
+  const formatActorLabel = (actor: string) => {
+    if (!actor) return "Sistem";
+    if (actor.startsWith("telegram:")) {
+      const tgId = actor.replace("telegram:", "");
+      return `Telegram (User #${tgId})`;
+    }
+    if (actor === "dashboard:admin") return "Web Dashboard (Admin)";
+    if (actor === "dashboard:admin_input") return "Web Dashboard (Admin Input)";
+    if (actor.startsWith("dashboard:")) return `Web Dashboard (${actor.replace("dashboard:", "")})`;
+    if (actor === "import:csv") return "Impor CSV";
+    if (actor === "sync:sheets") return "Sinkronisasi Sheets";
+    if (actor === "system") return "Sistem Otomatis";
+    return actor;
+  };
+
+  const formatFieldLabel = (field: string) => {
+    const map: Record<string, string> = {
+      pay_status: "Status Bayar",
+      total_price: "Total Harga",
+      unit_price: "Harga Satuan",
+      qty: "Jumlah (Qty)",
+      item_name: "Nama Barang",
+      supplier: "Toko / Supplier",
+      category: "Kategori",
+      expense_date: "Tanggal Nota",
+      notes: "Catatan",
+      invoice_number: "No. Invoice",
+      is_reimbursement: "Status Reimburse",
+      reimbursed_at: "Waktu Ganti Talangan",
+    };
+    return map[field] || field;
+  };
+
+  const formatValue = (field: string, val: any) => {
+    if (val === null || val === undefined || val === "") return "-";
+    if (field.includes("price") || field === "total_price" || field === "unit_price") {
+      const num = Number(val);
+      return !isNaN(num) ? formatRupiah(num) : String(val);
+    }
+    if (field === "is_reimbursement") {
+      return val === true || val === "true" ? "Ya (Ditalangi)" : "Tidak (Reguler)";
+    }
+    return String(val);
+  };
 
   const handleCopyLink = async () => {
     if (!tgInfo.url) return;
@@ -435,6 +498,103 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                   {expense.notes && expense.notes !== "-" ? expense.notes : "Tidak ada catatan."}
                 </p>
               </div>
+            </div>
+
+            {/* Riwayat Log & Perubahan Data (Audit Trail) */}
+            <div className="p-3.5 bg-slate-50/80 border border-slate-200/90 rounded-2xl sm:col-span-2">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                  <History className="w-4 h-4 text-indigo-600" />
+                  <span>Riwayat Perubahan & Log Aksi</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] font-medium bg-white text-slate-600">
+                  {isLoadingLogs ? "Memuat..." : `${logs.length} catatan`}
+                </Badge>
+              </div>
+
+              {isLoadingLogs ? (
+                <div className="text-center py-3 text-xs text-slate-400">Memuat log aktivitas...</div>
+              ) : logs.length === 0 ? (
+                <div className="text-center py-2 text-xs text-slate-400">Belum ada riwayat perubahan yang tercatat.</div>
+              ) : (
+                <div className="space-y-2 mt-2 max-h-56 overflow-y-auto pr-1">
+                  {logs.map((log) => {
+                    let parsed: any = null;
+                    try {
+                      parsed = log.details ? JSON.parse(log.details) : null;
+                    } catch {}
+
+                    const actionColor =
+                      log.action === "CREATE"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : log.action === "DELETE"
+                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : log.action === "STATUS_CHANGE"
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200";
+
+                    const actionLabel =
+                      log.action === "CREATE"
+                        ? "Dicatat Baru"
+                        : log.action === "DELETE"
+                        ? "Dihapus"
+                        : log.action === "STATUS_CHANGE"
+                        ? "Status Berubah"
+                        : "Data Diedit";
+
+                    return (
+                      <div
+                        key={log.id}
+                        className="bg-white border border-slate-200/70 rounded-xl p-2.5 text-xs shadow-xs"
+                      >
+                        <div className="flex items-center justify-between gap-1 flex-wrap mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${actionColor}`}>
+                              {actionLabel}
+                            </span>
+                            <span className="text-[11px] font-medium text-slate-700">
+                              {formatActorLabel(log.actor)}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            {formatDateId(log.created_at, true)}
+                          </span>
+                        </div>
+
+                        {/* Rincian perubahan jika ada diff */}
+                        {parsed?.changes && Object.keys(parsed.changes).length > 0 && (
+                          <div className="mt-1.5 pt-1.5 border-t border-slate-100 space-y-1">
+                            {Object.entries(parsed.changes).map(([field, diff]: [string, any]) => (
+                              <div
+                                key={field}
+                                className="flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-50/70 px-2 py-0.5 rounded"
+                              >
+                                <span className="font-semibold text-slate-700">
+                                  {formatFieldLabel(field)}:
+                                </span>
+                                <span className="line-through text-slate-400">
+                                  {formatValue(field, diff.old)}
+                                </span>
+                                <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span className="font-semibold text-slate-900">
+                                  {formatValue(field, diff.new)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Keterangan create awal jika tidak ada diff */}
+                        {log.action === "CREATE" && parsed && (
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Dicatat untuk {parsed.item_name || "Barang"} senilai {formatRupiah(parsed.total_price || 0)} ({parsed.supplier || "-"})
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

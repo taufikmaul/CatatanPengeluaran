@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.expense import Expense
+from app.models.expense_log import ExpenseLog
 from app.services.expense_service import (
     check_duplicate,
     get_all_expenses_paginated,
@@ -15,6 +16,10 @@ from app.services.expense_service import (
     mark_synced_to_sheets,
     save_expenses,
     search_last_price,
+    update_expense,
+    delete_expense,
+    get_expense_logs,
+    get_recent_expense_logs,
 )
 
 
@@ -110,6 +115,80 @@ class TestCheckDuplicate:
 
     async def test_empty_database_has_no_duplicate(self, db, sample_items):
         assert await check_duplicate(db, sample_items) is False
+
+    async def test_same_item_different_order_date_is_not_duplicate(self, db):
+        # Transaksi pertama tanggal pemesanan 2026-10-20
+        first_order = [{
+            "barang": "Keju Meg Cheddar",
+            "toko_supplier": "Toko Wahab",
+            "tanggal": "2026-10-20",
+            "total_harga": 100000,
+        }]
+        await save_expenses(db, first_order)
+
+        # Transaksi kedua untuk barang yang sama tapi tanggal pemesanan 2026-10-25
+        second_order = [{
+            "barang": "Keju Meg Cheddar",
+            "toko_supplier": "Toko Wahab",
+            "tanggal_pemesanan": "2026-10-25",
+            "total_harga": 100000,
+        }]
+        assert await check_duplicate(db, second_order) is False
+
+    async def test_different_item_same_day_same_supplier_same_price_is_not_duplicate(self, db):
+        # Pembelian Tepung di Toko A Rp 15.000 pada 2026-10-26
+        order1 = [{
+            "barang": "Tepung Terigu",
+            "toko_supplier": "Toko Sumber Rejeki",
+            "tanggal": "2026-10-26",
+            "total_harga": 15000,
+        }]
+        await save_expenses(db, order1)
+
+        # Pembelian Gula di Toko A Rp 15.000 pada 2026-10-26 (nama barang berbeda)
+        order2 = [{
+            "barang": "Gula Pasir",
+            "toko_supplier": "Toko Sumber Rejeki",
+            "tanggal": "2026-10-26",
+            "total_harga": 15000,
+        }]
+        assert await check_duplicate(db, order2) is False
+
+    async def test_same_item_same_order_date_is_duplicate(self, db):
+        order1 = [{
+            "barang": "Mentega Anchor",
+            "toko_supplier": "Toko Bahan Roti",
+            "tanggal_pemesanan": "2026-10-24",
+            "total_harga": 250000,
+        }]
+        await save_expenses(db, order1)
+
+        order2 = [{
+            "barang": "Mentega Anchor",
+            "toko_supplier": "Toko Bahan Roti",
+            "tanggal": "2026-10-24",
+            "total_harga": 250000,
+        }]
+        assert await check_duplicate(db, order2) is True
+
+    async def test_different_invoice_number_is_not_duplicate(self, db):
+        order1 = [{
+            "barang": "Loyang Kue",
+            "toko_supplier": "Shopee",
+            "tanggal": "2026-10-26",
+            "total_harga": 50000,
+            "no_invoice": "INV-1001",
+        }]
+        await save_expenses(db, order1)
+
+        order2 = [{
+            "barang": "Loyang Kue",
+            "toko_supplier": "Shopee",
+            "tanggal": "2026-10-26",
+            "total_harga": 50000,
+            "no_invoice": "INV-1002",
+        }]
+        assert await check_duplicate(db, order2) is False
 
 
 class TestGetMonthlyReport:
@@ -345,3 +424,63 @@ class TestMonthlyLeaderboards:
         assert summary["unique_items_count"] == 3  # Tepung, Butter, Oven
         assert summary["max_single_transaction"]["item_name"] == "Oven Gas 2 Deck"
         assert summary["max_single_transaction"]["amount"] == 5000000.0
+
+
+class TestExpenseLogs:
+    async def test_save_expenses_records_create_log(self, db, sample_items):
+        saved = await save_expenses(db, sample_items, actor="telegram:999")
+        assert len(saved) == 1
+        expense_id = saved[0].id
+
+        logs = await get_expense_logs(db, expense_id)
+        assert len(logs) == 1
+        assert logs[0].action == "CREATE"
+        assert logs[0].actor == "telegram:999"
+        assert "Tepung Terigu" in logs[0].details
+
+    async def test_update_expense_records_change_diff(self, db, sample_items):
+        saved = await save_expenses(db, sample_items, actor="dashboard:admin")
+        expense = saved[0]
+
+        # Update pay_status and total_price
+        updated = await update_expense(
+            db,
+            expense.id,
+            {"pay_status": "Belum Lunas", "notes": "Catatan baru"},
+            actor="dashboard:admin",
+        )
+        assert updated is not None
+
+        logs = await get_expense_logs(db, expense.id)
+        assert len(logs) == 2  # 1 CREATE, 1 UPDATE
+        latest_log = logs[0]
+        assert latest_log.action in ("UPDATE", "STATUS_CHANGE")
+        assert latest_log.actor == "dashboard:admin"
+        assert "pay_status" in latest_log.details
+        assert "Belum Lunas" in latest_log.details
+
+    async def test_delete_expense_records_delete_snapshot(self, db, sample_items):
+        saved = await save_expenses(db, sample_items)
+        expense = saved[0]
+        eid = expense.id
+
+        deleted = await delete_expense(db, eid, actor="telegram:undo_btn")
+        assert deleted is True
+
+        logs = await get_expense_logs(db, eid)
+        assert len(logs) == 2  # 1 CREATE, 1 DELETE
+        del_log = logs[0]
+        assert del_log.action == "DELETE"
+        assert del_log.actor == "telegram:undo_btn"
+        assert "deleted_expense" in del_log.details
+        assert "Tepung Terigu" in del_log.details
+
+    async def test_get_recent_expense_logs(self, db, sample_items):
+        saved = await save_expenses(db, sample_items)
+        expense = saved[0]
+        await update_expense(db, expense.id, {"notes": "Updated note"}, actor="dashboard:admin")
+
+        recent_logs = await get_recent_expense_logs(db, limit=10)
+        assert len(recent_logs) >= 2
+        actions = [l.action for l in recent_logs]
+        assert "UPDATE" in actions or "CREATE" in actions

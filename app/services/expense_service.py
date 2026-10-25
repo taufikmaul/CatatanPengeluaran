@@ -4,10 +4,35 @@ Port dari saveDataToSheet, checkDuplicateInSheet, generateReport, cekHargaTerakh
 """
 from datetime import datetime, date
 from decimal import Decimal
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from app.models.expense import Expense
 from app.models.user import User
+from app.models.expense_log import ExpenseLog
+
+
+async def record_expense_log(
+    db: AsyncSession,
+    expense_id: int | None,
+    action: str,
+    actor: str = "system",
+    details: dict | str | None = None,
+) -> ExpenseLog:
+    """
+    Catat log aksi / riwayat perubahan pada data belanja.
+    Action: CREATE, UPDATE, DELETE, STATUS_CHANGE
+    Actor: telegram:<id>, dashboard:admin, dashboard:admin_input, import:csv, sync:sheets, system
+    """
+    details_str = json.dumps(details, default=str) if isinstance(details, dict) else (details or "")
+    log_entry = ExpenseLog(
+        expense_id=expense_id,
+        action=action.upper(),
+        actor=actor,
+        details=details_str,
+    )
+    db.add(log_entry)
+    return log_entry
 
 
 async def save_expenses(
@@ -15,6 +40,8 @@ async def save_expenses(
     items: list[dict],
     msg_link: str = "Private Chat",
     user_id: int | None = None,
+    actor: str | None = None,
+    allow_zero: bool = True,
 ) -> list[Expense]:
     """
     Simpan list item pengeluaran ke Postgres.
@@ -28,8 +55,31 @@ async def save_expenses(
     today = date.today()
 
     for item in items:
-        # Parse tanggal
-        raw_date = item.get("tanggal", str(today))
+        qty = Decimal(str(item.get("qty") or 1))
+        unit_price = Decimal(str(item.get("harga_satuan") or 0))
+        shipping_fee = Decimal(str(item.get("ongkir") or item.get("shipping_fee") or 0))
+        tax = Decimal(str(item.get("tax") or item.get("pajak") or 0))
+        other_fee = Decimal(str(item.get("biaya_lainnya") or item.get("other_fee") or 0))
+        discount = Decimal(str(item.get("diskon") or item.get("discount") or 0))
+
+        raw_tot = item.get("total_harga") if item.get("total_harga") is not None else item.get("total_price")
+        if raw_tot is not None:
+            total_price = Decimal(str(raw_tot))
+        else:
+            total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
+
+        # Jangan simpan pengeluaran minus atau 0 (jika allow_zero=False)
+        if total_price < 0 or (total_price == 0 and not allow_zero):
+            continue
+
+        # Parse tanggal dengan memprioritaskan tanggal pemesanan jika tersedia
+        raw_date = (
+            item.get("tanggal_pemesanan")
+            or item.get("waktu_pesanan")
+            or item.get("order_date")
+            or item.get("tanggal")
+            or str(today)
+        )
         try:
             expense_date = date.fromisoformat(str(raw_date)[:10])
         except (ValueError, TypeError):
@@ -45,21 +95,21 @@ async def save_expenses(
 
         expense = Expense(
             expense_date=expense_date,
-            supplier=item.get("toko_supplier") or "-",
-            item_name=item.get("barang") or "Barang",
-            qty=Decimal(str(item.get("qty") or 1)),
+            supplier=item.get("toko_supplier") or item.get("supplier") or "-",
+            item_name=item.get("barang") or item.get("item_name") or "Barang",
+            qty=qty if qty > 0 else Decimal("1"),
             unit=(item.get("satuan") or item.get("unit") or "Pcs").strip() or "Pcs",
-            category=item.get("kategori") or "Operasional",
-            unit_price=Decimal(str(item.get("harga_satuan") or 0)),
-            shipping_fee=Decimal(str(item.get("ongkir") or item.get("shipping_fee") or 0)),
-            tax=Decimal(str(item.get("tax") or item.get("pajak") or 0)),
-            other_fee=Decimal(str(item.get("biaya_lainnya") or item.get("other_fee") or 0)),
-            discount=Decimal(str(item.get("diskon") or item.get("discount") or 0)),
-            total_price=Decimal(str(item.get("total_harga") or item.get("total_price") or 0)),
-            pay_method=item.get("metode_bayar") or "Tunai",
-            pay_status=item.get("status_pembayaran") or "Lunas",
-            due_date=item.get("jatuh_tempo") or "-",
-            notes=item.get("keterangan") or "-",
+            category=item.get("kategori") or item.get("category") or "Operasional",
+            unit_price=unit_price,
+            shipping_fee=shipping_fee,
+            tax=tax,
+            other_fee=other_fee,
+            discount=discount,
+            total_price=total_price,
+            pay_method=item.get("metode_bayar") or item.get("pay_method") or "Tunai",
+            pay_status=item.get("status_pembayaran") or item.get("pay_status") or "Lunas",
+            due_date=item.get("jatuh_tempo") or item.get("due_date") or "-",
+            notes=item.get("keterangan") or item.get("notes") or "-",
             is_reimbursement=is_reimb,
             invoice_number=str(inv_num),
             msg_link=msg_link,
@@ -69,6 +119,26 @@ async def save_expenses(
         )
         db.add(expense)
         saved.append(expense)
+
+    await db.flush()
+
+    effective_actor = actor or (f"telegram:{user_id}" if user_id else "system")
+    for exp in saved:
+        await record_expense_log(
+            db,
+            expense_id=exp.id,
+            action="CREATE",
+            actor=effective_actor,
+            details={
+                "item_name": exp.item_name,
+                "total_price": float(exp.total_price),
+                "supplier": exp.supplier,
+                "expense_date": str(exp.expense_date),
+                "category": exp.category,
+                "pay_status": exp.pay_status,
+                "msg_link": exp.msg_link,
+            },
+        )
 
     await db.flush()
     return saved
@@ -81,8 +151,10 @@ async def check_duplicate(
 ) -> bool:
     """
     Cek apakah transaksi ini sudah pernah dicatat.
-    Port dari checkDuplicateInSheet di GAS.
-    Logika: match berdasarkan (toko + total + tanggal).
+    Port dari checkDuplicateInSheet di GAS dengan penyempurnaan:
+    1. Memprioritaskan tanggal pemesanan (tanggal_pemesanan / order_date). Jika tanggal berbeda, bukan duplikat.
+    2. Jika no_invoice ada pada kedua data dan berbeda, bukan duplikat. Jika sama, duplikat.
+    3. Jika item_name tersedia, bandingkan nama barang (agar barang berbeda dari toko yang sama tidak terblokir).
     """
     result = await db.execute(
         select(Expense)
@@ -94,20 +166,51 @@ async def check_duplicate(
     for existing in recent:
         existing_date = str(existing.expense_date)
         existing_supplier = (existing.supplier or "").strip().lower()
+        existing_item = (existing.item_name or "").strip().lower()
         existing_total = float(existing.total_price or 0)
+        existing_invoice = (existing.invoice_number or "").strip()
 
         for item in items:
-            raw_date = str(item.get("tanggal", date.today().isoformat()))[:10]
-            new_supplier = str(item.get("toko_supplier") or "").strip().lower()
-            new_total = float(item.get("total_harga") or 0)
+            raw_date = str(
+                item.get("tanggal_pemesanan")
+                or item.get("waktu_pesanan")
+                or item.get("order_date")
+                or item.get("tanggal")
+                or date.today().isoformat()
+            )[:10]
+            new_supplier = str(item.get("toko_supplier") or item.get("supplier") or "").strip().lower()
+            new_item = str(item.get("barang") or item.get("item_name") or "").strip().lower()
+            new_total = float(item.get("total_harga") if item.get("total_harga") is not None else (item.get("total_price") or 0))
+            new_invoice = str(item.get("no_invoice") or item.get("invoice_number") or "").strip()
 
-            if (
-                existing_supplier == new_supplier
-                and abs(existing_total - new_total) < 1
-                and existing_date == raw_date
-                and new_total > 0
-            ):
-                return True
+            if new_total <= 0:
+                continue
+
+            # Jika kedua data memiliki invoice valid yang berbeda, bukan duplikat
+            if existing_invoice and existing_invoice != "-" and new_invoice and new_invoice != "-":
+                if existing_invoice.lower() == new_invoice.lower():
+                    return True
+                continue
+
+            # Tanggal pemesanan harus sama persis
+            if existing_date != raw_date:
+                continue
+
+            # Toko / supplier harus sama
+            if existing_supplier != new_supplier:
+                continue
+
+            # Nominal harus sama
+            if abs(existing_total - new_total) >= 1:
+                continue
+
+            # Jika nama barang tersedia pada kedua data, bandingkan nama barang
+            if existing_item and new_item:
+                if existing_item == new_item:
+                    return True
+                continue
+
+            return True
 
     return False
 
@@ -425,14 +528,17 @@ async def update_expense(
     db: AsyncSession,
     expense_id: int,
     updates: dict,
+    actor: str = "system",
 ) -> Expense | None:
-    """Update field expense yang ada."""
+    """Update field expense yang ada dan catat perubahan di expense_logs."""
     expense = await get_expense_by_id(db, expense_id)
     if not expense:
         return None
 
+    changes = {}
     for field, val in updates.items():
         if hasattr(expense, field):
+            old_val = getattr(expense, field)
             # Khusus konversi jika perlu
             if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price") and val is not None:
                 val = Decimal(str(val))
@@ -441,6 +547,13 @@ async def update_expense(
                     val = date.fromisoformat(val[:10])
                 except (ValueError, TypeError):
                     continue
+
+            # Deteksi perubahan nilai
+            if str(old_val) != str(val):
+                changes[field] = {
+                    "old": float(old_val) if isinstance(old_val, Decimal) else str(old_val),
+                    "new": float(val) if isinstance(val, Decimal) else str(val),
+                }
             setattr(expense, field, val)
 
     # Auto-match ke master_item_id jika nama barang berubah tanpa eksplisit master_item_id
@@ -448,20 +561,65 @@ async def update_expense(
         from app.services.master_item_service import list_master_items, find_best_master_match
         master_items = await list_master_items(db)
         matched = find_best_master_match(expense.item_name, master_items)
-        if matched:
+        if matched and matched.id != expense.master_item_id:
+            changes["master_item_id"] = {
+                "old": expense.master_item_id,
+                "new": matched.id,
+            }
             expense.master_item_id = matched.id
 
     # Tandai sheets_synced = False agar perubahan tersinkron ulang jika perlu
     expense.sheets_synced = False
+
+    # Catat log jika ada perubahan field
+    if changes:
+        action = "STATUS_CHANGE" if set(changes.keys()) <= {"pay_status"} else "UPDATE"
+        await record_expense_log(
+            db,
+            expense_id=expense.id,
+            action=action,
+            actor=actor,
+            details={
+                "item_name": expense.item_name,
+                "supplier": expense.supplier,
+                "changes": changes,
+            },
+        )
+
     await db.flush()
     return expense
 
 
-async def delete_expense(db: AsyncSession, expense_id: int) -> bool:
-    """Hapus satu record pengeluaran."""
+async def delete_expense(
+    db: AsyncSession,
+    expense_id: int,
+    actor: str = "system",
+) -> bool:
+    """Hapus satu record pengeluaran dan catat log aksi DELETE."""
     expense = await get_expense_by_id(db, expense_id)
     if not expense:
         return False
+
+    # Catat log DELETE sebelum data dihapus
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action="DELETE",
+        actor=actor,
+        details={
+            "deleted_expense": {
+                "id": expense.id,
+                "item_name": expense.item_name,
+                "supplier": expense.supplier,
+                "total_price": float(expense.total_price or 0),
+                "expense_date": str(expense.expense_date),
+                "category": expense.category,
+                "pay_status": expense.pay_status,
+                "invoice_number": expense.invoice_number,
+            }
+        },
+    )
+
     await db.delete(expense)
     await db.flush()
     return True
@@ -828,6 +986,7 @@ async def batch_insert_expenses(
     items: list[dict],
     sheets_synced: bool = True,
     user_id: int | None = None,
+    actor: str = "system",
 ) -> list[Expense]:
     """
     Simpan sekumpulan pengeluaran (misal dari CSV) ke Postgres secara batch.
@@ -841,6 +1000,10 @@ async def batch_insert_expenses(
     today = date.today()
 
     for item in items:
+        tot = Decimal(str(item.get("total_price") if item.get("total_price") is not None else (item.get("total_harga") or 0)))
+        if tot <= 0:
+            continue
+
         raw_date = item.get("expense_date", today)
         if isinstance(raw_date, str):
             try:
@@ -864,7 +1027,7 @@ async def batch_insert_expenses(
             tax=Decimal(str(item.get("tax") or item.get("pajak") or 0)),
             other_fee=Decimal(str(item.get("other_fee") or item.get("biaya_lainnya") or 0)),
             discount=Decimal(str(item.get("discount") or item.get("diskon") or 0)),
-            total_price=Decimal(str(item.get("total_price") or item.get("total_harga") or 0)),
+            total_price=tot,
             pay_method=item.get("pay_method") or "Tunai",
             pay_status=item.get("pay_status") or "Lunas",
             due_date=item.get("due_date") or "-",
@@ -878,6 +1041,24 @@ async def batch_insert_expenses(
         )
         db.add(expense)
         saved.append(expense)
+
+    await db.flush()
+
+    for exp in saved:
+        await record_expense_log(
+            db,
+            expense_id=exp.id,
+            action="CREATE",
+            actor=actor,
+            details={
+                "item_name": exp.item_name,
+                "total_price": float(exp.total_price),
+                "supplier": exp.supplier,
+                "expense_date": str(exp.expense_date),
+                "category": exp.category,
+                "msg_link": exp.msg_link,
+            },
+        )
 
     await db.flush()
     return saved
@@ -941,6 +1122,7 @@ async def group_reimbursements_by_user(
 async def mark_reimbursed(
     db: AsyncSession,
     expense_ids: list[int],
+    actor: str = "system",
 ) -> list[Expense]:
     """Tandai talangan sudah diganti. Hanya memproses item reimbursement yang belum diganti."""
     if not expense_ids:
@@ -956,5 +1138,46 @@ async def mark_reimbursed(
     for e in items:
         e.reimbursed_at = now
         e.sheets_synced = False
+        await record_expense_log(
+            db,
+            expense_id=e.id,
+            action="UPDATE",
+            actor=actor,
+            details={
+                "item_name": e.item_name,
+                "changes": {
+                    "reimbursed_at": {
+                        "old": None,
+                        "new": str(now),
+                    }
+                },
+            },
+        )
     await db.flush()
     return items
+
+
+async def get_expense_logs(
+    db: AsyncSession,
+    expense_id: int,
+) -> list[ExpenseLog]:
+    """Ambil seluruh riwayat log perubahan untuk suatu transaksi belanja."""
+    result = await db.execute(
+        select(ExpenseLog)
+        .where(ExpenseLog.expense_id == expense_id)
+        .order_by(ExpenseLog.created_at.desc(), ExpenseLog.id.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_recent_expense_logs(
+    db: AsyncSession,
+    limit: int = 50,
+) -> list[ExpenseLog]:
+    """Ambil log aktivitas perubahan belanja terkini secara global."""
+    result = await db.execute(
+        select(ExpenseLog)
+        .order_by(ExpenseLog.created_at.desc(), ExpenseLog.id.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())

@@ -14,6 +14,7 @@ import { ExpenseTable } from "@/components/dashboard/ExpenseTable";
 import { ExpenseDetailModal } from "@/components/dashboard/ExpenseDetailModal";
 import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
 import { BudgetSetupDialog } from "@/components/dashboard/BudgetSetupDialog";
+import { ExpenseActivityLogModal } from "@/components/dashboard/ExpenseActivityLogModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
@@ -62,6 +63,7 @@ export function App() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
+  const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
 
   // Theme state with localStorage persistence
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -662,6 +664,7 @@ export function App() {
                         onInspectItemPrice={handleInspectItemPrice}
                         onDeleteExpense={(id) => deleteMutation.mutate(id)}
                         onViewExpense={(item) => setViewingExpense(item)}
+                        onOpenActivityLog={() => setIsActivityLogOpen(true)}
                         canDelete={canDelete}
                       />
                     </div>
@@ -807,6 +810,7 @@ export function App() {
                       onInspectItemPrice={handleInspectItemPrice}
                       onDeleteExpense={(id) => deleteMutation.mutate(id)}
                       onViewExpense={(item) => setViewingExpense(item)}
+                      onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       canDelete={canDelete}
                     />
                   </div>
@@ -897,6 +901,15 @@ export function App() {
           onImportSuccess={() => {
             refetchExpenses();
             refetchReport();
+          }}
+        />
+
+        {/* Expense Activity Log Modal (Log Aksi Perubahan Belanja) */}
+        <ExpenseActivityLogModal
+          isOpen={isActivityLogOpen}
+          onClose={() => setIsActivityLogOpen(false)}
+          onSelectExpense={(id) => {
+            setIsActivityLogOpen(false);
           }}
         />
 

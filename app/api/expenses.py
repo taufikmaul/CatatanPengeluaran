@@ -4,11 +4,11 @@ app/api/expenses.py — REST API for Expenses Management
 from datetime import date
 from decimal import Decimal
 import base64
-from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
-from app.api.deps import require_auth, require_admin_role
+from app.api.deps import require_auth, require_admin_role, get_current_role
 from app.api.schemas import (
     ExpenseCreate,
     ExpenseBatchCreate,
@@ -16,6 +16,7 @@ from app.api.schemas import (
     ExpenseResponse,
     ExpenseListResponse,
     ExpenseUserResponse,
+    ExpenseLogResponse,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
@@ -25,6 +26,9 @@ from app.services.expense_service import (
     update_expense,
     delete_expense,
     batch_insert_expenses,
+    record_expense_log,
+    get_expense_logs,
+    get_recent_expense_logs,
 )
 from app.services.ai_service import call_ai_image
 
@@ -108,6 +112,7 @@ async def list_expenses(
 @router.post("", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
 async def create_expense(
     payload: ExpenseCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.master_item_service import match_and_normalize_extracted_items
@@ -140,11 +145,18 @@ async def create_expense(
     else:
         total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
 
+    # Cegah pengeluaran 0 atau minus
+    if total_price <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nominal pengeluaran tidak boleh Rp 0 atau minus.",
+        )
+
     expense = Expense(
         expense_date=payload.expense_date,
         supplier=norm["supplier"] or "-",
         item_name=norm["item_name"],
-        qty=qty,
+        qty=qty if qty > 0 else Decimal("1"),
         unit=norm.get("unit") or payload.unit or "Pcs",
         category=norm["category"] or "Operasional",
         unit_price=unit_price,
@@ -165,6 +177,24 @@ async def create_expense(
         sheets_synced=False,
     )
     db.add(expense)
+    await db.flush()
+
+    actor = f"dashboard:{get_current_role(request)}"
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action="CREATE",
+        actor=actor,
+        details={
+            "item_name": expense.item_name,
+            "total_price": float(expense.total_price),
+            "supplier": expense.supplier,
+            "expense_date": str(expense.expense_date),
+            "category": expense.category,
+            "pay_status": expense.pay_status,
+        },
+    )
+
     await db.commit()
     await db.refresh(expense)
     if expense.user_id:
@@ -179,6 +209,7 @@ async def create_expense(
 @router.post("/batch", response_model=list[ExpenseResponse], status_code=status.HTTP_201_CREATED)
 async def create_expense_batch(
     payload: ExpenseBatchCreate | list[ExpenseCreate],
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Simpan sekumpulan pengeluaran sekaligus (misal hasil scan OCR nota multi-item)."""
@@ -202,11 +233,15 @@ async def create_expense_batch(
         else:
             total_price = (qty * unit_price) + shipping_fee + tax + other_fee - discount
 
+        # Saring item yang bernilai <= 0
+        if total_price <= 0:
+            continue
+
         dict_items.append({
             "expense_date": it.expense_date,
             "supplier": it.supplier or "-",
             "item_name": it.item_name,
-            "qty": qty,
+            "qty": qty if qty > 0 else Decimal("1"),
             "unit": it.unit or "Pcs",
             "category": it.category or "Operasional",
             "unit_price": unit_price,
@@ -226,10 +261,18 @@ async def create_expense_batch(
             "master_item_id": it.master_item_id,
         })
 
+    if not dict_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Semua item bernilai Rp 0 atau minus, tidak ada pengeluaran valid.",
+        )
+
+    actor = f"dashboard:{get_current_role(request)}"
     saved = await batch_insert_expenses(
         db,
         dict_items,
         sheets_synced=False,
+        actor=actor,
     )
     await db.commit()
     for e in saved:
@@ -312,6 +355,26 @@ async def get_expense_price_history(
     }
 
 
+@router.get("/logs/recent", response_model=list[ExpenseLogResponse])
+async def list_recent_expense_logs(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil daftar log aktivitas perubahan belanja terkini secara global."""
+    logs = await get_recent_expense_logs(db, limit=limit)
+    return [ExpenseLogResponse.model_validate(log) for log in logs]
+
+
+@router.get("/{expense_id}/logs", response_model=list[ExpenseLogResponse])
+async def list_expense_logs(
+    expense_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil riwayat log aksi / perubahan khusus untuk satu transaksi belanja."""
+    logs = await get_expense_logs(db, expense_id=expense_id)
+    return [ExpenseLogResponse.model_validate(log) for log in logs]
+
+
 @router.get("/{expense_id}", response_model=ExpenseResponse)
 async def get_expense(
     expense_id: int,
@@ -327,6 +390,7 @@ async def get_expense(
 async def update_expense_endpoint(
     expense_id: int,
     payload: ExpenseUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     updates = payload.model_dump(exclude_unset=True)
@@ -336,7 +400,15 @@ async def update_expense_endpoint(
             raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
         return ExpenseResponse(**_to_response_dict(expense))
 
-    expense = await update_expense(db, expense_id, updates)
+    if "total_price" in updates and updates["total_price"] is not None:
+        if float(updates["total_price"]) <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nominal total pengeluaran tidak boleh Rp 0 atau minus.",
+            )
+
+    actor = f"dashboard:{get_current_role(request)}"
+    expense = await update_expense(db, expense_id, updates, actor=actor)
     if not expense:
         raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
 
@@ -353,9 +425,11 @@ async def update_expense_endpoint(
 @router.delete("/{expense_id}", dependencies=[Depends(require_admin_role)])
 async def delete_expense_endpoint(
     expense_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    deleted = await delete_expense(db, expense_id)
+    actor = f"dashboard:{get_current_role(request)}"
+    deleted = await delete_expense(db, expense_id, actor=actor)
     if not deleted:
         raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
     await db.commit()

@@ -34,6 +34,15 @@ export interface ExpenseUser {
   is_auth?: boolean;
 }
 
+export interface ExpenseLog {
+  id: number;
+  expense_id: number | null;
+  action: string;
+  actor: string;
+  details: string | null;
+  created_at: string;
+}
+
 export interface ExpenseListResponse {
   ok: boolean;
   data: Expense[];

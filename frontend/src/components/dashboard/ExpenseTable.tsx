@@ -20,6 +20,7 @@ import {
   ExternalLink,
   User as UserIcon,
   Briefcase,
+  History,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -35,6 +36,7 @@ interface ExpenseTableProps {
   onInspectItemPrice?: (itemName: string, itemId?: number | null) => void;
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
+  onOpenActivityLog?: () => void;
   canDelete?: boolean;
 }
 
@@ -51,6 +53,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onInspectItemPrice,
   onDeleteExpense,
   onViewExpense,
+  onOpenActivityLog,
   canDelete = true,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -93,16 +96,30 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col">
       {/* Table Header count summary */}
-      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Daftar Transaksi</span>
           <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
             {totalCount} item
           </Badge>
         </div>
-        <span className="text-xs text-slate-500 font-medium">
-          Halaman {page} dari {totalPages}
-        </span>
+        <div className="flex items-center gap-2">
+          {onOpenActivityLog && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onOpenActivityLog}
+              className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <History className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Log Aktivitas Belanja</span>
+            </Button>
+          )}
+          <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+            Halaman {page} dari {totalPages}
+          </span>
+        </div>
       </div>
 
       {/* Desktop View Table */}
