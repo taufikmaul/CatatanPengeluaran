@@ -113,6 +113,59 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
     elif data == "retry_scan":
         await tg.send_message(chat_id, "🔄 Silakan kirim ulang foto/voice/teks.", thread_id)
 
+    elif data == "force_save_duplicate":
+        from app.agent.memory import get_user_context, update_user_context
+        from app.utils.auth import get_or_create_user
+        from app.agent.hermes import HermesAgent
+
+        user = await get_or_create_user(db, cb["from"]["id"])
+        ctx = await get_user_context(db, user.id)
+        pending = ctx.get("pending_duplicate")
+
+        msg_id = cb["message"].get("message_id")
+
+        if not pending or not pending.get("items"):
+            await tg.edit_message(
+                chat_id,
+                msg_id,
+                "⚠️ *Data tidak ditemukan atau sudah kedaluwarsa.*\nSilakan input ulang pengeluaran.",
+            )
+            return
+
+        items = pending["items"]
+        msg_link = pending.get("msg_link", "")
+
+        saved = await tools.tool_save_expenses(
+            db, items, msg_link, user.id, actor=f"telegram:{cb['from']['id']}"
+        )
+        await db.commit()
+        await update_user_context(db, user.id, {"pending_duplicate": None})
+
+        if not saved:
+            await tg.edit_message(
+                chat_id,
+                msg_id,
+                "❌ Gagal menyimpan pengeluaran (nominal tidak boleh Rp 0 atau minus).",
+            )
+            return
+
+        agent = HermesAgent(db, user.id, chat_id, thread_id)
+        await agent._send_save_success(msg_id, items, saved_expenses=saved)
+
+    elif data == "cancel_duplicate":
+        from app.agent.memory import update_user_context
+        from app.utils.auth import get_or_create_user
+
+        user = await get_or_create_user(db, cb["from"]["id"])
+        await update_user_context(db, user.id, {"pending_duplicate": None})
+
+        msg_id = cb["message"].get("message_id")
+        cancel_msg = "❌ *Pencatatan Dibatalkan.*\nData pengeluaran duplikat tidak disimpan."
+        if msg_id:
+            await tg.edit_message(chat_id, msg_id, cancel_msg)
+        else:
+            await tg.send_message(chat_id, cancel_msg, thread_id)
+
     elif data.startswith("undo_save:"):
         from app.services.expense_service import get_expense_by_id, delete_expense
 

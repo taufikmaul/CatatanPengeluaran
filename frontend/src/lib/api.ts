@@ -1,5 +1,5 @@
 import axios from "axios";
-import { ExpenseFormData, ExpenseLog } from "@/types";
+import { Expense, ExpenseFormData, ExpenseLog } from "@/types";
 
 export const api = axios.create({
   baseURL: "/api/v1",
@@ -101,6 +101,32 @@ export async function getExpenseLogs(expenseId: number): Promise<ExpenseLog[]> {
 
 export async function getRecentExpenseLogs(limit: number = 50): Promise<ExpenseLog[]> {
   const res = await api.get(`/expenses/logs/recent?limit=${limit}`);
+  return res.data;
+}
+
+export async function exportExpenseLogsCsv(action?: string, search?: string): Promise<void> {
+  const params = new URLSearchParams();
+  if (action && action !== "ALL") params.append("action", action);
+  if (search?.trim()) params.append("search", search.trim());
+  params.append("limit", "2000");
+
+  const res = await api.get(`/expenses/logs/export?${params.toString()}`, {
+    responseType: "blob",
+  });
+
+  const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8;" }));
+  const link = document.createElement("a");
+  link.href = url;
+  const timestamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  link.setAttribute("download", `log_aktivitas_belanja_${timestamp}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode?.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+export async function restoreDeletedExpense(logId: number): Promise<Expense> {
+  const res = await api.post(`/expenses/logs/${logId}/restore`);
   return res.data;
 }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ExpenseLog } from "@/types";
-import { getRecentExpenseLogs } from "@/lib/api";
+import { getRecentExpenseLogs, exportExpenseLogsCsv, restoreDeletedExpense } from "@/lib/api";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import {
   Dialog,
@@ -21,21 +21,28 @@ import {
   CheckCircle2,
   ArrowRight,
   Filter,
+  Download,
+  RotateCcw,
 } from "lucide-react";
 
 interface ExpenseActivityLogModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectExpense?: (expenseId: number) => void;
+  onExpenseRestored?: () => void;
 }
 
 export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = ({
   isOpen,
   onClose,
   onSelectExpense,
+  onExpenseRestored,
 }) => {
   const [logs, setLogs] = useState<ExpenseLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterAction, setFilterAction] = useState<string>("ALL");
 
@@ -51,9 +58,43 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
     }
   };
 
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      await exportExpenseLogsCsv(filterAction, search);
+    } catch (err) {
+      console.error("Gagal mengekspor CSV:", err);
+      alert("Gagal mengekspor log ke CSV. Pastikan koneksi aman.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleRestore = async (logId: number, itemName: string) => {
+    if (!window.confirm(`Pulihkan transaksi belanja "${itemName}" kembali ke database?`)) {
+      return;
+    }
+    setRestoringId(logId);
+    setRestoreMessage(null);
+    try {
+      await restoreDeletedExpense(logId);
+      setRestoreMessage(`Berhasil memulihkan "${itemName}" ke database.`);
+      await fetchLogs();
+      if (onExpenseRestored) {
+        onExpenseRestored();
+      }
+    } catch (err: any) {
+      console.error("Gagal memulihkan transaksi:", err);
+      alert(err.response?.data?.detail || "Gagal memulihkan transaksi belanja.");
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       fetchLogs();
+      setRestoreMessage(null);
     }
   }, [isOpen]);
 
@@ -126,21 +167,40 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                 Log Aktivitas & Perubahan Data Belanja
               </DialogTitle>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={fetchLogs}
-              disabled={isLoading}
-              className="h-8 rounded-xl text-xs gap-1.5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-              <span>Segarkan</span>
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={isExporting || logs.length === 0}
+                className="h-8 rounded-xl text-xs gap-1.5 text-slate-700 hover:text-slate-900"
+              >
+                <Download className={`w-3.5 h-3.5 ${isExporting ? "animate-spin" : ""}`} />
+                <span>{isExporting ? "Mengekspor..." : "Ekspor CSV"}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={fetchLogs}
+                disabled={isLoading}
+                className="h-8 rounded-xl text-xs gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                <span>Segarkan</span>
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Mencatat setiap aksi penambahan, koreksi nominal/status, dan penghapusan data belanja secara transparan.
           </p>
+          {restoreMessage && (
+            <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{restoreMessage}</span>
+            </div>
+          )}
         </DialogHeader>
 
         {/* Filter bar */}
@@ -161,6 +221,7 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
               { id: "UPDATE", label: "Diedit" },
               { id: "STATUS_CHANGE", label: "Status" },
               { id: "DELETE", label: "Dihapus" },
+              { id: "RESTORE", label: "Dipulihkan" },
             ].map((f) => (
               <Button
                 key={f.id}
@@ -205,6 +266,8 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                   ? "bg-rose-50 text-rose-700 border-rose-200"
                   : log.action === "STATUS_CHANGE"
                   ? "bg-purple-50 text-purple-700 border-purple-200"
+                  : log.action === "RESTORE"
+                  ? "bg-teal-50 text-teal-700 border-teal-200"
                   : "bg-blue-50 text-blue-700 border-blue-200";
 
               const actionIcon =
@@ -214,6 +277,8 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                   <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                 ) : log.action === "STATUS_CHANGE" ? (
                   <CheckCircle2 className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                ) : log.action === "RESTORE" ? (
+                  <RotateCcw className="w-3.5 h-3.5 text-teal-600 shrink-0" />
                 ) : (
                   <Edit className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 );
@@ -225,6 +290,8 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                   ? "Data Dihapus"
                   : log.action === "STATUS_CHANGE"
                   ? "Status Bayar Diubah"
+                  : log.action === "RESTORE"
+                  ? "Data Dipulihkan"
                   : "Perubahan Data";
 
               return (
@@ -299,10 +366,40 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                     </div>
                   )}
 
-                  {/* Details for DELETE */}
+                  {/* Details for RESTORE */}
+                  {log.action === "RESTORE" && parsed && (
+                    <div className="mt-1.5 pt-1.5 border-t border-teal-100 text-[11px] text-teal-800 bg-teal-50/50 p-2 rounded-xl flex items-center justify-between flex-wrap gap-1">
+                      <div>
+                        <span className="font-bold">Item dipulihkan:</span> {parsed.item_name || "Barang"} • ID Baru: #{log.expense_id}
+                      </div>
+                      <div className="font-bold text-teal-900 tabular-nums">
+                        {formatRupiah(parsed.total_price || 0)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Details for DELETE + Restore button */}
                   {log.action === "DELETE" && parsed?.deleted_expense && (
-                    <div className="mt-1.5 pt-1.5 border-t border-rose-100 text-[11px] text-rose-800 bg-rose-50/50 p-2 rounded-xl">
-                      <span className="font-bold">Item yang dihapus:</span> {parsed.deleted_expense.item_name} ({formatRupiah(parsed.deleted_expense.total_price || 0)}) • Toko: {parsed.deleted_expense.supplier || "-"} • Tanggal: {parsed.deleted_expense.expense_date}
+                    <div className="mt-1.5 pt-1.5 border-t border-rose-100 text-[11px] text-rose-800 bg-rose-50/50 p-2.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                      <div>
+                        <div>
+                          <span className="font-bold">Item yang dihapus:</span> {parsed.deleted_expense.item_name} ({formatRupiah(parsed.deleted_expense.total_price || 0)})
+                        </div>
+                        <div className="text-[10px] text-rose-600 mt-0.5">
+                          Toko: {parsed.deleted_expense.supplier || "-"} • Tanggal: {parsed.deleted_expense.expense_date} • Kategori: {parsed.deleted_expense.category || "-"}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRestore(log.id, parsed.deleted_expense.item_name)}
+                        disabled={restoringId === log.id}
+                        className="h-7 rounded-lg text-[11px] px-2.5 gap-1.5 text-emerald-700 bg-white hover:bg-emerald-50 hover:text-emerald-800 border-emerald-300 font-semibold shrink-0"
+                      >
+                        <RotateCcw className={`w-3 h-3 ${restoringId === log.id ? "animate-spin" : ""}`} />
+                        <span>{restoringId === log.id ? "Memulihkan..." : "Pulihkan Data"}</span>
+                      </Button>
                     </div>
                   )}
                 </div>

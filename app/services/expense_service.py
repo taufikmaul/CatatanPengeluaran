@@ -586,6 +586,18 @@ async def update_expense(
             },
         )
 
+        from app.services.alert_service import notify_high_value_expense_action
+        diff_lines = [f"• {k}: {v.get('old')} ➔ {v.get('new')}" for k, v in changes.items()]
+        await notify_high_value_expense_action(
+            action=action,
+            item_name=expense.item_name,
+            total_price=float(expense.total_price or 0),
+            actor=actor,
+            date_str=str(expense.expense_date),
+            supplier=expense.supplier,
+            changes_diff="\n".join(diff_lines),
+        )
+
     await db.flush()
     return expense
 
@@ -600,7 +612,12 @@ async def delete_expense(
     if not expense:
         return False
 
-    # Catat log DELETE sebelum data dihapus
+    total_price_val = float(expense.total_price or 0)
+    item_name_val = expense.item_name
+    supplier_val = expense.supplier
+    date_val = str(expense.expense_date)
+
+    # Catat log DELETE sebelum data dihapus dengan snapshot komprehensif
     await record_expense_log(
         db,
         expense_id=expense.id,
@@ -611,17 +628,42 @@ async def delete_expense(
                 "id": expense.id,
                 "item_name": expense.item_name,
                 "supplier": expense.supplier,
-                "total_price": float(expense.total_price or 0),
-                "expense_date": str(expense.expense_date),
+                "total_price": total_price_val,
+                "unit_price": float(expense.unit_price or 0),
+                "qty": float(expense.qty or 1),
+                "unit": expense.unit,
+                "shipping_fee": float(expense.shipping_fee or 0),
+                "tax": float(expense.tax or 0),
+                "other_fee": float(expense.other_fee or 0),
+                "discount": float(expense.discount or 0),
+                "expense_date": date_val,
                 "category": expense.category,
                 "pay_status": expense.pay_status,
+                "pay_method": getattr(expense, "pay_method", "Tunai"),
+                "is_reimbursement": bool(expense.is_reimbursement),
+                "reimbursed_at": str(expense.reimbursed_at) if getattr(expense, "reimbursed_at", None) else None,
+                "notes": expense.notes,
                 "invoice_number": expense.invoice_number,
+                "user_id": expense.user_id,
+                "master_item_id": expense.master_item_id,
+                "msg_link": expense.msg_link,
             }
         },
     )
 
     await db.delete(expense)
     await db.flush()
+
+    from app.services.alert_service import notify_high_value_expense_action
+    await notify_high_value_expense_action(
+        action="DELETE",
+        item_name=item_name_val,
+        total_price=total_price_val,
+        actor=actor,
+        date_str=date_val,
+        supplier=supplier_val,
+    )
+
     return True
 
 
@@ -1181,3 +1223,95 @@ async def get_recent_expense_logs(
         .limit(limit)
     )
     return list(result.scalars().all())
+
+
+async def get_expense_log_by_id(
+    db: AsyncSession,
+    log_id: int,
+) -> ExpenseLog | None:
+    """Ambil satu entri log aksi berdasarkan ID."""
+    result = await db.execute(select(ExpenseLog).where(ExpenseLog.id == log_id))
+    return result.scalar_one_or_none()
+
+
+async def restore_deleted_expense(
+    db: AsyncSession,
+    log_id: int,
+    actor: str = "dashboard:admin",
+) -> Expense | None:
+    """Pulihkan data pengeluaran yang pernah dihapus berdasarkan ID ExpenseLog."""
+    log = await get_expense_log_by_id(db, log_id)
+    if not log or log.action != "DELETE":
+        return None
+
+    details = {}
+    if log.details:
+        try:
+            details = json.loads(log.details) if isinstance(log.details, str) else log.details
+        except Exception:
+            details = {}
+
+    snap = details.get("deleted_expense") or details.get("deleted_record")
+    if not snap or not isinstance(snap, dict):
+        return None
+
+    exp_date = date.today()
+    if snap.get("expense_date"):
+        try:
+            exp_date = date.fromisoformat(str(snap["expense_date"])[:10])
+        except Exception:
+            pass
+
+    expense = Expense(
+        expense_date=exp_date,
+        supplier=snap.get("supplier") or "-",
+        item_name=snap.get("item_name") or "Item Dipulihkan",
+        category=snap.get("category") or "Operasional",
+        qty=Decimal(str(snap.get("qty") or 1)),
+        unit=(snap.get("unit") or "Pcs").strip() or "Pcs",
+        unit_price=Decimal(str(snap.get("unit_price") or 0)),
+        shipping_fee=Decimal(str(snap.get("shipping_fee") or 0)),
+        tax=Decimal(str(snap.get("tax") or 0)),
+        other_fee=Decimal(str(snap.get("other_fee") or 0)),
+        discount=Decimal(str(snap.get("discount") or 0)),
+        total_price=Decimal(str(snap.get("total_price") or 0)),
+        pay_method=snap.get("pay_method") or snap.get("payment_method") or "Tunai",
+        pay_status=snap.get("pay_status") or "Lunas",
+        is_reimbursement=bool(snap.get("is_reimbursement", False)),
+        notes=snap.get("notes") or "-",
+        invoice_number=snap.get("invoice_number") or "-",
+        user_id=snap.get("user_id"),
+        master_item_id=snap.get("master_item_id"),
+        msg_link=snap.get("msg_link") or "Restored Data",
+        sheets_synced=False,
+    )
+    db.add(expense)
+    await db.flush()
+
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action="RESTORE",
+        actor=actor,
+        details={
+            "restored_from_log_id": log_id,
+            "original_deleted_expense_id": log.expense_id,
+            "item_name": expense.item_name,
+            "total_price": float(expense.total_price),
+            "expense_date": str(expense.expense_date),
+        },
+    )
+    await db.flush()
+
+    from app.services.alert_service import notify_high_value_expense_action
+    await notify_high_value_expense_action(
+        action="RESTORE",
+        item_name=expense.item_name,
+        total_price=float(expense.total_price),
+        actor=actor,
+        date_str=str(expense.expense_date),
+        supplier=expense.supplier,
+        changes_diff=f"Dipulihkan dari log aksi #{log_id}",
+    )
+
+    return expense

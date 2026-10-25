@@ -365,6 +365,113 @@ async def list_recent_expense_logs(
     return [ExpenseLogResponse.model_validate(log) for log in logs]
 
 
+@router.get("/logs/export")
+async def export_expense_logs_csv(
+    action: str | None = None,
+    search: str | None = None,
+    limit: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ekspor log audit perubahan belanja ke format file CSV."""
+    import csv
+    import io
+    import json
+    from datetime import datetime
+    from sqlalchemy import select, or_
+    from app.models.expense_log import ExpenseLog
+    from fastapi.responses import Response
+
+    query = select(ExpenseLog).order_by(ExpenseLog.created_at.desc(), ExpenseLog.id.desc())
+    if action and action.upper() != "ALL":
+        query = query.where(ExpenseLog.action == action.upper())
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                ExpenseLog.actor.ilike(term),
+                ExpenseLog.action.ilike(term),
+                ExpenseLog.details.ilike(term),
+            )
+        )
+    query = query.limit(limit)
+    res = await db.execute(query)
+    logs = list(res.scalars().all())
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "ID Log",
+        "Waktu",
+        "Aksi",
+        "Pelaku",
+        "ID Pengeluaran",
+        "Ringkasan Perubahan",
+        "Detail Mentah (JSON)",
+    ])
+
+    for log in logs:
+        summary = ""
+        details_obj = {}
+        if log.details:
+            try:
+                details_obj = json.loads(log.details) if isinstance(log.details, str) else log.details
+            except Exception:
+                details_obj = {}
+
+        if log.action in ("UPDATE", "STATUS_CHANGE"):
+            ch = details_obj.get("changes") or {}
+            diffs = [f"{k}: {v.get('old')} -> {v.get('new')}" for k, v in ch.items()]
+            item_nm = details_obj.get("item_name") or ""
+            summary = f"Item: {item_nm} | {', '.join(diffs)}" if diffs else f"Item: {item_nm}"
+        elif log.action == "DELETE":
+            d_exp = details_obj.get("deleted_expense") or {}
+            summary = f"Dihapus: {d_exp.get('item_name', '-')} (Rp {float(d_exp.get('total_price', 0)):,.0f})"
+        elif log.action == "CREATE":
+            summary = f"Dibuat: {details_obj.get('item_name', '-')} (Rp {float(details_obj.get('total_price', 0)):,.0f})"
+        elif log.action == "RESTORE":
+            summary = f"Dipulihkan: {details_obj.get('item_name', '-')} (Rp {float(details_obj.get('total_price', 0)):,.0f})"
+        else:
+            summary = str(log.details or "")[:100]
+
+        writer.writerow([
+            log.id,
+            log.created_at.strftime("%Y-%m-%d %H:%M:%S") if log.created_at else "-",
+            log.action,
+            log.actor or "-",
+            log.expense_id or "-",
+            summary,
+            log.details or "-",
+        ])
+
+    csv_data = output.getvalue().encode("utf-8-sig")
+    filename = f"log_aktivitas_belanja_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/logs/{log_id}/restore", response_model=ExpenseResponse, dependencies=[Depends(require_admin_role)])
+async def restore_expense_from_log_endpoint(
+    log_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Pulihkan (undo delete) data belanja yang pernah dihapus berdasarkan ID ExpenseLog."""
+    from app.services.expense_service import restore_deleted_expense
+    actor = f"dashboard:{get_current_role(request)}"
+    expense = await restore_deleted_expense(db, log_id, actor=actor)
+    if not expense:
+        raise HTTPException(
+            status_code=400,
+            detail="Gagal memulihkan pengeluaran. Log tidak ditemukan atau bukan merupakan log DELETE yang valid.",
+        )
+    await db.commit()
+    await db.refresh(expense)
+    return ExpenseResponse(**_to_response_dict(expense))
+
+
 @router.get("/{expense_id}/logs", response_model=list[ExpenseLogResponse])
 async def list_expense_logs(
     expense_id: int,

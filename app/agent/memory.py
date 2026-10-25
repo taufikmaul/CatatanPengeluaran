@@ -15,6 +15,7 @@ DEFAULT_CONTEXT = {
     "last_supplier": None,
     "last_action_at": None,
     "pending_action": None,
+    "pending_duplicate": None,
     "conversation_history": [],   # max 5 turns
 }
 

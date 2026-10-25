@@ -603,4 +603,204 @@ async def test_api_expense_activity_logs(client, auth_cookies):
     assert logs_after_delete[0]["action"] == "DELETE"
 
 
+@pytest.mark.asyncio
+async def test_api_expense_logs_export_csv(client, auth_cookies):
+    """Test ekspor log aktivitas belanja ke CSV."""
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat transaksi untuk menghasilkan log
+    payload = {
+        "expense_date": "2026-10-26",
+        "supplier": "Toko Plastik Makmur",
+        "item_name": "Plastik Mika 100pcs",
+        "qty": 2,
+        "unit_price": 30000,
+        "total_price": 60000,
+    }
+    create_res = await client.post("/api/v1/expenses", json=payload)
+    assert create_res.status_code == 201
+
+    # 2. Panggil endpoint ekspor
+    res = await client.get("/api/v1/expenses/logs/export")
+    assert res.status_code == 200
+    assert "text/csv" in res.headers["content-type"]
+    assert "attachment; filename=" in res.headers["content-disposition"]
+    csv_text = res.text
+    assert "ID Log" in csv_text
+    assert "Plastik Mika" in csv_text or "CREATE" in csv_text
+
+
+@pytest.mark.asyncio
+async def test_api_restore_deleted_expense(client, auth_cookies):
+    """Test fitur undo delete / restore data belanja dari log DELETE."""
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat belanja
+    payload = {
+        "expense_date": "2026-10-26",
+        "supplier": "CV Aneka Bahan",
+        "item_name": "Mentega Anchor 5kg",
+        "qty": 1,
+        "unit_price": 350000,
+        "total_price": 350000,
+        "notes": "Pesanan kue ulang tahun",
+    }
+    create_res = await client.post("/api/v1/expenses", json=payload)
+    assert create_res.status_code == 201
+    expense_id = create_res.json()["id"]
+
+    # 2. Hapus belanja
+    del_res = await client.delete(f"/api/v1/expenses/{expense_id}")
+    assert del_res.status_code == 200
+
+    # 3. Cari ID log DELETE
+    logs_res = await client.get(f"/api/v1/expenses/{expense_id}/logs")
+    logs = logs_res.json()
+    delete_log = next(l for l in logs if l["action"] == "DELETE")
+    delete_log_id = delete_log["id"]
+
+    # 4. Panggil endpoint restore
+    restore_res = await client.post(f"/api/v1/expenses/logs/{delete_log_id}/restore")
+    assert restore_res.status_code == 200
+    restored_data = restore_res.json()
+    assert restored_data["item_name"] == "Mentega Anchor 5kg"
+    assert restored_data["total_price"] == 350000
+    assert restored_data["notes"] == "Pesanan kue ulang tahun"
+
+    # 5. Cek apakah ada log RESTORE yang tercatat
+    new_expense_id = restored_data["id"]
+    new_logs_res = await client.get(f"/api/v1/expenses/{new_expense_id}/logs")
+    new_logs = new_logs_res.json()
+    assert any(l["action"] == "RESTORE" for l in new_logs)
+
+
+@pytest.mark.asyncio
+async def test_telegram_duplicate_interactive_callbacks(db):
+    """Test callback interactive duplicate Telegram (force_save_duplicate & cancel_duplicate)."""
+    from app.bot.callbacks import handle_callback_query
+    from app.agent.memory import get_user_context, update_user_context
+    from app.utils.auth import get_or_create_user
+    from app.services.expense_service import get_all_expenses_paginated
+
+    user = await get_or_create_user(db, 888999)
+
+    # 1. Simpan pending duplicate ke context
+    pending_items = [
+        {
+            "barang": "Keju Edam Holland",
+            "toko_supplier": "TBK Sumber Berkah",
+            "qty": 2,
+            "satuan": "Kg",
+            "harga_satuan": 175000,
+            "total_harga": 350000,
+            "kategori": "Bahan Baku",
+            "tanggal": "2026-10-26",
+        }
+    ]
+    await update_user_context(db, user.id, {
+        "pending_duplicate": {
+            "items": pending_items,
+            "msg_link": "https://t.me/c/123/456",
+        }
+    })
+    await db.commit()
+
+    # 2. User klik "Tetap Simpan" (force_save_duplicate)
+    cb_force = {
+        "id": "cb_test_force",
+        "from": {"id": 888999, "first_name": "Chef"},
+        "message": {"chat": {"id": 12345}, "message_id": 999, "message_thread_id": 7},
+        "data": "force_save_duplicate",
+    }
+    await handle_callback_query(cb_force, db)
+    await db.commit()
+
+    # Context pending_duplicate harus sudah bersih
+    ctx = await get_user_context(db, user.id)
+    assert ctx.get("pending_duplicate") is None
+
+    # Expense harus tersimpan di DB
+    expenses, count = await get_all_expenses_paginated(db, search="Keju Edam Holland")
+    assert count >= 1
+    assert expenses[0].total_price == 350000
+
+    # 3. Test cancel_duplicate
+    await update_user_context(db, user.id, {
+        "pending_duplicate": {
+            "items": pending_items,
+            "msg_link": "https://t.me/c/123/456",
+        }
+    })
+    await db.commit()
+
+    cb_cancel = {
+        "id": "cb_test_cancel",
+        "from": {"id": 888999, "first_name": "Chef"},
+        "message": {"chat": {"id": 12345}, "message_id": 999, "message_thread_id": 7},
+        "data": "cancel_duplicate",
+    }
+    await handle_callback_query(cb_cancel, db)
+    await db.commit()
+
+    ctx_after_cancel = await get_user_context(db, user.id)
+    assert ctx_after_cancel.get("pending_duplicate") is None
+
+
+@pytest.mark.asyncio
+async def test_high_value_audit_alert_triggering(db, monkeypatch):
+    """Test notifikasi alert audit untuk pengeluaran >= threshold (Rp 500.000)."""
+    from app.services.expense_service import save_expenses, update_expense, delete_expense
+
+    sent_alerts = []
+
+    async def mock_send_message(chat_id, text, thread_id=None, **kwargs):
+        sent_alerts.append({"chat_id": chat_id, "text": text, "thread_id": thread_id})
+        return {"ok": True}
+
+    monkeypatch.setattr("app.bot.telegram_client.send_message", mock_send_message)
+    monkeypatch.setattr("app.config.settings.report_chat_id", "-1002481928371")
+    monkeypatch.setattr("app.config.settings.report_thread_id", 7)
+    monkeypatch.setattr("app.config.settings.high_value_alert_threshold", 500000.0)
+
+    # 1. Simpan item dengan nominal Rp 1.500.000
+    items = [{
+        "barang": "Oven Deck Gas RFL-12",
+        "toko_supplier": "PT Fomac Machinery",
+        "qty": 1,
+        "satuan": "Unit",
+        "harga_satuan": 1500000,
+        "total_harga": 1500000,
+        "kategori": "Asset",
+        "tanggal": "2026-10-26",
+    }]
+    saved = await save_expenses(db, items, actor="dashboard:admin")
+    await db.commit()
+    exp_id = saved[0].id
+
+    # 2. Update harga ke Rp 1.600.000 -> Harus memicu alert
+    sent_alerts.clear()
+    await update_expense(
+        db,
+        exp_id,
+        {"unit_price": 1600000, "total_price": 1600000},
+        actor="dashboard:admin",
+    )
+    await db.commit()
+
+    assert len(sent_alerts) == 1
+    assert "AUDIT ALERT" in sent_alerts[0]["text"]
+    assert "Oven Deck Gas" in sent_alerts[0]["text"]
+    assert "1.600.000" in sent_alerts[0]["text"]
+
+    # 3. Hapus item bernilai Rp 1.600.000 -> Harus memicu alert
+    sent_alerts.clear()
+    await delete_expense(db, exp_id, actor="dashboard:admin")
+    await db.commit()
+
+    assert len(sent_alerts) == 1
+    assert "PENGELUARAN DIHAPUS" in sent_alerts[0]["text"]
+    assert "Oven Deck Gas" in sent_alerts[0]["text"]
+
+
+
 

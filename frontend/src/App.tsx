@@ -911,6 +911,10 @@ export function App() {
           onSelectExpense={(id) => {
             setIsActivityLogOpen(false);
           }}
+          onExpenseRestored={() => {
+            refetchExpenses();
+            refetchReport();
+          }}
         />
 
         {/* Telegram PIN Login Modal */}

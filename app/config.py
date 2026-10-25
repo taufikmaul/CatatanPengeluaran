@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     auto_report_time: str = Field("08:00", env="AUTO_REPORT_TIME")
     report_chat_id: str = Field("", env="REPORT_CHAT_ID")
     report_thread_id: int = Field(7, env="REPORT_THREAD_ID")
+    high_value_alert_threshold: float = Field(500000.0, env="HIGH_VALUE_ALERT_THRESHOLD")
     monthly_budget_limit: int = Field(0, env="MONTHLY_BUDGET_LIMIT")
     category_budgets_json: str = Field("{}", env="CATEGORY_BUDGETS_JSON")
 

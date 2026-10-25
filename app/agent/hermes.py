@@ -150,8 +150,7 @@ class HermesAgent:
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi data...")
         if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*\nTransaksi ini sudah pernah tercatat.")
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -199,8 +198,7 @@ class HermesAgent:
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
         if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*\nTransaksi ini sudah pernah tercatat.")
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -241,8 +239,7 @@ class HermesAgent:
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
         if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "⚠️ *Double Input Terdeteksi!*\nTransaksi ini sudah pernah tercatat.")
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -598,8 +595,55 @@ class HermesAgent:
         await tg.send_message(self.chat_id, msg, self.thread_id)
 
     # ──────────────────────────────────────────────
-    # Helper: Build success message dengan Hermes insight
+    # Helper: Build duplicate warning & save success message
     # ──────────────────────────────────────────────
+
+    async def _send_duplicate_warning(
+        self,
+        msg_id: int | None,
+        items: list[dict],
+        msg_link: str,
+    ) -> None:
+        """Kirim peringatan duplikat dengan tombol interaktif Tetap Simpan atau Batalkan."""
+        await update_user_context(self.db, self.user_id, {
+            "pending_duplicate": {
+                "items": items,
+                "msg_link": msg_link,
+            }
+        })
+
+        item_lines = []
+        total = 0.0
+        for i, itm in enumerate(items[:5], 1):
+            nm = itm.get("barang") or "Item"
+            qty = itm.get("jumlah", 1)
+            sat = itm.get("satuan") or ""
+            tot = float(itm.get("total_harga") or 0)
+            total += tot
+            item_lines.append(f"{i}. {nm} ({qty} {sat}) — {fmt_rupiah(tot)}")
+        if len(items) > 5:
+            item_lines.append(f"_...dan {len(items) - 5} item lainnya_")
+
+        items_summary = "\n".join(item_lines)
+        warn_msg = (
+            "⚠️ *Kemungkinan Double Input Terdeteksi!*\n\n"
+            "Transaksi ini terdeteksi mirip atau pernah dicatat sebelumnya:\n"
+            f"{items_summary}\n\n"
+            f"💰 *Total:* {fmt_rupiah(total)}\n\n"
+            "_Jika transaksi ini memang pembelian baru yang terpisah, klik **Tetap Simpan** di bawah._"
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Tetap Simpan", "callback_data": "force_save_duplicate"},
+                    {"text": "❌ Batalkan", "callback_data": "cancel_duplicate"},
+                ]
+            ]
+        }
+        if msg_id:
+            await tg.edit_message(self.chat_id, msg_id, warn_msg, keyboard)
+        else:
+            await tg.send_message(self.chat_id, warn_msg, self.thread_id, keyboard)
 
     async def _send_save_success(
         self,
