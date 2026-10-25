@@ -138,7 +138,7 @@ export function DashboardHeader({
               <span className="sm:hidden text-[11px]">
                 {MONTH_NAMES[month - 1].slice(0, 3)} '{String(year).slice(-2)}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -216,7 +216,7 @@ export function DashboardHeader({
               <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100">
                 Perhatian Operasional
               </h2>
-              <span className="text-[10px] text-slate-400 font-medium">
+              <span className="text-[10px] text-slate-500 font-medium">
                 {MONTH_NAMES[month - 1]} {year}
               </span>
             </div>

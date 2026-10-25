@@ -143,7 +143,7 @@ const LeaderboardRow: React.FC<LeaderboardRowProps> = ({
             >
               {title}
             </p>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
               {badgeText && (
                 <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium truncate max-w-[110px]">
                   {badgeText}
@@ -161,7 +161,7 @@ const LeaderboardRow: React.FC<LeaderboardRowProps> = ({
             {primaryValue}
           </span>
           {secondaryValue && (
-            <span className="text-[10px] text-slate-400 tabular-nums block mt-0.5">
+            <span className="text-[10px] text-slate-500 tabular-nums block mt-0.5">
               {secondaryValue}
             </span>
           )}
@@ -224,7 +224,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
               <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
                 {formatRupiah(summaryMetrics.daily_average)}
               </p>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-slate-500">
                 {summaryMetrics.active_days_count} hari belanja aktif
               </p>
             </div>
@@ -241,7 +241,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
               <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
                 {formatRupiah(summaryMetrics.average_per_transaction)}
               </p>
-              <p className="text-[10px] text-slate-400">Rerata nota belanja</p>
+              <p className="text-[10px] text-slate-500">Rerata nota belanja</p>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-100/70 text-emerald-600 shrink-0">
               <Receipt className="w-4 h-4" />
@@ -257,7 +257,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                 {summaryMetrics.unique_items_count}{" "}
                 <span className="text-xs font-medium text-slate-500">macam</span>
               </p>
-              <p className="text-[10px] text-slate-400">
+              <p className="text-[10px] text-slate-500">
                 Dari {summaryMetrics.unique_suppliers_count} supplier
               </p>
             </div>
@@ -277,7 +277,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                   : "-"}
               </p>
               <p
-                className="text-[10px] text-slate-400 truncate"
+                className="text-[10px] text-slate-500 truncate"
                 title={summaryMetrics.max_single_transaction?.item_name}
               >
                 {summaryMetrics.max_single_transaction
@@ -292,9 +292,9 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
         </div>
       )}
 
-      {/* ── Main Leaderboard Cards Grid (Exact Same Card Structure) ── */}
+      {/* Leaderboard Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* ── Card 1: Top Sering Dibeli (Blue) ── */}
+        {/* Card 1: Top Sering Dibeli */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -312,7 +312,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                       <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
                         Top Sering Dibeli
                       </CardTitle>
-                      <p className="text-[10px] text-slate-400 font-medium truncate">
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
                         Frekuensi belanja terbanyak
                       </p>
                     </div>
@@ -328,7 +328,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
               <CardContent className="p-4 space-y-3.5">
                 {topFrequentItems.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400 space-y-1">
+                  <div className="text-center py-8 text-slate-500 space-y-1">
                     <ShoppingBag className="w-8 h-8 mx-auto mb-1 text-slate-300" />
                     <p className="text-xs font-medium">Belum ada data barang</p>
                     <p className="text-[10px]">Transaksi akan muncul di sini</p>
@@ -353,7 +353,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
           </Card>
         </motion.div>
 
-        {/* ── Card 2: Top Item Termahal (Emerald) ── */}
+        {/* Card 2: Top Item Termahal */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -371,7 +371,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                       <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
                         Top Item Termahal
                       </CardTitle>
-                      <p className="text-[10px] text-slate-400 font-medium truncate">
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
                         Pengeluaran paling besar
                       </p>
                     </div>
@@ -408,7 +408,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
               <CardContent className="p-4 space-y-3.5">
                 {expensiveMode === "total" ? (
                   topExpensiveItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 space-y-1">
+                    <div className="text-center py-8 text-slate-500 space-y-1">
                       <TrendingUp className="w-8 h-8 mx-auto mb-1 text-slate-300" />
                       <p className="text-xs font-medium">Belum ada pengeluaran</p>
                       <p className="text-[10px]">Data belanja akan muncul di sini</p>
@@ -429,7 +429,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                     ))
                   )
                 ) : topUnitPriceItems.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400 space-y-1">
+                  <div className="text-center py-8 text-slate-500 space-y-1">
                     <TrendingUp className="w-8 h-8 mx-auto mb-1 text-slate-300" />
                     <p className="text-xs font-medium">Belum ada data harga satuan</p>
                     <p className="text-[10px]">Data harga satuan akan muncul di sini</p>
@@ -454,7 +454,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
           </Card>
         </motion.div>
 
-        {/* ── Card 3: Top Naik Drastis (Rose) — SAME STYLE, SAME COMPONENT! ── */}
+        {/* Card 3: Top Kenaikan Harga */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -472,7 +472,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                       <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
                         Top Naik Drastis
                       </CardTitle>
-                      <p className="text-[10px] text-slate-400 font-medium truncate">
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
                         Lonjakan harga beli bahan
                       </p>
                     </div>
@@ -493,7 +493,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                       <CheckCircle2 className="w-5 h-5" />
                     </div>
                     <p className="text-xs font-semibold text-emerald-700">Harga Bahan Stabil</p>
-                    <p className="text-[10px] text-slate-400 max-w-[190px] mx-auto leading-relaxed">
+                    <p className="text-[10px] text-slate-500 max-w-[190px] mx-auto leading-relaxed">
                       Tidak terdeteksi lonjakan harga bahan di periode {monthName} {year}
                     </p>
                   </div>
@@ -517,7 +517,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
           </Card>
         </motion.div>
 
-        {/* ── Card 4: Top Toko & Supplier (Purple) — SAME STYLE, SAME COMPONENT! ── */}
+        {/* Card 4: Top Toko & Supplier */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
@@ -535,7 +535,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                       <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
                         Top Toko & Mitra
                       </CardTitle>
-                      <p className="text-[10px] text-slate-400 font-medium truncate">
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
                         Alokasi belanja per mitra
                       </p>
                     </div>
@@ -551,7 +551,7 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
               <CardContent className="p-4 space-y-3.5">
                 {topSuppliers.length === 0 ? (
-                  <div className="text-center py-8 text-slate-400 space-y-1">
+                  <div className="text-center py-8 text-slate-500 space-y-1">
                     <Store className="w-8 h-8 mx-auto mb-1 text-slate-300" />
                     <p className="text-xs font-medium">Belum ada data supplier</p>
                     <p className="text-[10px]">Data mitra belanja akan muncul di sini</p>

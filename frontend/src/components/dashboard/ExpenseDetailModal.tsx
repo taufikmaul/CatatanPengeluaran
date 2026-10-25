@@ -77,7 +77,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
         <DialogHeader className="mb-1">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-xl">🧾</span>
+              <Receipt className="w-5 h-5 text-slate-700" />
               <DialogTitle className="text-lg font-bold text-slate-900">
                 Detail Transaksi
               </DialogTitle>
@@ -153,7 +153,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                     </>
                   ) : (
                     <>
-                      <Copy className="w-3.5 h-3.5 text-slate-400" />
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
                       <span>Salin</span>
                     </>
                   )}
@@ -197,7 +197,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 <span className="font-semibold text-slate-800">
                   Dicatat via Web Dashboard
                 </span>
-                <span className="text-slate-400 text-[11px] block">
+                <span className="text-slate-500 text-[11px] block">
                   Data pengeluaran dimasukkan secara langsung melalui formulir dashboard.
                 </span>
               </div>
@@ -211,7 +211,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 <span className="font-semibold text-slate-800">
                   Diimpor dari File CSV
                 </span>
-                <span className="text-slate-400 text-[11px] block">
+                <span className="text-slate-500 text-[11px] block">
                   Data pengeluaran dimasukkan melalui fitur migrasi/impor spreadsheet.
                 </span>
               </div>
@@ -225,7 +225,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
           <div className="p-4 bg-slate-50/80 border border-slate-100 rounded-2xl">
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-1">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
                   Nama Barang / Keperluan
                 </span>
                 <div className="text-base font-bold text-slate-900 leading-snug">
@@ -265,7 +265,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 <span className="text-xs text-slate-500 font-medium block">
                   Total Biaya Transaksi
                 </span>
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500">
                   {expense.qty} {expense.unit || "Pcs"} x {formatRupiah(expense.unit_price)}
                   {Number(expense.shipping_fee) > 0 ? ` + Ongkir ${formatRupiah(expense.shipping_fee)}` : ""}
                   {Number(expense.tax) > 0 ? ` + Pajak ${formatRupiah(expense.tax)}` : ""}
@@ -285,9 +285,9 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             {/* Toko / Supplier */}
             <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5">
-              <Store className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <Store className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div>
-                <span className="text-slate-400 text-[11px] block font-medium">Toko / Supplier</span>
+                <span className="text-slate-500 text-[11px] block font-medium">Toko / Supplier</span>
                 <span className="font-semibold text-slate-800 text-xs">
                   {expense.supplier || "-"}
                 </span>
@@ -296,9 +296,9 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
             {/* No. Invoice */}
             <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5">
-              <Receipt className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <Receipt className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div>
-                <span className="text-slate-400 text-[11px] block font-medium">No. Invoice / Nota</span>
+                <span className="text-slate-500 text-[11px] block font-medium">No. Invoice / Nota</span>
                 <span className="font-semibold text-slate-800 text-xs font-mono">
                   {expense.invoice_number && expense.invoice_number !== "-"
                     ? `#${expense.invoice_number}`
@@ -309,9 +309,9 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
             {/* Tanggal Nota */}
             <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5">
-              <Calendar className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <Calendar className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div>
-                <span className="text-slate-400 text-[11px] block font-medium">Tanggal Transaksi</span>
+                <span className="text-slate-500 text-[11px] block font-medium">Tanggal Transaksi</span>
                 <span className="font-semibold text-slate-800 text-xs">
                   {formatDateId(expense.expense_date, true)}
                 </span>
@@ -320,9 +320,9 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
             {/* Metode Bayar */}
             <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5">
-              <CreditCard className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <CreditCard className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div>
-                <span className="text-slate-400 text-[11px] block font-medium">Metode Pembayaran</span>
+                <span className="text-slate-500 text-[11px] block font-medium">Metode Pembayaran</span>
                 <span className="font-semibold text-slate-800 text-xs">
                   {expense.pay_method || "Tunai"}
                 </span>
@@ -336,7 +336,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-400 text-[11px] block font-medium">Diinput Oleh</span>
+                  <span className="text-slate-500 text-[11px] block font-medium">Diinput Oleh</span>
                   {expense.user_name ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
                       User Terdaftar
@@ -352,7 +352,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                     {expense.user_name || "Tanpa Atribusi User"}
                   </span>
                   {expense.user_id && (
-                    <span className="text-[11px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                    <span className="text-[11px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
                       User #{expense.user_id}
                     </span>
                   )}
@@ -371,25 +371,25 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div className="p-2 bg-white rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] text-slate-400 block font-medium">🚚 Ongkir</span>
+                    <span className="text-[10px] text-slate-500 block font-medium">Ongkir</span>
                     <span className="font-semibold text-slate-800 tabular-nums">
                       {formatRupiah(expense.shipping_fee || 0)}
                     </span>
                   </div>
                   <div className="p-2 bg-white rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] text-slate-400 block font-medium">🏛️ Pajak</span>
+                    <span className="text-[10px] text-slate-500 block font-medium">Pajak</span>
                     <span className="font-semibold text-slate-800 tabular-nums">
                       {formatRupiah(expense.tax || 0)}
                     </span>
                   </div>
                   <div className="p-2 bg-white rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] text-slate-400 block font-medium">⚙️ Biaya Lain</span>
+                    <span className="text-[10px] text-slate-500 block font-medium">Biaya Lain</span>
                     <span className="font-semibold text-slate-800 tabular-nums">
                       {formatRupiah(expense.other_fee || 0)}
                     </span>
                   </div>
                   <div className="p-2 bg-white rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] text-slate-400 block font-medium">🏷️ Diskon</span>
+                    <span className="text-[10px] text-slate-500 block font-medium">Diskon</span>
                     <span className="font-semibold text-emerald-600 tabular-nums">
                       {Number(expense.discount || 0) > 0 ? `-${formatRupiah(expense.discount || 0)}` : "Rp 0"}
                     </span>
@@ -428,9 +428,9 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
             {/* Catatan Tambahan */}
             <div className="p-3 bg-white border border-slate-200/90 rounded-2xl flex items-start gap-2.5 sm:col-span-2">
-              <FileText className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+              <FileText className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <div className="w-full">
-                <span className="text-slate-400 text-[11px] block font-medium">Catatan / Keterangan</span>
+                <span className="text-slate-500 text-[11px] block font-medium">Catatan / Keterangan</span>
                 <p className="font-normal text-slate-700 text-xs mt-0.5 whitespace-pre-wrap">
                   {expense.notes && expense.notes !== "-" ? expense.notes : "Tidak ada catatan."}
                 </p>
@@ -439,7 +439,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
           </div>
 
           {/* Sync Status Info */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 px-1 pt-1">
+          <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1">
             <span>
               Waktu dicatat: {expense.created_at ? formatDateId(expense.created_at, true) : "-"}
             </span>

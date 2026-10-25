@@ -73,7 +73,7 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
           {/* Download Template Bar */}
           <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
             <div className="flex items-center gap-2 text-slate-700 font-medium">
-              <FileText className="w-4 h-4 text-slate-400" />
+              <FileText className="w-4 h-4 text-slate-500" />
               <span>Format Kolom Standar (15 Kolom)</span>
             </div>
             <Button
@@ -95,11 +95,11 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
               onChange={handleFileChange}
               className="absolute inset-0 opacity-0 cursor-pointer"
             />
-            <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+            <Upload className="w-8 h-8 text-slate-500 mx-auto mb-2" />
             <p className="text-xs font-semibold text-slate-700">
               {file ? file.name : "Klik atau seret file CSV ke sini"}
             </p>
-            <p className="text-[11px] text-slate-400 mt-1">Maksimal 10MB per file</p>
+            <p className="text-[11px] text-slate-500 mt-1">Maksimal 10MB per file</p>
           </div>
 
           {/* Options */}

@@ -94,7 +94,7 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
               <CardTitle className="text-sm md:text-base font-bold text-slate-800 flex items-center gap-2">
                 Orderan Perlu Pelunasan
               </CardTitle>
-              <p className="text-[11px] text-slate-400 font-medium truncate">
+              <p className="text-[11px] text-slate-500 font-medium truncate">
                 Tagihan hutang belanja & jatuh tempo
               </p>
             </div>
@@ -104,7 +104,7 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
             <span className="text-xs md:text-sm font-bold text-rose-600 block tabular-nums">
               {formatRupiah(totalNominal)}
             </span>
-            <span className="text-[10px] text-slate-400 font-medium">
+            <span className="text-[10px] text-slate-500 font-medium">
               {unpaidList.length} tagihan pending
             </span>
           </div>
@@ -119,7 +119,7 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
             </div>
             <div>
               <p className="text-sm font-bold text-emerald-700">Semua Tagihan Lunas!</p>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Tidak ada orderan pending di periode ini.
               </p>
             </div>
@@ -146,10 +146,10 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate">
                         {item.supplier && item.supplier !== "-" && (
                           <span className="flex items-center gap-1 text-slate-600 truncate">
-                            <Store className="w-3 h-3 text-slate-400 shrink-0" />
+                            <Store className="w-3 h-3 text-slate-500 shrink-0" />
                             {item.supplier}
                           </span>
                         )}
@@ -169,7 +169,7 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
                   {/* Due Date & Action Strip */}
                   <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px]">
                     <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       <Badge
                         variant="outline"
                         className={`text-[10px] px-2 py-0.5 border ${status.color}`}
@@ -177,7 +177,7 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
                         {status.label}
                       </Badge>
                       {item.tempo && item.tempo !== "-" && (
-                        <span className="text-slate-400 font-mono text-[10px] hidden sm:inline">
+                        <span className="text-slate-500 font-mono text-[10px] hidden sm:inline">
                           ({item.tempo})
                         </span>
                       )}

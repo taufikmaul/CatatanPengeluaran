@@ -1,7 +1,7 @@
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, RotateCcw, Plus, Filter } from "lucide-react";
+import { Search, RotateCcw, Plus, Filter, Tag } from "lucide-react";
 import { ExpenseUser } from "@/types";
 
 interface FilterBarProps {
@@ -55,7 +55,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Search Input */}
         <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <Input
             placeholder="Cari nama barang, supplier, invoice, penginput..."
             value={search}
@@ -65,7 +65,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           {search && (
             <button
               onClick={() => onSearchChange("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-600"
             >
               Clear
             </button>
@@ -84,7 +84,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
       {/* Filter Selectors Row */}
       <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
-        <div className="flex items-center gap-1.5 text-xs text-slate-400 mr-1">
+        <div className="flex items-center gap-1.5 text-xs text-slate-500 mr-1">
           <Filter className="w-3.5 h-3.5" />
           <span>Filter:</span>
         </div>
@@ -139,7 +139,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <option value="">Semua Penginput</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
-                👤 {u.name}
+                {u.name}
               </option>
             ))}
           </select>
@@ -184,7 +184,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <span>🏷️</span>
+            <Tag className="w-3.5 h-3.5 shrink-0" />
             <span>Talangan</span>
             {isReimbursement && (
               <span className="bg-white/20 text-[10px] px-1 rounded-full">Aktif</span>
@@ -198,7 +198,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             variant="ghost"
             size="sm"
             onClick={onReset}
-            className="h-8 px-2 text-xs text-slate-400 hover:text-slate-700 gap-1 ml-auto"
+            className="h-8 px-2 text-xs text-slate-500 hover:text-slate-700 gap-1 ml-auto"
           >
             <RotateCcw className="w-3 h-3" />
             Reset

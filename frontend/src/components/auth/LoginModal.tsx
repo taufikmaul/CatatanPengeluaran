@@ -181,8 +181,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
     <Dialog open={isOpen} onOpenChange={() => {}}>
       <DialogContent className="max-w-sm rounded-3xl p-6">
         <DialogHeader className="text-center">
-          <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-2 text-2xl">
-            🎂
+          <div className="w-12 h-12 bg-rose-50 text-rose-600 border border-rose-200/80 rounded-2xl flex items-center justify-center mx-auto mb-2 font-bold text-base tracking-tight select-none">
+            HC
           </div>
           <DialogTitle className="text-lg font-bold text-slate-900">
             Login Catatan Pengeluaran
@@ -240,7 +240,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                   <button
                     type="button"
                     onClick={() => setShowAdminPassword(!showAdminPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
                     title={showAdminPassword ? "Sembunyikan" : "Tampilkan"}
                   >
                     {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -320,7 +320,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                       type="button"
                       onClick={handleRequestPin}
                       disabled={cooldown > 0 || isRequesting}
-                      className="text-xs text-blue-600 hover:underline disabled:text-slate-400 disabled:no-underline font-medium"
+                      className="text-xs text-blue-600 hover:underline disabled:text-slate-500 disabled:no-underline font-medium"
                     >
                       {cooldown > 0 ? `Kirim ulang PIN dalam ${cooldown}d` : "Kirim Ulang PIN"}
                     </button>

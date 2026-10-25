@@ -117,7 +117,7 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all">
             {hoveredItem ? (
               <div className="flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-150 px-2 text-center">
-                <span className="text-[10px] text-slate-400 font-medium truncate max-w-[85px]">
+                <span className="text-[10px] text-slate-500 font-medium truncate max-w-[85px]">
                   {hoveredItem.name}
                 </span>
                 <span className="text-xs font-bold text-slate-800 tabular-nums leading-tight">
@@ -129,7 +129,7 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center">
-                <span className="text-[11px] text-slate-400 font-medium">Total</span>
+                <span className="text-[11px] text-slate-500 font-medium">Total</span>
                 <span className="text-xs font-bold text-slate-700">{chartData.length} Kat</span>
               </div>
             )}
@@ -166,13 +166,13 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
 
                 <div className="text-right shrink-0">
                   {/* Default State: Percentage */}
-                  <span className="group-hover:hidden text-slate-400 font-medium tabular-nums text-xs">
+                  <span className="group-hover:hidden text-slate-500 font-medium tabular-nums text-xs">
                     {item.percentage}%
                   </span>
                   {/* Hover State: Rupiah Value + Percentage */}
                   <span className="hidden group-hover:inline-flex items-center gap-1 font-bold text-blue-600 tabular-nums text-[11px] animate-in fade-in duration-150">
                     <span>{formatRupiah(item.value)}</span>
-                    <span className="text-[10px] text-slate-400 font-normal">({item.percentage}%)</span>
+                    <span className="text-[10px] text-slate-500 font-normal">({item.percentage}%)</span>
                   </span>
                 </div>
               </div>

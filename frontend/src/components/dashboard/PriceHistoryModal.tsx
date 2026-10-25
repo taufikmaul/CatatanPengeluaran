@@ -46,11 +46,11 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
         </DialogHeader>
 
         {isLoading ? (
-          <div className="py-12 text-center text-xs text-slate-400">
+          <div className="py-12 text-center text-xs text-slate-500">
             Memuat riwayat harga & perbandingan toko...
           </div>
         ) : !data || data.tx_count === 0 ? (
-          <div className="py-12 text-center text-xs text-slate-400">
+          <div className="py-12 text-center text-xs text-slate-500">
             Belum ada riwayat transaksi untuk barang ini.
           </div>
         ) : (
@@ -135,7 +135,7 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
                             </Badge>
                           )}
                         </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5">
+                        <div className="text-[10px] text-slate-500 mt-0.5">
                           {s.tx_count}x transaksi • Terakhir {formatDateId(s.last_date)}
                         </div>
                       </div>
@@ -144,7 +144,7 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
                           {formatRupiah(s.min_price)}
                         </div>
                         {s.max_price > s.min_price && (
-                          <div className="text-[10px] text-slate-400 tabular-nums">
+                          <div className="text-[10px] text-slate-500 tabular-nums">
                             s/d {formatRupiah(s.max_price)}
                           </div>
                         )}

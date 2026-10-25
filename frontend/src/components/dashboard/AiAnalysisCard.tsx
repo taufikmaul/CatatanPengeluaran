@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
-  Sparkles,
+  BrainCircuit,
   RefreshCw,
   Copy,
   Check,
@@ -121,19 +121,19 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
-              <Sparkles className="w-5 h-5" />
+              <BrainCircuit className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-slate-900 text-base md:text-lg leading-tight">
-                  Evaluasi Finansial & Saran AI
+                  Evaluasi Finansial & Rekomendasi
                 </h3>
-                <span className="text-xs text-slate-400 font-medium hidden sm:inline">
+                <span className="text-xs text-slate-500 font-medium hidden sm:inline">
                   • {monthName} {year}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Konsultan cerdas berbasis data transaksi real toko kue Historycake
+                Analisis pengeluaran dan rekomendasi berbasis data transaksi toko Historycake
               </p>
             </div>
           </div>
@@ -231,7 +231,7 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
 
             {/* Ringkasan Eksekutif */}
             <div className="space-y-1.5">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Ringkasan Eksekutif
               </h4>
               <p className="text-sm text-slate-700 leading-relaxed font-normal">
@@ -336,11 +336,11 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
                   </p>
                   {analysis.key_insights.length > 0 && (
                     <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
-                      <span className="text-[11px] font-bold uppercase text-slate-400">Observasi Tambahan:</span>
+                      <span className="text-[11px] font-bold uppercase text-slate-500">Observasi Tambahan:</span>
                       <ul className="space-y-1">
                         {analysis.key_insights.map((insight, idx) => (
                           <li key={idx} className="text-xs text-slate-600 flex items-start gap-2">
-                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-500">•</span>
                             <span>{insight}</span>
                           </li>
                         ))}
@@ -352,10 +352,10 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
             </div>
 
             {/* Footer Bar: Tombol Laporan Lengkap & Info Waktu */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 text-[11px] text-slate-400">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 text-[11px] text-slate-500">
               <div>
                 Dianalisis pada: {analysis.analyzed_at}{" "}
-                {analysis.cached ? <span className="text-slate-400">(cache cepat)</span> : ""}
+                {analysis.cached ? <span className="text-slate-500">(cache cepat)</span> : ""}
               </div>
               <Button
                 variant="ghost"
@@ -376,7 +376,7 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-500" />
+              <BrainCircuit className="w-5 h-5 text-amber-500" />
               <DialogTitle className="text-lg font-bold text-slate-900">
                 Laporan Lengkap Analisis Finansial
               </DialogTitle>
@@ -393,7 +393,7 @@ ${analysis.actionable_recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
           </div>
 
           <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500">
               Skor Kesehatan: {analysis?.health_score}/100 ({analysis?.health_status})
             </span>
             <Button

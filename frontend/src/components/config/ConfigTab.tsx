@@ -11,7 +11,9 @@ import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import {
   Save,
   Bot,
-  Sparkles,
+  Cpu,
+  Percent,
+  FlaskConical,
   FileSpreadsheet,
   RefreshCw,
   Upload,
@@ -26,7 +28,6 @@ import {
   ChevronRight,
   AlertCircle,
   RotateCcw,
-  Percent,
 } from "lucide-react";
 
 interface ConfigTabProps {
@@ -413,7 +414,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               <button
                 type="button"
                 onClick={() => setShowTokens(!showTokens)}
-                className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1 font-medium"
+                className="text-xs text-slate-500 hover:text-slate-600 flex items-center gap-1 font-medium"
               >
                 {showTokens ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 {showTokens ? "Sembunyikan Nilai Rahasia" : "Lihat Nilai"}
@@ -433,7 +434,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder={config.telegram_token_masked || "Masukkan token dari @BotFather"}
                   className="h-10 text-xs rounded-xl"
                 />
-                <span className="text-[11px] text-slate-400 mt-1 block">
+                <span className="text-[11px] text-slate-500 mt-1 block">
                   Format: <code>123456789:ABCdefGHIjkl...</code>
                 </span>
               </div>
@@ -449,7 +450,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="Contoh: 123456789 atau -100123456789"
                   className="h-10 text-xs rounded-xl"
                 />
-                <span className="text-[11px] text-slate-400 mt-1 block">
+                <span className="text-[11px] text-slate-500 mt-1 block">
                   User ID atau Group ID Telegram tujuan pengiriman PIN
                 </span>
               </div>
@@ -464,7 +465,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   onChange={(e) => setAllowedThreadId(Number(e.target.value))}
                   className="h-10 text-xs rounded-xl"
                 />
-                <span className="text-[11px] text-slate-400 mt-1 block">
+                <span className="text-[11px] text-slate-500 mt-1 block">
                   Default: 7 (Topic bot Catatan Pengeluaran)
                 </span>
               </div>
@@ -589,7 +590,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               </div>
 
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
                   Rp
                 </span>
                 <Input
@@ -671,7 +672,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                       {totalAllocatedPercentage}%
                     </span>
                   </span>
-                  <span className="text-slate-400">•</span>
+                  <span className="text-slate-500">•</span>
                   <span className="font-semibold text-slate-700 tabular-nums">
                     {formatRupiah(totalAllocatedRupiah)}
                   </span>
@@ -725,7 +726,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     disabled={remainingPercentage <= 0}
                     className="h-7 text-[10px] rounded-lg px-2 font-medium border-slate-200"
                   >
-                    <Sparkles className="w-3 h-3 text-amber-500 mr-1" />
+                    <Percent className="w-3 h-3 text-slate-600 mr-1" />
                     Bagi Rata Sisa {remainingPercentage > 0 ? `(${remainingPercentage}%)` : ""}
                   </Button>
                   <Button
@@ -772,7 +773,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   </span>
                   Alokasi Persentase Per Kategori (%) & Preview Rupiah
                 </label>
-                <span className="text-[11px] text-slate-400">
+                <span className="text-[11px] text-slate-500">
                   {config?.valid_categories?.length || 0} kategori tersedia
                 </span>
               </div>
@@ -808,7 +809,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                             placeholder="0"
                             className="h-8 text-xs font-bold text-slate-900 pr-5 rounded-lg bg-white"
                           />
-                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500 pointer-events-none">
                             %
                           </span>
                         </div>
@@ -858,7 +859,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="p-4 md:p-5 pb-3">
             <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-500" />
+              <Cpu className="w-5 h-5 text-blue-600" />
               Hermes AI & Sumopod Configuration
             </CardTitle>
           </CardHeader>
@@ -875,7 +876,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder={config.ai_key_masked || "sk-your-sumopod-api-key"}
                   className="h-10 text-xs rounded-xl"
                 />
-                <span className="text-[11px] text-slate-400 mt-1 block">
+                <span className="text-[11px] text-slate-500 mt-1 block">
                   Dapatkan di dashboard Sumopod AI
                 </span>
               </div>
@@ -955,7 +956,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   </Button>
                 )}
               </div>
-              <span className="text-[11px] text-slate-400 mt-1 block">
+              <span className="text-[11px] text-slate-500 mt-1 block">
                 ID spreadsheet diambil dari URL: <code>docs.google.com/spreadsheets/d/[SPREADSHEET_ID]/edit</code>
               </span>
             </div>
@@ -1000,7 +1001,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     {config.service_account_email}
                   </code>
                   <p className="text-[11px] text-emerald-700 mt-1">
-                    💡 <strong>Penting:</strong> Bagikan (*Share*) spreadsheet Google Anda ke email di atas dengan akses <strong>Editor</strong> agar sync berjalan sukses.
+                    <strong>Penting:</strong> Bagikan (*Share*) spreadsheet Google Anda ke email di atas dengan akses <strong>Editor</strong> agar sync berjalan sukses.
                   </p>
                 </div>
               )}
@@ -1042,7 +1043,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       <Card className="border-slate-200 shadow-sm mt-8">
         <CardHeader className="p-4 md:p-5 pb-2">
           <CardTitle className="text-sm md:text-base font-semibold text-slate-800 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-blue-600" />
+            <FlaskConical className="w-4 h-4 text-blue-600" />
             Uji Coba Prompt & Ekstraksi AI (Live)
           </CardTitle>
         </CardHeader>

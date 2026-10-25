@@ -711,7 +711,7 @@ export function App() {
                         </div>
                         <div className="text-sm sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
                           {reportData?.expense_count || 0}
-                          <span className="hidden sm:inline text-xs font-normal text-slate-400 ml-1.5">item</span>
+                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">item</span>
                         </div>
                       </div>
                       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
@@ -724,7 +724,7 @@ export function App() {
                         <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Belum Lunas</div>
                         <div className="text-xs sm:text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 tabular-nums truncate">
                           {reportData?.list_hutang?.length || 0}
-                          <span className="hidden sm:inline text-xs font-normal text-slate-400 ml-1.5">
+                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">
                             ({formatRupiah(totalUnpaidNominal)})
                           </span>
                         </div>

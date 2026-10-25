@@ -19,6 +19,7 @@ import {
   Eye,
   ExternalLink,
   User as UserIcon,
+  Briefcase,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -78,7 +79,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   if (expenses.length === 0) {
     return (
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-12 text-center shadow-sm">
-        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto mb-3">
+        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto mb-3">
           <Inbox className="w-6 h-6" />
         </div>
         <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Tidak ada transaksi ditemukan</h3>
@@ -99,7 +100,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             {totalCount} item
           </Badge>
         </div>
-        <span className="text-xs text-slate-400 font-medium">
+        <span className="text-xs text-slate-500 font-medium">
           Halaman {page} dari {totalPages}
         </span>
       </div>
@@ -136,7 +137,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </td>
                   <td className="py-3 px-4 whitespace-nowrap text-slate-600 max-w-[170px] lg:max-w-[240px] 2xl:max-w-[320px]">
                     <div className="truncate font-medium text-slate-800">{e.supplier || "-"}</div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-normal mt-0.5 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-normal mt-0.5 flex-wrap">
                       {e.invoice_number && e.invoice_number !== "-" && (
                         <span className="font-mono text-slate-600 bg-slate-100/90 px-1 py-0.5 rounded border border-slate-200/60 shrink-0">
                           #{e.invoice_number}
@@ -153,7 +154,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       ) : (
                         <span
                           title="Diinput via Web Dashboard / Import"
-                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] text-slate-400 shrink-0"
+                          className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] text-slate-500 shrink-0"
                         >
                           <span className="opacity-70">Web/Import</span>
                         </span>
@@ -173,7 +174,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       </button>
                       {e.is_reimbursement && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                          💼 Reimburse
+                          <Briefcase className="w-2.5 h-2.5" />
+                          <span>Reimburse</span>
                         </span>
                       )}
                       {tgMeta.isUrl && (
@@ -192,7 +194,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       )}
                     </div>
                     {e.notes && e.notes !== "-" && (
-                      <div className="text-[11px] text-slate-400 font-normal truncate mt-0.5">
+                      <div className="text-[11px] text-slate-500 font-normal truncate mt-0.5">
                         {e.notes}
                       </div>
                     )}
@@ -206,7 +208,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </td>
                   <td className="py-3 px-4 text-right text-slate-700 tabular-nums font-medium whitespace-nowrap">
                     <span>{e.qty}</span>
-                    <span className="text-[11px] text-slate-400 font-normal ml-1">
+                    <span className="text-[11px] text-slate-500 font-normal ml-1">
                       {e.unit || "Pcs"}
                     </span>
                   </td>
@@ -246,7 +248,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                           variant="ghost"
                           size="icon"
                           onClick={() => onViewExpense(e)}
-                          className="h-7 w-7 text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                          className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                           title="Lihat detail lengkap transaksi"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -258,7 +260,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(ev) => ev.stopPropagation()}
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-[#229ED9] hover:bg-sky-50 transition-colors"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-[#229ED9] hover:bg-sky-50 transition-colors"
                           title={`Buka pesan di Telegram (${tgMeta.badgeLabel})`}
                         >
                           <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
@@ -269,7 +271,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                           variant="ghost"
                           size="icon"
                           onClick={() => onRepeatExpense(e)}
-                          className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                          className="h-7 w-7 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
                           title="Beli Lagi (Catat ulang untuk hari ini)"
                         >
                           <Repeat className="w-3.5 h-3.5" />
@@ -279,7 +281,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                         variant="ghost"
                         size="icon"
                         onClick={() => onEditExpense(e)}
-                        className="h-7 w-7 text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                        className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                         title="Edit data"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
@@ -290,7 +292,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                           size="icon"
                           onClick={() => handleDelete(e.id)}
                           disabled={deletingId === e.id}
-                          className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          className="h-7 w-7 text-slate-500 hover:text-red-600 hover:bg-red-50"
                           title="Hapus data"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -319,8 +321,9 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug flex items-center gap-1.5 flex-wrap">
                     <span>{e.item_name}</span>
                     {e.is_reimbursement && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                        💼 Talangan
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        <Briefcase className="w-2.5 h-2.5" />
+                        <span>Talangan</span>
                       </span>
                     )}
                   </div>
@@ -345,7 +348,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <div className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 tabular-nums">
                     {formatRupiah(e.total_price)}
                   </div>
-                  <div className="text-[11px] text-slate-400 tabular-nums">
+                  <div className="text-[11px] text-slate-500 tabular-nums">
                     {e.qty} {e.unit || "Pcs"} × {formatRupiah(e.unit_price)}
                   </div>
                 </div>
@@ -434,7 +437,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       size="icon"
                       onClick={() => handleDelete(e.id)}
                       disabled={deletingId === e.id}
-                      className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-600"
+                      className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-500 hover:text-rose-600"
                       title="Hapus data"
                     >
                       <Trash2 className="w-4 h-4" />

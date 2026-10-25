@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import {
   PackageCheck,
   Plus,
-  Sparkles,
   Trash2,
   Edit3,
   Search,
@@ -287,7 +286,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <FileText className="w-4 h-4 text-blue-600" />
                   Paste Daftar Nama Item Sekaligus (1 Baris = 1 Item)
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
@@ -486,7 +485,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       <Card className="border-slate-200/90 bg-white rounded-2xl shadow-xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input
               placeholder="Cari nama item baku atau kata kunci alias..."
               value={search}
@@ -527,13 +526,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <tbody className="divide-y divide-slate-100 text-xs">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                  <td colSpan={8} className="py-10 text-center text-slate-500">
                     Memuat katalog item baku...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-slate-400">
+                  <td colSpan={8} className="py-10 text-center text-slate-500">
                     Belum ada item baku yang terdaftar. Tambahkan di atas atau klik{" "}
                     <strong>"Paste Daftar Item Massal"</strong>.
                   </td>
@@ -666,7 +665,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                               </div>
                             )}
                             {item.tipe_satuan === "keduanya" && item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
-                              <div className="text-[10px] text-slate-400">
+                              <div className="text-[10px] text-slate-500">
                                 Ecer: <span className="text-slate-600 font-medium">{item.satuan_ecer}</span>
                               </div>
                             )}
@@ -736,7 +735,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                               size="sm"
                               variant="ghost"
                               onClick={() => setEditingId(null)}
-                              className="h-7 w-7 p-0 text-slate-400 hover:bg-slate-100"
+                              className="h-7 w-7 p-0 text-slate-500 hover:bg-slate-100"
                             >
                               <X className="w-3.5 h-3.5" />
                             </Button>
@@ -756,7 +755,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                               size="sm"
                               variant="ghost"
                               onClick={() => deleteMutation.mutate(item.id)}
-                              className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600"
+                              className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
                               title="Hapus"
                             >
                               <Trash2 className="w-3.5 h-3.5" />

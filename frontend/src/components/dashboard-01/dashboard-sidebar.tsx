@@ -9,6 +9,7 @@ import {
   Sun,
   ChevronUp,
   Wallet,
+  Home,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -102,8 +103,8 @@ export function DashboardSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 border border-rose-200/80 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 font-bold text-lg select-none">
-                🎂
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 border border-rose-200/80 dark:bg-rose-950/40 dark:border-rose-900/60 dark:text-rose-400 font-bold text-sm tracking-tight select-none">
+                HC
               </div>
               <div className="flex flex-col min-w-0 group-data-[collapsible=icon]:hidden">
                 <div className="flex items-center gap-1.5">
@@ -129,7 +130,7 @@ export function DashboardSidebar({
       {/* Main Navigation */}
       <SidebarContent className="px-2 py-3">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-2">
+          <SidebarGroupLabel className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider px-2">
             Menu Utama
           </SidebarGroupLabel>
           <SidebarMenu className="gap-1 mt-1">
@@ -176,7 +177,7 @@ export function DashboardSidebar({
 
         {canManageConfig && (
           <SidebarGroup className="mt-2">
-            <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-2">
+            <SidebarGroupLabel className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider px-2">
               Pengaturan & Data
             </SidebarGroupLabel>
             <SidebarMenu className="gap-1 mt-1">
@@ -256,7 +257,7 @@ export function DashboardSidebar({
                       {roleLabel}
                     </span>
                   </div>
-                  <ChevronUp className="ml-auto w-4 h-4 text-slate-400 group-data-[collapsible=icon]:hidden" />
+                  <ChevronUp className="ml-auto w-4 h-4 text-slate-500 group-data-[collapsible=icon]:hidden" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -295,7 +296,7 @@ export function DashboardSidebar({
                     href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
                     className="flex cursor-pointer items-center gap-2 rounded-lg text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
-                    <span>🏠</span>
+                    <Home className="w-4 h-4 text-slate-500 shrink-0" />
                     <span>Kembali ke HCTeams Hub</span>
                   </a>
                 </DropdownMenuItem>

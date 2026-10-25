@@ -3,7 +3,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { Wallet, Receipt, AlertCircle, Layers, TrendingUp, TrendingDown, Target } from "lucide-react";
+import { Wallet, Receipt, AlertCircle, Layers, TrendingUp, TrendingDown, Target, Tag } from "lucide-react";
 
 interface StatCardsProps {
   totalLunas: number;
@@ -156,10 +156,12 @@ export const StatCards: React.FC<StatCardsProps> = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
           onClick={onFilterReimburse}
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border border-purple-200/90 rounded-2xl cursor-pointer hover:border-purple-300 transition-all shadow-xs"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-purple-50/90 border border-purple-200 rounded-2xl cursor-pointer hover:border-purple-300 transition-all shadow-xs"
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl p-1.5 bg-white rounded-xl shadow-2xs">🏷️</span>
+            <div className="p-2 bg-white rounded-xl shadow-2xs text-purple-700">
+              <Tag className="w-5 h-5" />
+            </div>
             <div>
               <p className="text-xs font-bold text-purple-900 flex items-center gap-2">
                 <span>{reimbursePendingCount} Pengeluaran Talangan Belum Diganti</span>
@@ -173,7 +175,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
             </div>
           </div>
           <span className="text-xs font-semibold text-purple-700 bg-white px-3 py-1.5 rounded-xl border border-purple-200 self-start sm:self-auto hover:bg-purple-50">
-            Lihat Data Talangan &rarr;
+            Lihat Data Talangan
           </span>
         </motion.div>
       )}
@@ -215,7 +217,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-1 flex-wrap">
-                      <p className="text-[11px] md:text-xs text-slate-400 font-medium">
+                      <p className="text-[11px] md:text-xs text-slate-500 font-medium">
                         {card.subtext}
                       </p>
                       {card.momBadge}
@@ -363,7 +365,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
             <button
               type="button"
               onClick={onOpenBudgetSettings}
-              className="text-[11px] text-slate-400 hover:text-blue-600 inline-flex items-center gap-1 font-medium transition-colors"
+              className="text-[11px] text-slate-500 hover:text-blue-600 inline-flex items-center gap-1 font-medium transition-colors"
             >
               <Target className="w-3 h-3" />
               Atur Target Anggaran (Keseluruhan & Per Kategori)

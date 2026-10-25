@@ -40,7 +40,7 @@ export const DailyTrendChart: React.FC<DailyTrendChartProps> = ({ data }) => {
             <TrendingUp className="w-4 h-4 text-emerald-600" />
             Tren Pengeluaran Harian
           </CardTitle>
-          <span className="text-xs text-slate-400 font-medium">Bulan Ini</span>
+          <span className="text-xs text-slate-500 font-medium">Bulan Ini</span>
         </div>
       </CardHeader>
 
@@ -83,7 +83,7 @@ export const DailyTrendChart: React.FC<DailyTrendChartProps> = ({ data }) => {
                         <div className="text-emerald-600 font-bold tabular-nums mt-0.5">
                           {formatRupiah(row.total)}
                         </div>
-                        <div className="text-slate-400 text-[10px]">{row.count} transaksi</div>
+                        <div className="text-slate-500 text-[10px]">{row.count} transaksi</div>
                       </div>
                     );
                   }

@@ -14,7 +14,6 @@ import {
   Percent,
   Copy,
   RotateCcw,
-  Sparkles,
   Calendar,
   ChevronLeft,
   ChevronRight,
@@ -286,7 +285,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                 <span className="text-xs font-bold text-slate-800 block leading-tight">
                   {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
                 </span>
-                <span className="text-[10px] text-slate-400">Pilih Bulan</span>
+                <span className="text-[10px] text-slate-500">Pilih Bulan</span>
               </div>
               <button
                 type="button"
@@ -318,7 +317,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
             </div>
 
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
                 Rp
               </span>
               <Input
@@ -384,7 +383,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                     {totalAllocatedPercentage}%
                   </span>
                 </span>
-                <span className="text-slate-400">•</span>
+                <span className="text-slate-500">•</span>
                 <span className="font-semibold text-slate-700 tabular-nums">
                   {formatRupiah(totalAllocatedRupiah)}
                 </span>
@@ -438,7 +437,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                   disabled={remainingPercentage <= 0}
                   className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-slate-200"
                 >
-                  <Sparkles className="w-3 h-3 text-amber-500 mr-1" />
+                  <Percent className="w-3 h-3 text-slate-600 mr-1" />
                   Bagi Rata Sisa {remainingPercentage > 0 ? `(${remainingPercentage}%)` : ""}
                 </Button>
                 <Button
@@ -485,7 +484,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                 </span>
                 Alokasi Anggaran Per Kategori (%) & Preview Rupiah
               </label>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-500">
                 Isi persentase alokasi untuk tiap kategori
               </span>
             </div>
@@ -510,7 +509,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                         {cat}
                       </span>
                       {spent > 0 && (
-                        <span className="text-[10px] text-slate-400 shrink-0">
+                        <span className="text-[10px] text-slate-500 shrink-0">
                           Aktual: {formatRupiah(spent)}
                         </span>
                       )}
@@ -529,7 +528,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                           placeholder="0"
                           className="h-8 text-xs font-bold text-slate-900 pr-6 rounded-lg bg-white"
                         />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none">
                           %
                         </span>
                       </div>

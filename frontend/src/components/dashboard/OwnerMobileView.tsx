@@ -27,7 +27,8 @@ import {
   Trash2,
   ExternalLink,
   User as UserIcon,
-  Sparkles,
+  Tag,
+  Briefcase,
   LineChart,
   Store,
   Calendar,
@@ -237,15 +238,13 @@ export function OwnerMobileView({
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
-            <Sparkles className="w-4 h-4 shrink-0" />
+            <LineChart className="w-4 h-4 shrink-0" />
             <span>Analisis</span>
           </button>
         </div>
       </nav>
 
-      {/* ===================================================================== */}
-      {/* TAB 1: RINGKASAN EKSEKUTIF OWNER                                      */}
-      {/* ===================================================================== */}
+      {/* Tab: Ringkasan Eksekutif */}
       {mobileTab === "ringkasan" && (
         <div className="space-y-4">
           {/* Action Alert: Hutang Supplier Belum Lunas */}
@@ -315,8 +314,8 @@ export function OwnerMobileView({
           {reimburseCount > 0 && (
             <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200/90 dark:border-purple-900/60 shadow-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 text-lg shrink-0">
-                  💼
+                <div className="p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/50 shrink-0">
+                  <Briefcase className="w-5 h-5 text-purple-700 dark:text-purple-300" />
                 </div>
                 <div>
                   <h2 className="text-xs font-bold text-purple-900 dark:text-purple-200">
@@ -352,7 +351,7 @@ export function OwnerMobileView({
                 {formatRupiah(totalPengeluaran)}
               </div>
               <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
-                <span className="text-[10px] text-slate-400 font-medium">
+                <span className="text-[10px] text-slate-500 font-medium">
                   {reportData?.expense_count || 0} transaksi
                 </span>
                 {renderMomBadge(reportData?.mom_total_change_pct)}
@@ -371,7 +370,7 @@ export function OwnerMobileView({
                 {formatRupiah(reportData?.total_lunas || 0)}
               </div>
               <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
-                <span className="text-[10px] text-slate-400 font-medium">Lunas</span>
+                <span className="text-[10px] text-slate-500 font-medium">Lunas</span>
                 {renderMomBadge(reportData?.mom_lunas_change_pct)}
               </div>
             </div>
@@ -463,7 +462,7 @@ export function OwnerMobileView({
                 <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   Pos Pengeluaran Terbesar
                 </h3>
-                <span className="text-[10px] text-slate-400 font-medium">Bulan Ini</span>
+                <span className="text-[10px] text-slate-500 font-medium">Bulan Ini</span>
               </div>
 
               <div className="space-y-2.5">
@@ -473,7 +472,7 @@ export function OwnerMobileView({
                       <span className="font-semibold text-slate-700 dark:text-slate-300">{cat.name}</span>
                       <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
                         {formatRupiah(cat.amount)}{" "}
-                        <span className="text-[10px] text-slate-400 font-normal">({cat.pct}%)</span>
+                        <span className="text-[10px] text-slate-500 font-normal">({cat.pct}%)</span>
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -504,23 +503,21 @@ export function OwnerMobileView({
               className="w-full min-h-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold justify-between px-4"
             >
               <span className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Lihat Analisis Mendalam & AI Advisor</span>
+                <LineChart className="w-3.5 h-3.5 text-blue-600" />
+                <span>Lihat Analisis & Rekomendasi Finansial</span>
               </span>
-              <ChevronRight className="w-4 h-4 text-slate-400" />
+              <ChevronRight className="w-4 h-4 text-slate-500" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* TAB 2: DAFTAR TRANSAKSI MOBILE (SIMPLE & ERGONOMIS)                  */}
-      {/* ===================================================================== */}
+      {/* Tab: Daftar Transaksi Mobile */}
       {mobileTab === "transaksi" && (
         <div className="space-y-3">
           {/* Search Bar Mobile */}
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <Input
               placeholder="Cari barang, toko, invoice..."
               value={search}
@@ -531,7 +528,7 @@ export function OwnerMobileView({
               <button
                 type="button"
                 onClick={() => onSearchChange("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[32px] flex items-center justify-center text-xs font-bold text-slate-400 hover:text-slate-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[32px] flex items-center justify-center text-xs font-bold text-slate-500 hover:text-slate-600"
               >
                 ✕
               </button>
@@ -596,7 +593,8 @@ export function OwnerMobileView({
                   : "bg-white dark:bg-slate-900 text-purple-600 dark:text-purple-400 border-slate-200 dark:border-slate-800"
               }`}
             >
-              <span>💼 Talangan</span>
+              <Briefcase className="w-3.5 h-3.5 shrink-0" />
+              <span>Talangan</span>
               {reimburseCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
                   {reimburseCount}
@@ -685,7 +683,7 @@ export function OwnerMobileView({
           {/* Empty State */}
           {!isExpensesLoading && expenses.length === 0 && (
             <div className="p-8 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto">
                 <Inbox className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
@@ -734,7 +732,8 @@ export function OwnerMobileView({
                           </button>
                           {e.is_reimbursement && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                              💼 Talangan
+                              <Briefcase className="w-2.5 h-2.5" />
+                              <span>Talangan</span>
                             </span>
                           )}
                         </div>
@@ -742,7 +741,7 @@ export function OwnerMobileView({
                         {/* Toko, Tanggal, dan Penginput */}
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
                           <span className="font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                            <Store className="w-3 h-3 text-slate-400" />
+                            <Store className="w-3 h-3 text-slate-500" />
                             <span>{e.supplier || "Tanpa Toko"}</span>
                           </span>
                           <span>•</span>
@@ -766,7 +765,7 @@ export function OwnerMobileView({
                         <div className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 tabular-nums">
                           {formatRupiah(e.total_price)}
                         </div>
-                        <div className="text-[10px] text-slate-400 tabular-nums">
+                        <div className="text-[10px] text-slate-500 tabular-nums">
                           {e.qty} {e.unit || "Pcs"} × {formatRupiah(e.unit_price)}
                         </div>
                       </div>
@@ -780,7 +779,7 @@ export function OwnerMobileView({
                         {e.category || "Operasional"}
                       </span>
                       {e.notes && e.notes !== "-" && (
-                        <span className="text-[11px] text-slate-400 truncate max-w-[200px]" title={e.notes}>
+                        <span className="text-[11px] text-slate-500 truncate max-w-[200px]" title={e.notes}>
                           {e.notes}
                         </span>
                       )}
@@ -871,7 +870,7 @@ export function OwnerMobileView({
                             size="icon"
                             onClick={() => handleDelete(e.id)}
                             disabled={deletingId === e.id}
-                            className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-600 hover:border-rose-200 dark:hover:border-rose-900"
+                            className="min-h-[44px] min-w-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-500 hover:text-rose-600 hover:border-rose-200 dark:hover:border-rose-900"
                             title="Hapus transaksi"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -916,9 +915,7 @@ export function OwnerMobileView({
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* TAB 3: ANALISIS & GRAFIK MENDALAM (DEEP DIVE KHUSUS OWNER)            */}
-      {/* ===================================================================== */}
+      {/* Tab: Analisis & Grafik */}
       {mobileTab === "analisis" && (
         <div className="space-y-5">
           {/* AI Financial Analysis Card */}
@@ -964,9 +961,7 @@ export function OwnerMobileView({
         </div>
       )}
 
-      {/* ===================================================================== */}
-      {/* 4. FLOATING ACTION BUTTON (FAB) "+ CATAT" UNTUK OWNER                  */}
-      {/* ===================================================================== */}
+      {/* Tombol Tambah Transaksi (FAB) */}
       <button
         type="button"
         onClick={onOpenAddExpense}
