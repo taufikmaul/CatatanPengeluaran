@@ -131,6 +131,8 @@ export interface MonthlyReport {
   monthly_budget_limit?: number;
   budget_used_pct?: number | null;
   category_budgets?: Record<string, number>;
+  category_budget_percentages?: Record<string, number>;
+  is_custom_budget?: boolean;
   per_kategori: Record<string, number>;
   per_metode_bayar?: Record<string, number>;
   list_hutang: UnpaidExpenseItem[];
@@ -335,3 +337,23 @@ export interface AiAnalysisData {
   analyzed_at: string;
   cached: boolean;
 }
+
+export interface MonthlyBudgetDetail {
+  ok: boolean;
+  year: number;
+  month: number;
+  total_budget: number;
+  category_percentages: Record<string, number>;
+  category_amounts: Record<string, number>;
+  is_custom: boolean;
+  valid_categories: string[];
+  message?: string;
+}
+
+export interface MonthlyBudgetUpsertPayload {
+  year: number;
+  month: number;
+  total_budget: number;
+  category_percentages: Record<string, number>;
+}
+

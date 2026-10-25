@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # Kosongkan untuk menurunkan otomatis dari WEBHOOK_URL (buang suffix /webhook).
     dashboard_url: str = Field("", env="DASHBOARD_URL")
     secret_key: str = Field("change_me", env="SECRET_KEY")
+    auth_secret: str = Field("change-me-use-a-long-random-string-min-32-chars", env="AUTH_SECRET")
     # Skema database dikelola Alembic. Set AUTO_CREATE_TABLES=true hanya untuk
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
     auto_create_tables: bool = Field(False, env="AUTO_CREATE_TABLES")

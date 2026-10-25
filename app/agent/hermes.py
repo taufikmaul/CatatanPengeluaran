@@ -235,8 +235,10 @@ class HermesAgent:
         msg = f"📊 *REKAP {bulan.upper()} {report['year']}*\n\n"
         msg += f"💰 *Lunas: {fmt_rupiah(report['total_lunas'])}*\n"
 
-        cat_budgets = settings.category_budgets
-        eff_budget = float(settings.monthly_budget_limit or 0) or sum(cat_budgets.values())
+        from app.services.budget_service import get_effective_budget
+        eff_budget_data = await get_effective_budget(self.db, report["year"], report["month"])
+        cat_budgets = eff_budget_data.get("category_amounts", {})
+        eff_budget = float(eff_budget_data.get("total_budget", 0))
 
         if eff_budget > 0:
             total_all = float(report["total_lunas"]) + sum(

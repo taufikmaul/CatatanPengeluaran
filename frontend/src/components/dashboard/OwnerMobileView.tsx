@@ -79,6 +79,7 @@ export interface OwnerMobileViewProps {
   onUserChange?: (userId: number | null) => void;
   onResetFilters: () => void;
   onOpenAddExpense: () => void;
+  onOpenBudgetSettings?: () => void;
 }
 
 export function OwnerMobileView({
@@ -113,6 +114,7 @@ export function OwnerMobileView({
   onUserChange,
   onResetFilters,
   onOpenAddExpense,
+  onOpenBudgetSettings,
 }: OwnerMobileViewProps) {
   // Mobile Sub-Tab: "ringkasan" | "transaksi" | "analisis"
   const [mobileTab, setMobileTab] = useState<"ringkasan" | "transaksi" | "analisis">("ringkasan");
@@ -376,7 +378,7 @@ export function OwnerMobileView({
           </div>
 
           {/* Progress Anggaran Bulanan (Jika Aktif) */}
-          {monthlyBudgetLimit > 0 && (
+          {monthlyBudgetLimit > 0 ? (
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -385,17 +387,28 @@ export function OwnerMobileView({
                     Batas Anggaran ({reportData?.month_name || "Bulan Ini"})
                   </span>
                 </div>
-                <span
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                    budgetUsedPct >= 95
-                      ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
-                      : budgetUsedPct >= 75
-                      ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                      : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                  }`}
-                >
-                  {budgetUsedPct}%
-                </span>
+                <div className="flex items-center gap-2">
+                  {onOpenBudgetSettings && (
+                    <button
+                      type="button"
+                      onClick={onOpenBudgetSettings}
+                      className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold hover:underline"
+                    >
+                      Atur
+                    </button>
+                  )}
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                      budgetUsedPct >= 95
+                        ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+                        : budgetUsedPct >= 75
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                        : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                    }`}
+                  >
+                    {budgetUsedPct}%
+                  </span>
+                </div>
               </div>
 
               <div className="w-full bg-slate-100 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
@@ -423,6 +436,24 @@ export function OwnerMobileView({
                 )}
               </div>
             </div>
+          ) : (
+            onOpenBudgetSettings && (
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Target className="w-4 h-4 text-emerald-600" />
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    Belum ada anggaran ({reportData?.month_name || "Bulan Ini"})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onOpenBudgetSettings}
+                  className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  Setup Anggaran
+                </button>
+              </div>
+            )
           )}
 
           {/* Ringkasan 4 Kategori Terbesar */}

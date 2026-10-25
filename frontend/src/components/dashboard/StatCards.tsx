@@ -22,6 +22,8 @@ interface StatCardsProps {
   monthlyBudgetLimit?: number;
   budgetUsedPct?: number | null;
   categoryBudgets?: Record<string, number>;
+  categoryBudgetPercentages?: Record<string, number>;
+  isCustomBudget?: boolean;
   perKategori?: Record<string, number>;
   reimbursePendingCount?: number;
   reimbursePendingTotal?: number;
@@ -47,6 +49,8 @@ export const StatCards: React.FC<StatCardsProps> = ({
   monthlyBudgetLimit = 0,
   budgetUsedPct,
   categoryBudgets = {},
+  categoryBudgetPercentages = {},
+  isCustomBudget = false,
   perKategori = {},
   reimbursePendingCount = 0,
   reimbursePendingTotal = 0,
@@ -245,6 +249,11 @@ export const StatCards: React.FC<StatCardsProps> = ({
                   <span className="text-xs font-bold text-slate-800">
                     Anggaran Keseluruhan ({monthName} {year})
                   </span>
+                  {isCustomBudget && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                      Kustom Bulan Ini
+                    </span>
+                  )}
                   <Badge
                     variant="outline"
                     className={`text-[10px] px-1.5 py-0 font-semibold ${
@@ -279,8 +288,9 @@ export const StatCards: React.FC<StatCardsProps> = ({
                 <button
                   type="button"
                   onClick={onOpenBudgetSettings}
-                  className="text-[11px] font-semibold text-blue-600 hover:underline shrink-0"
+                  className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline shrink-0 inline-flex items-center gap-1"
                 >
+                  <Target className="w-3 h-3" />
                   Atur Anggaran
                 </button>
               )}
@@ -296,6 +306,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
                 const clampedCat = Math.min(100, Math.max(0, catPct));
                 const isCatOver = catPct >= 95;
                 const isCatWarn = catPct >= 75 && catPct < 95;
+                const allocatedPct = categoryBudgetPercentages[catName];
                 const catBarColor = isCatOver
                   ? "bg-rose-500"
                   : isCatWarn
@@ -307,12 +318,19 @@ export const StatCards: React.FC<StatCardsProps> = ({
                     key={catName}
                     className="p-2.5 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-1.5"
                   >
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700 truncate">
-                        {catName}
-                      </span>
+                    <div className="flex items-center justify-between text-xs gap-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-slate-700 truncate">
+                          {catName}
+                        </span>
+                        {allocatedPct !== undefined && allocatedPct > 0 && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-slate-200/70 text-slate-600 font-medium shrink-0">
+                            {allocatedPct}%
+                          </span>
+                        )}
+                      </div>
                       <span
-                        className={`text-[10px] font-bold tabular-nums ${
+                        className={`text-[10px] font-bold tabular-nums shrink-0 ${
                           isCatOver
                             ? "text-rose-600"
                             : isCatWarn

@@ -13,6 +13,7 @@ import { FilterBar } from "@/components/dashboard/FilterBar";
 import { ExpenseTable } from "@/components/dashboard/ExpenseTable";
 import { ExpenseDetailModal } from "@/components/dashboard/ExpenseDetailModal";
 import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
+import { BudgetSetupDialog } from "@/components/dashboard/BudgetSetupDialog";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
@@ -60,6 +61,7 @@ export function App() {
   };
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
 
   // Theme state with localStorage persistence
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -92,6 +94,20 @@ export function App() {
       document.documentElement.classList.remove("dark");
     }
   }, [isDarkMode]);
+
+  // Tangani SSO token dari URL (dikirim oleh HCTeams Hub)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+    if (urlToken) {
+      localStorage.setItem("hcteams_token", urlToken);
+      localStorage.setItem("dashboard_session_token", urlToken);
+      params.delete("token");
+      const newQuery = params.toString() ? `?${params.toString()}` : "";
+      window.history.replaceState({}, "", `${window.location.pathname}${newQuery}`);
+      queryClient.invalidateQueries({ queryKey: ["auth-status"] });
+    }
+  }, [queryClient]);
 
   // 1. Auth Status Query
   const { data: authData, refetch: refetchAuth } = useQuery({
@@ -484,6 +500,7 @@ export function App() {
                           setRepeatingExpense(null);
                           setIsFormOpen(true);
                         }}
+                        onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
                       />
                     </div>
 
@@ -507,6 +524,8 @@ export function App() {
                         monthlyBudgetLimit={reportData?.monthly_budget_limit}
                         budgetUsedPct={reportData?.budget_used_pct}
                         categoryBudgets={reportData?.category_budgets}
+                        categoryBudgetPercentages={reportData?.category_budget_percentages}
+                        isCustomBudget={reportData?.is_custom_budget}
                         perKategori={reportData?.per_kategori}
                         reimbursePendingCount={reportData?.reimburse_pending_count || 0}
                         reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
@@ -515,7 +534,7 @@ export function App() {
                           setIsReimbursement(true);
                           setPage(1);
                         }}
-                        onOpenBudgetSettings={() => setActiveTab("config")}
+                        onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
                       />
 
                       {/* AI Financial Analysis & Strategic Advisor Card */}
@@ -813,6 +832,19 @@ export function App() {
             )}
           </main>
         </SidebarInset>
+
+        {/* Monthly Budget Setup Modal (Persentase per Kategori & Preview Rupiah) */}
+        <BudgetSetupDialog
+          isOpen={isBudgetDialogOpen}
+          onClose={() => setIsBudgetDialogOpen(false)}
+          initialYear={year}
+          initialMonth={month}
+          onBudgetUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ["monthly-report"] });
+            queryClient.invalidateQueries({ queryKey: ["system-config"] });
+          }}
+          currentSpending={reportData?.per_kategori || {}}
+        />
 
         {/* Expense Form Drawer / Modal */}
         <ExpenseFormDrawer

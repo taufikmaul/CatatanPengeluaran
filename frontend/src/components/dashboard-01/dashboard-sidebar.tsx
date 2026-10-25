@@ -290,6 +290,16 @@ export function DashboardSidebar({
                   )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a
+                    href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <span>🏠</span>
+                    <span>Kembali ke HCTeams Hub</span>
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={onLogout}
                   className="cursor-pointer gap-2 rounded-lg text-xs text-rose-600 dark:text-rose-400 focus:text-rose-600 focus:bg-rose-50 dark:focus:bg-rose-950/40"

@@ -128,6 +128,8 @@ class MonthlyReportResponse(BaseModel):
     monthly_budget_limit: float = 0.0
     budget_used_pct: float | None = None
     category_budgets: dict[str, float] = {}
+    category_budget_percentages: dict[str, float] = {}
+    is_custom_budget: bool = False
     per_kategori: dict[str, float]
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict[str, Any]]
@@ -247,4 +249,31 @@ class SystemConfigUpdate(BaseModel):
     webhook_url: str | None = None
     monthly_budget_limit: int | None = None
     category_budgets: dict[str, float] | None = None
+
+
+class MonthlyBudgetUpsert(BaseModel):
+    year: int
+    month: int
+    total_budget: float = 0.0
+    category_percentages: dict[str, float] = {}
+
+
+class MonthlyBudgetCopyRequest(BaseModel):
+    target_year: int
+    target_month: int
+    source_year: int | None = None
+    source_month: int | None = None
+
+
+class MonthlyBudgetDetailResponse(BaseModel):
+    ok: bool = True
+    year: int
+    month: int
+    total_budget: float = 0.0
+    category_percentages: dict[str, float] = {}
+    category_amounts: dict[str, float] = {}
+    is_custom: bool = False
+    valid_categories: list[str] = []
+    message: str | None = None
+
 

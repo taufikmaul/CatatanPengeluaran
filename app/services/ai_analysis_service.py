@@ -105,10 +105,10 @@ async def _aggregate_financial_data(
     mom_pct = round((mom_diff / prev_total) * 100.0, 1) if prev_total > 0 else 0.0
 
     # Anggaran
-    cat_budgets = settings.category_budgets
-    budget_limit = float(settings.monthly_budget_limit or 0)
-    if budget_limit <= 0 and cat_budgets:
-        budget_limit = float(sum(cat_budgets.values()))
+    from app.services.budget_service import get_effective_budget
+    eff_budget = await get_effective_budget(db, year, month)
+    cat_budgets = eff_budget.get("category_amounts", {})
+    budget_limit = float(eff_budget.get("total_budget", 0))
     budget_used_pct = round((total_pengeluaran / budget_limit) * 100.0, 1) if budget_limit > 0 else None
 
     # Overbudget kategori

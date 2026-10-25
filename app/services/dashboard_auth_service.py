@@ -90,6 +90,30 @@ def get_token_payload(token: str, secret_key: str | None = None) -> dict | None:
         return None
 
 
+def verify_sso_jwt(token: str) -> dict | None:
+    """Verifikasi token SSO JWT dari HCTeams Auth Service (algoritma HS256)."""
+    if not token or token.count(".") != 2:
+        return None
+    secret = getattr(settings, "auth_secret", None) or getattr(settings, "secret_key", "change_me")
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+        signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
+        expected_sig_bytes = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        rem = len(sig_b64) % 4
+        padded_sig = sig_b64 + ("=" * (4 - rem) if rem else "")
+        actual_sig_bytes = base64.urlsafe_b64decode(padded_sig.encode("utf-8"))
+        if not hmac.compare_digest(expected_sig_bytes, actual_sig_bytes):
+            return None
+        rem_p = len(payload_b64) % 4
+        padded_payload = payload_b64 + ("=" * (4 - rem_p) if rem_p else "")
+        payload = json.loads(base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8"))
+        if payload.get("exp") and payload["exp"] < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
 def verify_session_token(token: str, secret_key: str | None = None) -> bool:
     """Validasi signature dan tanggal kedaluwarsa session token."""
     return get_token_payload(token, secret_key=secret_key) is not None
@@ -108,6 +132,13 @@ def get_authenticated_role(request: Request) -> str | None:
     if not token:
         return None
 
+    # 1. Cek apakah token adalah JWT SSO dari HCTeams Hub
+    sso_data = verify_sso_jwt(token)
+    if sso_data:
+        sso_role = sso_data.get("role", "staff")
+        return "admin" if sso_role == "owner" else "admin_input"
+
+    # 2. Cek apakah token adalah HMAC session token internal
     payload = get_token_payload(token)
     if not payload:
         return None

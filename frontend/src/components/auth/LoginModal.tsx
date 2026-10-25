@@ -332,6 +332,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                 <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Akses penuh Owner: Analisis grafik statistik, kelola sistem, & hak hapus transaksi.</span>
               </div>
+
+              <div className="pt-1 text-center">
+                <a
+                  href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
+                  className="text-xs text-slate-500 hover:text-slate-900 underline underline-offset-4"
+                >
+                  Atau masuk via HCTeams Hub (SSO)
+                </a>
+              </div>
             </div>
           )}
         </div>

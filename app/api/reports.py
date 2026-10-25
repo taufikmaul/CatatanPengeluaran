@@ -14,6 +14,7 @@ from app.services.expense_service import (
     get_monthly_leaderboards,
 )
 from app.services.ai_analysis_service import generate_ai_analysis
+from app.services.budget_service import get_effective_budget
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_auth)])
 
@@ -64,11 +65,11 @@ async def get_monthly_analytics(
         else None
     )
 
-    cat_budgets = settings.category_budgets
-    budget_limit = float(settings.monthly_budget_limit or 0)
-    # Jika anggaran total belum diisi manual tapi anggaran per kategori diisi, gunakan total kategori
-    if budget_limit <= 0 and cat_budgets:
-        budget_limit = float(sum(cat_budgets.values()))
+    eff_budget = await get_effective_budget(db, cur_year, cur_month)
+    budget_limit = float(eff_budget.get("total_budget", 0))
+    cat_budgets = eff_budget.get("category_amounts", {})
+    cat_percentages = eff_budget.get("category_percentages", {})
+    is_custom_budget = eff_budget.get("is_custom", False)
 
     budget_used_pct = (
         round((total_pengeluaran / budget_limit) * 100.0, 1)
@@ -92,6 +93,8 @@ async def get_monthly_analytics(
         monthly_budget_limit=budget_limit,
         budget_used_pct=budget_used_pct,
         category_budgets=cat_budgets,
+        category_budget_percentages=cat_percentages,
+        is_custom_budget=is_custom_budget,
         per_kategori=report.get("per_kategori", {}),
         per_metode_bayar=report.get("per_metode_bayar", {}),
         list_hutang=report.get("list_hutang", []),
