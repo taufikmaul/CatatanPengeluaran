@@ -10,6 +10,7 @@ from app.models.expense import Expense
 from app.models.expense_log import ExpenseLog
 from app.services.expense_service import (
     check_duplicate,
+    find_duplicate_expenses,
     get_all_expenses_paginated,
     get_monthly_report,
     get_unsynced_to_sheets,
@@ -189,6 +190,39 @@ class TestCheckDuplicate:
             "no_invoice": "INV-1002",
         }]
         assert await check_duplicate(db, order2) is False
+
+    async def test_find_duplicate_expenses_returns_details_and_timestamp(self, db):
+        order1 = [{
+            "barang": "Susu UHT Diamond 1L",
+            "toko_supplier": "Supermarket Maju",
+            "tanggal_pemesanan": "2026-10-26",
+            "harga_satuan": 19500,
+            "qty": 3,
+            "total_harga": 58500,
+        }]
+        saved = await save_expenses(db, order1, actor="telegram:12345")
+        await db.commit()
+        saved_id = saved[0].id
+
+        # Coba cek data yang sama
+        order2 = [{
+            "barang": "Susu UHT Diamond 1L",
+            "toko_supplier": "Supermarket Maju",
+            "tanggal": "2026-10-26",
+            "harga_satuan": 19500,
+            "qty": 3,
+            "total_harga": 58500,
+        }]
+        matches = await find_duplicate_expenses(db, order2)
+        assert len(matches) == 1
+        match = matches[0]
+        assert match["existing_expense"].id == saved_id
+        assert match["existing_expense"].item_name == "Susu UHT Diamond 1L"
+        assert match["existing_expense"].supplier == "Supermarket Maju"
+        assert match["existing_expense"].total_price == 58500
+        assert str(match["existing_expense"].expense_date) == "2026-10-26"
+        assert match["existing_expense"].created_at is not None
+        assert match["new_item"]["barang"] == "Susu UHT Diamond 1L"
 
 
 class TestGetMonthlyReport:

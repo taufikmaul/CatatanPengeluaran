@@ -54,6 +54,11 @@ async def tool_check_duplicate(db: AsyncSession, items: list[dict]) -> bool:
     return await expense_service.check_duplicate(db, items)
 
 
+async def tool_find_duplicates(db: AsyncSession, items: list[dict]) -> list[dict]:
+    """Cari rincian data duplikasi transaksi dengan data pembanding di DB."""
+    return await expense_service.find_duplicate_expenses(db, items)
+
+
 async def tool_get_report(db: AsyncSession, year: int | None = None, month: int | None = None) -> dict:
     """Generate laporan bulanan."""
     now = datetime.now()

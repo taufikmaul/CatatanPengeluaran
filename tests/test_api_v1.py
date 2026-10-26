@@ -802,5 +802,85 @@ async def test_high_value_audit_alert_triggering(db, monkeypatch):
     assert "Oven Deck Gas" in sent_alerts[0]["text"]
 
 
+@pytest.mark.asyncio
+async def test_hermes_duplicate_warning_explains_which_data_and_when(db, monkeypatch):
+    """Test pesan peringatan double input Hermes menyajikan rincian data mana dan kapan."""
+    from app.agent.hermes import HermesAgent
+    from app.services.expense_service import save_expenses, find_duplicate_expenses
+    from app.utils.auth import get_or_create_user
+
+    user = await get_or_create_user(db, 777888)
+
+    # 1. Simpan data awal di database
+    initial_item = [{
+        "barang": "Coklat Colatta Dark 1kg",
+        "toko_supplier": "TBK Berkah Jaya",
+        "qty": 2,
+        "satuan": "Batang",
+        "harga_satuan": 45000,
+        "total_harga": 90000,
+        "tanggal_pemesanan": "2026-10-26",
+    }]
+    saved = await save_expenses(db, initial_item, user_id=user.id, actor=f"telegram:{user.id}")
+    await db.commit()
+    saved_id = saved[0].id
+
+    # 2. Tangkap pesan Telegram yang dikirim Hermes
+    captured_messages = []
+
+    async def mock_send_message(chat_id, text, thread_id=None, reply_markup=None):
+        captured_messages.append({"chat_id": chat_id, "text": text, "keyboard": reply_markup})
+        return {"ok": True, "result": {"message_id": 1001}}
+
+    async def mock_edit_message(chat_id, message_id, text, reply_markup=None):
+        captured_messages.append({"chat_id": chat_id, "message_id": message_id, "text": text, "keyboard": reply_markup})
+        return {"ok": True}
+
+    monkeypatch.setattr("app.bot.telegram_client.send_message", mock_send_message)
+    monkeypatch.setattr("app.bot.telegram_client.edit_message", mock_edit_message)
+
+    # 3. Buat HermesAgent dan jalankan _send_duplicate_warning dengan duplicate_matches
+    agent = HermesAgent(db, user.id, chat_id=12345, thread_id=7)
+    duplicate_input = [{
+        "barang": "Coklat Colatta Dark 1kg",
+        "toko_supplier": "TBK Berkah Jaya",
+        "qty": 2,
+        "satuan": "Batang",
+        "harga_satuan": 45000,
+        "total_harga": 90000,
+        "tanggal": "2026-10-26",
+    }]
+    matches = await find_duplicate_expenses(db, duplicate_input)
+    assert len(matches) == 1
+
+    await agent._send_duplicate_warning(
+        msg_id=1001,
+        items=duplicate_input,
+        msg_link="https://t.me/c/123/456",
+        duplicate_matches=matches,
+    )
+
+    assert len(captured_messages) == 1
+    msg_text = captured_messages[0]["text"]
+
+    # Verifikasi penjelasan data mana (ID, barang, supplier, nominal)
+    assert f"#{saved_id}" in msg_text
+    assert "Coklat Colatta Dark 1kg" in msg_text
+    assert "TBK Berkah Jaya" in msg_text
+    assert "90.000" in msg_text
+
+    # Verifikasi penjelasan kapan (Tanggal Transaksi & Waktu Dicatat)
+    assert "26 Oktober 2026" in msg_text
+    assert "Waktu Dicatat" in msg_text
+
+    # Verifikasi tombol aksi inline Tetap Simpan dan Batalkan
+    kb = captured_messages[0]["keyboard"]
+    assert kb is not None
+    button_callbacks = [b["callback_data"] for row in kb.get("inline_keyboard", []) for b in row]
+    assert "force_save_duplicate" in button_callbacks
+    assert "cancel_duplicate" in button_callbacks
+
+
+
 
 

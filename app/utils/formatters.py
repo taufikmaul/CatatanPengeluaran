@@ -9,16 +9,43 @@ def fmt_rupiah(amount: float | int) -> str:
     return f"Rp {int(amount):,}".replace(",", ".")
 
 
-def fmt_date_id(dt: datetime | str) -> str:
+def fmt_date_id(dt: datetime | str | None) -> str:
     """Format tanggal ke format Indonesia: '21 Oktober 2026'"""
+    if not dt:
+        return "-"
     MONTHS = {
         1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
         5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
         9: "September", 10: "Oktober", 11: "November", 12: "Desember"
     }
     if isinstance(dt, str):
-        dt = datetime.fromisoformat(dt)
-    return f"{dt.day} {MONTHS[dt.month]} {dt.year}"
+        try:
+            dt = datetime.fromisoformat(dt[:10])
+        except Exception:
+            return dt
+    return f"{dt.day} {MONTHS.get(dt.month, str(dt.month))} {dt.year}"
+
+
+def fmt_datetime_id(dt: datetime | str | None) -> str:
+    """Format tanggal dan waktu ke format Indonesia: '26 Oktober 2026, 14:30 WIB'"""
+    if not dt:
+        return "-"
+    MONTHS = {
+        1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
+        5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
+        9: "September", 10: "Oktober", 11: "November", 12: "Desember"
+    }
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except Exception:
+            return dt
+    try:
+        month_name = MONTHS.get(dt.month, str(dt.month))
+        time_str = dt.strftime("%H:%M")
+        return f"{dt.day} {month_name} {dt.year}, {time_str} WIB"
+    except Exception:
+        return str(dt)
 
 
 def build_progress_text(step: int, status: str, total_steps: int = 4) -> str:

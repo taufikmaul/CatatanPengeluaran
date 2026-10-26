@@ -144,14 +144,20 @@ async def save_expenses(
     return saved
 
 
-async def check_duplicate(
+async def find_duplicate_expenses(
     db: AsyncSession,
     items: list[dict],
     lookback_rows: int = 50,
-) -> bool:
+) -> list[dict]:
     """
-    Cek apakah transaksi ini sudah pernah dicatat.
-    Port dari checkDuplicateInSheet di GAS dengan penyempurnaan:
+    Cari duplikasi pengeluaran dan kembalikan rincian kecocokan:
+    Return list of dict:
+    [
+        {
+            "new_item": item,
+            "existing_expense": existing, # instance of Expense
+        }
+    ]
     1. Memprioritaskan tanggal pemesanan (tanggal_pemesanan / order_date). Jika tanggal berbeda, bukan duplikat.
     2. Jika no_invoice ada pada kedua data dan berbeda, bukan duplikat. Jika sama, duplikat.
     3. Jika item_name tersedia, bandingkan nama barang (agar barang berbeda dari toko yang sama tidak terblokir).
@@ -163,33 +169,41 @@ async def check_duplicate(
     )
     recent = result.scalars().all()
 
-    for existing in recent:
-        existing_date = str(existing.expense_date)
-        existing_supplier = (existing.supplier or "").strip().lower()
-        existing_item = (existing.item_name or "").strip().lower()
-        existing_total = float(existing.total_price or 0)
-        existing_invoice = (existing.invoice_number or "").strip()
+    matches = []
+    matched_existing_ids = set()
 
-        for item in items:
-            raw_date = str(
-                item.get("tanggal_pemesanan")
-                or item.get("waktu_pesanan")
-                or item.get("order_date")
-                or item.get("tanggal")
-                or date.today().isoformat()
-            )[:10]
-            new_supplier = str(item.get("toko_supplier") or item.get("supplier") or "").strip().lower()
-            new_item = str(item.get("barang") or item.get("item_name") or "").strip().lower()
-            new_total = float(item.get("total_harga") if item.get("total_harga") is not None else (item.get("total_price") or 0))
-            new_invoice = str(item.get("no_invoice") or item.get("invoice_number") or "").strip()
+    for item in items:
+        raw_date = str(
+            item.get("tanggal_pemesanan")
+            or item.get("waktu_pesanan")
+            or item.get("order_date")
+            or item.get("tanggal")
+            or date.today().isoformat()
+        )[:10]
+        new_supplier = str(item.get("toko_supplier") or item.get("supplier") or "").strip().lower()
+        new_item = str(item.get("barang") or item.get("item_name") or "").strip().lower()
+        new_total = float(item.get("total_harga") if item.get("total_harga") is not None else (item.get("total_price") or 0))
+        new_invoice = str(item.get("no_invoice") or item.get("invoice_number") or "").strip()
 
-            if new_total <= 0:
+        if new_total <= 0:
+            continue
+
+        for existing in recent:
+            if existing.id in matched_existing_ids:
                 continue
+
+            existing_date = str(existing.expense_date)
+            existing_supplier = (existing.supplier or "").strip().lower()
+            existing_item = (existing.item_name or "").strip().lower()
+            existing_total = float(existing.total_price or 0)
+            existing_invoice = (existing.invoice_number or "").strip()
 
             # Jika kedua data memiliki invoice valid yang berbeda, bukan duplikat
             if existing_invoice and existing_invoice != "-" and new_invoice and new_invoice != "-":
                 if existing_invoice.lower() == new_invoice.lower():
-                    return True
+                    matches.append({"new_item": item, "existing_expense": existing})
+                    matched_existing_ids.add(existing.id)
+                    break
                 continue
 
             # Tanggal pemesanan harus sama persis
@@ -207,12 +221,29 @@ async def check_duplicate(
             # Jika nama barang tersedia pada kedua data, bandingkan nama barang
             if existing_item and new_item:
                 if existing_item == new_item:
-                    return True
+                    matches.append({"new_item": item, "existing_expense": existing})
+                    matched_existing_ids.add(existing.id)
+                    break
                 continue
 
-            return True
+            matches.append({"new_item": item, "existing_expense": existing})
+            matched_existing_ids.add(existing.id)
+            break
 
-    return False
+    return matches
+
+
+async def check_duplicate(
+    db: AsyncSession,
+    items: list[dict],
+    lookback_rows: int = 50,
+) -> bool:
+    """
+    Cek apakah transaksi ini sudah pernah dicatat.
+    Kembalikan True jika ada duplikat, False jika tidak.
+    """
+    matches = await find_duplicate_expenses(db, items, lookback_rows=lookback_rows)
+    return len(matches) > 0
 
 
 async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:

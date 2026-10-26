@@ -11,6 +11,8 @@ from app.bot import telegram_client as tg
 from app.utils.formatters import (
     fmt_rupiah,
     fmt_date_id,
+    fmt_datetime_id,
+    fmt_qty,
     build_items_summary,
     build_progress_text,
     build_expense_action_keyboard,
@@ -149,8 +151,9 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi data...")
-        if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
+        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+        if duplicate_matches:
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -197,8 +200,9 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
-        if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
+        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+        if duplicate_matches:
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -238,8 +242,9 @@ class HermesAgent:
             return
 
         await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
-        if await tools.tool_check_duplicate(self.db, extracted["items"]):
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link)
+        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+        if duplicate_matches:
+            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
             return
 
         await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
@@ -603,8 +608,9 @@ class HermesAgent:
         msg_id: int | None,
         items: list[dict],
         msg_link: str,
+        duplicate_matches: list[dict] | None = None,
     ) -> None:
-        """Kirim peringatan duplikat dengan tombol interaktif Tetap Simpan atau Batalkan."""
+        """Kirim peringatan duplikat dengan penjelasan lengkap data pembanding di database dan waktu pencatatannya."""
         await update_user_context(self.db, self.user_id, {
             "pending_duplicate": {
                 "items": items,
@@ -612,24 +618,63 @@ class HermesAgent:
             }
         })
 
-        item_lines = []
-        total = 0.0
-        for i, itm in enumerate(items[:5], 1):
-            nm = itm.get("barang") or "Item"
-            qty = itm.get("jumlah", 1)
-            sat = itm.get("satuan") or ""
-            tot = float(itm.get("total_harga") or 0)
-            total += tot
-            item_lines.append(f"{i}. {nm} ({qty} {sat}) — {fmt_rupiah(tot)}")
-        if len(items) > 5:
-            item_lines.append(f"_...dan {len(items) - 5} item lainnya_")
+        total_new = sum(
+            float(itm.get("total_harga") if itm.get("total_harga") is not None else (itm.get("total_price") or 0))
+            for itm in items
+        )
 
-        items_summary = "\n".join(item_lines)
+        match_lines = []
+        if duplicate_matches:
+            for i, m in enumerate(duplicate_matches[:5], 1):
+                new_itm = m.get("new_item", {})
+                existing = m.get("existing_expense")
+                new_nm = new_itm.get("barang") or new_itm.get("item_name") or "Item"
+                new_qty = fmt_qty(new_itm.get("qty") or new_itm.get("jumlah") or 1)
+                new_sat = (new_itm.get("satuan") or new_itm.get("unit") or "Pcs").strip()
+                new_tot = float(new_itm.get("total_harga") if new_itm.get("total_harga") is not None else (new_itm.get("total_price") or 0))
+
+                # Ambil info user penginput lama jika ada
+                creator = "Web / Sistem"
+                if existing and getattr(existing, "user", None) and existing.user and existing.user.name:
+                    creator = existing.user.name
+                elif existing and getattr(existing, "user_id", None):
+                    creator = f"User #{existing.user_id}"
+
+                exist_nm = getattr(existing, "item_name", "-") if existing else "-"
+                exist_sup = getattr(existing, "supplier", "-") if existing else "-"
+                exist_id = getattr(existing, "id", "-") if existing else "-"
+                exist_date = fmt_date_id(getattr(existing, "expense_date", None)) if existing else "-"
+                exist_created = fmt_datetime_id(getattr(existing, "created_at", None)) if existing else "-"
+                exist_tot = fmt_rupiah(float(getattr(existing, "total_price", 0) or 0)) if existing else "-"
+
+                match_lines.append(
+                    f"*{i}. Data Baru: {new_nm}* ({new_qty} {new_sat} — {fmt_rupiah(new_tot)})\n"
+                    f"   ↳ ⚠️ *Sama dengan Data:* ID `#{exist_id}` • *{exist_nm}* ({exist_sup})\n"
+                    f"   ↳ 💰 *Nominal Lama:* {exist_tot}\n"
+                    f"   ↳ 📅 *Tanggal Transaksi:* {exist_date}\n"
+                    f"   ↳ 🕒 *Waktu Dicatat:* {exist_created} (oleh {creator})"
+                )
+
+            if len(duplicate_matches) > 5:
+                match_lines.append(f"_...dan {len(duplicate_matches) - 5} item duplikat lainnya_")
+
+        detail_match_str = "\n\n".join(match_lines) if match_lines else ""
+
+        if not detail_match_str:
+            item_lines = []
+            for i, itm in enumerate(items[:5], 1):
+                nm = itm.get("barang") or "Item"
+                qty = fmt_qty(itm.get("qty") or itm.get("jumlah") or 1)
+                sat = itm.get("satuan") or ""
+                tot = float(itm.get("total_harga") or 0)
+                item_lines.append(f"{i}. {nm} ({qty} {sat}) — {fmt_rupiah(tot)}")
+            detail_match_str = "\n".join(item_lines)
+
         warn_msg = (
-            "⚠️ *Kemungkinan Double Input Terdeteksi!*\n\n"
-            "Transaksi ini terdeteksi mirip atau pernah dicatat sebelumnya:\n"
-            f"{items_summary}\n\n"
-            f"💰 *Total:* {fmt_rupiah(total)}\n\n"
+            "⚠️ *Double Input Terdeteksi!*\n\n"
+            "Transaksi yang kamu kirim terdeteksi sudah pernah dicatat di database:\n\n"
+            f"{detail_match_str}\n\n"
+            f"💰 *Total Belanja Baru:* *{fmt_rupiah(total_new)}*\n\n"
             "_Jika transaksi ini memang pembelian baru yang terpisah, klik **Tetap Simpan** di bawah._"
         )
         keyboard = {
