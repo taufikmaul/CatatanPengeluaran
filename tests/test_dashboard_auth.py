@@ -387,3 +387,69 @@ class TestAdminInputAccessAndRestrictions:
             )
             assert owner_del_res.status_code == 200
             assert owner_del_res.json()["ok"] is True
+
+
+class TestSsoAndCandidateAuth:
+    @staticmethod
+    def _create_sso_jwt(role: str, exp_offset: int = 3600) -> str:
+        import base64
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        secret = getattr(settings, "auth_secret", "change-me-use-a-long-random-string-min-32-chars")
+        header = {"alg": "HS256", "typ": "JWT"}
+        payload = {
+            "sub": "42",
+            "username": "sso_user",
+            "role": role,
+            "exp": int(time.time()) + exp_offset,
+        }
+        h_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        p_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        signing_input = f"{h_b64}.{p_b64}".encode()
+        sig = hmac.new(secret.encode(), signing_input, hashlib.sha256).digest()
+        sig_b64 = base64.urlsafe_b64encode(sig).decode().rstrip("=")
+        return f"{h_b64}.{p_b64}.{sig_b64}"
+
+    async def test_sso_owner_authenticated_as_admin(self, client: AsyncClient):
+        token = self._create_sso_jwt(role="owner")
+        res = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["authenticated"] is True
+        assert data["role"] == "admin"
+        assert data["permissions"]["can_delete"] is True
+
+    async def test_sso_staff_authenticated_as_admin_input(self, client: AsyncClient):
+        token = self._create_sso_jwt(role="staff")
+        res = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["authenticated"] is True
+        assert data["role"] == "admin_input"
+        assert data["permissions"]["can_delete"] is False
+
+    async def test_stale_bearer_header_falls_back_to_valid_cookie(self, client: AsyncClient):
+        # Cookie sesi valid
+        valid_cookie_token = create_session_token(role="admin")
+        # Header Bearer berisi token usang / rusak
+        stale_header = {"Authorization": "Bearer invalid.or.expired.jwt.token"}
+
+        client.cookies.set(SESSION_COOKIE_NAME, valid_cookie_token)
+        res = await client.get("/api/v1/auth/status", headers=stale_header)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["authenticated"] is True
+        assert data["role"] == "admin"
+
+    async def test_root_browser_redirects_to_app_with_query_params(self, client: AsyncClient):
+        res = await client.get("/?token=sso_sample_token_123", headers={"Accept": "text/html"}, follow_redirects=False)
+        assert res.status_code == 307
+        assert res.headers["location"] == "/app?token=sso_sample_token_123"
+
+    async def test_root_json_api_returns_app_info(self, client: AsyncClient):
+        res = await client.get("/", headers={"Accept": "application/json"})
+        assert res.status_code == 200
+        assert res.json()["app"] == "CatatanPengeluaran v2.0"

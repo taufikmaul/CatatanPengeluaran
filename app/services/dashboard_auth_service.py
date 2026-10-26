@@ -121,36 +121,39 @@ def verify_session_token(token: str, secret_key: str | None = None) -> bool:
 
 def get_authenticated_role(request: Request) -> str | None:
     """Ambil role user yang terautentikasi ('admin' atau 'admin_input'), atau None jika belum login."""
-    token = None
+    candidates: list[str] = []
     auth_hdr = request.headers.get("authorization", "")
     if auth_hdr.lower().startswith("bearer "):
-        token = auth_hdr[7:].strip()
-    elif request.headers.get("x-session-token"):
-        token = request.headers.get("x-session-token")
-    if not token:
-        token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token:
-        return None
+        candidates.append(auth_hdr[7:].strip())
+    if request.headers.get("x-session-token"):
+        candidates.append(request.headers.get("x-session-token").strip())
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_token:
+        candidates.append(cookie_token.strip())
 
-    # 1. Cek apakah token adalah JWT SSO dari HCTeams Hub
-    sso_data = verify_sso_jwt(token)
-    if sso_data:
-        sso_role = sso_data.get("role", "staff")
-        return "admin" if sso_role == "owner" else "admin_input"
+    for token in candidates:
+        if not token:
+            continue
 
-    # 2. Cek apakah token adalah HMAC session token internal
-    payload = get_token_payload(token)
-    if not payload:
-        return None
+        # 1. Cek apakah token adalah JWT SSO dari HCTeams Hub
+        sso_data = verify_sso_jwt(token)
+        if sso_data:
+            sso_role = sso_data.get("role", "staff")
+            return "admin" if sso_role == "owner" else "admin_input"
 
-    role = payload.get("role")
-    if not role:
-        sub = payload.get("sub", "")
-        if "admin_input" in sub:
-            role = "admin_input"
-        else:
-            role = "admin"
-    return role
+        # 2. Cek apakah token adalah HMAC session token internal
+        payload = get_token_payload(token)
+        if payload:
+            role = payload.get("role")
+            if not role:
+                sub = payload.get("sub", "")
+                if "admin_input" in sub:
+                    role = "admin_input"
+                else:
+                    role = "admin"
+            return role
+
+    return None
 
 
 def is_authenticated_request(request: Request) -> bool:

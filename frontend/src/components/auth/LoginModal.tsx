@@ -115,6 +115,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       const res = await api.post("/auth/login-admin-input", {
         password: adminInputPassword.trim(),
       });
+      if (res.data?.token) {
+        localStorage.setItem("dashboard_session_token", res.data.token);
+        localStorage.removeItem("hcteams_token");
+      }
       toast.success(res.data.message || "Login Admin Input berhasil!");
       onSuccess();
     } catch (err: any) {
@@ -167,7 +171,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
 
     setIsVerifying(true);
     try {
-      await api.post("/auth/verify-pin", { pin });
+      const res = await api.post("/auth/verify-pin", { pin });
+      if (res.data?.token) {
+        localStorage.setItem("dashboard_session_token", res.data.token);
+        localStorage.removeItem("hcteams_token");
+      }
       toast.success("Login berhasil! Selamat datang kembali.");
       onSuccess();
     } catch (err: any) {

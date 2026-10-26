@@ -89,15 +89,23 @@ async def serve_react_app(full_path: str = ""):
 # Utility Endpoints
 # ──────────────────────────────────────────────
 
-@app.get("/", response_class=JSONResponse)
-async def root():
-    return {
+@app.get("/", include_in_schema=False)
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    # Browser request atau navigasi yang membawa SSO token: arahkan ke SPA /app
+    if "text/html" in accept or "token" in request.query_params:
+        query_str = str(request.query_params)
+        target = f"/app{'?' + query_str if query_str else ''}"
+        return RedirectResponse(url=target, status_code=307)
+
+    # Permintaan API / CLI / Test: kembalikan info status aplikasi
+    return JSONResponse({
         "app": "CatatanPengeluaran v2.0",
         "status": "running",
         "agent": "Hermes",
         "docs": "/docs",
         "dashboard": "/app",
-    }
+    })
 
 
 @app.get("/health")

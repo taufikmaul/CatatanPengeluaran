@@ -31,6 +31,21 @@ import confetti from "canvas-confetti";
 import { formatRupiah } from "@/lib/formatters";
 import { Plus } from "lucide-react";
 
+// Tangani SSO token dari URL (dikirim oleh HCTeams Hub) secara langsung sebelum render
+try {
+  const initParams = new URLSearchParams(window.location.search);
+  const initUrlToken = initParams.get("token");
+  if (initUrlToken) {
+    localStorage.setItem("hcteams_token", initUrlToken);
+    localStorage.setItem("dashboard_session_token", initUrlToken);
+    initParams.delete("token");
+    const initNewQuery = initParams.toString() ? `?${initParams.toString()}` : "";
+    window.history.replaceState({}, "", `${window.location.pathname}${initNewQuery}`);
+  }
+} catch {
+  // Abaikan saat SSR atau testing environment
+}
+
 export function App() {
   const queryClient = useQueryClient();
 
@@ -122,8 +137,14 @@ export function App() {
   });
 
   useEffect(() => {
-    if (authData && !authData.authenticated) {
-      setIsLoginOpen(true);
+    if (authData) {
+      if (authData.authenticated) {
+        setIsLoginOpen(false);
+      } else {
+        localStorage.removeItem("hcteams_token");
+        localStorage.removeItem("dashboard_session_token");
+        setIsLoginOpen(true);
+      }
     }
   }, [authData]);
 
@@ -145,6 +166,8 @@ export function App() {
   // Listen for 401 unauthorized event
   useEffect(() => {
     const handleUnauthorized = () => {
+      localStorage.removeItem("hcteams_token");
+      localStorage.removeItem("dashboard_session_token");
       setIsLoginOpen(true);
     };
     window.addEventListener("catpen:unauthorized", handleUnauthorized);
@@ -341,6 +364,8 @@ export function App() {
   };
 
   const handleLogout = async () => {
+    localStorage.removeItem("hcteams_token");
+    localStorage.removeItem("dashboard_session_token");
     try {
       await api.post("/auth/logout");
       toast.success("Anda telah keluar akun");
