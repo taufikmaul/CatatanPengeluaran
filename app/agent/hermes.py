@@ -302,7 +302,12 @@ class HermesAgent:
         bulan = MONTHS[report["month"] - 1]
 
         msg = f"📊 *REKAP {bulan.upper()} {report['year']}*\n\n"
-        msg += f"💰 *Lunas: {fmt_rupiah(report['total_lunas'])}*\n"
+        total_belanja = report.get("total_belanja_riil", report["total_lunas"])
+        total_tukar = report.get("total_tukar_cash", 0)
+
+        msg += f"💰 *Belanja Toko (Lunas): {fmt_rupiah(total_belanja)}*\n"
+        if total_tukar > 0:
+            msg += f"🔄 *Tukar Cash (Tarik Tunai): {fmt_rupiah(total_tukar)}* _(kas keluar, uang masuk rekening)_\n"
 
         from app.services.budget_service import get_effective_budget
         eff_budget_data = await get_effective_budget(self.db, report["year"], report["month"])
@@ -310,7 +315,7 @@ class HermesAgent:
         eff_budget = float(eff_budget_data.get("total_budget", 0))
 
         if eff_budget > 0:
-            total_all = float(report["total_lunas"]) + sum(
+            total_all = float(total_belanja) + sum(
                 h.get("nominal", 0) for h in report.get("list_hutang", [])
             )
             pct = round((total_all / eff_budget) * 100.0, 1)

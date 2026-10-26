@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     telegram_token: str = Field(..., env="TELEGRAM_TOKEN")
     bot_password: str = Field("12345", env="BOT_PASSWORD")
     allowed_thread_id: int = Field(7, env="ALLOWED_THREAD_ID")
+    allowed_thread_ids: str = Field("", env="ALLOWED_THREAD_IDS")  # e.g. "7, 12, 15"
+    tukar_cash_thread_ids: str = Field("", env="TUKAR_CASH_THREAD_IDS")  # Topic khusus Tukar Cash
+    ongkir_thread_ids: str = Field("", env="ONGKIR_THREAD_IDS")  # Topic khusus Ongkir & Kurir
 
     # Database
     database_url: str = Field(..., env="DATABASE_URL")
@@ -83,6 +86,48 @@ class Settings(BaseSettings):
     # Admin Telegram (boleh menandai reimburse "Sudah Diganti").
     # Daftar Telegram user ID dipisah koma. Jika kosong, fallback ke DASHBOARD_PIN_CHAT_ID.
     admin_telegram_ids: str = Field("", env="ADMIN_TELEGRAM_IDS")
+
+    def get_allowed_thread_ids(self) -> set[int]:
+        """Ambil kumpulan thread/topic ID yang diizinkan di grup toko."""
+        ids: set[int] = set()
+        if self.allowed_thread_id is not None:
+            try:
+                ids.add(int(self.allowed_thread_id))
+            except (ValueError, TypeError):
+                pass
+        if self.allowed_thread_ids:
+            for part in str(self.allowed_thread_ids).split(","):
+                part = part.strip()
+                if part.isdigit():
+                    ids.add(int(part))
+        for extra in (self.tukar_cash_thread_ids, self.ongkir_thread_ids):
+            if extra:
+                for part in str(extra).split(","):
+                    part = part.strip()
+                    if part.isdigit():
+                        ids.add(int(part))
+        return ids
+
+    def is_thread_allowed(self, thread_id: int | None) -> bool:
+        """Cek apakah topic thread ID diizinkan (atau True jika grup tanpa topic forum)."""
+        allowed = self.get_allowed_thread_ids()
+        if not allowed:
+            return True
+        if thread_id is None:
+            return True
+        return thread_id in allowed
+
+    def get_thread_topic_type(self, thread_id: int | None) -> str | None:
+        """Deteksi tipe konteks topic (tukar_cash / ongkir / None)."""
+        if thread_id is None:
+            return None
+        tukar_cash_ids = {int(p.strip()) for p in str(self.tukar_cash_thread_ids).split(",") if p.strip().isdigit()}
+        if thread_id in tukar_cash_ids:
+            return "tukar_cash"
+        ongkir_ids = {int(p.strip()) for p in str(self.ongkir_thread_ids).split(",") if p.strip().isdigit()}
+        if thread_id in ongkir_ids:
+            return "ongkir"
+        return None
 
     def is_admin_telegram(self, telegram_id: int | str | None) -> bool:
         """Cek apakah Telegram user ID termasuk admin/owner."""

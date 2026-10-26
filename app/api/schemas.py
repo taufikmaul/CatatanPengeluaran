@@ -247,6 +247,9 @@ class SystemConfigUpdate(BaseModel):
     dashboard_pin_chat_id: str | None = None
     dashboard_pin_thread_id: int | None = None
     allowed_thread_id: int | None = None
+    allowed_thread_ids: str | None = None
+    tukar_cash_thread_ids: str | None = None
+    ongkir_thread_ids: str | None = None
     report_chat_id: str | None = None
     report_thread_id: int | None = None
     sumopod_api_key: str | None = None

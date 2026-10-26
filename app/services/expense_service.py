@@ -272,6 +272,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     expenses = result.scalars().all()
 
     total_lunas = 0.0
+    total_tukar_cash = 0.0
     per_kategori: dict[str, float] = {}
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
@@ -294,6 +295,8 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
             total_lunas += nominal
             kat = e.category or "Lainnya"
             per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
+            if kat.lower() == "tukar cash":
+                total_tukar_cash += nominal
         elif "belum" in status or status in ("hutang", "tempo"):
             list_hutang.append({
                 "id": e.id,
@@ -308,6 +311,8 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
     return {
         "total_lunas": total_lunas,
+        "total_tukar_cash": total_tukar_cash,
+        "total_belanja_riil": max(0.0, total_lunas - total_tukar_cash),
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
         "list_hutang": list_hutang,

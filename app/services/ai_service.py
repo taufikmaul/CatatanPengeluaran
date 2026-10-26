@@ -46,6 +46,41 @@ Aturan Pembayaran COD (Cash on Delivery / Bayar di Tempat) - Skenario Kasir:
   * Jika kolom "keterangan" kosong atau "-", isi dengan "COD - Bayar di Kasir".
   * Alasan: Uang kas fisik kasir baru akan dibayarkan saat kurir tiba mengantar barang di toko, sehingga saat baru di-checkout/dipesan harus berstatus "Belum Lunas".
 
+Aturan Khusus Bukti Transfer Bank / E-Wallet (Tukar Cash / Tarik Tunai Karyawan):
+- Jika gambar adalah bukti transfer bank (m-BCA, Livin Mandiri, BRImo, BNI, Permata, DANA, GoPay Transfer, OVO, QRIS Transfer, dll) atau terdapat mutasi kirim uang/transfer dari karyawan ke rekening toko/owner:
+  * "kategori": WAJIB "Tukar Cash"
+  * "barang": "Tukar Cash - [Nama Pengirim/Karyawan]" (contoh: "Tukar Cash - Budi", jika nama pengirim tidak tertera, isi "Tukar Cash - Karyawan")
+  * "qty": 1
+  * "satuan": "Trans"
+  * "harga_satuan": nominal transfer yang tertera
+  * "total_harga": nominal transfer yang tertera
+  * "toko_supplier": nama bank/layanan (misal: "BCA", "Mandiri", "BRI", "DANA")
+  * "metode_bayar": "Transfer"
+  * "status_pembayaran": "Lunas"
+  * "no_invoice": nomor referensi / no. transaksi transfer jika ada, jika tidak isi "-"
+  * "keterangan": "Tarik tunai kasir (uang masuk ke rekening)"
+  * "is_reimbursement": false
+
+Aturan Khusus Bukti Ongkir & Kurir Instan (GoSend, GrabExpress, Lalamove, Maxim, J&T, SiCepat):
+- Jika gambar adalah bukti pemesanan pengiriman/kurir atau struk ekspedisi:
+  * "kategori": WAJIB "Operasional"
+  * "barang": "Ongkir [Layanan] - [Penerima/Tujuan/Kue]" (contoh: "Ongkir GoSend - Bolu Ibu Maya", atau jika tidak tertera tujuan isi "Ongkir GoSend")
+  * "qty": 1
+  * "satuan": "Trip"
+  * "harga_satuan": total biaya ongkir bersih yang dibayar
+  * "total_harga": total biaya ongkir bersih yang dibayar
+  * "toko_supplier": nama ekspedisi/aplikasi (contoh: "GoSend", "GrabExpress", "Lalamove", "J&T")
+  * Jika metode bayar yang tertera adalah saldo e-wallet (GoPay, OVO, DANA, ShopeePay) atau rekening pribadi karyawan (atau caption menyebutkan "reimburse", "talangan", "ditalangi"):
+    - "is_reimbursement": true
+    - "metode_bayar": nama e-wallet (misal: "GoPay")
+    - "status_pembayaran": "Lunas"
+    - "keterangan": "Ongkir ditalangi e-wallet karyawan"
+  * Jika metode bayar tunai (Cash dari kasir):
+    - "is_reimbursement": false
+    - "metode_bayar": "Tunai"
+    - "status_pembayaran": "Lunas"
+    - "keterangan": "Ongkir tunai kasir"
+
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
 - Status Pembayaran selain kasus COD di atas, asumsikan "Lunas" kecuali disebut sebaliknya.
@@ -127,6 +162,9 @@ async def _execute_fetch(messages: list[dict]) -> dict:
             pay_m = str(item.get("metode_bayar") or "").strip().lower()
             notes = str(item.get("keterangan") or "").strip().lower()
             status_p = str(item.get("status_pembayaran") or "").strip().lower()
+            barang_l = str(item.get("barang") or "").strip().lower()
+            sup_l = str(item.get("toko_supplier") or "").strip().lower()
+            kat_l = str(item.get("kategori") or "").strip().lower()
 
             is_cod = any(k in pay_m for k in ("cod", "bayar di tempat", "cash on delivery"))
             if is_cod:
@@ -142,6 +180,47 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                     item["status_pembayaran"] = "Belum Lunas"
                     if not item.get("keterangan") or item.get("keterangan") == "-":
                         item["keterangan"] = "COD - Bayar di Kasir"
+
+            # Normalisasi Bukti Transfer / Tukar Cash Karyawan
+            is_tukar_cash = (
+                "tukar cash" in barang_l
+                or "tarik tunai" in barang_l
+                or "tukercash" in notes
+                or "tukar cash" in kat_l
+                or "tarik tunai" in notes
+                or any(b in sup_l for b in ("m-bca", "bca mobile", "livin", "brimo", "qris transfer"))
+                or ("transfer" in barang_l and any(b in sup_l for b in ("bca", "mandiri", "bri", "bni", "dana")))
+            )
+            if is_tukar_cash:
+                item["kategori"] = "Tukar Cash"
+                if not item.get("satuan") or item.get("satuan") == "Pcs":
+                    item["satuan"] = "Trans"
+                if not item.get("metode_bayar") or item.get("metode_bayar") == "Tunai":
+                    item["metode_bayar"] = "Transfer"
+                item["status_pembayaran"] = "Lunas"
+                if not item.get("keterangan") or item.get("keterangan") == "-":
+                    item["keterangan"] = "Tarik tunai kasir (uang masuk ke rekening)"
+
+            # Normalisasi Bukti Ongkir & Kurir Instan
+            is_ongkir = (
+                "ongkir" in barang_l
+                or "ongkos kirim" in barang_l
+                or "gosend" in barang_l
+                or "grabexpress" in barang_l
+                or "lalamove" in barang_l
+                or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "gojek", "grab"))
+            )
+            if is_ongkir and item.get("kategori") != "Tukar Cash":
+                item["kategori"] = "Operasional"
+                if not any(item.get("barang", "").lower().startswith(p) for p in ("ongkir", "ongkos kirim")):
+                    item["barang"] = f"Ongkir {item.get('barang', 'Kurir')}"
+                if not item.get("satuan") or item.get("satuan") == "Pcs":
+                    item["satuan"] = "Trip"
+                # Cek jika ditalangi e-wallet karyawan (GoPay, OVO, Dana, ShopeePay)
+                if any(ew in pay_m for ew in ("gopay", "ovo", "dana", "shopeepay")) or any(ew in notes for ew in ("reimburse", "talangan", "ditalangi")):
+                    item["is_reimbursement"] = True
+                    if not item.get("keterangan") or item.get("keterangan") == "-":
+                        item["keterangan"] = "Ongkir ditalangi e-wallet karyawan"
 
             normalized_items.append(item)
         parsed["items"] = normalized_items

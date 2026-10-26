@@ -71,7 +71,8 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             if await is_user_authenticated(db, sender_id):
                 is_authorized = True
             else:
-                if text == settings.bot_password:
+                caption_text = (message.get("caption") or "").strip()
+                if text == settings.bot_password or caption_text == settings.bot_password:
                     await authenticate_user(db, sender_id, sender_name)
                     await db.commit()
                     await tg.send_message(chat_id, "🔓 *Akses Diterima! Selamat datang.*", thread_id)
@@ -82,7 +83,7 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     return {"ok": True}
 
         elif chat_type in ("group", "supergroup"):
-            if thread_id == settings.allowed_thread_id:
+            if settings.is_thread_allowed(thread_id):
                 is_authorized = True
 
         if not is_authorized:
@@ -99,6 +100,13 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             photo_idx = len(photo) - 2 if len(photo) > 1 else len(photo) - 1
             file_id = photo[photo_idx]["file_id"]
             caption = (message.get("caption") or "").strip()
+
+            # Sisipkan context topic jika postingan berada di topic khusus
+            topic_type = settings.get_thread_topic_type(thread_id)
+            if topic_type == "tukar_cash" and "/tukercash" not in caption.lower():
+                caption = f"{caption} /tukercash".strip()
+            elif topic_type == "ongkir" and "ongkir" not in caption.lower():
+                caption = f"{caption} (Kategori Ongkir)".strip()
 
             # Download async di background untuk tidak block
             asyncio.create_task(
@@ -132,6 +140,12 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
         # ── Teks (commands + natural language) ──
         if text:
+            topic_type = settings.get_thread_topic_type(thread_id)
+            if topic_type == "tukar_cash" and "/tukercash" not in text.lower():
+                text = f"{text} /tukercash".strip()
+            elif topic_type == "ongkir" and "ongkir" not in text.lower():
+                text = f"{text} (Ongkir)".strip()
+
             agent = HermesAgent(db, user.id, chat_id, thread_id)
             await agent.process(
                 text=text,

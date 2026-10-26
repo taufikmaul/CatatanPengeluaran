@@ -187,28 +187,32 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
 
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="max-w-sm rounded-3xl p-6">
+      <DialogContent className="max-w-sm rounded-2xl p-7 border border-slate-200 bg-white shadow-sm font-sans">
         <DialogHeader className="text-center">
-          <div className="w-12 h-12 bg-rose-50 text-rose-600 border border-rose-200/80 rounded-2xl flex items-center justify-center mx-auto mb-2 font-bold text-base tracking-tight select-none">
-            HC
+          <div
+            className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-2xl flex items-center justify-center mx-auto mb-3 select-none shadow-2xs"
+            role="img"
+            aria-label="History Cake"
+          >
+            🎂
           </div>
-          <DialogTitle className="text-lg font-bold text-slate-900">
-            Login Catatan Pengeluaran
+          <DialogTitle className="text-xl font-bold tracking-tight text-slate-900">
+            Catatan Pengeluaran
           </DialogTitle>
-          <p className="text-xs text-slate-500">
-            Pilih akses sesuai peran Anda di Historycake
+          <p className="text-xs text-slate-500 mt-0.5">
+            HCTeams Suite — Keuangan & Operasional
           </p>
         </DialogHeader>
 
         {/* Mode Selector Tabs */}
-        <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-2xl text-xs font-semibold mt-2">
+        <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold mt-1">
           <button
             type="button"
             onClick={() => setLoginMode("admin_input")}
-            className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               loginMode === "admin_input"
-                ? "bg-white text-amber-700 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+                ? "bg-white text-slate-900 shadow-xs"
+                : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <PenTool className="w-3.5 h-3.5" />
@@ -217,10 +221,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
           <button
             type="button"
             onClick={() => setLoginMode("owner")}
-            className={`py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
               loginMode === "owner"
-                ? "bg-white text-blue-700 shadow-xs"
-                : "text-slate-600 hover:text-slate-900"
+                ? "bg-white text-slate-900 shadow-xs"
+                : "text-slate-500 hover:text-slate-900"
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -228,7 +232,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
           </button>
         </div>
 
-        <div className="space-y-4 pt-2">
+        <div className="space-y-4 pt-1">
           {/* TAB 1: ADMIN INPUT LOGIN */}
           {loginMode === "admin_input" && (
             <form onSubmit={handleAdminInputSubmit} className="space-y-3.5">
@@ -242,13 +246,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                     value={adminInputPassword}
                     onChange={(e) => setAdminInputPassword(e.target.value)}
                     placeholder="Masukkan password..."
-                    className="h-11 rounded-xl border-slate-200 pr-10 text-sm"
+                    className="h-11 rounded-xl border-slate-300 pr-10 text-sm focus:border-slate-400 focus:ring-slate-400"
                     autoFocus
                   />
                   <button
                     type="button"
                     onClick={() => setShowAdminPassword(!showAdminPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     title={showAdminPassword ? "Sembunyikan" : "Tampilkan"}
                   >
                     {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -259,19 +263,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
               <Button
                 type="submit"
                 disabled={isAdminInputLoggingIn || !adminInputPassword.trim()}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold h-11 gap-2 shadow-xs"
+                className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-xl text-xs font-semibold h-10 gap-2 shadow-xs transition-colors"
               >
-                <PenTool className="w-4 h-4" />
+                <PenTool className="w-3.5 h-3.5" />
                 {isAdminInputLoggingIn ? "Memeriksa..." : "Masuk sebagai Admin Input"}
               </Button>
 
-              <div className="p-3 bg-amber-50/70 border border-amber-200/70 rounded-xl text-[11px] text-amber-900 space-y-1">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <span>✨ Akses Khusus Admin Input:</span>
-                </div>
-                <p className="text-amber-800 leading-relaxed">
-                  Bisa mencatat pengeluaran baru dan koreksi transaksi tanpa tombol hapus & tanpa grafik statistik yang rumit.
-                </p>
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] text-slate-500 leading-relaxed text-center">
+                Mencatat pengeluaran harian dan koreksi transaksi tanpa izin hapus atau statistik owner.
               </div>
             </form>
           )}
@@ -281,15 +280,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
             <div className="space-y-3.5">
               {!pinSent ? (
                 <div className="text-center space-y-3">
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs text-slate-500 leading-relaxed">
                     Klik tombol di bawah ini untuk menerima 6-digit kode PIN verifikasi melalui bot Telegram Historycake.
                   </p>
                   <Button
                     onClick={handleRequestPin}
                     disabled={isRequesting || cooldown > 0}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 gap-2"
+                    className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-xl text-xs font-semibold h-10 gap-2 shadow-xs transition-colors"
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="w-3.5 h-3.5" />
                     {isRequesting
                       ? "Mengirim ke Telegram..."
                       : cooldown > 0
@@ -298,18 +297,30 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                   </Button>
                 </div>
               ) : (
-                <form onSubmit={handleVerify} className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600 block text-center">
-                      Masukkan 6-Digit Kode PIN Telegram
-                    </label>
+                <form onSubmit={handleVerify} className="space-y-3.5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-700">
+                        Kode 6-Digit PIN
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRequestPin}
+                        disabled={cooldown > 0 || isRequesting}
+                        className="text-xs font-semibold text-slate-900 hover:text-slate-700 disabled:text-slate-400 transition-colors inline-flex items-center gap-1"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>{cooldown > 0 ? `Kirim ulang (${cooldown}d)` : "Kirim PIN lagi"}</span>
+                      </button>
+                    </div>
                     <Input
                       type="text"
+                      inputMode="numeric"
                       maxLength={6}
                       value={pin}
                       onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-                      placeholder="• • • • • •"
-                      className="text-center text-xl tracking-widest font-mono h-12 rounded-xl border-slate-200"
+                      placeholder="000000"
+                      className="w-full px-3 py-3 text-center text-xl font-bold tracking-[0.45em] border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-400 placeholder:tracking-normal placeholder:font-normal placeholder:text-sm text-slate-900 h-11"
                       autoFocus
                     />
                   </div>
@@ -317,34 +328,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                   <Button
                     type="submit"
                     disabled={isVerifying || pin.length < 4}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 gap-2"
+                    className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-xl text-xs font-semibold h-10 gap-2 shadow-xs transition-colors"
                   >
-                    <KeyRound className="w-4 h-4" />
+                    <KeyRound className="w-3.5 h-3.5" />
                     {isVerifying ? "Memverifikasi..." : "Masuk sebagai Owner"}
                   </Button>
-
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={handleRequestPin}
-                      disabled={cooldown > 0 || isRequesting}
-                      className="text-xs text-blue-600 hover:underline disabled:text-slate-500 disabled:no-underline font-medium"
-                    >
-                      {cooldown > 0 ? `Kirim ulang PIN dalam ${cooldown}d` : "Kirim Ulang PIN"}
-                    </button>
-                  </div>
                 </form>
               )}
 
-              <div className="p-3 bg-blue-50/60 border border-blue-200/60 rounded-xl flex items-center gap-2 text-[11px] text-blue-800">
-                <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>Akses penuh Owner: Analisis grafik statistik, kelola sistem, & hak hapus transaksi.</span>
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl text-[11px] text-slate-500 leading-relaxed text-center">
+                Akses penuh Owner: Analisis grafik keuangan, kelola sistem, & izin hapus transaksi.
               </div>
 
               <div className="pt-1 text-center">
                 <a
                   href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
-                  className="text-xs text-slate-500 hover:text-slate-900 underline underline-offset-4"
+                  className="text-xs text-slate-500 hover:text-slate-900 underline underline-offset-4 font-medium transition-colors"
                 >
                   Atau masuk via HCTeams Hub (SSO)
                 </a>
