@@ -13,6 +13,9 @@ from app.api.schemas import (
     MasterItemUpdate,
     MasterItemBulkRequest,
     MasterItemResponse,
+    MasterItemAuditResponse,
+    MasterItemMergeRequest,
+    MasterItemMergeResponse,
 )
 from app.services.master_item_service import (
     list_master_items,
@@ -21,6 +24,8 @@ from app.services.master_item_service import (
     sync_existing_expenses_to_master,
     import_master_items_from_history,
     get_item_and_supplier_suggestions,
+    audit_duplicate_master_items,
+    merge_master_items,
 )
 
 router = APIRouter(
@@ -161,6 +166,54 @@ async def seed_master_items_from_history(db: AsyncSession = Depends(get_db)):
         "ok": True,
         **result,
     }
+
+
+@router.get("/audit-duplicates", response_model=MasterItemAuditResponse)
+async def audit_duplicates(
+    min_score: float = 0.70,
+    limit: int = 150,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Audit seluruh katalog nama item baku untuk mendeteksi potensi duplikat.
+    Mendeteksi perbedaan awalan/akhiran hasil scan AI nota belanja.
+    """
+    result = await audit_duplicate_master_items(db, min_score=min_score, limit=limit)
+    return result
+
+
+@router.post("/merge", response_model=MasterItemMergeResponse)
+async def merge_items(
+    payload: MasterItemMergeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Gabungkan satu atau lebih master item duplikat ke dalam satu target master item utama.
+    Riwayat transaksi dialihkan, nama lama disimpan ke aliases dan catatan.
+    """
+    try:
+        result = await merge_master_items(
+            db=db,
+            target_item_id=payload.target_item_id,
+            source_item_ids=payload.source_item_ids,
+            custom_name=payload.custom_name,
+            custom_category=payload.custom_category,
+            custom_supplier=payload.custom_supplier,
+            custom_satuan_beli=payload.custom_satuan_beli,
+            custom_tipe_satuan=payload.custom_tipe_satuan,
+            custom_isi_paket=payload.custom_isi_paket,
+            custom_satuan_ecer=payload.custom_satuan_ecer,
+            merge_aliases=payload.merge_aliases,
+            update_expenses=payload.update_expenses,
+        )
+        await db.commit()
+        return result
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Gagal menggabungkan item: {str(e)}")
 
 
 @router.put("/{item_id}", response_model=MasterItemResponse)

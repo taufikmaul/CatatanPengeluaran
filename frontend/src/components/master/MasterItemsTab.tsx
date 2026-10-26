@@ -1,11 +1,24 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { MasterItem } from "@/types";
+import {
+  MasterItem,
+  DuplicatePair,
+  MasterItemAuditResponse,
+  MasterItemMergeRequest,
+} from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
 import { toast } from "sonner";
 import {
@@ -20,6 +33,15 @@ import {
   RefreshCw,
   DatabaseZap,
   LineChart,
+  GitMerge,
+  SearchCheck,
+  CheckCircle2,
+  AlertTriangle,
+  Layers,
+  Sparkles,
+  ArrowRight,
+  ShieldCheck,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface MasterItemsTabProps {
@@ -65,6 +87,24 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     satuan_ecer: "Pcs",
   });
 
+  // Audit & Merge state
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditMinScore, setAuditMinScore] = useState(0.70);
+  const [ignoredPairKeys, setIgnoredPairKeys] = useState<Set<string>>(new Set());
+
+  // Manual table selection for merge
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  // Merge modal dialog state
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeItemsList, setMergeItemsList] = useState<MasterItem[]>([]);
+  const [targetItemId, setTargetItemId] = useState<number | null>(null);
+  const [customMergeName, setCustomMergeName] = useState("");
+  const [customMergeCategory, setCustomMergeCategory] = useState("");
+  const [customMergeSupplier, setCustomMergeSupplier] = useState("");
+  const [mergeAliasesOption, setMergeAliasesOption] = useState(true);
+  const [updateExpensesOption, setUpdateExpensesOption] = useState(true);
+
   const { data: masterRes, isLoading } = useQuery<{
     ok: boolean;
     data: MasterItem[];
@@ -99,6 +139,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     queryClient.invalidateQueries({ queryKey: ["suggestions"] });
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     queryClient.invalidateQueries({ queryKey: ["report"] });
+    queryClient.invalidateQueries({ queryKey: ["master-items-audit"] });
   };
 
   const addMutation = useMutation({
@@ -213,6 +254,112 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     },
   });
 
+  // Audit Duplikat Query
+  const {
+    data: auditRes,
+    isLoading: isAuditing,
+    refetch: refetchAudit,
+  } = useQuery<MasterItemAuditResponse>({
+    queryKey: ["master-items-audit", auditMinScore],
+    queryFn: async () =>
+      (await api.get(`/master-items/audit-duplicates?min_score=${auditMinScore}`)).data,
+    enabled: showAuditModal,
+  });
+
+  // Merge Items Mutation
+  const mergeMutation = useMutation({
+    mutationFn: async (payload: MasterItemMergeRequest) => {
+      return (await api.post("/master-items/merge", payload)).data;
+    },
+    onSuccess: (res) => {
+      toast.success(res.message || "Berhasil menggabungkan item!");
+      setMergeDialogOpen(false);
+      setSelectedIds([]);
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["master-items-audit"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal menggabungkan item baku");
+    },
+  });
+
+  const openMergeDialogForItems = (items: MasterItem[], defaultPrimaryId?: number) => {
+    if (items.length < 2) return;
+    setMergeItemsList(items);
+
+    const primary =
+      (defaultPrimaryId ? items.find((i) => i.id === defaultPrimaryId) : null) ||
+      [...items].sort((a, b) => (b.tx_count || 0) - (a.tx_count || 0))[0] ||
+      items[0];
+
+    setTargetItemId(primary.id);
+    setCustomMergeName(primary.item_name);
+    setCustomMergeCategory(primary.category || categories[0] || "Bahan Kue");
+    setCustomMergeSupplier(primary.default_supplier === "-" ? "" : primary.default_supplier || "");
+    setMergeAliasesOption(true);
+    setUpdateExpensesOption(true);
+    setMergeDialogOpen(true);
+  };
+
+  const handleSelectPrimaryTarget = (item: MasterItem) => {
+    setTargetItemId(item.id);
+    setCustomMergeName(item.item_name);
+    if (item.category) setCustomMergeCategory(item.category);
+    if (item.default_supplier && item.default_supplier !== "-") {
+      setCustomMergeSupplier(item.default_supplier);
+    }
+  };
+
+  const handleExecuteMerge = () => {
+    if (!targetItemId) {
+      toast.error("Pilih salah satu item sebagai item baku utama!");
+      return;
+    }
+    const sourceIds = mergeItemsList.map((i) => i.id).filter((id) => id !== targetItemId);
+    if (sourceIds.length === 0) {
+      toast.error("Minimal harus ada satu item duplikat yang digabungkan!");
+      return;
+    }
+    mergeMutation.mutate({
+      target_item_id: targetItemId,
+      source_item_ids: sourceIds,
+      custom_name: customMergeName.trim() || undefined,
+      custom_category: customMergeCategory.trim() || undefined,
+      custom_supplier: customMergeSupplier.trim() || undefined,
+      merge_aliases: mergeAliasesOption,
+      update_expenses: updateExpensesOption,
+    });
+  };
+
+  const toggleSelectItem = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllVisible = () => {
+    const visibleIds = filteredItems.map((i) => i.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const auditPairs = useMemo(() => {
+    if (!auditRes?.pairs) return [];
+    return auditRes.pairs.filter((p) => {
+      const key = `${Math.min(p.item_a.id, p.item_b.id)}-${Math.max(p.item_a.id, p.item_b.id)}`;
+      return !ignoredPairKeys.has(key);
+    });
+  }, [auditRes, ignoredPairKeys]);
+
+  const ignorePair = (itemAId: number, itemBId: number) => {
+    const key = `${Math.min(itemAId, itemBId)}-${Math.max(itemAId, itemBId)}`;
+    setIgnoredPairKeys((prev) => new Set([...prev, key]));
+  };
+
   const startEdit = (item: MasterItem) => {
     setEditingId(item.id);
     setEditForm({
@@ -274,6 +421,18 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
               />
               Cocokkan Data Lama ({masterItems.length} item)
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setShowAuditModal(true);
+                refetchAudit();
+              }}
+              className="rounded-xl text-xs font-semibold gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-100 border border-amber-300/30 shadow-xs"
+            >
+              <SearchCheck className="w-3.5 h-3.5 text-amber-300" />
+              Audit Item Duplikat
             </Button>
           </div>
         </CardContent>
@@ -509,10 +668,63 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           </div>
         </div>
 
+        {/* Selected Items Merge Action Bar */}
+        {selectedIds.length > 0 && (
+          <div className="bg-blue-50/80 border-b border-blue-100 px-4 py-2.5 flex items-center justify-between gap-3 text-xs animate-in fade-in">
+            <div className="flex items-center gap-2 text-blue-900 font-medium">
+              <Layers className="w-4 h-4 text-blue-600" />
+              <span>
+                <strong>{selectedIds.length}</strong> item dipilih
+                {selectedIds.length < 2 && (
+                  <span className="text-slate-500 font-normal ml-1">
+                    (Pilih minimal 2 item untuk digabungkan)
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                disabled={selectedIds.length < 2}
+                onClick={() => {
+                  const selectedItems = masterItems.filter((m) =>
+                    selectedIds.includes(m.id)
+                  );
+                  openMergeDialogForItems(selectedItems);
+                }}
+                className="h-8 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                Gabungkan ({selectedIds.length}) Jadi 1 Item
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds([])}
+                className="h-8 rounded-xl text-xs text-slate-600 hover:text-slate-900"
+              >
+                Batal
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                <th className="w-10 py-3 px-3 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Pilih semua item yang tampil"
+                    checked={
+                      filteredItems.length > 0 &&
+                      filteredItems.every((i) => selectedIds.includes(i.id))
+                    }
+                    onChange={handleToggleSelectAllVisible}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                  />
+                </th>
                 <th className="py-3 px-4">Nama Item Baku</th>
                 <th className="py-3 px-4">Kategori</th>
                 <th className="py-3 px-4">Satuan & Kemasan</th>
@@ -526,13 +738,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <tbody className="divide-y divide-slate-100 text-xs">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-slate-500">
+                  <td colSpan={9} className="py-10 text-center text-slate-500">
                     Memuat katalog item baku...
                   </td>
                 </tr>
               ) : filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-slate-500">
+                  <td colSpan={9} className="py-10 text-center text-slate-500">
                     Belum ada item baku yang terdaftar. Tambahkan di atas atau klik{" "}
                     <strong>"Paste Daftar Item Massal"</strong>.
                   </td>
@@ -540,8 +752,23 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               ) : (
                 filteredItems.map((item) => {
                   const isEditing = editingId === item.id;
+                  const isSelected = selectedIds.includes(item.id);
                   return (
-                    <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                    <tr
+                      key={item.id}
+                      className={`hover:bg-slate-50/60 transition-colors ${
+                        isSelected ? "bg-blue-50/40" : ""
+                      }`}
+                    >
+                      <td className="w-10 py-3 px-3 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Pilih ${item.item_name}`}
+                          checked={isSelected}
+                          onChange={() => toggleSelectItem(item.id)}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                        />
+                      </td>
                       <td className="py-3 px-4 font-semibold text-slate-900">
                         {isEditing ? (
                           <Input
@@ -745,6 +972,22 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                             <Button
                               size="sm"
                               variant="ghost"
+                              onClick={() => {
+                                setSelectedIds((prev) =>
+                                  prev.includes(item.id) ? prev : [...prev, item.id]
+                                );
+                                toast.info(
+                                  `'${item.item_name}' ditandai. Centang item lain di tabel untuk digabungkan.`
+                                );
+                              }}
+                              className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+                              title="Pilih untuk digabung"
+                            >
+                              <GitMerge className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               onClick={() => startEdit(item)}
                               className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
                               title="Edit"
@@ -771,6 +1014,448 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           </table>
         </div>
       </Card>
+
+      {/* Floating Action Bar ketika item dipilih */}
+      {selectedIds.length >= 2 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-4 border border-slate-700/80 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-400" />
+            <span className="text-xs font-semibold">
+              <strong>{selectedIds.length} item</strong> dipilih
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                const selectedItems = masterItems.filter((m) =>
+                  selectedIds.includes(m.id)
+                );
+                openMergeDialogForItems(selectedItems);
+              }}
+              className="rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+            >
+              <GitMerge className="w-3.5 h-3.5" />
+              Gabungkan Jadi 1 Item
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds([])}
+              className="rounded-xl text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+            >
+              Batal
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Dialog Audit Duplikat Item Master */}
+      <Dialog open={showAuditModal} onOpenChange={setShowAuditModal}>
+        <DialogContent className="max-w-4xl max-h-[88vh] flex flex-col p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="p-6 pb-4 border-b border-slate-100 bg-slate-50/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700">
+                  <SearchCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-slate-900">
+                    Audit Duplikat Katalog Item Baku
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                    Deteksi otomatis item yang sama namun berbeda awalan/akhiran akibat input scan AI atau variasi penulisan.
+                  </DialogDescription>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-toolbar controls */}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200/60">
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
+                <span className="font-medium">Tingkat Kemiripan:</span>
+                <select
+                  value={auditMinScore}
+                  onChange={(e) => setAuditMinScore(parseFloat(e.target.value))}
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                >
+                  <option value={0.80}>Ketat (80% kemiripan)</option>
+                  <option value={0.70}>Normal (70% kemiripan - Rekomendasi)</option>
+                  <option value={0.60}>Sensitif / Luas (60% kemiripan)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchAudit()}
+                  disabled={isAuditing}
+                  className="h-8 rounded-lg text-xs gap-1.5"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isAuditing ? "animate-spin" : ""}`} />
+                  Pindai Ulang
+                </Button>
+                <Badge variant="secondary" className="text-xs py-1 px-2.5 font-semibold">
+                  {auditPairs.length} Potensi Duplikat
+                </Badge>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {/* Dialog Body - Scrollable */}
+          <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/30">
+            {isAuditing ? (
+              <div className="py-16 text-center space-y-3">
+                <RefreshCw className="w-7 h-7 text-blue-600 animate-spin mx-auto" />
+                <p className="text-sm font-semibold text-slate-800">
+                  Sedang menganalisis katalog item baku...
+                </p>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Mencocokkan kemiripan teks, susunan kata, awalan/akhiran, dan riwayat transaksi...
+                </p>
+              </div>
+            ) : auditPairs.length === 0 ? (
+              <div className="py-16 text-center space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-800">
+                  Katalog Rapi! Tidak Ada Duplikat
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Tidak ditemukan item ganda atau variasi awalan/akhiran yang mencurigakan pada tingkat sensitivitas saat ini.
+                </p>
+              </div>
+            ) : (
+              auditPairs.map((pair) => {
+                const isItemAPrimary = pair.suggested_primary_id === pair.item_a.id;
+                return (
+                  <div
+                    key={`${pair.item_a.id}-${pair.item_b.id}`}
+                    className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-3 hover:border-slate-300 transition-colors"
+                  >
+                    {/* Header info */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] font-medium bg-amber-50 text-amber-800 border-amber-200"
+                        >
+                          {pair.reason}
+                        </Badge>
+                      </div>
+                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                        {Math.round(pair.similarity_score * 100)}% Kemiripan
+                      </Badge>
+                    </div>
+
+                    {/* Comparison 2 Items */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Item A */}
+                      <div
+                        className={`p-3 rounded-xl border transition-all text-xs space-y-1.5 ${
+                          isItemAPrimary
+                            ? "border-blue-300 bg-blue-50/20 shadow-xs"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-900 text-sm">
+                            {pair.item_a.item_name}
+                          </span>
+                          {isItemAPrimary && (
+                            <Badge className="bg-blue-600 text-white text-[10px] font-medium">
+                              ⭐ Disarankan Utama
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <Badge variant="outline" className="text-[10px]">
+                            {pair.item_a.category}
+                          </Badge>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-600">
+                            Satuan: <strong>{pair.item_a.satuan_beli || "Pcs"}</strong>
+                          </span>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-600">
+                            Toko: <strong>{pair.item_a.default_supplier || "-"}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-2">
+                          <span className="text-slate-500">
+                            Riwayat:{" "}
+                            <strong className="text-slate-800">{pair.item_a.tx_count}x transaksi</strong>
+                          </span>
+                          <span className="font-bold text-emerald-700 tabular-nums">
+                            {pair.item_a.last_unit_price > 0
+                              ? formatRupiah(pair.item_a.last_unit_price)
+                              : "-"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Item B */}
+                      <div
+                        className={`p-3 rounded-xl border transition-all text-xs space-y-1.5 ${
+                          !isItemAPrimary
+                            ? "border-blue-300 bg-blue-50/20 shadow-xs"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-900 text-sm">
+                            {pair.item_b.item_name}
+                          </span>
+                          {!isItemAPrimary && (
+                            <Badge className="bg-blue-600 text-white text-[10px] font-medium">
+                              ⭐ Disarankan Utama
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <Badge variant="outline" className="text-[10px]">
+                            {pair.item_b.category}
+                          </Badge>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-600">
+                            Satuan: <strong>{pair.item_b.satuan_beli || "Pcs"}</strong>
+                          </span>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-600">
+                            Toko: <strong>{pair.item_b.default_supplier || "-"}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-2">
+                          <span className="text-slate-500">
+                            Riwayat:{" "}
+                            <strong className="text-slate-800">{pair.item_b.tx_count}x transaksi</strong>
+                          </span>
+                          <span className="font-bold text-emerald-700 tabular-nums">
+                            {pair.item_b.last_unit_price > 0
+                              ? formatRupiah(pair.item_b.last_unit_price)
+                              : "-"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => ignorePair(pair.item_a.id, pair.item_b.id)}
+                        className="text-slate-400 hover:text-slate-700 text-xs h-8"
+                      >
+                        Abaikan
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          openMergeDialogForItems(
+                            [pair.item_a, pair.item_b],
+                            pair.suggested_primary_id
+                          )
+                        }
+                        className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold gap-1.5 h-8 rounded-xl shadow-xs"
+                      >
+                        <GitMerge className="w-3.5 h-3.5" />
+                        Gabungkan Jadi 1 Item
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAuditModal(false)}
+              className="rounded-xl text-xs"
+            >
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Konfirmasi & Eksekusi Merge Item */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] flex flex-col p-6 overflow-y-auto rounded-2xl">
+          <DialogHeader className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                <GitMerge className="w-4 h-4" />
+              </div>
+              <DialogTitle className="text-base font-bold text-slate-900">
+                Gabungkan Item Baku
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-slate-500">
+              Pilih satu item baku utama yang dipertahankan. Item lainnya akan dilebur, riwayat transaksi dialihkan, dan namanya dicatat ke kata kunci alias.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 my-2 text-xs">
+            {/* Step 1: Pilih Item Utama */}
+            <div className="space-y-2">
+              <label className="font-semibold text-slate-700 block">
+                1. Pilih Item Utama yang Dipertahankan:
+              </label>
+              <div className="space-y-2">
+                {mergeItemsList.map((item) => {
+                  const isSelected = targetItemId === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectPrimaryTarget(item)}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-50/30 ring-1 ring-blue-500"
+                          : "border-slate-200 hover:border-slate-300 bg-white"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="primary_item"
+                        checked={isSelected}
+                        onChange={() => handleSelectPrimaryTarget(item)}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">{item.item_name}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {item.category}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-3 text-slate-500 text-[11px]">
+                          <span>Toko: <strong>{item.default_supplier || "-"}</strong></span>
+                          <span>Satuan: <strong>{item.satuan_beli || "Pcs"}</strong></span>
+                          <span>Transaksi: <strong className="text-blue-700">{item.tx_count}x</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Step 2: Sesuaikan Nama Baku & Kategori Hasil Gabungan */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <label className="font-semibold text-slate-700 block">
+                2. Sesuaikan Data Akhir Hasil Gabungan:
+              </label>
+
+              <div>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                  Nama Baku Akhir *
+                </label>
+                <Input
+                  value={customMergeName}
+                  onChange={(e) => setCustomMergeName(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                  placeholder="Nama baku yang akan digunakan di semua transaksi"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                    Kategori
+                  </label>
+                  <select
+                    value={customMergeCategory}
+                    onChange={(e) => setCustomMergeCategory(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                  >
+                    {categories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                    Toko Default
+                  </label>
+                  <Input
+                    value={customMergeSupplier}
+                    onChange={(e) => setCustomMergeSupplier(e.target.value)}
+                    className="h-9 text-xs rounded-xl"
+                    placeholder="Nama toko"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Opsi Gabung & Alias */}
+            <div className="space-y-2 pt-2 border-t border-slate-100 bg-slate-50/70 p-3 rounded-xl border border-slate-200/60">
+              <span className="font-semibold text-slate-800 block text-[11px]">
+                Opsi Sinkronisasi & Otomasi AI:
+              </span>
+              <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={mergeAliasesOption}
+                  onChange={(e) => setMergeAliasesOption(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  <strong>Tambahkan nama item lain ke Kata Kunci / Alias Struk</strong>
+                  <br />
+                  <span className="text-slate-500 text-[10px]">
+                    Scan AI di masa depan yang membaca variasi nama ini akan otomatis disamakan ke item baku utama ini.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={updateExpensesOption}
+                  onChange={(e) => setUpdateExpensesOption(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  <strong>Alihkan semua riwayat transaksi ke item utama ini</strong>
+                  <br />
+                  <span className="text-slate-500 text-[10px]">
+                    Nama asli di nota belanja fisik tetap tersimpan aman di kolom Catatan/Keterangan.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 pt-2 border-t border-slate-100 flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMergeDialogOpen(false)}
+              className="rounded-xl text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              disabled={mergeMutation.isPending || !customMergeName.trim()}
+              onClick={handleExecuteMerge}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
+            >
+              <GitMerge className="w-3.5 h-3.5" />
+              {mergeMutation.isPending ? "Menggabungkan..." : "Ya, Gabungkan Sekarang"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

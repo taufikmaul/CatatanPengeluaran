@@ -177,6 +177,44 @@ export interface MasterItem {
   created_at?: string;
 }
 
+export interface DuplicatePair {
+  item_a: MasterItem;
+  item_b: MasterItem;
+  similarity_score: number;
+  match_type: "substring" | "prefix_suffix" | "fuzzy" | "alias";
+  reason: string;
+  suggested_primary_id: number;
+}
+
+export interface MasterItemAuditResponse {
+  ok: boolean;
+  total_duplicates: number;
+  pairs: DuplicatePair[];
+}
+
+export interface MasterItemMergeRequest {
+  target_item_id: number;
+  source_item_ids: number[];
+  custom_name?: string | null;
+  custom_category?: string | null;
+  custom_supplier?: string | null;
+  custom_satuan_beli?: string | null;
+  custom_tipe_satuan?: string | null;
+  custom_isi_paket?: string | null;
+  custom_satuan_ecer?: string | null;
+  merge_aliases?: boolean;
+  update_expenses?: boolean;
+}
+
+export interface MasterItemMergeResponse {
+  ok: boolean;
+  message: string;
+  target_item: MasterItem;
+  merged_sources: string[];
+  expenses_reassigned_count: number;
+  aliases_added: string[];
+}
+
 export interface ItemSuggestion {
   id?: number | null;
   item_name: string;
