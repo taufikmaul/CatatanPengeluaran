@@ -222,6 +222,9 @@ export interface SystemConfig {
   dashboard_pin_chat_id?: string;
   dashboard_pin_thread_id?: number | null;
   allowed_thread_id: number;
+  allowed_thread_ids?: string;
+  tukar_cash_thread_ids?: string;
+  ongkir_thread_ids?: string;
   report_chat_id: string;
   report_thread_id: number;
   bot_password?: string;

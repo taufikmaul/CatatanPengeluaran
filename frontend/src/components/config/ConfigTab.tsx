@@ -40,6 +40,9 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [telegramToken, setTelegramToken] = useState("");
   const [pinChatId, setPinChatId] = useState("");
   const [allowedThreadId, setAllowedThreadId] = useState(7);
+  const [allowedThreadIds, setAllowedThreadIds] = useState("");
+  const [tukarCashThreadIds, setTukarCashThreadIds] = useState("");
+  const [ongkirThreadIds, setOngkirThreadIds] = useState("");
   const [botPassword, setBotPassword] = useState("12345");
   const [adminInputPassword, setAdminInputPassword] = useState("input123");
   const [webhookUrl, setWebhookUrl] = useState("");
@@ -228,6 +231,9 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setTelegramToken(config.telegram_token || "");
       setPinChatId(config.dashboard_pin_chat_id || "");
       setAllowedThreadId(config.allowed_thread_id || 7);
+      setAllowedThreadIds(config.allowed_thread_ids || "");
+      setTukarCashThreadIds(config.tukar_cash_thread_ids || "");
+      setOngkirThreadIds(config.ongkir_thread_ids || "");
       setBotPassword(config.bot_password || "12345");
       setAdminInputPassword(config.admin_input_password || "input123");
       setWebhookUrl(config.webhook_url || "");
@@ -248,6 +254,9 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
     try {
       const payload: any = {
         allowed_thread_id: Number(allowedThreadId),
+        allowed_thread_ids: allowedThreadIds.trim(),
+        tukar_cash_thread_ids: tukarCashThreadIds.trim(),
+        ongkir_thread_ids: ongkirThreadIds.trim(),
         report_thread_id: Number(allowedThreadId),
         dashboard_pin_thread_id: Number(allowedThreadId),
         sumopod_model: sumopodModel,
@@ -457,7 +466,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Topic / Thread ID (Untuk Forum Group)
+                  Topic ID Default (Fallback)
                 </label>
                 <Input
                   type="number"
@@ -467,6 +476,54 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                 />
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Default: 7 (Topic bot Catatan Pengeluaran)
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Semua Topic ID Diizinkan (Multi-Topic)
+                </label>
+                <Input
+                  type="text"
+                  value={allowedThreadIds}
+                  onChange={(e) => setAllowedThreadIds(e.target.value)}
+                  placeholder="Contoh: 7, 12, 15"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Pisahkan dengan koma jika bot melayani beberapa topic forum
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Topic ID Khusus Tukar Cash (Tarik Tunai Karyawan)
+                </label>
+                <Input
+                  type="text"
+                  value={tukarCashThreadIds}
+                  onChange={(e) => setTukarCashThreadIds(e.target.value)}
+                  placeholder="Contoh: 12"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Bukti transfer di topic ini otomatis masuk kategori "Tukar Cash"
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Topic ID Khusus Ongkir & Kurir
+                </label>
+                <Input
+                  type="text"
+                  value={ongkirThreadIds}
+                  onChange={(e) => setOngkirThreadIds(e.target.value)}
+                  placeholder="Contoh: 15"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Resi di topic ini otomatis masuk kategori "Operasional" (Ongkir)
                 </span>
               </div>
 
