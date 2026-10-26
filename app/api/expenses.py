@@ -83,6 +83,7 @@ async def list_expenses(
     status: str | None = Query(None),
     is_reimbursement: bool | None = Query(None),
     user_id: int | None = Query(None),
+    special_type: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -96,6 +97,7 @@ async def list_expenses(
         status=status,
         is_reimbursement=is_reimbursement,
         user_id=user_id,
+        special_type=special_type,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 

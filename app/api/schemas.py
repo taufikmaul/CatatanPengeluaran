@@ -131,6 +131,13 @@ class MonthlyReportResponse(BaseModel):
     month_name: str
     total_lunas: float
     total_pengeluaran: float
+    total_tukar_cash: float = 0.0
+    tukar_cash_count: int = 0
+    total_ongkir: float = 0.0
+    ongkir_count: int = 0
+    ongkir_reimburse_count: int = 0
+    ongkir_reimburse_total: float = 0.0
+    total_belanja_riil: float = 0.0
     expense_count: int
     prev_month_name: str | None = None
     prev_total_lunas: float = 0.0

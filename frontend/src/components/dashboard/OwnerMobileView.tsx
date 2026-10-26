@@ -35,6 +35,8 @@ import {
   ArrowRight,
   Inbox,
   LayoutDashboard,
+  ArrowLeftRight,
+  Truck,
 } from "lucide-react";
 
 // Sub-components untuk tab Analisis & Grafik
@@ -81,6 +83,7 @@ export interface OwnerMobileViewProps {
   onResetFilters: () => void;
   onOpenAddExpense: () => void;
   onOpenBudgetSettings?: () => void;
+  onOpenTukarCashOngkir?: (subType?: "all" | "tukar_cash" | "ongkir") => void;
 }
 
 export function OwnerMobileView({
@@ -116,6 +119,7 @@ export function OwnerMobileView({
   onResetFilters,
   onOpenAddExpense,
   onOpenBudgetSettings,
+  onOpenTukarCashOngkir,
 }: OwnerMobileViewProps) {
   // Mobile Sub-Tab: "ringkasan" | "transaksi" | "analisis"
   const [mobileTab, setMobileTab] = useState<"ringkasan" | "transaksi" | "analisis">("ringkasan");
@@ -372,6 +376,47 @@ export function OwnerMobileView({
               <div className="flex items-center justify-between gap-1 flex-wrap pt-0.5">
                 <span className="text-[10px] text-slate-500 font-medium">Lunas</span>
                 {renderMomBadge(reportData?.mom_lunas_change_pct)}
+              </div>
+            </div>
+          </div>
+
+          {/* 2 Kartu Khusus: Tukar Cash & Ongkir Kurir */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Tukar Cash */}
+            <div
+              onClick={() => onOpenTukarCashOngkir?.("tukar_cash")}
+              className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/90 dark:border-indigo-800 shadow-2xs space-y-1 cursor-pointer active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-300">Tukar Cash</span>
+                <div className="p-1 rounded-lg bg-white dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300">
+                  <ArrowLeftRight className="w-3 h-3" />
+                </div>
+              </div>
+              <div className="text-sm sm:text-base font-bold text-indigo-950 dark:text-indigo-200 tabular-nums">
+                {formatRupiah(reportData?.total_tukar_cash || 0)}
+              </div>
+              <div className="text-[10px] text-indigo-700/80 dark:text-indigo-400 font-medium">
+                {reportData?.tukar_cash_count || 0} transaksi &rarr;
+              </div>
+            </div>
+
+            {/* Ongkir & Kurir */}
+            <div
+              onClick={() => onOpenTukarCashOngkir?.("ongkir")}
+              className="p-3.5 rounded-2xl bg-sky-50/70 dark:bg-sky-950/40 border border-sky-200/90 dark:border-sky-800 shadow-2xs space-y-1 cursor-pointer active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-sky-900 dark:text-sky-300">Ongkir & Kurir</span>
+                <div className="p-1 rounded-lg bg-white dark:bg-sky-900 text-sky-700 dark:text-sky-300">
+                  <Truck className="w-3 h-3" />
+                </div>
+              </div>
+              <div className="text-sm sm:text-base font-bold text-sky-950 dark:text-sky-200 tabular-nums">
+                {formatRupiah(reportData?.total_ongkir || 0)}
+              </div>
+              <div className="text-[10px] text-sky-700/80 dark:text-sky-400 font-medium">
+                {reportData?.ongkir_count || 0} trip &rarr;
               </div>
             </div>
           </div>

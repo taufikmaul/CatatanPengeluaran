@@ -131,6 +131,13 @@ export interface MonthlyReport {
   month_name: string;
   total_lunas: number;
   total_pengeluaran: number;
+  total_tukar_cash?: number;
+  tukar_cash_count?: number;
+  total_ongkir?: number;
+  ongkir_count?: number;
+  ongkir_reimburse_count?: number;
+  ongkir_reimburse_total?: number;
+  total_belanja_riil?: number;
   expense_count: number;
   prev_month_name?: string | null;
   prev_total_lunas?: number;

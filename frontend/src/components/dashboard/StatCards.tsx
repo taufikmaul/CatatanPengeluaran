@@ -3,7 +3,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { Wallet, Receipt, AlertCircle, Layers, TrendingUp, TrendingDown, Target, Tag } from "lucide-react";
+import { Wallet, Receipt, AlertCircle, Layers, TrendingUp, TrendingDown, Target, Tag, ArrowLeftRight, Truck } from "lucide-react";
 
 interface StatCardsProps {
   totalLunas: number;
@@ -27,9 +27,16 @@ interface StatCardsProps {
   perKategori?: Record<string, number>;
   reimbursePendingCount?: number;
   reimbursePendingTotal?: number;
+  totalTukarCash?: number;
+  tukarCashCount?: number;
+  totalOngkir?: number;
+  ongkirCount?: number;
+  ongkirReimburseCount?: number;
+  ongkirReimburseTotal?: number;
   onFilterUnpaid?: () => void;
   onFilterReimburse?: () => void;
   onOpenBudgetSettings?: () => void;
+  onOpenTukarCashOngkir?: (subType?: "all" | "tukar_cash" | "ongkir") => void;
 }
 
 export const StatCards: React.FC<StatCardsProps> = ({
@@ -54,9 +61,16 @@ export const StatCards: React.FC<StatCardsProps> = ({
   perKategori = {},
   reimbursePendingCount = 0,
   reimbursePendingTotal = 0,
+  totalTukarCash = 0,
+  tukarCashCount = 0,
+  totalOngkir = 0,
+  ongkirCount = 0,
+  ongkirReimburseCount = 0,
+  ongkirReimburseTotal = 0,
   onFilterUnpaid,
   onFilterReimburse,
   onOpenBudgetSettings,
+  onOpenTukarCashOngkir,
 }) => {
   const renderMomBadge = (pct?: number | null, prevVal?: number) => {
     if (pct === undefined || pct === null) return null;
@@ -228,6 +242,103 @@ export const StatCards: React.FC<StatCardsProps> = ({
             </motion.div>
           );
         })}
+      </div>
+
+      {/* 2 Card Terpisah: Tukar Cash & Ongkir Kurir */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+        {/* Card 1: Tukar Cash (Tarik Tunai Karyawan) */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
+        >
+          <Card
+            onClick={() => onOpenTukarCashOngkir?.("tukar_cash")}
+            className="relative overflow-hidden border-indigo-200/90 bg-gradient-to-br from-indigo-50/50 via-white to-white hover:border-indigo-300 transition-all cursor-pointer hover:shadow-md group"
+          >
+            <CardContent className="p-4 md:p-5 relative">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-indigo-50 text-indigo-700">
+                    <ArrowLeftRight className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800">Tukar Cash (Tarik Tunai)</span>
+                    <p className="text-[10px] text-slate-500">Mutasi kasir via transfer rekening</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-200 font-semibold">
+                  Kasir ⇄ Rekening
+                </Badge>
+              </div>
+
+              <div className="space-y-1.5 mt-2">
+                <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                  <span className="text-lg md:text-2xl font-bold tracking-tight tabular-nums text-indigo-900">
+                    {formatRupiah(totalTukarCash)}
+                  </span>
+                  <span className="text-xs text-indigo-700 font-semibold group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                    Buka Rincian &rarr;
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {tukarCashCount > 0
+                    ? `${tukarCashCount} transaksi tarik tunai kasir (netral, tidak membebani OPEX toko)`
+                    : "Belum ada mutasi tarik tunai bulan ini"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Card 2: Biaya Ongkir & Kurir */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.25 }}
+        >
+          <Card
+            onClick={() => onOpenTukarCashOngkir?.("ongkir")}
+            className="relative overflow-hidden border-sky-200/90 bg-gradient-to-br from-sky-50/50 via-white to-white hover:border-sky-300 transition-all cursor-pointer hover:shadow-md group"
+          >
+            <CardContent className="p-4 md:p-5 relative">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-sky-50 text-sky-700">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800">Biaya Ongkir & Kurir</span>
+                    <p className="text-[10px] text-slate-500">GoSend, GrabExpress, Lalamove, J&T</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200 font-semibold">
+                  Logistik Toko
+                </Badge>
+              </div>
+
+              <div className="space-y-1.5 mt-2">
+                <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                  <span className="text-lg md:text-2xl font-bold tracking-tight tabular-nums text-sky-900">
+                    {formatRupiah(totalOngkir)}
+                  </span>
+                  <span className="text-xs text-sky-700 font-semibold group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-1">
+                    Buka Rincian &rarr;
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {ongkirCount > 0
+                    ? `${ongkirCount} pengiriman${
+                        ongkirReimburseCount > 0
+                          ? ` • ${ongkirReimburseCount} talangan e-wallet: ${formatRupiah(ongkirReimburseTotal)}`
+                          : ""
+                      }`
+                    : "Belum ada catatan ongkir bulan ini"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
 
       {/* Monthly Budget Alert Progress Bar (Overall + Per Category) */}

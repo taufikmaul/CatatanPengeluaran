@@ -273,6 +273,11 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
     total_lunas = 0.0
     total_tukar_cash = 0.0
+    tukar_cash_count = 0
+    total_ongkir = 0.0
+    ongkir_count = 0
+    ongkir_reimburse_count = 0
+    ongkir_reimburse_total = 0.0
     per_kategori: dict[str, float] = {}
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
@@ -282,6 +287,31 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     for e in expenses:
         nominal = float(e.total_price or 0)
         status = (e.pay_status or "").lower()
+        kat = e.category or "Lainnya"
+        item_l = (e.item_name or "").lower()
+        sup_l = (e.supplier or "").lower()
+
+        # Deteksi Tukar Cash (tarik tunai karyawan)
+        is_tukar_cash = kat.lower() == "tukar cash" or "tukar cash" in item_l or "tarik tunai" in item_l
+        if is_tukar_cash:
+            total_tukar_cash += nominal
+            tukar_cash_count += 1
+
+        # Deteksi Ongkir & Kurir
+        is_ongkir = (
+            kat.lower() == "ongkir"
+            or item_l.startswith("ongkir")
+            or "ongkir" in item_l
+            or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "j&t", "sicepat", "anteraja"))
+        )
+        if is_ongkir and not is_tukar_cash:
+            total_ongkir += nominal
+            ongkir_count += 1
+            if bool(e.is_reimbursement):
+                ongkir_reimburse_count += 1
+                ongkir_reimburse_total += nominal
+        elif float(e.shipping_fee or 0) > 0 and not is_tukar_cash:
+            total_ongkir += float(e.shipping_fee)
 
         if bool(e.is_reimbursement) and not e.reimbursed_at:
             reimburse_pending_count += 1
@@ -293,10 +323,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
         if status == "lunas":
             total_lunas += nominal
-            kat = e.category or "Lainnya"
             per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
-            if kat.lower() == "tukar cash":
-                total_tukar_cash += nominal
         elif "belum" in status or status in ("hutang", "tempo"):
             list_hutang.append({
                 "id": e.id,
@@ -312,6 +339,11 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     return {
         "total_lunas": total_lunas,
         "total_tukar_cash": total_tukar_cash,
+        "tukar_cash_count": tukar_cash_count,
+        "total_ongkir": total_ongkir,
+        "ongkir_count": ongkir_count,
+        "ongkir_reimburse_count": ongkir_reimburse_count,
+        "ongkir_reimburse_total": ongkir_reimburse_total,
         "total_belanja_riil": max(0.0, total_lunas - total_tukar_cash),
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
@@ -512,9 +544,50 @@ async def get_all_expenses_paginated(
     status: str | None = None,
     is_reimbursement: bool | None = None,
     user_id: int | None = None,
+    special_type: str | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, dan user."""
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, dan special_type (tukar_cash, ongkir, all_cash_delivery)."""
     query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
+
+    if special_type == "tukar_cash":
+        query = query.where(
+            or_(
+                Expense.category.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tarik tunai%"),
+            )
+        )
+    elif special_type == "ongkir":
+        query = query.where(
+            or_(
+                Expense.category.ilike("%ongkir%"),
+                Expense.item_name.ilike("ongkir%"),
+                Expense.item_name.ilike("%ongkir%"),
+                Expense.supplier.ilike("%gosend%"),
+                Expense.supplier.ilike("%grabexpress%"),
+                Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%j&t%"),
+                Expense.supplier.ilike("%sicepat%"),
+                Expense.shipping_fee > 0,
+            )
+        )
+    elif special_type in ("all_cash_delivery", "cash_or_delivery", "tukar_cash_ongkir"):
+        query = query.where(
+            or_(
+                Expense.category.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tarik tunai%"),
+                Expense.category.ilike("%ongkir%"),
+                Expense.item_name.ilike("ongkir%"),
+                Expense.item_name.ilike("%ongkir%"),
+                Expense.supplier.ilike("%gosend%"),
+                Expense.supplier.ilike("%grabexpress%"),
+                Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%j&t%"),
+                Expense.supplier.ilike("%sicepat%"),
+                Expense.shipping_fee > 0,
+            )
+        )
 
     if category:
         query = query.where(Expense.category == category)

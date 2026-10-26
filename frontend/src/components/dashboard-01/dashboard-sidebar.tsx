@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Wallet,
   Home,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -40,8 +41,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "master" | "config";
-  onTabChange: (tab: "overview" | "master" | "config") => void;
+  activeTab: "overview" | "master" | "tukar-cash-ongkir" | "config";
+  onTabChange: (tab: "overview" | "master" | "tukar-cash-ongkir" | "config") => void;
   onOpenImport: () => void;
   userRole?: string | null;
   canManageConfig?: boolean;
@@ -74,7 +75,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "master" | "config") => {
+  const handleSelectTab = (tab: "overview" | "master" | "tukar-cash-ongkir" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -171,6 +172,22 @@ export function DashboardSidebar({
               >
                 <PackageCheck className="w-4 h-4" />
                 <span className="truncate">Master Item</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "tukar-cash-ongkir"}
+                onClick={() => handleSelectTab("tukar-cash-ongkir")}
+                tooltip="Tukar Cash & Ongkir Kurir"
+                className={`h-9.5 rounded-xl font-medium ${
+                  activeTab === "tukar-cash-ongkir"
+                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <ArrowLeftRight className="w-4 h-4" />
+                <span className="truncate">Tukar Cash & Ongkir</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

@@ -19,6 +19,7 @@ import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
+import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -49,8 +50,9 @@ try {
 export function App() {
   const queryClient = useQueryClient();
 
-  // Active Tab: "overview" | "master" | "config"
-  const [activeTab, setActiveTab] = useState<"overview" | "master" | "config">("overview");
+  // Active Tab: "overview" | "master" | "tukar-cash-ongkir" | "config"
+  const [activeTab, setActiveTab] = useState<"overview" | "master" | "tukar-cash-ongkir" | "config">("overview");
+  const [cashDeliverySubtype, setCashDeliverySubtype] = useState<"all" | "tukar_cash" | "ongkir">("all");
 
   // Filter states
   const now = new Date();
@@ -528,6 +530,10 @@ export function App() {
                           setIsFormOpen(true);
                         }}
                         onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
+                        onOpenTukarCashOngkir={(subType) => {
+                          setCashDeliverySubtype(subType || "all");
+                          setActiveTab("tukar-cash-ongkir");
+                        }}
                       />
                     </div>
 
@@ -556,12 +562,22 @@ export function App() {
                         perKategori={reportData?.per_kategori}
                         reimbursePendingCount={reportData?.reimburse_pending_count || 0}
                         reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
+                        totalTukarCash={reportData?.total_tukar_cash || 0}
+                        tukarCashCount={reportData?.tukar_cash_count || 0}
+                        totalOngkir={reportData?.total_ongkir || 0}
+                        ongkirCount={reportData?.ongkir_count || 0}
+                        ongkirReimburseCount={reportData?.ongkir_reimburse_count || 0}
+                        ongkirReimburseTotal={reportData?.ongkir_reimburse_total || 0}
                         onFilterUnpaid={() => setStatus("Belum Lunas")}
                         onFilterReimburse={() => {
                           setIsReimbursement(true);
                           setPage(1);
                         }}
                         onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
+                        onOpenTukarCashOngkir={(subType) => {
+                          setCashDeliverySubtype(subType || "all");
+                          setActiveTab("tukar-cash-ongkir");
+                        }}
                       />
 
                       {/* AI Financial Analysis & Strategic Advisor Card */}
@@ -847,6 +863,24 @@ export function App() {
               <MasterItemsTab
                 categories={categories}
                 onInspectItemPrice={handleInspectItemPrice}
+              />
+            )}
+
+            {activeTab === "tukar-cash-ongkir" && (
+              <TukarCashOngkirTab
+                currentMonth={month}
+                currentYear={year}
+                reportData={reportData}
+                initialType={cashDeliverySubtype}
+                onEditExpense={(item) => {
+                  setRepeatingExpense(null);
+                  setEditingExpense(item);
+                  setIsFormOpen(true);
+                }}
+                onViewExpense={(item) => setViewingExpense(item)}
+                onToggleStatus={handleToggleStatus}
+                onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                canDelete={canDelete}
               />
             )}
 
