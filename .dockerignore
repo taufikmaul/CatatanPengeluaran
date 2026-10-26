@@ -24,3 +24,10 @@ README.md
 **/*.md
 .DS_Store
 logs
+
+# Jangan pernah masuk image: secret mount VPS, build lokal yang stale,
+# dan file CI itu sendiri.
+secrets/
+frontend/node_modules/
+frontend/dist/
+.github/
