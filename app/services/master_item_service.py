@@ -4,7 +4,7 @@ app/services/master_item_service.py — Layanan Katalog Nama Item Baku (Master I
 """
 import re
 from difflib import SequenceMatcher
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.master_item import MasterItem
 from app.models.expense import Expense
@@ -572,4 +572,344 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     return {
         "items": sorted_items[:250],
         "suppliers": sorted_suppliers[:100],
+    }
+
+
+async def audit_duplicate_master_items(
+    db: AsyncSession,
+    min_score: float = 0.70,
+    limit: int = 150,
+) -> dict:
+    """
+    Audit seluruh katalog master items untuk mendeteksi potensi duplikat.
+    Mendeteksi variasi input seperti perbedaan awalan/akhiran hasil scan AI
+    (mis. 'Kabel listrik NYM Dynamic 2 x 1.5' vs 'Kabel listrik NYM Dynamic 2 x 1.5 / Kabel tembaga').
+    """
+    master_items = await list_master_items(db)
+    if len(master_items) < 2:
+        return {"ok": True, "total_duplicates": 0, "pairs": []}
+
+    suggestions = await get_item_and_supplier_suggestions(db)
+    hist_by_id = {
+        s["id"]: s
+        for s in suggestions.get("items", [])
+        if s.get("id") is not None
+    }
+    hist_by_name = {
+        s["item_name"].strip().lower(): s
+        for s in suggestions.get("items", [])
+    }
+
+    def _get_item_stats(m: MasterItem) -> dict:
+        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
+        return {
+            "id": m.id,
+            "item_name": m.item_name,
+            "category": m.category,
+            "default_supplier": m.default_supplier or "-",
+            "aliases": m.aliases or "",
+            "satuan_beli": m.satuan_beli or "Pcs",
+            "tipe_satuan": m.tipe_satuan or "keduanya",
+            "isi_paket": m.isi_paket or "",
+            "satuan_ecer": m.satuan_ecer or "Pcs",
+            "last_unit_price": float(h.get("last_unit_price") or 0.0),
+            "last_supplier": h.get("last_supplier") or m.default_supplier or "-",
+            "tx_count": int(h.get("tx_count") or 0),
+            "created_at": m.created_at,
+        }
+
+    # Pre-calculate stats and normalized attributes
+    items_data = []
+    for m in master_items:
+        stats = _get_item_stats(m)
+        norm_name = _normalize_str(m.item_name)
+        tokens = set(norm_name.split())
+        nums = set(re.findall(r"\b\d+(?:[\.,]\d+)?\b", norm_name))
+        aliases_list = [_normalize_str(a) for a in _parse_aliases(m.aliases)]
+        items_data.append({
+            "model": m,
+            "stats": stats,
+            "norm_name": norm_name,
+            "tokens": tokens,
+            "nums": nums,
+            "aliases": aliases_list,
+        })
+
+    pairs = []
+    n = len(items_data)
+
+    for i in range(n):
+        data_a = items_data[i]
+        norm_a = data_a["norm_name"]
+        if not norm_a:
+            continue
+
+        for j in range(i + 1, n):
+            data_b = items_data[j]
+            norm_b = data_b["norm_name"]
+            if not norm_b:
+                continue
+
+            nums_a = data_a["nums"]
+            nums_b = data_b["nums"]
+            # Cek jika ada perbedaan angka/dimensi spesifik yang bertentangan (mis. 2 vs 3, 20 vs 25)
+            has_num_conflict = bool(nums_a and nums_b and (nums_a - nums_b) and (nums_b - nums_a))
+
+            # Cek kecocokan alias
+            has_alias_match = (
+                norm_a in data_b["aliases"]
+                or norm_b in data_a["aliases"]
+                or bool(set(data_a["aliases"]) & set(data_b["aliases"]) - {""})
+            )
+
+            similarity = 0.0
+            match_type = ""
+            reason = ""
+
+            if has_alias_match:
+                similarity = 0.98
+                match_type = "alias"
+                reason = "Kata kunci alias struk saling terhubung"
+            elif has_num_conflict:
+                # Angka/dimensi berbeda (misal 2x1.5 vs 3x1.5), jangan deteksi sebagai duplikat
+                continue
+            else:
+                tokens_a = data_a["tokens"]
+                tokens_b = data_b["tokens"]
+                is_sub_a_in_b = norm_a in norm_b
+                is_sub_b_in_a = norm_b in norm_a
+
+                if is_sub_a_in_b or is_sub_b_in_a:
+                    shorter = norm_a if is_sub_a_in_b else norm_b
+                    longer = norm_b if is_sub_a_in_b else norm_a
+                    shorter_name = data_a["stats"]["item_name"] if is_sub_a_in_b else data_b["stats"]["item_name"]
+                    longer_name = data_b["stats"]["item_name"] if is_sub_a_in_b else data_a["stats"]["item_name"]
+
+                    if len(shorter.split()) >= 2 or len(shorter) >= 6:
+                        len_ratio = len(shorter) / max(len(longer), 1)
+                        similarity = round(0.85 + (0.14 * len_ratio), 2)
+                        match_type = "substring"
+                        if longer.startswith(shorter):
+                            reason = f"Nama '{shorter_name}' terkandung di awalan '{longer_name}'"
+                        elif longer.endswith(shorter):
+                            reason = f"Nama '{shorter_name}' terkandung di akhiran '{longer_name}'"
+                        else:
+                            reason = f"Nama '{shorter_name}' terkandung utuh di dalam '{longer_name}'"
+                elif tokens_a.issubset(tokens_b) or tokens_b.issubset(tokens_a):
+                    shorter_tokens = tokens_a if len(tokens_a) <= len(tokens_b) else tokens_b
+                    longer_tokens = tokens_b if len(tokens_a) <= len(tokens_b) else tokens_a
+                    if len(shorter_tokens) >= 2:
+                        tok_ratio = len(shorter_tokens) / max(len(longer_tokens), 1)
+                        similarity = round(0.82 + (0.16 * tok_ratio), 2)
+                        match_type = "prefix_suffix"
+                        shorter_name = data_a["stats"]["item_name"] if len(tokens_a) <= len(tokens_b) else data_b["stats"]["item_name"]
+                        longer_name = data_b["stats"]["item_name"] if len(tokens_a) <= len(tokens_b) else data_a["stats"]["item_name"]
+                        reason = f"Semua kata '{shorter_name}' termuat di '{longer_name}'"
+                else:
+                    seq_ratio = SequenceMatcher(None, norm_a, norm_b).ratio()
+                    union_len = len(tokens_a | tokens_b)
+                    jaccard = len(tokens_a & tokens_b) / union_len if union_len > 0 else 0.0
+                    combined = (seq_ratio * 0.6) + (jaccard * 0.4)
+                    if combined >= 0.76:
+                        similarity = round(combined, 2)
+                        match_type = "fuzzy"
+                        reason = f"Kemiripan teks {int(similarity * 100)}%"
+
+            if match_type and similarity >= min_score:
+                tx_a = data_a["stats"]["tx_count"]
+                tx_b = data_b["stats"]["tx_count"]
+                if tx_a > tx_b:
+                    suggested_primary = data_a["stats"]["id"]
+                elif tx_b > tx_a:
+                    suggested_primary = data_b["stats"]["id"]
+                else:
+                    if len(data_a["stats"]["item_name"]) <= len(data_b["stats"]["item_name"]):
+                        suggested_primary = data_a["stats"]["id"]
+                    else:
+                        suggested_primary = data_b["stats"]["id"]
+
+                pairs.append({
+                    "item_a": data_a["stats"],
+                    "item_b": data_b["stats"],
+                    "similarity_score": similarity,
+                    "match_type": match_type,
+                    "reason": reason,
+                    "suggested_primary_id": suggested_primary,
+                })
+
+    # Urutkan berdasarkan similarity_score tertinggi
+    pairs.sort(key=lambda x: -x["similarity_score"])
+
+    return {
+        "ok": True,
+        "total_duplicates": len(pairs),
+        "pairs": pairs[:limit],
+    }
+
+
+async def merge_master_items(
+    db: AsyncSession,
+    target_item_id: int,
+    source_item_ids: list[int],
+    custom_name: str | None = None,
+    custom_category: str | None = None,
+    custom_supplier: str | None = None,
+    custom_satuan_beli: str | None = None,
+    custom_tipe_satuan: str | None = None,
+    custom_isi_paket: str | None = None,
+    custom_satuan_ecer: str | None = None,
+    merge_aliases: bool = True,
+    update_expenses: bool = True,
+) -> dict:
+    """
+    Gabungkan satu atau lebih MasterItem duplikat ke dalam satu target MasterItem utama:
+    1. Menggabungkan nama dan alias lama ke dalam `aliases` target item.
+    2. Mengalihkan semua transaksi Expense (berdasarkan master_item_id dan nama lama) ke target item.
+    3. Menyimpan nama struk lama di kolom notes jika namanya diubah.
+    4. Menghapus MasterItem sumber yang sudah dilebur.
+    """
+    target = await db.scalar(select(MasterItem).where(MasterItem.id == target_item_id))
+    if not target:
+        raise ValueError("Item baku tujuan (target) tidak ditemukan.")
+
+    clean_source_ids = [sid for sid in set(source_item_ids) if sid != target_item_id]
+    if not clean_source_ids:
+        raise ValueError("Pilih minimal satu item duplikat untuk digabungkan.")
+
+    sources_res = await db.execute(
+        select(MasterItem).where(MasterItem.id.in_(clean_source_ids))
+    )
+    sources = list(sources_res.scalars().all())
+    if not sources:
+        raise ValueError("Item duplikat tidak ditemukan di database.")
+
+    source_names = [s.item_name for s in sources]
+    aliases_added: list[str] = []
+
+    # 1. Update target aliases jika diminta
+    if merge_aliases:
+        existing_aliases = [a.strip() for a in (target.aliases or "").split(",") if a.strip()]
+        existing_lower = {a.lower() for a in existing_aliases}
+
+        candidates = []
+        for s in sources:
+            if s.item_name.lower() != target.item_name.lower():
+                candidates.append(s.item_name)
+            for a in (s.aliases or "").split(","):
+                ca = a.strip()
+                if ca and ca.lower() != target.item_name.lower():
+                    candidates.append(ca)
+
+        for cand in candidates:
+            cl = cand.lower()
+            if cl not in existing_lower:
+                existing_aliases.append(cand)
+                existing_lower.add(cl)
+                aliases_added.append(cand)
+
+        target.aliases = ", ".join(existing_aliases)
+
+    # 2. Update custom field jika ada atau lengkapi field kosong
+    if custom_name and custom_name.strip():
+        target.item_name = custom_name.strip()
+
+    if custom_category and custom_category.strip() in settings.valid_categories:
+        target.category = custom_category.strip()
+
+    if custom_supplier is not None:
+        target.default_supplier = custom_supplier.strip() or "-"
+    elif target.default_supplier in (None, "", "-"):
+        for s in sources:
+            if s.default_supplier and s.default_supplier != "-":
+                target.default_supplier = s.default_supplier
+                break
+
+    if custom_satuan_beli is not None:
+        target.satuan_beli = custom_satuan_beli.strip() or "Pcs"
+    elif not target.satuan_beli or target.satuan_beli == "Pcs":
+        for s in sources:
+            if s.satuan_beli and s.satuan_beli != "Pcs":
+                target.satuan_beli = s.satuan_beli
+                break
+
+    if custom_tipe_satuan is not None:
+        target.tipe_satuan = custom_tipe_satuan.strip() or "keduanya"
+
+    if custom_isi_paket is not None:
+        target.isi_paket = custom_isi_paket.strip()
+    elif not target.isi_paket:
+        for s in sources:
+            if s.isi_paket:
+                target.isi_paket = s.isi_paket
+                break
+
+    if custom_satuan_ecer is not None:
+        target.satuan_ecer = custom_satuan_ecer.strip() or "Pcs"
+    elif not target.satuan_ecer or target.satuan_ecer == "Pcs":
+        for s in sources:
+            if s.satuan_ecer and s.satuan_ecer != "Pcs":
+                target.satuan_ecer = s.satuan_ecer
+                break
+
+    # 3. Alihkan semua transaksi Expense
+    lower_source_names = [n.lower() for n in source_names]
+    exp_query = select(Expense).where(
+        or_(
+            Expense.master_item_id.in_(clean_source_ids),
+            func.lower(Expense.item_name).in_(lower_source_names),
+        )
+    )
+    exp_res = await db.execute(exp_query)
+    expenses = exp_res.scalars().all()
+
+    reassigned_count = 0
+    for exp in expenses:
+        orig_name = exp.item_name
+        exp.master_item_id = target.id
+        if update_expenses:
+            exp.notes = append_original_name_to_notes(orig_name, target.item_name, exp.notes)
+            exp.item_name = target.item_name
+            if target.category and exp.category != "Tukar Cash":
+                exp.category = target.category
+        exp.sheets_synced = False
+        reassigned_count += 1
+
+    # 4. Hapus MasterItem sumber
+    for s in sources:
+        await db.delete(s)
+
+    await db.flush()
+
+    # Ambil ulang stats target
+    suggestions = await get_item_and_supplier_suggestions(db)
+    hist_by_id = {
+        s["id"]: s
+        for s in suggestions.get("items", [])
+        if s.get("id") is not None
+    }
+    h = hist_by_id.get(target.id) or {}
+
+    target_resp = {
+        "id": target.id,
+        "item_name": target.item_name,
+        "category": target.category,
+        "default_supplier": target.default_supplier or "-",
+        "aliases": target.aliases or "",
+        "satuan_beli": target.satuan_beli or "Pcs",
+        "tipe_satuan": target.tipe_satuan or "keduanya",
+        "isi_paket": target.isi_paket or "",
+        "satuan_ecer": target.satuan_ecer or "Pcs",
+        "last_unit_price": float(h.get("last_unit_price") or 0.0),
+        "last_supplier": h.get("last_supplier") or target.default_supplier or "-",
+        "tx_count": int(h.get("tx_count") or 0),
+        "created_at": target.created_at,
+    }
+
+    return {
+        "ok": True,
+        "message": f"Berhasil menggabungkan {len(sources)} item ke '{target.item_name}'. {reassigned_count} transaksi dialihkan.",
+        "target_item": target_resp,
+        "merged_sources": source_names,
+        "expenses_reassigned_count": reassigned_count,
+        "aliases_added": aliases_added,
     }
