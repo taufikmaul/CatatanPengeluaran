@@ -220,6 +220,44 @@ class MasterItemResponse(BaseModel):
         from_attributes = True
 
 
+class MasterItemDuplicatePair(BaseModel):
+    item_a: MasterItemResponse
+    item_b: MasterItemResponse
+    similarity_score: float
+    match_type: str  # "substring", "prefix_suffix", "fuzzy", "alias"
+    reason: str
+    suggested_primary_id: int
+
+
+class MasterItemAuditResponse(BaseModel):
+    ok: bool
+    total_duplicates: int
+    pairs: list[MasterItemDuplicatePair]
+
+
+class MasterItemMergeRequest(BaseModel):
+    target_item_id: int
+    source_item_ids: list[int]
+    custom_name: str | None = None
+    custom_category: str | None = None
+    custom_supplier: str | None = None
+    custom_satuan_beli: str | None = None
+    custom_tipe_satuan: str | None = None
+    custom_isi_paket: str | None = None
+    custom_satuan_ecer: str | None = None
+    merge_aliases: bool = True
+    update_expenses: bool = True
+
+
+class MasterItemMergeResponse(BaseModel):
+    ok: bool
+    message: str
+    target_item: MasterItemResponse
+    merged_sources: list[str]
+    expenses_reassigned_count: int
+    aliases_added: list[str]
+
+
 class AuthPermissions(BaseModel):
     can_edit: bool = True
     can_delete: bool = False
