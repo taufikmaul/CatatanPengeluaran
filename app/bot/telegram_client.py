@@ -19,14 +19,15 @@ async def send_message(
     reply_markup: dict | None = None,
     parse_mode: str | None = "Markdown",
 ) -> dict | None:
-    """Kirim pesan Telegram. Return response JSON dengan fallback jika entity markdown error."""
+    """Kirim pesan Telegram. Return response JSON dengan fallback jika entity markdown error atau thread id invalid."""
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
     }
     if parse_mode:
         payload["parse_mode"] = parse_mode
-    if thread_id:
+    # Chat pribadi (chat_id > 0) tidak menggunakan thread/forum topic
+    if thread_id and chat_id < 0:
         payload["message_thread_id"] = thread_id
     if reply_markup:
         payload["reply_markup"] = reply_markup
@@ -35,16 +36,23 @@ async def send_message(
         async with httpx.AsyncClient(timeout=15) as client:
             res = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload)
             data = res.json()
-            if not data.get("ok") and parse_mode:
-                logger.warning(
-                    "Telegram sendMessage failed with parse_mode=%s (%s). Retrying without parse_mode.",
-                    parse_mode,
-                    data.get("description"),
-                )
+            if not data.get("ok"):
+                desc = str(data.get("description", "")).lower()
                 payload_fallback = dict(payload)
-                payload_fallback.pop("parse_mode", None)
-                res_fb = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload_fallback)
-                return res_fb.json()
+                modified = False
+                if "message_thread_id" in payload_fallback and "thread" in desc:
+                    payload_fallback.pop("message_thread_id", None)
+                    modified = True
+                if parse_mode and ("parse" in desc or "entity" in desc):
+                    payload_fallback.pop("parse_mode", None)
+                    modified = True
+                if modified:
+                    logger.warning(
+                        "Telegram sendMessage failed (%s). Retrying with fallback payload.",
+                        data.get("description"),
+                    )
+                    res_fb = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload_fallback)
+                    return res_fb.json()
             return data
     except Exception as e:
         logger.error("Exception in send_message: %s", e)

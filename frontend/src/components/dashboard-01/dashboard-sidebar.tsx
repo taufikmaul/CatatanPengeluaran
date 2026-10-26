@@ -12,6 +12,7 @@ import {
   Home,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { getHubUrl } from "@/lib/hub";
 import { Progress } from "@/components/ui/progress";
 import {
   Sidebar,
@@ -293,7 +294,7 @@ export function DashboardSidebar({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <a
-                    href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
+                    href={getHubUrl()}
                     className="flex cursor-pointer items-center gap-2 rounded-lg text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                   >
                     <Home className="w-4 h-4 text-slate-500 shrink-0" />

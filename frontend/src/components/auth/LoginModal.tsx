@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { getHubUrl } from "@/lib/hub";
 import { toast } from "sonner";
 import { Send, KeyRound, ShieldAlert, PenTool, ShieldCheck, Eye, EyeOff } from "lucide-react";
 
@@ -342,7 +343,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
 
               <div className="pt-1 text-center">
                 <a
-                  href={(import.meta as any).env?.VITE_HUB_URL || "http://localhost:5174"}
+                  href={getHubUrl()}
                   className="text-xs text-slate-500 hover:text-slate-900 underline underline-offset-4 font-medium transition-colors"
                 >
                   Atau masuk via HCTeams Hub (SSO)
