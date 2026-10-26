@@ -201,3 +201,40 @@ async def test_api_audit_and_merge_endpoints(client, auth_cookies, db):
     assert merge_data["ok"] is True
     assert merge_data["target_item"]["id"] == m1.id
     assert "Full Cream" in merge_data["target_item"]["aliases"]
+
+
+@pytest.mark.asyncio
+async def test_merge_when_target_takes_source_name_does_not_violate_unique_constraint(db):
+    """
+    Skenario bug yang dilaporkan pengguna:
+    Target (id A) diberi custom_name yang sama persis dengan nama salah satu source (id B).
+    Tanpa penanganan urutan flush, Postgres melempar UniqueViolationError pada ix_master_items_item_name.
+    """
+    target = await create_master_item(
+        db,
+        item_name="Alat Makan Sendok Garpu Wooden Sendok Teh / Garpu Panjang",
+        category="Operasional",
+    )
+    source = await create_master_item(
+        db,
+        item_name="Alat Makan Sendok Garpu Wooden Sendok Teh",
+        category="Operasional",
+    )
+    await db.commit()
+
+    # Merge dengan custom_name = source.item_name
+    res = await merge_master_items(
+        db,
+        target_item_id=target.id,
+        source_item_ids=[source.id],
+        custom_name="Alat Makan Sendok Garpu Wooden Sendok Teh",
+        merge_aliases=True,
+        update_expenses=True,
+    )
+    await db.commit()
+
+    assert res["ok"] is True
+    assert res["target_item"]["item_name"] == "Alat Makan Sendok Garpu Wooden Sendok Teh"
+    # Pastikan source terhapus
+    deleted = await db.scalar(select(MasterItem).where(MasterItem.id == source.id))
+    assert deleted is None

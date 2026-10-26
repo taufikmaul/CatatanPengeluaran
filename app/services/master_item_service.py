@@ -3,6 +3,7 @@ app/services/master_item_service.py — Layanan Katalog Nama Item Baku (Master I
 & Pencocokan Otomatis (Fuzzy + Alias + Exact Match) untuk konsistensi pembukuan.
 """
 import re
+from uuid import uuid4
 from difflib import SequenceMatcher
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -766,7 +767,7 @@ async def merge_master_items(
     1. Menggabungkan nama dan alias lama ke dalam `aliases` target item.
     2. Mengalihkan semua transaksi Expense (berdasarkan master_item_id dan nama lama) ke target item.
     3. Menyimpan nama struk lama di kolom notes jika namanya diubah.
-    4. Menghapus MasterItem sumber yang sudah dilebur.
+    4. Menghapus MasterItem sumber yang sudah dilebur tanpa memicu konflik unique constraint.
     """
     target = await db.scalar(select(MasterItem).where(MasterItem.id == target_item_id))
     if not target:
@@ -783,75 +784,91 @@ async def merge_master_items(
     if not sources:
         raise ValueError("Item duplikat tidak ditemukan di database.")
 
-    source_names = [s.item_name for s in sources]
-    aliases_added: list[str] = []
+    # 1. Tentukan nama akhir target
+    final_name = custom_name.strip() if custom_name and custom_name.strip() else target.item_name
 
-    # 1. Update target aliases jika diminta
+    # 2. Cek apakah final_name sudah digunakan oleh item KETIGA (di luar target dan sources)
+    conflict_check = await db.execute(
+        select(MasterItem).where(
+            func.lower(MasterItem.item_name) == final_name.lower(),
+            MasterItem.id != target.id,
+            MasterItem.id.not_in(clean_source_ids),
+        )
+    )
+    conflict_item = conflict_check.scalar_one_or_none()
+    if conflict_item:
+        raise ValueError(
+            f"Nama item baku '{final_name}' sudah digunakan oleh item lain (ID: {conflict_item.id}). "
+            "Silakan pilih nama lain atau sertakan item tersebut untuk digabungkan."
+        )
+
+    # 3. Kumpulkan data sources sebelum diubah/dihapus
+    source_names = [s.item_name for s in sources]
+    source_aliases_lists = [(s.aliases or "").split(",") for s in sources]
+
+    # Kumpulkan field default yang bisa diadopsi target jika target kosong
+    adopted_supplier = custom_supplier.strip() if custom_supplier is not None else None
+    if adopted_supplier is None and (target.default_supplier in (None, "", "-")):
+        for s in sources:
+            if s.default_supplier and s.default_supplier != "-":
+                adopted_supplier = s.default_supplier
+                break
+
+    adopted_satuan_beli = custom_satuan_beli.strip() if custom_satuan_beli is not None else None
+    if adopted_satuan_beli is None and (not target.satuan_beli or target.satuan_beli == "Pcs"):
+        for s in sources:
+            if s.satuan_beli and s.satuan_beli != "Pcs":
+                adopted_satuan_beli = s.satuan_beli
+                break
+
+    adopted_tipe_satuan = custom_tipe_satuan.strip() if custom_tipe_satuan is not None else None
+
+    adopted_isi_paket = custom_isi_paket.strip() if custom_isi_paket is not None else None
+    if adopted_isi_paket is None and not target.isi_paket:
+        for s in sources:
+            if s.isi_paket:
+                adopted_isi_paket = s.isi_paket
+                break
+
+    adopted_satuan_ecer = custom_satuan_ecer.strip() if custom_satuan_ecer is not None else None
+    if adopted_satuan_ecer is None and (not target.satuan_ecer or target.satuan_ecer == "Pcs"):
+        for s in sources:
+            if s.satuan_ecer and s.satuan_ecer != "Pcs":
+                adopted_satuan_ecer = s.satuan_ecer
+                break
+
+    # 4. Hitung alias gabungan
+    aliases_added: list[str] = []
+    final_aliases_str = target.aliases or ""
     if merge_aliases:
         existing_aliases = [a.strip() for a in (target.aliases or "").split(",") if a.strip()]
+        # Tambahkan nama lama target jika target ganti nama
+        if target.item_name.lower() != final_name.lower():
+            existing_aliases.append(target.item_name)
+
         existing_lower = {a.lower() for a in existing_aliases}
 
         candidates = []
-        for s in sources:
-            if s.item_name.lower() != target.item_name.lower():
-                candidates.append(s.item_name)
-            for a in (s.aliases or "").split(","):
+        for s_name in source_names:
+            candidates.append(s_name)
+        for s_aliases in source_aliases_lists:
+            for a in s_aliases:
                 ca = a.strip()
-                if ca and ca.lower() != target.item_name.lower():
+                if ca:
                     candidates.append(ca)
 
         for cand in candidates:
             cl = cand.lower()
-            if cl not in existing_lower:
+            if cl != final_name.lower() and cl not in existing_lower:
                 existing_aliases.append(cand)
                 existing_lower.add(cl)
                 aliases_added.append(cand)
 
-        target.aliases = ", ".join(existing_aliases)
+        # Pastikan final_name sendiri tidak ada di aliases
+        existing_aliases = [a for a in existing_aliases if a.lower() != final_name.lower()]
+        final_aliases_str = ", ".join(existing_aliases)
 
-    # 2. Update custom field jika ada atau lengkapi field kosong
-    if custom_name and custom_name.strip():
-        target.item_name = custom_name.strip()
-
-    if custom_category and custom_category.strip() in settings.valid_categories:
-        target.category = custom_category.strip()
-
-    if custom_supplier is not None:
-        target.default_supplier = custom_supplier.strip() or "-"
-    elif target.default_supplier in (None, "", "-"):
-        for s in sources:
-            if s.default_supplier and s.default_supplier != "-":
-                target.default_supplier = s.default_supplier
-                break
-
-    if custom_satuan_beli is not None:
-        target.satuan_beli = custom_satuan_beli.strip() or "Pcs"
-    elif not target.satuan_beli or target.satuan_beli == "Pcs":
-        for s in sources:
-            if s.satuan_beli and s.satuan_beli != "Pcs":
-                target.satuan_beli = s.satuan_beli
-                break
-
-    if custom_tipe_satuan is not None:
-        target.tipe_satuan = custom_tipe_satuan.strip() or "keduanya"
-
-    if custom_isi_paket is not None:
-        target.isi_paket = custom_isi_paket.strip()
-    elif not target.isi_paket:
-        for s in sources:
-            if s.isi_paket:
-                target.isi_paket = s.isi_paket
-                break
-
-    if custom_satuan_ecer is not None:
-        target.satuan_ecer = custom_satuan_ecer.strip() or "Pcs"
-    elif not target.satuan_ecer or target.satuan_ecer == "Pcs":
-        for s in sources:
-            if s.satuan_ecer and s.satuan_ecer != "Pcs":
-                target.satuan_ecer = s.satuan_ecer
-                break
-
-    # 3. Alihkan semua transaksi Expense
+    # 5. Alihkan semua transaksi Expense (lakukan sebelum mengubah target agar autoflush tidak memicu bentrok nama)
     lower_source_names = [n.lower() for n in source_names]
     exp_query = select(Expense).where(
         or_(
@@ -862,21 +879,49 @@ async def merge_master_items(
     exp_res = await db.execute(exp_query)
     expenses = exp_res.scalars().all()
 
+    target_category = (
+        custom_category.strip()
+        if custom_category and custom_category.strip() in settings.valid_categories
+        else target.category
+    )
+
     reassigned_count = 0
     for exp in expenses:
         orig_name = exp.item_name
         exp.master_item_id = target.id
         if update_expenses:
-            exp.notes = append_original_name_to_notes(orig_name, target.item_name, exp.notes)
-            exp.item_name = target.item_name
-            if target.category and exp.category != "Tukar Cash":
-                exp.category = target.category
+            exp.notes = append_original_name_to_notes(orig_name, final_name, exp.notes)
+            exp.item_name = final_name
+            if target_category and exp.category != "Tukar Cash":
+                exp.category = target_category
         exp.sheets_synced = False
         reassigned_count += 1
 
-    # 4. Hapus MasterItem sumber
+    # 6. PENTING: Untuk menghindari pelanggaran unique constraint `ix_master_items_item_name` di Postgres
+    # ketika `final_name` sama persis dengan salah satu nama item sumber:
+    # Rename sources ke unique dummy name lalu hapus dan flush terlebih dahulu!
     for s in sources:
+        s.item_name = f"__merged_{s.id}_{uuid4().hex[:8]}"
         await db.delete(s)
+
+    await db.flush()
+
+    # 7. Sekarang aman memperbarui nama & data target tanpa bentrok unique constraint
+    target.item_name = final_name
+    if target_category:
+        target.category = target_category
+    if adopted_supplier is not None:
+        target.default_supplier = adopted_supplier or "-"
+    if adopted_satuan_beli is not None:
+        target.satuan_beli = adopted_satuan_beli or "Pcs"
+    if adopted_tipe_satuan is not None:
+        target.tipe_satuan = adopted_tipe_satuan or "keduanya"
+    if adopted_isi_paket is not None:
+        target.isi_paket = adopted_isi_paket
+    if adopted_satuan_ecer is not None:
+        target.satuan_ecer = adopted_satuan_ecer or "Pcs"
+    if merge_aliases:
+        target.aliases = final_aliases_str
 
     await db.flush()
 
