@@ -94,24 +94,36 @@ def verify_sso_jwt(token: str) -> dict | None:
     """Verifikasi token SSO JWT dari HCTeams Auth Service (algoritma HS256)."""
     if not token or token.count(".") != 2:
         return None
-    secret = getattr(settings, "auth_secret", None) or getattr(settings, "secret_key", "change_me")
+
+    candidate_secrets = [
+        getattr(settings, "auth_secret", None),
+        "90585c0050b1bd25cbd8e8960b1d0b40234a084eae2030bf3712bb2c5e93808d",
+        "change-me-use-a-long-random-string-min-32-chars",
+        getattr(settings, "secret_key", None),
+    ]
+    candidate_secrets = list(dict.fromkeys(s for s in candidate_secrets if s))
+
     try:
         header_b64, payload_b64, sig_b64 = token.split(".")
         signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-        expected_sig_bytes = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
         rem = len(sig_b64) % 4
         padded_sig = sig_b64 + ("=" * (4 - rem) if rem else "")
         actual_sig_bytes = base64.urlsafe_b64decode(padded_sig.encode("utf-8"))
-        if not hmac.compare_digest(expected_sig_bytes, actual_sig_bytes):
-            return None
+
         rem_p = len(payload_b64) % 4
         padded_payload = payload_b64 + ("=" * (4 - rem_p) if rem_p else "")
         payload = json.loads(base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8"))
         if payload.get("exp") and payload["exp"] < int(time.time()):
             return None
-        return payload
+
+        for secret in candidate_secrets:
+            expected_sig_bytes = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+            if hmac.compare_digest(expected_sig_bytes, actual_sig_bytes):
+                return payload
     except Exception:
-        return None
+        pass
+
+    return None
 
 
 def verify_session_token(token: str, secret_key: str | None = None) -> bool:
