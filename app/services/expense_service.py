@@ -4,7 +4,10 @@ Port dari saveDataToSheet, checkDuplicateInSheet, generateReport, cekHargaTerakh
 """
 from datetime import datetime, date
 from decimal import Decimal
+from collections import defaultdict
+from difflib import SequenceMatcher
 import json
+import re
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
@@ -145,6 +148,95 @@ async def save_expenses(
     return saved
 
 
+def _normalize_name_units(text: str) -> str:
+    s = text.lower()
+    # Normalisasi satuan ukuran dan singkatan belanja umum
+    s = re.sub(r"\b(liter|ltr|lt)\b", "l", s)
+    s = re.sub(r"\b(kilogram|kilo)\b", "kg", s)
+    s = re.sub(r"\b(gram|gr)\b", "g", s)
+    s = re.sub(r"\b(pieces|piece|pcs|pc)\b", "pcs", s)
+    s = re.sub(r"\b(bungkus|bks)\b", "bks", s)
+    s = re.sub(r"\b(botol|btl)\b", "btl", s)
+    s = re.sub(r"\b(karton|ktn|ctn)\b", "ctn", s)
+    s = re.sub(r"\b(dus|kardus)\b", "dus", s)
+    s = re.sub(r"\b(sachet|sct)\b", "sct", s)
+    # Satukan angka dan satuan (mis. 2 l -> 2l, 500 g -> 500g)
+    s = re.sub(r"(\d+)\s+(l|kg|g|pcs|bks|btl|ctn|dus|sct)\b", r"\1\2", s)
+    return s
+
+
+def calculate_name_similarity(name_a: str, name_b: str) -> float:
+    """
+    Hitung tingkat kemiripan teks antara dua nama barang (0.0 sampai 1.0).
+    Mendukung perbandingan teks langsung, normalisasi karakter non-alfanumerik,
+    normalisasi satuan standar, dan perbandingan token yang diurutkan (token sort).
+    """
+    if not name_a or not name_b:
+        return 0.0
+    s_a = re.sub(r"\s+", " ", name_a.strip().lower())
+    s_b = re.sub(r"\s+", " ", name_b.strip().lower())
+    if s_a == s_b:
+        return 1.0
+
+    direct_ratio = SequenceMatcher(None, s_a, s_b).ratio()
+
+    # Normalisasi tanda baca
+    clean_a = re.sub(r"[^\w\s]", "", s_a)
+    clean_b = re.sub(r"[^\w\s]", "", s_b)
+    clean_ratio = SequenceMatcher(None, clean_a, clean_b).ratio() if clean_a and clean_b else 0.0
+
+    # Normalisasi satuan & singkatan umum
+    unit_norm_a = _normalize_name_units(clean_a)
+    unit_norm_b = _normalize_name_units(clean_b)
+    unit_ratio = SequenceMatcher(None, unit_norm_a, unit_norm_b).ratio() if unit_norm_a and unit_norm_b else 0.0
+
+    # Token-sort comparison (menangani perbedaan urutan kata)
+    toks_a = " ".join(sorted(unit_norm_a.split()))
+    toks_b = " ".join(sorted(unit_norm_b.split()))
+    tok_ratio = SequenceMatcher(None, toks_a, toks_b).ratio() if toks_a and toks_b else 0.0
+
+    best = max(direct_ratio, clean_ratio, unit_ratio, tok_ratio)
+    return round(best, 4)
+
+
+def expense_to_dict(e: Expense) -> dict:
+    """Konversi instance Expense ke format dict response standar."""
+    user_name = None
+    if getattr(e, "user", None) and e.user and e.user.name:
+        user_name = e.user.name
+    elif getattr(e, "user_id", None):
+        user_name = f"User #{e.user_id}"
+
+    return {
+        "id": e.id,
+        "created_at": e.created_at,
+        "expense_date": str(e.expense_date),
+        "supplier": e.supplier or "-",
+        "item_name": e.item_name or "-",
+        "qty": float(e.qty or 1),
+        "unit": getattr(e, "unit", "Pcs") or "Pcs",
+        "category": e.category or "Operasional",
+        "unit_price": float(e.unit_price or 0),
+        "shipping_fee": float(e.shipping_fee or 0),
+        "tax": float(e.tax or 0),
+        "other_fee": float(e.other_fee or 0),
+        "discount": float(e.discount or 0),
+        "total_price": float(e.total_price or 0),
+        "pay_method": e.pay_method or "Tunai",
+        "pay_status": e.pay_status or "Lunas",
+        "due_date": e.due_date or "-",
+        "notes": e.notes or "-",
+        "msg_link": e.msg_link or "Web Dashboard",
+        "is_reimbursement": bool(e.is_reimbursement),
+        "invoice_number": e.invoice_number or "-",
+        "reimbursed_at": e.reimbursed_at,
+        "user_id": e.user_id,
+        "user_name": user_name,
+        "master_item_id": getattr(e, "master_item_id", None),
+        "sheets_synced": bool(e.sheets_synced),
+    }
+
+
 async def find_duplicate_expenses(
     db: AsyncSession,
     items: list[dict],
@@ -161,7 +253,7 @@ async def find_duplicate_expenses(
     ]
     1. Memprioritaskan tanggal pemesanan (tanggal_pemesanan / order_date). Jika tanggal berbeda, bukan duplikat.
     2. Jika no_invoice ada pada kedua data dan berbeda, bukan duplikat. Jika sama, duplikat.
-    3. Jika item_name tersedia, bandingkan nama barang (agar barang berbeda dari toko yang sama tidak terblokir).
+    3. Jika item_name tersedia, bandingkan nama barang (kemiripan >= 90% agar barang berbeda dari toko yang sama tidak terblokir).
     """
     result = await db.execute(
         select(Expense)
@@ -220,9 +312,10 @@ async def find_duplicate_expenses(
             if abs(existing_total - new_total) >= 1:
                 continue
 
-            # Jika nama barang tersedia pada kedua data, bandingkan nama barang
+            # Jika nama barang tersedia pada kedua data, bandingkan nama barang (kemiripan >= 90%)
             if existing_item and new_item:
-                if existing_item == new_item:
+                sim = calculate_name_similarity(existing_item, new_item)
+                if sim >= 0.90:
                     matches.append({"new_item": item, "existing_expense": existing})
                     matched_existing_ids.add(existing.id)
                     break
@@ -246,6 +339,116 @@ async def check_duplicate(
     """
     matches = await find_duplicate_expenses(db, items, lookback_rows=lookback_rows)
     return len(matches) > 0
+
+
+async def audit_duplicate_expenses(
+    db: AsyncSession,
+    min_similarity: float = 0.90,
+    month: int | None = None,
+    year: int | None = None,
+    category: str | None = None,
+    limit: int = 150,
+) -> dict:
+    """
+    Audit duplikasi data transaksi pengeluaran.
+    Klasifikasi duplikat:
+    1. Tanggal sama (expense_date sama)
+    2. Nominal sama (total_price sama)
+    3. Nama mirip >= 90% (atau min_similarity yang ditentukan, default 0.90)
+    """
+    query = (
+        select(Expense)
+        .options(selectinload(Expense.user))
+        .where(Expense.total_price > 0)
+    )
+
+    if month and year:
+        start = date(year, month, 1)
+        end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+    elif year:
+        start = date(year, 1, 1)
+        end = date(year + 1, 1, 1)
+        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+
+    if category:
+        query = query.where(Expense.category == category)
+
+    query = query.order_by(Expense.expense_date.desc(), Expense.id.asc())
+    result = await db.execute(query)
+    expenses = result.scalars().all()
+
+    # Kelompokkan pengeluaran berdasarkan (tanggal_str, nominal_bulat)
+    buckets: dict[tuple[str, float], list[Expense]] = defaultdict(list)
+    for exp in expenses:
+        key = (str(exp.expense_date), round(float(exp.total_price or 0), 2))
+        buckets[key].append(exp)
+
+    pairs = []
+    seen_duplicate_ids = set()
+    total_potential_waste = 0.0
+
+    for (d_str, nom_val), items in buckets.items():
+        if len(items) < 2:
+            continue
+
+        n = len(items)
+        for i in range(n):
+            exp_a = items[i]
+            for j in range(i + 1, n):
+                exp_b = items[j]
+
+                sim = calculate_name_similarity(exp_a.item_name, exp_b.item_name)
+                if sim >= min_similarity:
+                    # Tentukan rekomendasi data mana yang dipertahankan dan dihapus
+                    if exp_a.sheets_synced and not exp_b.sheets_synced:
+                        keep_id, delete_id = exp_a.id, exp_b.id
+                    elif exp_b.sheets_synced and not exp_a.sheets_synced:
+                        keep_id, delete_id = exp_b.id, exp_a.id
+                    elif (exp_a.invoice_number and exp_a.invoice_number != "-") and not (exp_b.invoice_number and exp_b.invoice_number != "-"):
+                        keep_id, delete_id = exp_a.id, exp_b.id
+                    elif (exp_b.invoice_number and exp_b.invoice_number != "-") and not (exp_a.invoice_number and exp_a.invoice_number != "-"):
+                        keep_id, delete_id = exp_b.id, exp_a.id
+                    elif exp_a.id <= exp_b.id:
+                        keep_id, delete_id = exp_a.id, exp_b.id
+                    else:
+                        keep_id, delete_id = exp_b.id, exp_a.id
+
+                    sim_pct = int(round(sim * 100))
+                    reason = (
+                        f"Tanggal sama ({d_str}), nominal sama (Rp {nom_val:,.0f}), "
+                        f"nama mirip {sim_pct}%"
+                    )
+
+                    pairs.append({
+                        "expense_a": expense_to_dict(exp_a),
+                        "expense_b": expense_to_dict(exp_b),
+                        "similarity_score": sim,
+                        "similarity_pct": sim_pct,
+                        "expense_date": d_str,
+                        "total_price": nom_val,
+                        "reason": reason,
+                        "suggested_keep_id": keep_id,
+                        "suggested_delete_id": delete_id,
+                    })
+
+                    if delete_id not in seen_duplicate_ids:
+                        seen_duplicate_ids.add(delete_id)
+                        total_potential_waste += nom_val
+
+                    if len(pairs) >= limit:
+                        break
+            if len(pairs) >= limit:
+                break
+        if len(pairs) >= limit:
+            break
+
+    return {
+        "ok": True,
+        "total_duplicates": len(pairs),
+        "total_potential_waste": round(total_potential_waste, 2),
+        "pairs": pairs,
+    }
 
 
 async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:

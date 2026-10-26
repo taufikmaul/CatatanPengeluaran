@@ -96,6 +96,25 @@ class ExpenseResponse(BaseModel):
         from_attributes = True
 
 
+class ExpenseDuplicatePair(BaseModel):
+    expense_a: ExpenseResponse
+    expense_b: ExpenseResponse
+    similarity_score: float
+    similarity_pct: int
+    expense_date: str
+    total_price: float
+    reason: str
+    suggested_keep_id: int
+    suggested_delete_id: int
+
+
+class ExpenseAuditResponse(BaseModel):
+    ok: bool = True
+    total_duplicates: int
+    total_potential_waste: float
+    pairs: list[ExpenseDuplicatePair]
+
+
 class ExpenseUserResponse(BaseModel):
     id: int
     name: str

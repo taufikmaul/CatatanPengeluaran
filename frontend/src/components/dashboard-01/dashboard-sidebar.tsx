@@ -11,6 +11,7 @@ import {
   Wallet,
   Home,
   ArrowLeftRight,
+  ShieldAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -44,6 +45,7 @@ export interface DashboardSidebarProps {
   activeTab: "overview" | "master" | "tukar-cash-ongkir" | "config";
   onTabChange: (tab: "overview" | "master" | "tukar-cash-ongkir" | "config") => void;
   onOpenImport: () => void;
+  onOpenAuditDuplicates?: () => void;
   userRole?: string | null;
   canManageConfig?: boolean;
   monthlyBudgetLimit?: number | null;
@@ -61,6 +63,7 @@ export function DashboardSidebar({
   activeTab,
   onTabChange,
   onOpenImport,
+  onOpenAuditDuplicates,
   userRole,
   canManageConfig = false,
   monthlyBudgetLimit,
@@ -190,6 +193,22 @@ export function DashboardSidebar({
                 <span className="truncate">Tukar Cash & Ongkir</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            {onOpenAuditDuplicates && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => {
+                    onOpenAuditDuplicates();
+                    if (isMobile) setOpenMobile(false);
+                  }}
+                  tooltip="Audit Duplikat Data (90% nama + tanggal + nominal)"
+                  className="h-9.5 rounded-xl font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                >
+                  <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span className="truncate">Audit Duplikat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
           </SidebarMenu>
         </SidebarGroup>
 

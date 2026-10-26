@@ -15,6 +15,7 @@ import { ExpenseDetailModal } from "@/components/dashboard/ExpenseDetailModal";
 import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
 import { BudgetSetupDialog } from "@/components/dashboard/BudgetSetupDialog";
 import { ExpenseActivityLogModal } from "@/components/dashboard/ExpenseActivityLogModal";
+import { AuditDuplicatesModal } from "@/components/dashboard/AuditDuplicatesModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
@@ -81,6 +82,7 @@ export function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
 
   // Theme state with localStorage persistence
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -402,6 +404,7 @@ export function App() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onOpenImport={() => setIsImportOpen(true)}
+          onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
           userRole={userRole}
           canManageConfig={canManageConfig}
           monthlyBudgetLimit={reportData?.monthly_budget_limit}
@@ -681,6 +684,7 @@ export function App() {
                           setRepeatingExpense(null);
                           setIsFormOpen(true);
                         }}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       />
 
                       {/* Desktop Expense Data Table */}
@@ -706,6 +710,7 @@ export function App() {
                         onDeleteExpense={(id) => deleteMutation.mutate(id)}
                         onViewExpense={(item) => setViewingExpense(item)}
                         onOpenActivityLog={() => setIsActivityLogOpen(true)}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                         canDelete={canDelete}
                       />
                     </div>
@@ -827,6 +832,7 @@ export function App() {
                         setRepeatingExpense(null);
                         setIsFormOpen(true);
                       }}
+                      onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                     />
 
                     {/* Admin Input Expense Table */}
@@ -852,6 +858,7 @@ export function App() {
                       onDeleteExpense={(id) => deleteMutation.mutate(id)}
                       onViewExpense={(item) => setViewingExpense(item)}
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
+                      onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       canDelete={canDelete}
                     />
                   </div>
@@ -974,6 +981,16 @@ export function App() {
             refetchExpenses();
             refetchReport();
           }}
+        />
+
+        {/* Audit Duplikat Modal (Nama Mirip >=90% + Tanggal Sama + Nominal Sama) */}
+        <AuditDuplicatesModal
+          isOpen={isAuditModalOpen}
+          onClose={() => setIsAuditModalOpen(false)}
+          currentMonth={month}
+          currentYear={year}
+          onDeleteExpense={(id) => deleteMutation.mutate(id)}
+          canDelete={canDelete}
         />
 
         {/* Telegram PIN Login Modal */}

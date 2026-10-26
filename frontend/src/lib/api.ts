@@ -1,5 +1,5 @@
 import axios from "axios";
-import { Expense, ExpenseFormData, ExpenseLog } from "@/types";
+import { Expense, ExpenseFormData, ExpenseLog, ExpenseAuditResponse } from "@/types";
 
 export const api = axios.create({
   baseURL: "/api/v1",
@@ -127,6 +127,34 @@ export async function exportExpenseLogsCsv(action?: string, search?: string): Pr
 
 export async function restoreDeletedExpense(logId: number): Promise<Expense> {
   const res = await api.post(`/expenses/logs/${logId}/restore`);
+  return res.data;
+}
+
+export async function getExpenseAuditDuplicates(params?: {
+  min_similarity?: number;
+  month?: number;
+  year?: number;
+  category?: string;
+  limit?: number;
+}): Promise<ExpenseAuditResponse> {
+  const query = new URLSearchParams();
+  if (params?.min_similarity !== undefined) {
+    query.set("min_similarity", params.min_similarity.toString());
+  }
+  if (params?.month !== undefined) {
+    query.set("month", params.month.toString());
+  }
+  if (params?.year !== undefined) {
+    query.set("year", params.year.toString());
+  }
+  if (params?.category) {
+    query.set("category", params.category);
+  }
+  if (params?.limit !== undefined) {
+    query.set("limit", params.limit.toString());
+  }
+  const queryStr = query.toString() ? `?${query.toString()}` : "";
+  const res = await api.get(`/expenses/audit-duplicates${queryStr}`);
   return res.data;
 }
 

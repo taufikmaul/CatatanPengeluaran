@@ -21,6 +21,7 @@ import {
   User as UserIcon,
   Briefcase,
   History,
+  ShieldAlert,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -37,6 +38,7 @@ interface ExpenseTableProps {
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
   onOpenActivityLog?: () => void;
+  onOpenAuditDuplicates?: () => void;
   canDelete?: boolean;
 }
 
@@ -54,6 +56,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onDeleteExpense,
   onViewExpense,
   onOpenActivityLog,
+  onOpenAuditDuplicates,
   canDelete = true,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -104,6 +107,18 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          {onOpenAuditDuplicates && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onOpenAuditDuplicates}
+              className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Audit Duplikat</span>
+            </Button>
+          )}
           {onOpenActivityLog && (
             <Button
               type="button"

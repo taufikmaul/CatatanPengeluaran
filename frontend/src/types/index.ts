@@ -414,3 +414,22 @@ export interface MonthlyBudgetUpsertPayload {
   category_percentages: Record<string, number>;
 }
 
+export interface ExpenseDuplicatePair {
+  expense_a: Expense;
+  expense_b: Expense;
+  similarity_score: number;
+  similarity_pct: number;
+  expense_date: string;
+  total_price: number;
+  reason: string;
+  suggested_keep_id: number;
+  suggested_delete_id: number;
+}
+
+export interface ExpenseAuditResponse {
+  ok: boolean;
+  total_duplicates: number;
+  total_potential_waste: number;
+  pairs: ExpenseDuplicatePair[];
+}
+

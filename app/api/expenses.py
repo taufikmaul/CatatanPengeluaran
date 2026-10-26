@@ -17,6 +17,7 @@ from app.api.schemas import (
     ExpenseListResponse,
     ExpenseUserResponse,
     ExpenseLogResponse,
+    ExpenseAuditResponse,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
@@ -29,6 +30,7 @@ from app.services.expense_service import (
     record_expense_log,
     get_expense_logs,
     get_recent_expense_logs,
+    audit_duplicate_expenses,
 )
 from app.services.ai_service import call_ai_image
 
@@ -355,6 +357,31 @@ async def get_expense_price_history(
         "ok": True,
         **data,
     }
+
+
+@router.get("/audit-duplicates", response_model=ExpenseAuditResponse)
+async def audit_duplicate_expense_entries(
+    min_similarity: float = Query(0.90, ge=0.50, le=1.0, description="Ambang batas kemiripan nama barang (default 0.90 / 90%)"),
+    month: int | None = Query(None, ge=1, le=12, description="Filter bulan"),
+    year: int | None = Query(None, ge=2020, description="Filter tahun"),
+    category: str | None = Query(None, description="Filter kategori"),
+    limit: int = Query(150, ge=1, le=500, description="Batas maksimal pasangan duplikat yang dikembalikan"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Audit duplikasi data transaksi pengeluaran berdasarkan klasifikasi:
+    - Nama mirip >= 90% (atau sesuai parameter min_similarity)
+    - Tanggal transaksi sama persis
+    - Nominal transaksi sama persis
+    """
+    return await audit_duplicate_expenses(
+        db,
+        min_similarity=min_similarity,
+        month=month,
+        year=year,
+        category=category,
+        limit=limit,
+    )
 
 
 @router.get("/logs/recent", response_model=list[ExpenseLogResponse])

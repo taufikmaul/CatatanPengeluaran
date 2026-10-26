@@ -1,7 +1,7 @@
 import React from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, RotateCcw, Plus, Filter, Tag } from "lucide-react";
+import { Search, RotateCcw, Plus, Filter, Tag, ShieldAlert } from "lucide-react";
 import { ExpenseUser } from "@/types";
 
 interface FilterBarProps {
@@ -23,6 +23,7 @@ interface FilterBarProps {
   onUserChange?: (userId: number | null) => void;
   onReset: () => void;
   onOpenAddExpense: () => void;
+  onOpenAuditDuplicates?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -49,6 +50,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onUserChange,
   onReset,
   onOpenAddExpense,
+  onOpenAuditDuplicates,
 }) => {
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm space-y-3">
@@ -72,14 +74,28 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           )}
         </div>
 
-        {/* Add Expense Action Button */}
-        <Button
-          onClick={onOpenAddExpense}
-          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm gap-2 h-10 font-semibold px-4 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          Tambah Catatan
-        </Button>
+        <div className="flex items-center gap-2">
+          {onOpenAuditDuplicates && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onOpenAuditDuplicates}
+              className="rounded-xl shadow-xs gap-1.5 h-10 font-medium px-3 text-xs border-slate-200 text-slate-700 hover:bg-slate-50 shrink-0"
+            >
+              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              <span>Audit Duplikat</span>
+            </Button>
+          )}
+
+          {/* Add Expense Action Button */}
+          <Button
+            onClick={onOpenAddExpense}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm gap-2 h-10 font-semibold px-4 shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Tambah Catatan
+          </Button>
+        </div>
       </div>
 
       {/* Filter Selectors Row */}
