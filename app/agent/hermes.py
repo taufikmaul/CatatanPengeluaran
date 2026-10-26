@@ -378,11 +378,13 @@ class HermesAgent:
         inline_rows = []
         for idx, e in enumerate(unpaid_list[:8], start=1):
             nominal = fmt_rupiah(float(e.total_price or 0))
-            sup = f" ({e.supplier})" if e.supplier and e.supplier != "-" else ""
+            sup = f" ({escape_markdown(e.supplier)})" if e.supplier and e.supplier != "-" else ""
             tempo = ""
-            if e.due_date and e.due_date != "-":
+            if "cod" in (e.pay_method or "").lower() or "cod" in (e.notes or "").lower():
+                tempo = " 📦 _(COD Kasir)_"
+            elif e.due_date and e.due_date != "-":
                 tempo = f" 🚨 *Tempo: {e.due_date}*" if e.due_date <= today_str else f" _(Tempo: {e.due_date})_"
-            msg += f"{idx}. *#{e.id} {e.item_name}*{sup} — {nominal}{tempo}\n"
+            msg += f"{idx}. *#{e.id} {escape_markdown(e.item_name)}*{sup} — {nominal}{tempo}\n"
             inline_rows.append([
                 {
                     "text": f"✅ Tandai Lunas #{e.id} ({e.item_name[:18]})",
@@ -759,7 +761,17 @@ class HermesAgent:
             str(getattr(e, "pay_status", "Lunas") or "Lunas").lower() in ("belum lunas", "hutang", "tempo")
             for e in (saved_expenses or [])
         )
-        pay_label = "✅ Lunas" if is_paid else "⏳ Belum Lunas (Hutang)"
+        is_cod = any(
+            "cod" in str(getattr(e, "pay_method", "") or "").lower()
+            or "cod" in str(getattr(e, "notes", "") or "").lower()
+            for e in (saved_expenses or [])
+        )
+        if is_paid:
+            pay_label = "✅ Lunas"
+        elif is_cod:
+            pay_label = "⏳ Belum Lunas (COD - Bayar di Kasir)"
+        else:
+            pay_label = "⏳ Belum Lunas (Hutang)"
         reimb_label = "💼 Ya (Ditalangi)" if is_reimb else "🏷️ Tidak (Reguler)"
 
         success_msg = (

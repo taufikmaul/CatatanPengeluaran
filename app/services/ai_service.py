@@ -39,9 +39,16 @@ Aturan Nilai Pengeluaran (TIDAK BOLEH 0 ATAU MINUS):
 - Jika ada diskon besar atau voucher, total_harga tidak boleh menjadi 0 atau negatif.
 - Baris promo gratis, voucher belanja, atau cashback bernilai 0 atau minus JANGAN dimasukkan sebagai baris pengeluaran.
 
+Aturan Pembayaran COD (Cash on Delivery / Bayar di Tempat) - Skenario Kasir:
+- Jika pada struk, nota, invoice, atau screenshot pesanan (Shopee, Tokopedia, TikTok Shop, dll) tertera metode pembayaran "COD", "Cash on Delivery", atau "Bayar di Tempat":
+  * Set "metode_bayar": "COD"
+  * KECUALI jika ada keterangan/caption eksplisit bahwa pesanan sudah dibayar/lunas (misal: "sudah dibayar", "lunas", "sudah lunas"), WAJIB set "status_pembayaran": "Belum Lunas".
+  * Jika kolom "keterangan" kosong atau "-", isi dengan "COD - Bayar di Kasir".
+  * Alasan: Uang kas fisik kasir baru akan dibayarkan saat kurir tiba mengantar barang di toko, sehingga saat baru di-checkout/dipesan harus berstatus "Belum Lunas".
+
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
-- Status Pembayaran asumsikan "Lunas" kecuali disebut sebaliknya.
+- Status Pembayaran selain kasus COD di atas, asumsikan "Lunas" kecuali disebut sebaliknya.
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
 - Ekstrak "satuan" barang jika tertera di nota atau teks (misal: "box", "dus", "karton", "pouch", "kg", "kaleng", "pack", "sak", "bal", "botol", "tray", "pcs"). Jika tidak tertera, isi "Pcs".
@@ -100,7 +107,7 @@ async def _execute_fetch(messages: list[dict]) -> dict:
             else:
                 parsed = {"items": []}
 
-        # Normalisasi tanggal pemesanan jika AI memakai key alternatif
+        # Normalisasi tanggal pemesanan jika AI memakai key alternatif & pengamanan aturan COD (Skenario 1)
         normalized_items = []
         for item in parsed.get("items", []):
             if not isinstance(item, dict):
@@ -115,6 +122,27 @@ async def _execute_fetch(messages: list[dict]) -> dict:
             )
             if order_date:
                 item["tanggal"] = str(order_date)[:10]
+
+            # Aturan COD (Skenario 1: Uang kas kasir baru keluar saat barang tiba)
+            pay_m = str(item.get("metode_bayar") or "").strip().lower()
+            notes = str(item.get("keterangan") or "").strip().lower()
+            status_p = str(item.get("status_pembayaran") or "").strip().lower()
+
+            is_cod = any(k in pay_m for k in ("cod", "bayar di tempat", "cash on delivery"))
+            if is_cod:
+                item["metode_bayar"] = "COD"
+                # Jika tidak dinyatakan eksplisit sudah lunas, pastikan status Belum Lunas
+                is_explicit_paid = any(k in notes for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
+                if not is_explicit_paid and status_p != "lunas":
+                    item["status_pembayaran"] = "Belum Lunas"
+                    if not item.get("keterangan") or item.get("keterangan") == "-":
+                        item["keterangan"] = "COD - Bayar di Kasir"
+                elif not is_explicit_paid and status_p == "lunas":
+                    # AI default ke lunas karena asumsi prompt umum, tapi ini transaksi COD
+                    item["status_pembayaran"] = "Belum Lunas"
+                    if not item.get("keterangan") or item.get("keterangan") == "-":
+                        item["keterangan"] = "COD - Bayar di Kasir"
+
             normalized_items.append(item)
         parsed["items"] = normalized_items
 
