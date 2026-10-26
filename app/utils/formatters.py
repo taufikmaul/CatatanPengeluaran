@@ -2,6 +2,21 @@
 app/utils/formatters.py — Helper format Rupiah, tanggal, progress bar, dll
 """
 from datetime import datetime
+from typing import Any
+
+
+def escape_markdown(text: Any) -> str:
+    """
+    Escape karakter khusus Telegram Markdown v1: _, *, [, `
+    Memastikan string dinamis (nama toko, barang, dll) aman saat dikirim ke Telegram.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    s = s.replace("\\", "\\\\")
+    for ch in ("_", "*", "`", "["):
+        s = s.replace(ch, f"\\{ch}")
+    return s
 
 
 def fmt_rupiah(amount: float | int) -> str:
@@ -56,7 +71,7 @@ def build_progress_text(step: int, status: str, total_steps: int = 4) -> str:
     return (
         f"⏳ *Memproses Data...*\n"
         f"`[{filled}{empty}] {percentage}%`\n"
-        f"_Status: {status}_"
+        f"_Status: {escape_markdown(status)}_"
     )
 
 
@@ -89,17 +104,18 @@ def build_items_summary(items: list[dict]) -> tuple[str, float]:
         meta = []
         supplier = item.get("toko_supplier") or item.get("supplier")
         if supplier and supplier != "-":
-            meta.append(f"Toko: {supplier}")
+            meta.append(f"Toko: {escape_markdown(supplier)}")
         inv = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota")
         if inv and inv != "-":
-            meta.append(f"Nota: {inv}")
+            meta.append(f"Nota: {escape_markdown(inv)}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
         satuan = (item.get("satuan") or item.get("unit") or "").strip()
-        unit_label = f" {satuan}" if satuan and satuan.lower() != "pcs" else "x"
+        unit_label = f" {escape_markdown(satuan)}" if satuan and satuan.lower() != "pcs" else "x"
+        item_name = escape_markdown(item.get("barang", "Item"))
 
         lines.append(
-            f"{i}. {item.get('barang', 'Item')} "
+            f"{i}. {item_name} "
             f"({fmt_qty(qty)}{unit_label} @{fmt_rupiah(harga)}) : {fmt_rupiah(total_item)}{meta_str}"
         )
     return "\n".join(lines), total
@@ -141,14 +157,15 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
 
         meta = []
         if supplier and supplier != "-":
-            meta.append(f"Toko: {supplier}")
+            meta.append(f"Toko: {escape_markdown(supplier)}")
         if inv and inv != "-":
-            meta.append(f"Nota: {inv}")
+            meta.append(f"Nota: {escape_markdown(inv)}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
-        unit_label = f" {satuan}" if satuan and satuan.lower() != "pcs" else "x"
+        unit_label = f" {escape_markdown(satuan)}" if satuan and satuan.lower() != "pcs" else "x"
+        item_name = escape_markdown(name)
         line = (
-            f"{i}. {name} "
+            f"{i}. {item_name} "
             f"({fmt_qty(qty)}{unit_label} @{fmt_rupiah(harga)}) : {fmt_rupiah(item_total)}{meta_str}"
         )
         if strikethrough:

@@ -4,9 +4,11 @@ Pengganti UrlFetchApp GAS: sendMessage, editMessage, getFile, dll
 """
 import httpx
 import base64
+import logging
 from typing import Any
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 TELEGRAM_BASE = f"https://api.telegram.org/bot{settings.telegram_token}"
 
 
@@ -15,14 +17,15 @@ async def send_message(
     text: str,
     thread_id: int | None = None,
     reply_markup: dict | None = None,
-    parse_mode: str = "Markdown",
+    parse_mode: str | None = "Markdown",
 ) -> dict | None:
-    """Kirim pesan Telegram. Return response JSON."""
+    """Kirim pesan Telegram. Return response JSON dengan fallback jika entity markdown error."""
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": parse_mode,
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if thread_id:
         payload["message_thread_id"] = thread_id
     if reply_markup:
@@ -31,8 +34,20 @@ async def send_message(
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             res = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload)
-            return res.json()
-    except Exception:
+            data = res.json()
+            if not data.get("ok") and parse_mode:
+                logger.warning(
+                    "Telegram sendMessage failed with parse_mode=%s (%s). Retrying without parse_mode.",
+                    parse_mode,
+                    data.get("description"),
+                )
+                payload_fallback = dict(payload)
+                payload_fallback.pop("parse_mode", None)
+                res_fb = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload_fallback)
+                return res_fb.json()
+            return data
+    except Exception as e:
+        logger.error("Exception in send_message: %s", e)
         return None
 
 
@@ -41,23 +56,41 @@ async def edit_message(
     message_id: int,
     text: str,
     reply_markup: dict | None = None,
-    parse_mode: str = "Markdown",
-) -> None:
-    """Edit pesan yang sudah ada (untuk update progress bar)."""
+    parse_mode: str | None = "Markdown",
+) -> dict | None:
+    """Edit pesan yang sudah ada (untuk update progress bar). Dilengkapi fallback jika entity error."""
     payload: dict[str, Any] = {
         "chat_id": chat_id,
         "message_id": message_id,
         "text": text,
-        "parse_mode": parse_mode,
     }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.post(f"{TELEGRAM_BASE}/editMessageText", json=payload)
-    except Exception:
-        pass
+            res = await client.post(f"{TELEGRAM_BASE}/editMessageText", json=payload)
+            data = res.json()
+            if not data.get("ok") and parse_mode:
+                desc = (data.get("description") or "").lower()
+                if "message is not modified" in desc:
+                    return data
+
+                logger.warning(
+                    "Telegram editMessageText failed with parse_mode=%s (%s). Retrying without parse_mode.",
+                    parse_mode,
+                    data.get("description"),
+                )
+                payload_fallback = dict(payload)
+                payload_fallback.pop("parse_mode", None)
+                res_fb = await client.post(f"{TELEGRAM_BASE}/editMessageText", json=payload_fallback)
+                return res_fb.json()
+            return data
+    except Exception as e:
+        logger.error("Exception in edit_message: %s", e)
+        return None
 
 
 async def answer_callback_query(callback_query_id: str, text: str = "") -> None:

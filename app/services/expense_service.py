@@ -7,6 +7,7 @@ from decimal import Decimal
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
+from sqlalchemy.orm import selectinload
 from app.models.expense import Expense
 from app.models.user import User
 from app.models.expense_log import ExpenseLog
@@ -164,6 +165,7 @@ async def find_duplicate_expenses(
     """
     result = await db.execute(
         select(Expense)
+        .options(selectinload(Expense.user))
         .order_by(Expense.id.desc())
         .limit(lookback_rows)
     )

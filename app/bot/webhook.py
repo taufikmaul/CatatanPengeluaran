@@ -164,17 +164,21 @@ async def _process_photo(
 ) -> None:
     """Download foto dan proses dengan Hermes Agent."""
     from app.database.connection import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        base64_img = await tg.get_file_base64(file_id)
-        agent = HermesAgent(session, user_id, chat_id, thread_id)
-        await agent.process(
-            has_photo=True,
-            photo_base64=base64_img,
-            caption=caption,
-            msg_link=msg_link,
-            sender_name=sender_name,
-        )
-        await session.commit()
+    try:
+        async with AsyncSessionLocal() as session:
+            base64_img = await tg.get_file_base64(file_id)
+            agent = HermesAgent(session, user_id, chat_id, thread_id)
+            await agent.process(
+                has_photo=True,
+                photo_base64=base64_img,
+                caption=caption,
+                msg_link=msg_link,
+                sender_name=sender_name,
+            )
+            await session.commit()
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[_process_photo error] {e}")
 
 
 async def _process_voice(
@@ -187,12 +191,16 @@ async def _process_voice(
 ) -> None:
     """Download voice note dan proses dengan Hermes Agent."""
     from app.database.connection import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        base64_audio = await tg.get_file_base64(file_id)
-        agent = HermesAgent(session, user_id, chat_id, thread_id)
-        await agent.process(
-            has_voice=True,
-            voice_base64=base64_audio,
-            msg_link=msg_link,
-        )
-        await session.commit()
+    try:
+        async with AsyncSessionLocal() as session:
+            base64_audio = await tg.get_file_base64(file_id)
+            agent = HermesAgent(session, user_id, chat_id, thread_id)
+            await agent.process(
+                has_voice=True,
+                voice_base64=base64_audio,
+                msg_link=msg_link,
+            )
+            await session.commit()
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[_process_voice error] {e}")

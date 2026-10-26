@@ -2,6 +2,7 @@
 app/agent/hermes.py — Hermes Agent Orchestrator
 Otak utama: menerima context, memilih tools, menjalankan chain, dan membalas
 """
+import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.intent import Intent, classify_intent
@@ -13,11 +14,14 @@ from app.utils.formatters import (
     fmt_date_id,
     fmt_datetime_id,
     fmt_qty,
+    escape_markdown,
     build_items_summary,
     build_progress_text,
     build_expense_action_keyboard,
 )
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class HermesAgent:
@@ -134,46 +138,56 @@ class HermesAgent:
         )
         msg_id = sent["result"]["message_id"] if sent else None
 
-        if "/tukercash" in caption.lower():
-            caption += f" (Input oleh: {sender_name})"
+        try:
+            if "/tukercash" in caption.lower():
+                caption += f" (Input oleh: {sender_name})"
 
-        await tg.update_progress(self.chat_id, msg_id, 1, "Mengunduh gambar...")
-        await tg.update_progress(self.chat_id, msg_id, 2, "Menganalisis struk via AI...")
-        extracted = await tools.tool_extract_image(base64_img, caption)
+            await tg.update_progress(self.chat_id, msg_id, 1, "Mengunduh gambar...")
+            await tg.update_progress(self.chat_id, msg_id, 2, "Menganalisis struk via AI...")
+            extracted = await tools.tool_extract_image(base64_img, caption)
 
-        if extracted.get("error") or not extracted.get("items"):
-            err_msg = extracted.get("message") or "❌ Gagal membaca struk. Coba foto lebih jelas."
-            if not err_msg.startswith("❌"):
-                err_msg = f"❌ {err_msg}"
-            keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
+            if extracted.get("error") or not extracted.get("items"):
+                err_msg = extracted.get("message") or "❌ Gagal membaca struk. Coba foto lebih jelas."
+                if not err_msg.startswith("❌"):
+                    err_msg = f"❌ {err_msg}"
+                keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi data...")
+            duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+            if duplicate_matches:
+                await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
+            saved = await tools.tool_save_expenses(
+                self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+            )
+            if not saved:
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+                return
+
+            # Buat balasan dengan insight
+            await self._send_save_success(msg_id, extracted["items"], extracted.get("items", []), saved_expenses=saved)
+
+            # Update memory dengan items yang baru disimpan
+            item_names = [i.get("barang", "") for i in extracted["items"]]
+            await update_user_context(self.db, self.user_id, {
+                "last_items": item_names,
+                "last_supplier": extracted["items"][0].get("toko_supplier") if extracted["items"] else None,
+            })
+        except Exception as e:
+            logger.exception("Error in _handle_receipt: %s", e)
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi data...")
-        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
-        if duplicate_matches:
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(
-            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
-        )
-        if not saved:
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
-            return
-
-        # Buat balasan dengan insight
-        await self._send_save_success(msg_id, extracted["items"], extracted.get("items", []), saved_expenses=saved)
-
-        # Update memory dengan items yang baru disimpan
-        item_names = [i.get("barang", "") for i in extracted["items"]]
-        await update_user_context(self.db, self.user_id, {
-            "last_items": item_names,
-            "last_supplier": extracted["items"][0].get("toko_supplier") if extracted["items"] else None,
-        })
+                await tg.edit_message(
+                    self.chat_id,
+                    msg_id,
+                    "❌ *Terjadi kendala saat memproses struk.*\nSilakan coba lagi beberapa saat lagi.",
+                )
+            raise
 
     async def _handle_voice(self, base64_audio: str | None, msg_link: str) -> None:
         """Handle voice note — transcribe → extract → save."""
@@ -186,34 +200,44 @@ class HermesAgent:
         )
         msg_id = sent["result"]["message_id"] if sent else None
 
-        await tg.update_progress(self.chat_id, msg_id, 1, "Mengunduh audio...")
-        await tg.update_progress(self.chat_id, msg_id, 2, "Transkripsi via AI...")
-        extracted = await tools.tool_extract_voice(base64_audio)
+        try:
+            await tg.update_progress(self.chat_id, msg_id, 1, "Mengunduh audio...")
+            await tg.update_progress(self.chat_id, msg_id, 2, "Transkripsi via AI...")
+            extracted = await tools.tool_extract_voice(base64_audio)
 
-        if extracted.get("error") or not extracted.get("items"):
-            err_msg = extracted.get("message") or "❌ Gagal memproses suara."
-            if not err_msg.startswith("❌"):
-                err_msg = f"❌ {err_msg}"
-            keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
+            if extracted.get("error") or not extracted.get("items"):
+                err_msg = extracted.get("message") or "❌ Gagal memproses suara."
+                if not err_msg.startswith("❌"):
+                    err_msg = f"❌ {err_msg}"
+                keyboard = {"inline_keyboard": [[{"text": "🔄 Coba Lagi", "callback_data": "retry_scan"}]]}
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
+            duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+            if duplicate_matches:
+                await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
+            saved = await tools.tool_save_expenses(
+                self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+            )
+            if not saved:
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+                return
+            await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
+        except Exception as e:
+            logger.exception("Error in _handle_voice: %s", e)
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, err_msg, keyboard)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
-        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
-        if duplicate_matches:
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(
-            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
-        )
-        if not saved:
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
-            return
-        await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
+                await tg.edit_message(
+                    self.chat_id,
+                    msg_id,
+                    "❌ *Terjadi kendala saat memproses rekaman suara.*\nSilakan coba lagi beberapa saat lagi.",
+                )
+            raise
 
     async def _handle_text_input(self, text: str, msg_link: str) -> None:
         """Handle input teks biasa atau /catat."""
@@ -230,32 +254,42 @@ class HermesAgent:
         )
         msg_id = sent["result"]["message_id"] if sent else None
 
-        await tg.update_progress(self.chat_id, msg_id, 2, "Menganalisis teks via AI...")
-        extracted = await tools.tool_extract_text(text)
+        try:
+            await tg.update_progress(self.chat_id, msg_id, 2, "Menganalisis teks via AI...")
+            extracted = await tools.tool_extract_text(text)
 
-        if extracted.get("error") or not extracted.get("items"):
-            err_msg = extracted.get("message") or "❌ Gagal memproses teks. Coba format ulang."
-            if not err_msg.startswith("❌"):
-                err_msg = f"❌ {err_msg}"
+            if extracted.get("error") or not extracted.get("items"):
+                err_msg = extracted.get("message") or "❌ Gagal memproses teks. Coba format ulang."
+                if not err_msg.startswith("❌"):
+                    err_msg = f"❌ {err_msg}"
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, err_msg)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
+            duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
+            if duplicate_matches:
+                await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
+                return
+
+            await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
+            saved = await tools.tool_save_expenses(
+                self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
+            )
+            if not saved:
+                if msg_id:
+                    await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
+                return
+            await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
+        except Exception as e:
+            logger.exception("Error in _handle_text_input: %s", e)
             if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, err_msg)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 3, "Mengecek duplikasi...")
-        duplicate_matches = await tools.tool_find_duplicates(self.db, extracted["items"])
-        if duplicate_matches:
-            await self._send_duplicate_warning(msg_id, extracted["items"], msg_link, duplicate_matches=duplicate_matches)
-            return
-
-        await tg.update_progress(self.chat_id, msg_id, 4, "Menyimpan ke database...")
-        saved = await tools.tool_save_expenses(
-            self.db, extracted["items"], msg_link, self.user_id, actor=f"telegram:{self.user_id}"
-        )
-        if not saved:
-            if msg_id:
-                await tg.edit_message(self.chat_id, msg_id, "❌ Tidak ada pengeluaran valid untuk disimpan (nominal tidak boleh Rp 0 atau minus).")
-            return
-        await self._send_save_success(msg_id, extracted["items"], saved_expenses=saved)
+                await tg.edit_message(
+                    self.chat_id,
+                    msg_id,
+                    "❌ *Terjadi kendala saat memproses teks belanja.*",
+                )
+            raise
 
     async def _handle_report(self) -> None:
         """Generate dan kirim laporan bulanan."""
@@ -628,20 +662,25 @@ class HermesAgent:
             for i, m in enumerate(duplicate_matches[:5], 1):
                 new_itm = m.get("new_item", {})
                 existing = m.get("existing_expense")
-                new_nm = new_itm.get("barang") or new_itm.get("item_name") or "Item"
+                new_nm = escape_markdown(new_itm.get("barang") or new_itm.get("item_name") or "Item")
                 new_qty = fmt_qty(new_itm.get("qty") or new_itm.get("jumlah") or 1)
-                new_sat = (new_itm.get("satuan") or new_itm.get("unit") or "Pcs").strip()
+                new_sat = escape_markdown((new_itm.get("satuan") or new_itm.get("unit") or "Pcs").strip())
                 new_tot = float(new_itm.get("total_harga") if new_itm.get("total_harga") is not None else (new_itm.get("total_price") or 0))
 
                 # Ambil info user penginput lama jika ada
                 creator = "Web / Sistem"
-                if existing and getattr(existing, "user", None) and existing.user and existing.user.name:
-                    creator = existing.user.name
-                elif existing and getattr(existing, "user_id", None):
-                    creator = f"User #{existing.user_id}"
+                try:
+                    if existing and getattr(existing, "user", None) and existing.user and existing.user.name:
+                        creator = existing.user.name
+                    elif existing and getattr(existing, "user_id", None):
+                        creator = f"User #{existing.user_id}"
+                except Exception:
+                    if existing and getattr(existing, "user_id", None):
+                        creator = f"User #{existing.user_id}"
+                creator = escape_markdown(creator)
 
-                exist_nm = getattr(existing, "item_name", "-") if existing else "-"
-                exist_sup = getattr(existing, "supplier", "-") if existing else "-"
+                exist_nm = escape_markdown(getattr(existing, "item_name", "-") if existing else "-")
+                exist_sup = escape_markdown(getattr(existing, "supplier", "-") if existing else "-")
                 exist_id = getattr(existing, "id", "-") if existing else "-"
                 exist_date = fmt_date_id(getattr(existing, "expense_date", None)) if existing else "-"
                 exist_created = fmt_datetime_id(getattr(existing, "created_at", None)) if existing else "-"
@@ -663,9 +702,9 @@ class HermesAgent:
         if not detail_match_str:
             item_lines = []
             for i, itm in enumerate(items[:5], 1):
-                nm = itm.get("barang") or "Item"
+                nm = escape_markdown(itm.get("barang") or "Item")
                 qty = fmt_qty(itm.get("qty") or itm.get("jumlah") or 1)
-                sat = itm.get("satuan") or ""
+                sat = escape_markdown(itm.get("satuan") or "")
                 tot = float(itm.get("total_harga") or 0)
                 item_lines.append(f"{i}. {nm} ({qty} {sat}) — {fmt_rupiah(tot)}")
             detail_match_str = "\n".join(item_lines)
@@ -674,8 +713,8 @@ class HermesAgent:
             "⚠️ *Double Input Terdeteksi!*\n\n"
             "Transaksi yang kamu kirim terdeteksi sudah pernah dicatat di database:\n\n"
             f"{detail_match_str}\n\n"
-            f"💰 *Total Belanja Baru:* *{fmt_rupiah(total_new)}*\n\n"
-            "_Jika transaksi ini memang pembelian baru yang terpisah, klik **Tetap Simpan** di bawah._"
+            f"💰 *Total Belanja Baru: {fmt_rupiah(total_new)}*\n\n"
+            "_Jika transaksi ini memang pembelian baru yang terpisah, klik_ *Tetap Simpan* _di bawah._"
         )
         keyboard = {
             "inline_keyboard": [

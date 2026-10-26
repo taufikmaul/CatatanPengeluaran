@@ -7,8 +7,10 @@ import pytest
 from app.utils.formatters import (
     build_items_summary,
     build_progress_text,
+    escape_markdown,
     fmt_date_id,
     fmt_rupiah,
+    format_expense_items_summary,
 )
 
 
@@ -82,3 +84,34 @@ class TestBuildItemsSummary:
         text, total = build_items_summary([])
         assert text == ""
         assert total == 0
+
+    def test_escapes_special_characters_in_supplier_and_items(self):
+        items = [{
+            "barang": "Box_Jendela*Mika",
+            "qty": 2,
+            "satuan": "pcs_pack",
+            "harga_satuan": 50000,
+            "total_harga": 100000,
+            "toko_supplier": "Boxlab_Bdg",
+            "no_invoice": "INV_2026*01",
+        }]
+        text, total = build_items_summary(items)
+        assert total == 100000
+        assert "Boxlab\\_Bdg" in text
+        assert "Box\\_Jendela\\*Mika" in text
+        assert "INV\\_2026\\*01" in text
+
+
+class TestEscapeMarkdown:
+    def test_escapes_underscore_asterisk_backtick_bracket(self):
+        raw = "Toko_Bdg *promo* [link] `code` \\slash"
+        escaped = escape_markdown(raw)
+        assert escaped == "Toko\\_Bdg \\*promo\\* \\[link] \\`code\\` \\\\slash"
+
+    def test_handles_none_and_empty(self):
+        assert escape_markdown(None) == ""
+        assert escape_markdown("") == ""
+
+    def test_plain_text_untouched(self):
+        assert escape_markdown("Tepung Terigu 1kg") == "Tepung Terigu 1kg"
+
