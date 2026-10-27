@@ -12,6 +12,7 @@ import {
   Home,
   ArrowLeftRight,
   ShieldAlert,
+  Store,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -42,8 +43,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "master" | "tukar-cash-ongkir" | "config";
-  onTabChange: (tab: "overview" | "master" | "tukar-cash-ongkir" | "config") => void;
+  activeTab: "overview" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
+  onTabChange: (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   userRole?: string | null;
@@ -78,7 +79,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "master" | "tukar-cash-ongkir" | "config") => {
+  const handleSelectTab = (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -175,6 +176,22 @@ export function DashboardSidebar({
               >
                 <PackageCheck className="w-4 h-4" />
                 <span className="truncate">Master Item</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "suppliers" || activeTab === "supplier-detail"}
+                onClick={() => handleSelectTab("suppliers")}
+                tooltip="Master Supplier & Toko"
+                className={`h-9.5 rounded-xl font-medium ${
+                  activeTab === "suppliers" || activeTab === "supplier-detail"
+                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <Store className="w-4 h-4" />
+                <span className="truncate">Master Supplier</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
 

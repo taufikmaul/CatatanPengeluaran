@@ -29,6 +29,7 @@ class ExpenseBase(BaseModel):
     msg_link: str = "Web Dashboard"
     user_id: int | None = None
     master_item_id: int | None = None
+    supplier_id: int | None = None
 
 
 class ExpenseCreate(ExpenseBase):
@@ -62,6 +63,7 @@ class ExpenseUpdate(BaseModel):
     msg_link: str | None = None
     user_id: int | None = None
     master_item_id: int | None = None
+    supplier_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -90,6 +92,7 @@ class ExpenseResponse(BaseModel):
     user_id: int | None = None
     user_name: str | None = None
     master_item_id: int | None = None
+    supplier_id: int | None = None
     sheets_synced: bool
 
     class Config:
@@ -354,5 +357,97 @@ class MonthlyBudgetDetailResponse(BaseModel):
     is_custom: bool = False
     valid_categories: list[str] = []
     message: str | None = None
+
+
+# ──────────────────────────────────────────────
+# Master Supplier / Toko Schemas
+# ──────────────────────────────────────────────
+
+class SupplierBase(BaseModel):
+    name: str
+    phone: str = ""
+    address: str = ""
+    aliases: str = ""
+    notes: str = ""
+    is_active: bool = True
+
+
+class SupplierCreate(SupplierBase):
+    pass
+
+
+class SupplierUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    aliases: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
+class SupplierResponse(SupplierBase):
+    id: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    total_spent: float = 0.0
+    transaction_count: int = 0
+    last_expense_date: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class SupplierDetailResponse(SupplierResponse):
+    avg_per_transaction: float = 0.0
+    first_expense_date: str | None = None
+
+
+class SupplierListResponse(BaseModel):
+    items: list[SupplierResponse]
+    total: int
+    page: int
+    limit: int
+
+
+class SupplierTopItem(BaseModel):
+    item_name: str
+    master_item_id: int | None = None
+    category: str = "Lainnya"
+    purchase_count: int
+    total_qty: float
+    unit: str = "Pcs"
+    total_spent: float
+
+
+class SupplierPriciestItem(BaseModel):
+    item_name: str
+    master_item_id: int | None = None
+    category: str = "Lainnya"
+    max_unit_price: float
+    unit: str = "Pcs"
+    last_purchase_date: str | None = None
+
+
+class SupplierDuplicateItem(BaseModel):
+    id: int
+    name: str
+    phone: str = ""
+    address: str = ""
+    transaction_count: int = 0
+    total_spent: float = 0.0
+    similarity: float = 0.0
+    reason: str
+
+
+class SupplierDuplicateGroup(BaseModel):
+    suggested_primary_id: int
+    primary: dict
+    duplicates: list[SupplierDuplicateItem]
+
+
+class SupplierMergeRequest(BaseModel):
+    target_supplier_id: int
+    source_supplier_ids: list[int]
+
 
 

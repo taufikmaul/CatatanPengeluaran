@@ -97,9 +97,25 @@ async def save_expenses(
 
         inv_num = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota") or "-"
 
+        # Resolusi master supplier (toko/vendor)
+        sup_id = item.get("supplier_id")
+        sup_name = item.get("toko_supplier") or item.get("supplier") or "-"
+        if not sup_id and sup_name and str(sup_name).strip() not in ("-", "None", ""):
+            from app.services.supplier_service import get_or_create_supplier_by_name
+            supplier_obj = await get_or_create_supplier_by_name(db, str(sup_name), auto_create=True)
+            if supplier_obj:
+                sup_id = supplier_obj.id
+                sup_name = supplier_obj.name
+        elif sup_id and (not sup_name or sup_name == "-"):
+            from app.models.supplier import Supplier
+            s_obj = await db.get(Supplier, sup_id)
+            if s_obj:
+                sup_name = s_obj.name
+
         expense = Expense(
             expense_date=expense_date,
-            supplier=item.get("toko_supplier") or item.get("supplier") or "-",
+            supplier=sup_name,
+            supplier_id=sup_id,
             item_name=item.get("barang") or item.get("item_name") or "Barang",
             qty=qty if qty > 0 else Decimal("1"),
             unit=(item.get("satuan") or item.get("unit") or "Pcs").strip() or "Pcs",
@@ -881,6 +897,31 @@ async def update_expense(
                 "new": matched.id,
             }
             expense.master_item_id = matched.id
+
+    # Auto-match / update supplier_id jika supplier berubah
+    if "supplier" in updates and "supplier_id" not in updates and expense.supplier:
+        if expense.supplier.strip() not in ("-", "None", ""):
+            from app.services.supplier_service import get_or_create_supplier_by_name
+            supplier_obj = await get_or_create_supplier_by_name(db, expense.supplier, auto_create=True)
+            if supplier_obj and supplier_obj.id != expense.supplier_id:
+                changes["supplier_id"] = {
+                    "old": expense.supplier_id,
+                    "new": supplier_obj.id,
+                }
+                expense.supplier_id = supplier_obj.id
+                expense.supplier = supplier_obj.name
+        else:
+            if expense.supplier_id is not None:
+                changes["supplier_id"] = {
+                    "old": expense.supplier_id,
+                    "new": None,
+                }
+                expense.supplier_id = None
+    elif "supplier_id" in updates and updates["supplier_id"]:
+        from app.models.supplier import Supplier
+        s_obj = await db.get(Supplier, updates["supplier_id"])
+        if s_obj and s_obj.name != expense.supplier:
+            expense.supplier = s_obj.name
 
     # Tandai sheets_synced = False agar perubahan tersinkron ulang jika perlu
     expense.sheets_synced = False

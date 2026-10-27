@@ -24,6 +24,7 @@ export interface Expense {
   user_id?: number | null;
   user_name?: string | null;
   master_item_id?: number | null;
+  supplier_id?: number | null;
   sheets_synced: boolean;
 }
 
@@ -347,6 +348,7 @@ export interface ExpenseFormData {
   msg_link?: string;
   user_id?: number | null;
   master_item_id?: number | null;
+  supplier_id?: number | null;
 }
 
 export interface OcrExtractedItem {
@@ -432,4 +434,84 @@ export interface ExpenseAuditResponse {
   total_potential_waste: number;
   pairs: ExpenseDuplicatePair[];
 }
+
+export interface Supplier {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  aliases: string;
+  notes: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+  total_spent: number;
+  transaction_count: number;
+  last_expense_date: string | null;
+}
+
+export interface SupplierDetail extends Supplier {
+  avg_per_transaction: number;
+  first_expense_date: string | null;
+}
+
+export interface SupplierListResponse {
+  items: Supplier[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SupplierTopItem {
+  item_name: string;
+  master_item_id: number | null;
+  category: string;
+  purchase_count: number;
+  total_qty: number;
+  unit: string;
+  total_spent: number;
+}
+
+export interface SupplierPriciestItem {
+  item_name: string;
+  master_item_id: number | null;
+  category: string;
+  max_unit_price: number;
+  unit: string;
+  last_purchase_date: string | null;
+}
+
+export interface SupplierDuplicateItem {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  transaction_count: number;
+  total_spent: number;
+  similarity: number;
+  reason: string;
+}
+
+export interface SupplierDuplicateGroup {
+  suggested_primary_id: number;
+  primary: {
+    id: number;
+    name: string;
+    phone: string;
+    address: string;
+    transaction_count: number;
+    total_spent: number;
+  };
+  duplicates: SupplierDuplicateItem[];
+}
+
+export interface SupplierFormData {
+  name: string;
+  phone?: string;
+  address?: string;
+  aliases?: string;
+  notes?: string;
+  is_active?: boolean;
+}
+
 

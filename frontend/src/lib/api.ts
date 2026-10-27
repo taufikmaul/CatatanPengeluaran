@@ -1,5 +1,17 @@
 import axios from "axios";
-import { Expense, ExpenseFormData, ExpenseLog, ExpenseAuditResponse } from "@/types";
+import {
+  Expense,
+  ExpenseFormData,
+  ExpenseLog,
+  ExpenseAuditResponse,
+  Supplier,
+  SupplierDetail,
+  SupplierListResponse,
+  SupplierTopItem,
+  SupplierPriciestItem,
+  SupplierDuplicateGroup,
+  SupplierFormData,
+} from "@/types";
 
 export const api = axios.create({
   baseURL: "/api/v1",
@@ -157,4 +169,133 @@ export async function getExpenseAuditDuplicates(params?: {
   const res = await api.get(`/expenses/audit-duplicates${queryStr}`);
   return res.data;
 }
+
+// ──────────────────────────────────────────────
+// Master Supplier / Toko API
+// ──────────────────────────────────────────────
+
+export async function getSuppliers(params?: {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  limit?: number;
+  sort_by?: string;
+  sort_order?: string;
+}): Promise<SupplierListResponse> {
+  const query = new URLSearchParams();
+  if (params?.search?.trim()) query.set("search", params.search.trim());
+  if (params?.is_active !== undefined) query.set("is_active", String(params.is_active));
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.sort_by) query.set("sort_by", params.sort_by);
+  if (params?.sort_order) query.set("sort_order", params.sort_order);
+
+  const queryStr = query.toString() ? `?${query.toString()}` : "";
+  const res = await api.get(`/suppliers${queryStr}`);
+  return res.data;
+}
+
+export async function getSupplierById(id: number): Promise<SupplierDetail> {
+  const res = await api.get(`/suppliers/${id}`);
+  return res.data;
+}
+
+export async function createSupplier(payload: SupplierFormData): Promise<Supplier> {
+  const res = await api.post("/suppliers", payload);
+  return res.data;
+}
+
+export async function updateSupplier(id: number, payload: Partial<SupplierFormData>): Promise<Supplier> {
+  const res = await api.put(`/suppliers/${id}`, payload);
+  return res.data;
+}
+
+export async function deleteSupplier(id: number): Promise<{ ok: boolean; message: string }> {
+  const res = await api.delete(`/suppliers/${id}`);
+  return res.data;
+}
+
+export async function getSupplierExpenses(
+  id: number,
+  params?: {
+    start_date?: string;
+    end_date?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }
+): Promise<{
+  ok: boolean;
+  data: Expense[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}> {
+  const query = new URLSearchParams();
+  if (params?.start_date) query.set("start_date", params.start_date);
+  if (params?.end_date) query.set("end_date", params.end_date);
+  if (params?.category) query.set("category", params.category);
+  if (params?.page) query.set("page", String(params.page));
+  if (params?.limit) query.set("limit", String(params.limit));
+
+  const queryStr = query.toString() ? `?${query.toString()}` : "";
+  const res = await api.get(`/suppliers/${id}/expenses${queryStr}`);
+  return res.data;
+}
+
+export async function getSupplierTopItems(id: number, limit: number = 10): Promise<SupplierTopItem[]> {
+  const res = await api.get(`/suppliers/${id}/top-items?limit=${limit}`);
+  return res.data;
+}
+
+export async function getSupplierPriciestItems(id: number, limit: number = 10): Promise<SupplierPriciestItem[]> {
+  const res = await api.get(`/suppliers/${id}/priciest-items?limit=${limit}`);
+  return res.data;
+}
+
+export async function createSupplierExpense(id: number, payload: ExpenseFormData): Promise<Expense> {
+  const res = await api.post(`/suppliers/${id}/expenses`, payload);
+  return res.data;
+}
+
+export async function deleteSupplierExpense(
+  supplierId: number,
+  expenseId: number
+): Promise<{ ok: boolean; message: string }> {
+  const res = await api.delete(`/suppliers/${supplierId}/expenses/${expenseId}`);
+  return res.data;
+}
+
+export async function syncSupplierExpenses(): Promise<{
+  synced_count: number;
+  created_suppliers: number;
+  message: string;
+}> {
+  const res = await api.post("/suppliers/sync-existing");
+  return res.data;
+}
+
+export async function getSupplierAuditDuplicates(threshold: number = 0.75): Promise<SupplierDuplicateGroup[]> {
+  const res = await api.get(`/suppliers/audit-duplicates?threshold=${threshold}`);
+  return res.data;
+}
+
+export async function mergeSuppliers(
+  targetSupplierId: number,
+  sourceSupplierIds: number[]
+): Promise<{
+  success: boolean;
+  target_supplier_id: number;
+  target_supplier_name: string;
+  merged_supplier_count: number;
+  expenses_transferred: number;
+}> {
+  const res = await api.post("/suppliers/merge", {
+    target_supplier_id: targetSupplierId,
+    source_supplier_ids: sourceSupplierIds,
+  });
+  return res.data;
+}
+
 

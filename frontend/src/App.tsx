@@ -21,7 +21,10 @@ import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
 import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
+import { SuppliersTab } from "@/components/supplier/SuppliersTab";
+import { SupplierDetailPage } from "@/components/supplier/SupplierDetailPage";
 import { LoginModal } from "@/components/auth/LoginModal";
+import { useLocation, useNavigate } from "react-router-dom";
 import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/dashboard-01/dashboard-sidebar";
@@ -50,9 +53,37 @@ try {
 
 export function App() {
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // Active Tab: "overview" | "master" | "tukar-cash-ongkir" | "config"
-  const [activeTab, setActiveTab] = useState<"overview" | "master" | "tukar-cash-ongkir" | "config">("overview");
+  // Parse path to activeTab & selectedSupplierId
+  const pathname = location.pathname.replace(/\/+$/, "") || "/";
+  const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
+  const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
+
+  let activeTab: "overview" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config" = "overview";
+  if (selectedSupplierId) {
+    activeTab = "supplier-detail";
+  } else if (pathname === "/suppliers") {
+    activeTab = "suppliers";
+  } else if (pathname === "/master") {
+    activeTab = "master";
+  } else if (pathname === "/tukar-cash-ongkir") {
+    activeTab = "tukar-cash-ongkir";
+  } else if (pathname === "/config") {
+    activeTab = "config";
+  } else {
+    activeTab = "overview";
+  }
+
+  const handleTabChange = (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
+    if (tab === "overview") {
+      navigate("/");
+    } else {
+      navigate("/" + tab);
+    }
+  };
+
   const [cashDeliverySubtype, setCashDeliverySubtype] = useState<"all" | "tukar_cash" | "ongkir">("all");
 
   // Filter states
@@ -163,9 +194,9 @@ export function App() {
   // Jika admin_input mencoba membuka tab konfigurasi sistem, kembalikan ke overview
   useEffect(() => {
     if (userRole === "admin_input" && activeTab === "config") {
-      setActiveTab("overview");
+      navigate("/");
     }
-  }, [userRole, activeTab]);
+  }, [userRole, activeTab, navigate]);
 
   // Listen for 401 unauthorized event
   useEffect(() => {
@@ -402,7 +433,7 @@ export function App() {
         {/* Dashboard Sidebar */}
         <DashboardSidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           onOpenImport={() => setIsImportOpen(true)}
           onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
           userRole={userRole}
@@ -443,12 +474,12 @@ export function App() {
             unpaidTotal={totalUnpaidNominal}
             reimburseCount={reportData?.reimburse_pending_count || 0}
             onFilterUnpaid={() => {
-              setActiveTab("overview");
+              navigate("/");
               setStatus("Belum Lunas");
               setPage(1);
             }}
             onFilterReimburse={() => {
-              setActiveTab("overview");
+              navigate("/");
               setIsReimbursement(true);
               setPage(1);
             }}
@@ -535,7 +566,7 @@ export function App() {
                         onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
                         onOpenTukarCashOngkir={(subType) => {
                           setCashDeliverySubtype(subType || "all");
-                          setActiveTab("tukar-cash-ongkir");
+                          navigate("/tukar-cash-ongkir");
                         }}
                       />
                     </div>
@@ -579,7 +610,7 @@ export function App() {
                         onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
                         onOpenTukarCashOngkir={(subType) => {
                           setCashDeliverySubtype(subType || "all");
-                          setActiveTab("tukar-cash-ongkir");
+                          navigate("/tukar-cash-ongkir");
                         }}
                       />
 
@@ -870,6 +901,22 @@ export function App() {
               <MasterItemsTab
                 categories={categories}
                 onInspectItemPrice={handleInspectItemPrice}
+              />
+            )}
+
+            {activeTab === "suppliers" && (
+              <SuppliersTab
+                onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
+                canDelete={canDelete}
+              />
+            )}
+
+            {activeTab === "supplier-detail" && selectedSupplierId && (
+              <SupplierDetailPage
+                supplierId={selectedSupplierId}
+                onBack={() => navigate("/suppliers")}
+                canDelete={canDelete}
+                categories={categories}
               />
             )}
 

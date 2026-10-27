@@ -8,6 +8,7 @@ from app.api.reports import router as reports_router
 from app.api.config import router as config_router
 from app.api.import_data import router as import_router
 from app.api.master_items import router as master_items_router
+from app.api.suppliers import router as suppliers_router
 from app.api.budgets import router as budgets_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -18,5 +19,6 @@ api_router.include_router(reports_router)
 api_router.include_router(config_router)
 api_router.include_router(import_router)
 api_router.include_router(master_items_router)
+api_router.include_router(suppliers_router)
 api_router.include_router(budgets_router)
 

@@ -70,6 +70,7 @@ def _to_response_dict(e: Expense) -> dict:
         "user_id": e.user_id,
         "user_name": user_name,
         "master_item_id": getattr(e, "master_item_id", None),
+        "supplier_id": getattr(e, "supplier_id", None),
         "sheets_synced": bool(e.sheets_synced),
     }
 
