@@ -400,21 +400,50 @@ async def audit_duplicate_expenses(
     2. Nominal sama (total_price sama)
     3. Nama mirip >= 90% (atau min_similarity yang ditentukan, default 0.90)
     """
-    query = (
-        select(Expense)
-        .options(selectinload(Expense.user))
+    # Filter awal cepat: hanya ambil tanggal & nominal yang memiliki kemunculan >= 2
+    dup_keys_query = (
+        select(Expense.expense_date, Expense.total_price)
         .where(Expense.total_price > 0)
     )
 
     if month and year:
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+        dup_keys_query = dup_keys_query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     elif year:
         start = date(year, 1, 1)
         end = date(year + 1, 1, 1)
-        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+        dup_keys_query = dup_keys_query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
 
+    if category:
+        dup_keys_query = dup_keys_query.where(Expense.category == category)
+
+    dup_keys_query = (
+        dup_keys_query
+        .group_by(Expense.expense_date, Expense.total_price)
+        .having(func.count(Expense.id) >= 2)
+    )
+    dup_keys_res = await db.execute(dup_keys_query)
+    candidate_keys = dup_keys_res.all()
+
+    if not candidate_keys:
+        return {
+            "total_duplicates": 0,
+            "pairs": [],
+            "total_potential_waste": 0.0,
+            "duplicate_count": 0,
+        }
+
+    key_conditions = [
+        and_(Expense.expense_date == row.expense_date, Expense.total_price == row.total_price)
+        for row in candidate_keys
+    ]
+
+    query = (
+        select(Expense)
+        .options(selectinload(Expense.user))
+        .where(or_(*key_conditions))
+    )
     if category:
         query = query.where(Expense.category == category)
 

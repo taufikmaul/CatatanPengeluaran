@@ -90,13 +90,15 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
 
     elif data == "menu_bantuan":
         help_msg = (
-            "💡 *Panduan Penggunaan:*\n\n"
-            "1. 📷 Kirim *foto struk* langsung\n"
+            "💡 *Panduan Penggunaan Bot:*\n\n"
+            "1. 📷 Kirim *foto struk* belanja langsung\n"
             "2. 🎤 Kirim *voice note* belanja\n"
             "3. ✏️ Ketik `/catat [detail belanja]`\n"
-            "4. 🔎 Ketik `/audit` untuk cek kategori\n"
-            "5. 🔢 Ketik `/audit hitung` untuk fix rumus\n\n"
-            f"📂 *Kategori valid:*\n"
+            "4. 🚚 Ketik `/ongkir` untuk panduan & catat kurir\n"
+            "5. 🔄 Ketik `/tukercash` untuk panduan & catat tarik tunai\n"
+            "6. 🔎 Ketik `/audit` untuk cek kategori\n"
+            "7. 🔢 Ketik `/audit hitung` untuk fix rumus\n\n"
+            f"📂 *Kategori valid ({len(settings.valid_categories)}):*\n"
             + "\n".join(f"▪️ {c}" for c in settings.valid_categories)
         )
         await tg.send_message(chat_id, help_msg, thread_id)

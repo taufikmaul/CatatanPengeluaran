@@ -247,3 +247,95 @@ async def test_master_item_excludes_ongkir_and_tukar_cash(db):
     assert not any("ongkir" in name for name in master_names)
     assert not any("tukar cash" in name for name in master_names)
 
+
+@pytest.mark.asyncio
+async def test_hermes_guidance_on_empty_ongkir_and_tukar_cash(db):
+    from app.agent.hermes import HermesAgent
+    from app.bot import telegram_client as tg
+
+    agent = HermesAgent(db=db, chat_id=123, user_id=456, thread_id=7)
+
+    with patch.object(tg, "send_message", new_callable=AsyncMock) as mock_send:
+        # 1. /ongkir tanpa parameter
+        await agent.process(text="/ongkir")
+        mock_send.assert_called_once()
+        sent_text = mock_send.call_args[0][1]
+        assert "FORMAT LAPORAN ONGKIR" in sent_text
+        assert "GoSend Car" in sent_text
+
+    with patch.object(tg, "send_message", new_callable=AsyncMock) as mock_send:
+        # 2. /tukercash tanpa parameter
+        await agent.process(text="/tukercash")
+        mock_send.assert_called_once()
+        sent_text = mock_send.call_args[0][1]
+        assert "FORMAT LAPORAN TUKAR CASH" in sent_text
+        assert "Transfer BCA" in sent_text
+
+
+@pytest.mark.asyncio
+async def test_multi_item_in_single_chat_ongkir_and_tukar_cash():
+    # 1. Multi item Ongkir dalam 1 chat
+    raw_ongkir = {
+        "choices": [{
+            "message": {
+                "content": """{
+                    "items": [
+                        {"barang": "GoSend Car", "total_harga": 25000, "toko_supplier": "GoSend Car", "metode_bayar": "Gopay - Kasir", "keterangan": "Bolu Bu Maya"},
+                        {"barang": "GrabExpress", "total_harga": 15000, "toko_supplier": "GrabExpress", "metode_bayar": "Tunai", "keterangan": "Roti Pak Doni"}
+                    ]
+                }"""
+            }
+        }]
+    }
+    with patch("httpx.AsyncClient.post") as mock_post:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = raw_ongkir
+        mock_post.return_value = mock_resp
+
+        messages = [{"role": "user", "content": "/ongkir 1. GoSend 25rb 2. Grab 15rb"}]
+        res = await _execute_fetch(messages)
+        items = res["items"]
+        assert len(items) == 2
+        assert items[0]["kategori"] == "Ongkir"
+        assert items[0]["toko_supplier"] == "GoSend Car"
+        assert items[0]["total_harga"] == 25000
+        assert items[1]["kategori"] == "Ongkir"
+        assert items[1]["toko_supplier"] == "GrabExpress"
+        assert items[1]["total_harga"] == 15000
+
+    # 2. Multi item Tukar Cash dalam 1 chat
+    raw_tukar = {
+        "choices": [{
+            "message": {
+                "content": """{
+                    "items": [
+                        {"barang": "Tukar Cash - Budi", "total_harga": 100000, "toko_supplier": "BCA", "metode_bayar": "Transfer", "keterangan": "Tarik tunai kasir"},
+                        {"barang": "Tukar Cash - Siti", "total_harga": 50000, "toko_supplier": "Mandiri", "metode_bayar": "Transfer", "keterangan": "Tarik tunai kasir"}
+                    ]
+                }"""
+            }
+        }]
+    }
+    with patch("httpx.AsyncClient.post") as mock_post:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = raw_tukar
+        mock_post.return_value = mock_resp
+
+        messages = [{"role": "user", "content": "/tukercash 1. Budi 100rb 2. Siti 50rb"}]
+        res = await _execute_fetch(messages)
+        items = res["items"]
+        assert len(items) == 2
+        assert items[0]["kategori"] == "Tukar Cash"
+        assert items[0]["metode_bayar"] == "Tunai"
+        assert items[0]["toko_supplier"] == "-"
+        assert "BCA" in items[0]["keterangan"]
+
+        assert items[1]["kategori"] == "Tukar Cash"
+        assert items[1]["metode_bayar"] == "Tunai"
+        assert items[1]["toko_supplier"] == "-"
+        assert "Mandiri" in items[1]["keterangan"]
+
+
+
