@@ -37,9 +37,15 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     print("✅ Scheduler started (weekly report + sheets sync)")
 
+    # Start background job queue workers
+    from app.services.job_queue import background_queue
+    background_queue.start_workers(num_workers=2)
+    print("✅ Background queue workers started")
+
     yield  # App running
 
     # ── Shutdown ──
+    await background_queue.stop_workers()
     scheduler.shutdown(wait=False)
     print("👋 CatatanPengeluaran shutdown")
 

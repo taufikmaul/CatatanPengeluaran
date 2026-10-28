@@ -29,6 +29,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { formatRupiah } from "@/lib/formatters";
+import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopover";
 
 export interface DashboardHeaderProps {
   activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
@@ -295,6 +296,9 @@ export function DashboardHeader({
             </div>
           </PopoverContent>
         </Popover>
+
+        {/* Background Action Queue Popover */}
+        <BackgroundQueuePopover />
 
         {/* Theme Dark/Light Mode Toggle */}
         <Button
