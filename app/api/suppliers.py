@@ -14,6 +14,7 @@ from app.api.schemas import (
     SupplierResponse,
     SupplierDetailResponse,
     SupplierListResponse,
+    SupplierListSummary,
     SupplierTopItem,
     SupplierPriciestItem,
     SupplierDuplicateGroup,
@@ -36,18 +37,20 @@ router = APIRouter(prefix="/suppliers", tags=["suppliers"], dependencies=[Depend
 async def list_suppliers(
     search: str | None = Query(None, description="Pencarian nama, alias, telp, atau alamat"),
     is_active: bool | None = Query(None, description="Filter status aktif"),
+    has_unpaid: bool | None = Query(None, description="Hanya toko yang memiliki tagihan belum lunas"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
-    sort_by: str = Query("total_spent", description="total_spent, name, transaction_count, last_expense_date, created_at"),
+    sort_by: str = Query("total_spent", description="total_spent, unpaid_bills_total, unpaid_bills_count, name, transaction_count, last_expense_date, created_at"),
     sort_order: str = Query("desc", description="asc atau desc"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ambil daftar supplier beserta ringkasan statistik belanja."""
+    """Ambil daftar supplier beserta ringkasan statistik belanja & tagihan."""
     skip = (page - 1) * limit
-    items, total = await supplier_service.get_suppliers(
+    items, total, summary = await supplier_service.get_suppliers(
         db,
         search=search,
         is_active=is_active,
+        has_unpaid=has_unpaid,
         skip=skip,
         limit=limit,
         sort_by=sort_by,
@@ -58,6 +61,7 @@ async def list_suppliers(
         total=total,
         page=page,
         limit=limit,
+        summary=SupplierListSummary(**summary),
     )
 
 
@@ -178,6 +182,7 @@ async def get_supplier_expenses(
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     category: str | None = Query(None),
+    pay_status: str | None = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
@@ -190,6 +195,7 @@ async def get_supplier_expenses(
         start_date=start_date,
         end_date=end_date,
         category=category,
+        pay_status=pay_status,
         skip=skip,
         limit=limit,
     )
@@ -270,3 +276,27 @@ async def delete_supplier_expense(
         )
     await db.commit()
     return {"ok": True, "message": "Catatan belanja berhasil dihapus."}
+
+
+@router.patch("/{supplier_id}/expenses/{expense_id}/pay-status", response_model=ExpenseResponse)
+async def update_supplier_expense_pay_status(
+    supplier_id: int,
+    expense_id: int,
+    payload: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update status pembayaran tagihan belanja toko (misal: 'Lunas' atau 'Belum Lunas')."""
+    from app.services.expense_service import update_expense
+    actor = get_current_role(request) or "admin"
+    new_status = payload.get("pay_status", "Lunas")
+    expense = await update_expense(db, expense_id, {"pay_status": new_status}, actor=actor)
+    if not expense:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Catatan pengeluaran tidak ditemukan.",
+        )
+    await db.commit()
+    await db.refresh(expense)
+    return ExpenseResponse(**_to_response_dict(expense))
+

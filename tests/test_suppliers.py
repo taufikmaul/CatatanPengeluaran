@@ -399,3 +399,77 @@ async def test_top_items_and_priciest_items(db):
     # Rank #2 adalah Tepung dengan unit_price tertinggi = 15.000
     assert priciest[1]["master_item_id"] == m_tepung.id
     assert priciest[1]["max_unit_price"] == 15000.0
+
+
+@pytest.mark.asyncio
+async def test_supplier_unpaid_bills_and_statistics(client, owner_cookies, db):
+    """
+    Uji statistik tagihan supplier:
+    1. Belanja dengan pay_status='Belum Lunas' meningkatkan unpaid_bills_count dan unpaid_bills_total.
+    2. get_supplier_by_id mengembalikan daftar unpaid_bills lengkap.
+    3. List suppliers endpoint mengembalikan data tagihan dan summary agregat.
+    4. Pembayaran / update pay_status ke 'Lunas' mengurangi tagihan.
+    """
+    supp = await create_supplier(db, name="TBK Tagihan Test")
+
+    # Buat 2 expense: 1 Lunas (50.000), 1 Belum Lunas (200.000)
+    e1 = Expense(
+        expense_date=date(2026, 10, 1),
+        supplier_id=supp.id,
+        supplier=supp.name,
+        item_name="Tepung Terigu",
+        qty=Decimal("5"),
+        unit="Kg",
+        unit_price=Decimal("10000"),
+        total_price=Decimal("50000"),
+        pay_status="Lunas",
+    )
+    e2 = Expense(
+        expense_date=date(2026, 10, 2),
+        supplier_id=supp.id,
+        supplier=supp.name,
+        item_name="Keju Cheddar 2kg",
+        qty=Decimal("1"),
+        unit="Block",
+        unit_price=Decimal("200000"),
+        total_price=Decimal("200000"),
+        pay_status="Belum Lunas",
+        due_date="2026-10-15",
+        invoice_number="INV-999",
+    )
+    db.add_all([e1, e2])
+    await db.flush()
+
+    # 1. Cek detail supplier
+    detail = await get_supplier_by_id(db, supp.id)
+    assert detail["transaction_count"] == 2
+    assert detail["total_spent"] == 250000.0
+    assert detail["unpaid_bills_count"] == 1
+    assert detail["unpaid_bills_total"] == 200000.0
+    assert len(detail["unpaid_bills"]) == 1
+    assert detail["unpaid_bills"][0]["item_name"] == "Keju Cheddar 2kg"
+    assert detail["unpaid_bills"][0]["invoice_number"] == "INV-999"
+
+    # 2. Cek API list suppliers
+    res = await client.get("/api/v1/suppliers", cookies=owner_cookies)
+    assert res.status_code == 200
+    json_data = res.json()
+    assert "summary" in json_data
+    assert json_data["summary"]["total_unpaid_amount"] >= 200000.0
+    assert json_data["summary"]["unpaid_suppliers_count"] >= 1
+
+    # 3. Tandai Lunas via endpoint PATCH
+    pay_res = await client.patch(
+        f"/api/v1/suppliers/{supp.id}/expenses/{e2.id}/pay-status",
+        json={"pay_status": "Lunas"},
+        cookies=owner_cookies,
+    )
+    assert pay_res.status_code == 200
+    assert pay_res.json()["pay_status"] == "Lunas"
+
+    # 4. Verifikasi setelah lunas, tagihan menjadi 0
+    updated_detail = await get_supplier_by_id(db, supp.id)
+    assert updated_detail["unpaid_bills_count"] == 0
+    assert updated_detail["unpaid_bills_total"] == 0.0
+    assert len(updated_detail["unpaid_bills"]) == 0
+

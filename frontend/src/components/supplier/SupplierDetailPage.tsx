@@ -9,6 +9,7 @@ import {
   getSupplierPriciestItems,
   createSupplierExpense,
   deleteSupplierExpense,
+  updateSupplierExpensePayStatus,
 } from "@/lib/api";
 import {
   SupplierDetail,
@@ -74,8 +75,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
+  GitMerge,
+  CreditCard,
+  AlertCircle,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SupplierItemAuditDialog } from "./SupplierItemAuditDialog";
 
 interface SupplierDetailPageProps {
   supplierId: number;
@@ -99,6 +105,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   // State filter & pagination riwayat
   const [page, setPage] = useState(1);
   const [searchCategory, setSearchCategory] = useState("");
+  const [searchPayStatus, setSearchPayStatus] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -111,6 +118,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   const [editNotes, setEditNotes] = useState("");
   const [editIsActive, setEditIsActive] = useState(true);
 
+  // Modal audit duplikat item toko
+  const [isItemAuditOpen, setIsItemAuditOpen] = useState(false);
+
   // Modal tambah catatan belanja
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [newItemName, setNewItemName] = useState("");
@@ -120,6 +130,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   const [newTotalPrice, setNewTotalPrice] = useState<number>(0);
   const [newCategory, setNewCategory] = useState(categories[0] || "Operasional");
   const [newPayMethod, setNewPayMethod] = useState("Tunai");
+  const [newPayStatus, setNewPayStatus] = useState("Lunas");
+  const [newInvoiceNumber, setNewInvoiceNumber] = useState("");
+  const [newDueDate, setNewDueDate] = useState("");
   const [newExpenseDate, setNewExpenseDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -162,12 +175,14 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       supplierId,
       page,
       searchCategory,
+      searchPayStatus,
       startDate,
       endDate,
     ],
     queryFn: () =>
       getSupplierExpenses(supplierId, {
         category: searchCategory || undefined,
+        pay_status: searchPayStatus || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         page,
@@ -176,6 +191,25 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   });
 
   // Mutations
+  const updatePayStatusMutation = useMutation({
+    mutationFn: ({
+      expenseId,
+      payStatus,
+    }: {
+      expenseId: number;
+      payStatus: string;
+    }) => updateSupplierExpensePayStatus(supplierId, expenseId, payStatus),
+    onSuccess: () => {
+      toast.success("Status pembayaran tagihan berhasil diubah.");
+      refetchSupplier();
+      refetchExpenses();
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal mengubah status tagihan.");
+    },
+  });
   const updateMutation = useMutation({
     mutationFn: (payload: any) => updateSupplier(supplierId, payload),
     onSuccess: () => {
@@ -253,6 +287,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
     setNewTotalPrice(0);
     setNewCategory(categories[0] || "Operasional");
     setNewPayMethod("Tunai");
+    setNewPayStatus("Lunas");
+    setNewInvoiceNumber("");
+    setNewDueDate("");
     setNewExpenseDate(new Date().toISOString().split("T")[0]);
     setNewNotes("");
   };
@@ -287,8 +324,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       discount: 0,
       category: newCategory,
       pay_method: newPayMethod,
-      pay_status: "Lunas",
-      due_date: "-",
+      pay_status: newPayStatus,
+      invoice_number: newInvoiceNumber.trim() || "-",
+      due_date: newPayStatus !== "Lunas" && newDueDate ? newDueDate : "-",
       notes: newNotes.trim() || "-",
     });
   };
@@ -300,6 +338,16 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
         label: "Kategori",
         type: "select",
         options: categories.map((c) => ({ label: c, value: c })),
+      },
+      {
+        id: "pay_status",
+        label: "Status Bayar",
+        type: "select",
+        options: [
+          { label: "Semua Status", value: "" },
+          { label: "Belum Lunas / Tempo", value: "unpaid" },
+          { label: "Lunas", value: "Lunas" },
+        ],
       },
       {
         id: "start_date",
@@ -320,6 +368,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
     if (searchCategory) {
       rules.push(createFilterRule({ id: "rule-cat", path: ["category"], operator: "is", value: searchCategory }));
     }
+    if (searchPayStatus) {
+      rules.push(createFilterRule({ id: "rule-pay-status", path: ["pay_status"], operator: "is", value: searchPayStatus }));
+    }
     if (startDate) {
       rules.push(createFilterRule({ id: "rule-start", path: ["start_date"], operator: "is", value: startDate }));
     }
@@ -327,16 +378,18 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       rules.push(createFilterRule({ id: "rule-end", path: ["end_date"], operator: "is", value: endDate }));
     }
     return createFilterQuery(rules, "and");
-  }, [searchCategory, startDate, endDate]);
+  }, [searchCategory, searchPayStatus, startDate, endDate]);
 
   const handleSupplierExpenseQueryChange = (nextQuery: FilterQuery) => {
     let nextCat = "";
+    let nextPay = "";
     let nextStart = "";
     let nextEnd = "";
     const traverse = (nodes: FilterNode[]) => {
       for (const node of nodes) {
         if (isFilterRule(node)) {
           if (node.path[0] === "category") nextCat = String(node.value ?? "");
+          if (node.path[0] === "pay_status") nextPay = String(node.value ?? "");
           if (node.path[0] === "start_date") nextStart = String(node.value ?? "");
           if (node.path[0] === "end_date") nextEnd = String(node.value ?? "");
         } else if (node.rules) {
@@ -346,6 +399,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
     };
     if (nextQuery?.rules) traverse(nextQuery.rules);
     setSearchCategory(nextCat);
+    setSearchPayStatus(nextPay);
     setStartDate(nextStart);
     setEndDate(nextEnd);
     setPage(1);
@@ -446,23 +500,51 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
         {
           accessorKey: "pay_status",
           id: "pay_status",
-          header: () => <span>Status</span>,
+          header: () => <span>Status Bayar</span>,
           cell: ({ row }) => {
             const exp = row.original;
+            const isLunas = exp.pay_status?.toLowerCase() === "lunas";
             return (
-              <Badge
-                variant={exp.pay_status === "Lunas" ? "default" : "destructive"}
-                className={
-                  exp.pay_status === "Lunas"
-                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 text-[10px]"
-                    : "text-[10px]"
-                }
-              >
-                {exp.pay_status}
-              </Badge>
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <Badge
+                  variant={isLunas ? "default" : "destructive"}
+                  className={
+                    isLunas
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 text-[10px]"
+                      : "text-[10px]"
+                  }
+                >
+                  {exp.pay_status}
+                </Badge>
+                {!isLunas && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Tandai transaksi '${exp.item_name}' (${formatRupiah(
+                            exp.total_price
+                          )}) sebagai Lunas?`
+                        )
+                      ) {
+                        updatePayStatusMutation.mutate({
+                          expenseId: exp.id,
+                          payStatus: "Lunas",
+                        });
+                      }
+                    }}
+                    className="h-6 px-1.5 text-[10px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded font-medium gap-0.5"
+                    title="Tandai lunas"
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    Lunas
+                  </Button>
+                )}
+              </div>
             );
           },
-          size: 90,
+          size: 140,
         },
       ];
 
@@ -496,7 +578,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
 
       return cols;
     },
-    [canDelete, deleteExpenseMutation]
+    [canDelete, deleteExpenseMutation, updatePayStatusMutation]
   );
 
   const supplierExpensePagination = useMemo<PaginationState>(
@@ -600,6 +682,16 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
             Edit Info Toko
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsItemAuditOpen(true)}
+            className="h-9 rounded-xl gap-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40 border-amber-200 dark:border-amber-800 shadow-sm"
+          >
+            <GitMerge className="w-3.5 h-3.5" />
+            Audit Item Toko
+          </Button>
+
           {canDelete && (
             <Button
               variant="outline"
@@ -677,7 +769,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       </div>
 
       {/* Ringkasan Statistik Lifetime */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-sm space-y-1">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
             Total Belanja (Lifetime)
@@ -716,7 +808,159 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
               : "-"}
           </p>
         </div>
+
+        <div
+          className={`p-4 rounded-2xl border shadow-sm space-y-1 ${
+            (supplier.unpaid_bills_count || 0) > 0
+              ? "bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50"
+              : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              Tagihan Belum Lunas
+            </span>
+            {(supplier.unpaid_bills_count || 0) > 0 ? (
+              <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4">
+                {supplier.unpaid_bills_count} Nota
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="text-[9px] px-1.5 py-0 h-4 text-emerald-600 dark:text-emerald-400 border-emerald-200"
+              >
+                Lunas
+              </Badge>
+            )}
+          </div>
+          <p
+            className={`text-lg font-bold tabular-nums ${
+              (supplier.unpaid_bills_count || 0) > 0
+                ? "text-rose-600 dark:text-rose-400"
+                : "text-slate-900 dark:text-slate-100"
+            }`}
+          >
+            {formatRupiah(supplier.unpaid_bills_total || 0)}
+          </p>
+          <span className="text-[10px] text-slate-400 block truncate">
+            {(supplier.unpaid_bills_count || 0) > 0
+              ? "Perlu pembayaran segera"
+              : "Tidak ada tagihan tertunda"}
+          </span>
+        </div>
       </div>
+
+      {/* Section Tagihan Belum Lunas */}
+      {supplier.unpaid_bills && supplier.unpaid_bills.length > 0 && (
+        <div className="p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300 shrink-0">
+                <AlertCircle className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                    Daftar Tagihan Supplier Belum Lunas
+                  </h3>
+                  <Badge variant="destructive" className="text-[10px]">
+                    {supplier.unpaid_bills.length} Tagihan Aktif
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                  Total kewajiban pembayaran yang belum diselesaikan:{" "}
+                  <span className="font-bold text-rose-600 dark:text-rose-400">
+                    {formatRupiah(supplier.unpaid_bills_total)}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-white dark:bg-slate-900 shadow-xs">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="py-2.5 px-3">Tanggal Belanja</th>
+                  <th className="py-2.5 px-3">Nama Barang</th>
+                  <th className="py-2.5 px-3">No. Invoice / Nota</th>
+                  <th className="py-2.5 px-3">Jatuh Tempo</th>
+                  <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
+                  <th className="py-2.5 px-3 text-center">Status</th>
+                  <th className="py-2.5 px-3 text-right">Aksi Cepat</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {supplier.unpaid_bills.map((bill) => (
+                  <tr
+                    key={bill.id}
+                    className="hover:bg-amber-50/30 dark:hover:bg-amber-950/10 transition-colors"
+                  >
+                    <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                      {formatDateId(bill.expense_date)}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+                        {bill.item_name}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {bill.category}{" "}
+                        {bill.notes && bill.notes !== "-" ? `• ${bill.notes}` : ""}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                      {bill.invoice_number && bill.invoice_number !== "-"
+                        ? bill.invoice_number
+                        : "-"}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                      {bill.due_date && bill.due_date !== "-"
+                        ? formatDateId(bill.due_date)
+                        : "-"}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+                      {formatRupiah(bill.total_price)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300"
+                      >
+                        {bill.pay_status}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={updatePayStatusMutation.isPending}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `Tandai tagihan '${bill.item_name}' (${formatRupiah(
+                                bill.total_price
+                              )}) sebagai Lunas?`
+                            )
+                          ) {
+                            updatePayStatusMutation.mutate({
+                              expenseId: bill.id,
+                              payStatus: "Lunas",
+                            });
+                          }
+                        }}
+                        className="h-7 px-2.5 text-[11px] font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-950/50 gap-1 rounded-lg shadow-xs"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Tandai Lunas
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Grid: Top Item Sering Dibeli & Item Paling Mahal */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -736,9 +980,21 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="text-[10px]">
-              Top {topItems.length}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-[10px]">
+                Top {topItems.length}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsItemAuditOpen(true)}
+                className="h-6 px-2 text-[10px] text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg gap-1 font-medium"
+                title="Pindai item duplikat toko ini"
+              >
+                <GitMerge className="w-3 h-3" />
+                Audit Duplikat
+              </Button>
+            </div>
           </div>
 
           {isTopLoading ? (
@@ -909,6 +1165,19 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 ))}
               </select>
 
+              <select
+                value={searchPayStatus}
+                onChange={(e) => {
+                  setSearchPayStatus(e.target.value);
+                  setPage(1);
+                }}
+                className="h-8 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 text-slate-700 dark:text-slate-300 font-medium"
+              >
+                <option value="">Semua Status Bayar</option>
+                <option value="unpaid">Belum Lunas / Tempo</option>
+                <option value="Lunas">Lunas</option>
+              </select>
+
               <Input
                 type="date"
                 value={startDate}
@@ -929,12 +1198,13 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 className="h-8 text-xs rounded-xl w-32"
               />
 
-              {(searchCategory || startDate || endDate) && (
+              {(searchCategory || searchPayStatus || startDate || endDate) && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
                     setSearchCategory("");
+                    setSearchPayStatus("");
                     setStartDate("");
                     setEndDate("");
                     setPage(1);
@@ -1221,6 +1491,49 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Status Pembayaran *
+                </label>
+                <select
+                  value={newPayStatus}
+                  onChange={(e) => setNewPayStatus(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                >
+                  <option value="Lunas">Lunas</option>
+                  <option value="Belum Lunas">Belum Lunas (Tempo)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  No. Invoice / Nota
+                </label>
+                <Input
+                  value={newInvoiceNumber}
+                  onChange={(e) => setNewInvoiceNumber(e.target.value)}
+                  placeholder="Contoh: INV/2026/001"
+                  className="h-9 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            {newPayStatus !== "Lunas" && (
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1 text-rose-600 dark:text-rose-400">
+                  Tanggal Jatuh Tempo *
+                </label>
+                <Input
+                  type="date"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                  required={newPayStatus !== "Lunas"}
+                  className="h-9 text-xs border-rose-300 dark:border-rose-900"
+                />
+              </div>
+            )}
+
             <div>
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                 Keterangan / Catatan
@@ -1228,7 +1541,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
               <Input
                 value={newNotes}
                 onChange={(e) => setNewNotes(e.target.value)}
-                placeholder="No nota atau catatan belanja tambahan"
+                placeholder="Catatan belanja tambahan..."
                 className="h-9 text-xs"
               />
             </div>
@@ -1254,6 +1567,20 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Audit Duplikat Item Toko */}
+      <SupplierItemAuditDialog
+        supplierId={supplierId}
+        supplierName={supplier.name}
+        isOpen={isItemAuditOpen}
+        onClose={() => setIsItemAuditOpen(false)}
+        onSuccess={() => {
+          refetchSupplier();
+          refetchExpenses();
+          queryClient.invalidateQueries({ queryKey: ["supplier-top-items", supplierId] });
+          queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items", supplierId] });
+        }}
+      />
     </div>
   );
 };

@@ -192,12 +192,39 @@ export interface DuplicatePair {
   match_type: "substring" | "prefix_suffix" | "fuzzy" | "alias";
   reason: string;
   suggested_primary_id: number;
+  both_in_supplier?: boolean;
 }
 
 export interface MasterItemAuditResponse {
   ok: boolean;
   total_duplicates: number;
   pairs: DuplicatePair[];
+}
+
+export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type JobType =
+  | "audit_master_items"
+  | "audit_suppliers"
+  | "audit_expenses"
+  | "merge_master_items"
+  | "merge_suppliers"
+  | "batch_merge_items";
+
+export interface BackgroundJob {
+  id: string;
+  type: JobType;
+  title: string;
+  status: JobStatus;
+  progress: number;
+  progress_message: string;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_seconds?: number | null;
+  payload: Record<string, any>;
+  result?: any;
+  error?: string | null;
+  actor: string;
 }
 
 export interface MasterItemMergeRequest {
@@ -463,12 +490,35 @@ export interface Supplier {
   updated_at?: string;
   total_spent: number;
   transaction_count: number;
+  unpaid_bills_count: number;
+  unpaid_bills_total: number;
   last_expense_date: string | null;
+}
+
+export interface SupplierUnpaidBillItem {
+  id: number;
+  expense_date: string;
+  item_name: string;
+  total_price: number;
+  due_date: string;
+  invoice_number: string;
+  notes: string;
+  category: string;
+  pay_method: string;
+  pay_status: string;
 }
 
 export interface SupplierDetail extends Supplier {
   avg_per_transaction: number;
   first_expense_date: string | null;
+  unpaid_bills: SupplierUnpaidBillItem[];
+}
+
+export interface SupplierListSummary {
+  total_suppliers: number;
+  total_spent: number;
+  total_unpaid_amount: number;
+  unpaid_suppliers_count: number;
 }
 
 export interface SupplierListResponse {
@@ -476,6 +526,7 @@ export interface SupplierListResponse {
   total: number;
   page: number;
   limit: number;
+  summary?: SupplierListSummary;
 }
 
 export interface SupplierTopItem {

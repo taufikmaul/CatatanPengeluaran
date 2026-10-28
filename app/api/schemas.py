@@ -256,6 +256,7 @@ class MasterItemDuplicatePair(BaseModel):
     match_type: str  # "substring", "prefix_suffix", "fuzzy", "alias"
     reason: str
     suggested_primary_id: int
+    both_in_supplier: bool = False
 
 
 class MasterItemAuditResponse(BaseModel):
@@ -424,15 +425,38 @@ class SupplierResponse(SupplierBase):
     updated_at: datetime | None = None
     total_spent: float = 0.0
     transaction_count: int = 0
+    unpaid_bills_count: int = 0
+    unpaid_bills_total: float = 0.0
     last_expense_date: str | None = None
 
     class Config:
         from_attributes = True
 
 
+class SupplierUnpaidBillItem(BaseModel):
+    id: int
+    expense_date: str
+    item_name: str
+    total_price: float
+    due_date: str = "-"
+    invoice_number: str = "-"
+    notes: str = "-"
+    category: str = "Operasional"
+    pay_method: str = "Tunai"
+    pay_status: str = "Belum Lunas"
+
+
 class SupplierDetailResponse(SupplierResponse):
     avg_per_transaction: float = 0.0
     first_expense_date: str | None = None
+    unpaid_bills: list[SupplierUnpaidBillItem] = []
+
+
+class SupplierListSummary(BaseModel):
+    total_suppliers: int = 0
+    total_spent: float = 0.0
+    total_unpaid_amount: float = 0.0
+    unpaid_suppliers_count: int = 0
 
 
 class SupplierListResponse(BaseModel):
@@ -440,6 +464,7 @@ class SupplierListResponse(BaseModel):
     total: int
     page: int
     limit: int
+    summary: SupplierListSummary | None = None
 
 
 class SupplierTopItem(BaseModel):

@@ -58,6 +58,8 @@ import {
   ShieldAlert,
   ArrowUpDown,
   FileCheck,
+  CreditCard,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuditSupplierDuplicatesModal } from "./AuditSupplierDuplicatesModal";
@@ -76,6 +78,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   // Search & Filter state
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [unpaidFilter, setUnpaidFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("total_spent");
   const [sortOrder, setSortOrder] = useState<string>("desc");
   const [page, setPage] = useState(1);
@@ -96,12 +99,22 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 
   // Query Data Suppliers
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ["suppliers", search, statusFilter, sortBy, sortOrder, page],
+    queryKey: [
+      "suppliers",
+      search,
+      statusFilter,
+      unpaidFilter,
+      sortBy,
+      sortOrder,
+      page,
+    ],
     queryFn: () =>
       getSuppliers({
         search: search || undefined,
         is_active:
           statusFilter === "all" ? undefined : statusFilter === "active",
+        has_unpaid:
+          unpaidFilter === "all" ? undefined : unpaidFilter === "unpaid",
         sort_by: sortBy,
         sort_order: sortOrder,
         page,
@@ -235,6 +248,12 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 
   const suppliers = data?.items || [];
   const total = data?.total || 0;
+  const summary = data?.summary || {
+    total_suppliers: total,
+    total_spent: 0,
+    total_unpaid_amount: 0,
+    unpaid_suppliers_count: 0,
+  };
   const totalPages = Math.ceil(total / 20) || 1;
 
   const supplierFilterFields: FilterField[] = useMemo(
@@ -250,11 +269,23 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         ],
       },
       {
+        id: "unpaid",
+        label: "Status Tagihan",
+        type: "select",
+        options: [
+          { label: "Semua Toko", value: "all" },
+          { label: "Hanya Ada Tagihan", value: "unpaid" },
+          { label: "Lunas / Bebas Tagihan", value: "paid" },
+        ],
+      },
+      {
         id: "sort_by",
         label: "Urutkan Berdasarkan",
         type: "select",
         options: [
           { label: "Total Belanja", value: "total_spent" },
+          { label: "Tagihan Terbanyak", value: "unpaid_bills_total" },
+          { label: "Jumlah Tagihan", value: "unpaid_bills_count" },
           { label: "Jumlah Transaksi", value: "transaction_count" },
           { label: "Nama Toko", value: "name" },
           { label: "Terakhir Belanja", value: "last_expense_date" },
@@ -279,6 +310,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     if (statusFilter && statusFilter !== "all") {
       rules.push(createFilterRule({ id: "rule-status", path: ["status"], operator: "is", value: statusFilter }));
     }
+    if (unpaidFilter && unpaidFilter !== "all") {
+      rules.push(createFilterRule({ id: "rule-unpaid", path: ["unpaid"], operator: "is", value: unpaidFilter }));
+    }
     if (sortBy) {
       rules.push(createFilterRule({ id: "rule-sort", path: ["sort_by"], operator: "is", value: sortBy }));
     }
@@ -286,16 +320,18 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
       rules.push(createFilterRule({ id: "rule-order", path: ["sort_order"], operator: "is", value: sortOrder }));
     }
     return createFilterQuery(rules, "and");
-  }, [statusFilter, sortBy, sortOrder]);
+  }, [statusFilter, unpaidFilter, sortBy, sortOrder]);
 
   const handleSupplierQueryChange = (nextQuery: FilterQuery) => {
     let newStatus = "all";
+    let newUnpaid = "all";
     let newSort = sortBy;
     let newOrder = sortOrder;
     const traverse = (nodes: FilterNode[]) => {
       for (const node of nodes) {
         if (isFilterRule(node)) {
           if (node.path[0] === "status") newStatus = String(node.value ?? "all");
+          if (node.path[0] === "unpaid") newUnpaid = String(node.value ?? "all");
           if (node.path[0] === "sort_by") newSort = String(node.value ?? sortBy);
           if (node.path[0] === "sort_order") newOrder = (String(node.value ?? sortOrder) as "asc" | "desc");
         } else if (node.rules) {
@@ -305,6 +341,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     };
     if (nextQuery?.rules) traverse(nextQuery.rules);
     setStatusFilter(newStatus);
+    setUnpaidFilter(newUnpaid);
     setSortBy(newSort);
     setSortOrder(newOrder);
     setPage(1);
@@ -385,6 +422,42 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             {formatRupiah(row.original.total_spent)}
           </div>
         ),
+        size: 140,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "unpaid_bills_total",
+        id: "unpaid_bills",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Tagihan / Hutang"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const s = row.original;
+          const hasUnpaid = (s.unpaid_bills_count || 0) > 0;
+          if (!hasUnpaid) {
+            return (
+              <div className="text-right">
+                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                  Lunas
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="text-right">
+              <span className="font-bold text-rose-600 dark:text-rose-400 tabular-nums text-xs">
+                {formatRupiah(s.unpaid_bills_total)}
+              </span>
+              <span className="block text-[10px] text-rose-500 font-medium">
+                {s.unpaid_bills_count} tagihan
+              </span>
+            </div>
+          );
+        },
         size: 140,
         enableSorting: true,
       },
@@ -554,6 +627,114 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         </div>
       </div>
 
+      {/* Ringkasan Statistik Supplier & Tagihan */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 shrink-0">
+            <Store className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Total Supplier / Toko
+            </span>
+            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              {summary.total_suppliers}{" "}
+              <span className="text-xs font-normal text-slate-500">toko</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300 shrink-0">
+            <FileCheck className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Total Belanja (Lifetime)
+            </span>
+            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              {formatRupiah(summary.total_spent)}
+            </p>
+          </div>
+        </div>
+
+        <div
+          onClick={() => {
+            setUnpaidFilter((prev) => (prev === "unpaid" ? "all" : "unpaid"));
+            setPage(1);
+          }}
+          className={`p-4 rounded-2xl border shadow-xs flex items-center gap-3 cursor-pointer transition-colors ${
+            summary.total_unpaid_amount > 0
+              ? "bg-rose-50/40 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50 hover:bg-rose-50/70"
+              : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+          }`}
+          title="Klik untuk filter toko yang memiliki tagihan belum lunas"
+        >
+          <div
+            className={`p-2.5 rounded-xl shrink-0 ${
+              summary.total_unpaid_amount > 0
+                ? "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
+                : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+            }`}
+          >
+            <CreditCard className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                Total Tagihan Belum Lunas
+              </span>
+              {unpaidFilter === "unpaid" && (
+                <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">
+                  Filter Aktif
+                </Badge>
+              )}
+            </div>
+            <p
+              className={`text-lg font-bold tabular-nums ${
+                summary.total_unpaid_amount > 0
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-slate-900 dark:text-slate-100"
+              }`}
+            >
+              {formatRupiah(summary.total_unpaid_amount)}
+            </p>
+          </div>
+        </div>
+
+        <div
+          onClick={() => {
+            setUnpaidFilter((prev) => (prev === "unpaid" ? "all" : "unpaid"));
+            setPage(1);
+          }}
+          className={`p-4 rounded-2xl border shadow-xs flex items-center gap-3 cursor-pointer transition-colors ${
+            summary.unpaid_suppliers_count > 0
+              ? "bg-amber-50/40 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 hover:bg-amber-50/70"
+              : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+          }`}
+          title="Klik untuk filter toko yang memiliki tagihan belum lunas"
+        >
+          <div
+            className={`p-2.5 rounded-xl shrink-0 ${
+              summary.unpaid_suppliers_count > 0
+                ? "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+            }`}
+          >
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+              Toko Memiliki Tagihan
+            </span>
+            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              {summary.unpaid_suppliers_count}{" "}
+              <span className="text-xs font-normal text-slate-500">toko</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Filter and ReUI DataGrid */}
       <DataGrid
         table={supplierTable}
@@ -604,6 +785,19 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
               </select>
 
               <select
+                value={unpaidFilter}
+                onChange={(e) => {
+                  setUnpaidFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-slate-700 dark:text-slate-300 font-medium"
+              >
+                <option value="all">Semua Tagihan</option>
+                <option value="unpaid">Ada Tagihan Belum Lunas</option>
+                <option value="paid">Lunas / Bebas Tagihan</option>
+              </select>
+
+              <select
                 value={sortBy}
                 onChange={(e) => {
                   setSortBy(e.target.value);
@@ -612,6 +806,8 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                 className="h-9 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-slate-700 dark:text-slate-300 font-medium"
               >
                 <option value="total_spent">Urutkan: Total Belanja</option>
+                <option value="unpaid_bills_total">Urutkan: Tagihan Terbanyak</option>
+                <option value="unpaid_bills_count">Urutkan: Jumlah Tagihan</option>
                 <option value="transaction_count">Urutkan: Jumlah Transaksi</option>
                 <option value="name">Urutkan: Nama Toko</option>
                 <option value="last_expense_date">Urutkan: Terakhir Belanja</option>

@@ -2,13 +2,14 @@
 app/services/supplier_service.py — Layanan Master Toko / Supplier
 CRUD, pencocokan otomatis, statistik belanja, top items, item termahal, audit duplikat & merge.
 """
+import asyncio
 import re
 from difflib import SequenceMatcher
 from datetime import date
 from decimal import Decimal
 from typing import Any
 from sqlalchemy import (
-    select, func, desc, asc, or_, and_, update, delete, cast, String
+    select, func, desc, asc, or_, and_, update, delete, cast, String, case
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
@@ -144,14 +145,16 @@ async def get_suppliers(
     db: AsyncSession,
     search: str | None = None,
     is_active: bool | None = None,
+    has_unpaid: bool | None = None,
     skip: int = 0,
     limit: int = 50,
     sort_by: str = "total_spent",
     sort_order: str = "desc",
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict], int, dict]:
     """
-    Ambil daftar supplier beserta agregasi statistik belanja:
-    total_spent, transaction_count, last_expense_date.
+    Ambil daftar supplier beserta agregasi statistik belanja & tagihan:
+    total_spent, transaction_count, unpaid_bills_count, unpaid_bills_total, last_expense_date,
+    serta summary agregat seluruh supplier.
     """
     # Subquery agregasi dari tabel expenses
     exp_sub = (
@@ -159,6 +162,24 @@ async def get_suppliers(
             Expense.supplier_id.label("sup_id"),
             func.coalesce(func.sum(Expense.total_price), 0).label("total_spent"),
             func.count(Expense.id).label("transaction_count"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (func.lower(Expense.pay_status) != "lunas", 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("unpaid_bills_count"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (func.lower(Expense.pay_status) != "lunas", Expense.total_price),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("unpaid_bills_total"),
             func.max(Expense.expense_date).label("last_expense_date"),
         )
         .where(Expense.supplier_id.is_not(None))
@@ -171,16 +192,23 @@ async def get_suppliers(
             Supplier,
             func.coalesce(exp_sub.c.total_spent, 0).label("total_spent"),
             func.coalesce(exp_sub.c.transaction_count, 0).label("transaction_count"),
+            func.coalesce(exp_sub.c.unpaid_bills_count, 0).label("unpaid_bills_count"),
+            func.coalesce(exp_sub.c.unpaid_bills_total, 0).label("unpaid_bills_total"),
             exp_sub.c.last_expense_date.label("last_expense_date"),
         )
         .outerjoin(exp_sub, Supplier.id == exp_sub.c.sup_id)
     )
 
-    count_query = select(func.count(Supplier.id))
+    count_query = select(func.count(Supplier.id)).outerjoin(exp_sub, Supplier.id == exp_sub.c.sup_id)
 
     filters = []
     if is_active is not None:
         filters.append(Supplier.is_active == is_active)
+
+    if has_unpaid is True:
+        filters.append(func.coalesce(exp_sub.c.unpaid_bills_count, 0) > 0)
+    elif has_unpaid is False:
+        filters.append(func.coalesce(exp_sub.c.unpaid_bills_count, 0) == 0)
 
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
@@ -203,6 +231,10 @@ async def get_suppliers(
         query = query.order_by(order_func(func.lower(Supplier.name)))
     elif sort_by == "transaction_count":
         query = query.order_by(order_func("transaction_count"), desc(Supplier.id))
+    elif sort_by == "unpaid_bills_total":
+        query = query.order_by(order_func("unpaid_bills_total"), desc(Supplier.id))
+    elif sort_by == "unpaid_bills_count":
+        query = query.order_by(order_func("unpaid_bills_count"), desc(Supplier.id))
     elif sort_by == "last_expense_date":
         query = query.order_by(order_func("last_expense_date").nulls_last(), desc(Supplier.id))
     elif sort_by == "created_at":
@@ -215,7 +247,7 @@ async def get_suppliers(
     rows = (await db.execute(query.offset(skip).limit(limit))).all()
 
     items = []
-    for supp, total_spent, tx_count, last_date in rows:
+    for supp, total_spent, tx_count, unpaid_count, unpaid_total, last_date in rows:
         items.append({
             "id": supp.id,
             "name": supp.name,
@@ -228,14 +260,45 @@ async def get_suppliers(
             "updated_at": supp.updated_at,
             "total_spent": float(total_spent or 0),
             "transaction_count": int(tx_count or 0),
+            "unpaid_bills_count": int(unpaid_count or 0),
+            "unpaid_bills_total": float(unpaid_total or 0),
             "last_expense_date": last_date.isoformat() if last_date else None,
         })
 
-    return items, total_count
+    # Summary agregat untuk list supplier
+    summary_stmt = (
+        select(
+            func.count(Supplier.id).label("total_suppliers"),
+            func.coalesce(func.sum(exp_sub.c.total_spent), 0).label("total_spent"),
+            func.coalesce(func.sum(exp_sub.c.unpaid_bills_total), 0).label("total_unpaid_amount"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (exp_sub.c.unpaid_bills_count > 0, 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("unpaid_suppliers_count"),
+        )
+        .outerjoin(exp_sub, Supplier.id == exp_sub.c.sup_id)
+    )
+    if is_active is not None:
+        summary_stmt = summary_stmt.where(Supplier.is_active == is_active)
+
+    summary_row = (await db.execute(summary_stmt)).one()
+    summary = {
+        "total_suppliers": int(summary_row.total_suppliers or 0),
+        "total_spent": float(summary_row.total_spent or 0),
+        "total_unpaid_amount": float(summary_row.total_unpaid_amount or 0),
+        "unpaid_suppliers_count": int(summary_row.unpaid_suppliers_count or 0),
+    }
+
+    return items, total_count, summary
 
 
 async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
-    """Ambil detail supplier beserta ringkasan statistik lengkap."""
+    """Ambil detail supplier beserta ringkasan statistik lengkap & daftar tagihan belum lunas."""
     supp = await db.get(Supplier, supplier_id)
     if not supp:
         return None
@@ -244,6 +307,24 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
     stats_query = select(
         func.coalesce(func.sum(Expense.total_price), 0).label("total_spent"),
         func.count(Expense.id).label("transaction_count"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (func.lower(Expense.pay_status) != "lunas", 1),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("unpaid_bills_count"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (func.lower(Expense.pay_status) != "lunas", Expense.total_price),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("unpaid_bills_total"),
         func.min(Expense.expense_date).label("first_expense_date"),
         func.max(Expense.expense_date).label("last_expense_date"),
     ).where(Expense.supplier_id == supplier_id)
@@ -251,7 +332,35 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
     stats = (await db.execute(stats_query)).one()
     total_spent = float(stats.total_spent or 0)
     tx_count = int(stats.transaction_count or 0)
+    unpaid_count = int(stats.unpaid_bills_count or 0)
+    unpaid_total = float(stats.unpaid_bills_total or 0)
     avg_per_tx = total_spent / tx_count if tx_count > 0 else 0.0
+
+    # Ambil detail daftar tagihan belum lunas di toko ini
+    unpaid_bills_query = (
+        select(Expense)
+        .where(
+            Expense.supplier_id == supplier_id,
+            func.lower(Expense.pay_status) != "lunas",
+        )
+        .order_by(asc(Expense.expense_date), asc(Expense.id))
+    )
+    unpaid_expenses = (await db.execute(unpaid_bills_query)).scalars().all()
+    unpaid_bills = [
+        {
+            "id": e.id,
+            "expense_date": str(e.expense_date),
+            "item_name": e.item_name,
+            "total_price": float(e.total_price or 0),
+            "due_date": e.due_date or "-",
+            "invoice_number": e.invoice_number or "-",
+            "notes": e.notes or "-",
+            "category": e.category or "Operasional",
+            "pay_method": e.pay_method or "Tunai",
+            "pay_status": e.pay_status or "Belum Lunas",
+        }
+        for e in unpaid_expenses
+    ]
 
     return {
         "id": supp.id,
@@ -265,6 +374,9 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
         "updated_at": supp.updated_at,
         "total_spent": total_spent,
         "transaction_count": tx_count,
+        "unpaid_bills_count": unpaid_count,
+        "unpaid_bills_total": unpaid_total,
+        "unpaid_bills": unpaid_bills,
         "avg_per_transaction": avg_per_tx,
         "first_expense_date": stats.first_expense_date.isoformat() if stats.first_expense_date else None,
         "last_expense_date": stats.last_expense_date.isoformat() if stats.last_expense_date else None,
@@ -413,6 +525,7 @@ async def get_supplier_expenses(
     start_date: date | None = None,
     end_date: date | None = None,
     category: str | None = None,
+    pay_status: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> tuple[list[Expense], int]:
@@ -431,6 +544,12 @@ async def get_supplier_expenses(
         filters.append(Expense.expense_date <= end_date)
     if category and category.strip():
         filters.append(Expense.category == category.strip())
+    if pay_status and pay_status.strip():
+        ps = pay_status.strip().lower()
+        if ps == "unpaid":
+            filters.append(func.lower(Expense.pay_status) != "lunas")
+        else:
+            filters.append(func.lower(Expense.pay_status) == ps)
 
     count_stmt = select(func.count(Expense.id)).where(and_(*filters))
     total_count = (await db.execute(count_stmt)).scalar_one()
@@ -557,81 +676,84 @@ async def get_supplier_priciest_items(
     return result
 
 
-async def audit_duplicate_suppliers(
-    db: AsyncSession,
-    threshold: float = 0.75,
+def _compute_supplier_duplicates(
+    suppliers: list[Supplier],
+    tx_map: dict[int, tuple[int, float]],
+    threshold: float,
 ) -> list[dict]:
-    """
-    Audit kemungkinan toko/supplier ganda atau penulisan mirip.
-    Mengembalikan cluster kandidat duplikat.
-    """
-    suppliers_res = await db.execute(
-        select(Supplier).order_by(Supplier.name)
-    )
-    suppliers = list(suppliers_res.scalars().all())
-
-    # Ambil jumlah transaksi masing-masing supplier
-    tx_counts_res = await db.execute(
-        select(
-            Expense.supplier_id,
-            func.count(Expense.id).label("cnt"),
-            func.coalesce(func.sum(Expense.total_price), 0).label("spent"),
-        )
-        .where(Expense.supplier_id.is_not(None))
-        .group_by(Expense.supplier_id)
-    )
-    tx_map = {row.supplier_id: (row.cnt, float(row.spent)) for row in tx_counts_res.all()}
-
+    """Hitung cluster duplikat supplier secara efisien di threadpool."""
     clusters: list[dict] = []
     visited_ids = set()
+    n = len(suppliers)
 
-    for i in range(len(suppliers)):
-        s1 = suppliers[i]
+    # Pre-parse attributes
+    parsed = []
+    for s in suppliers:
+        norm = _normalize_supplier_name(s.name)
+        toks = set(norm.split())
+        aliases = [_normalize_supplier_name(a) for a in _parse_aliases(s.aliases)]
+        s_cnt, s_spent = tx_map.get(s.id, (0, 0.0))
+        parsed.append({
+            "supplier": s,
+            "norm": norm,
+            "len": len(norm),
+            "tokens": toks,
+            "aliases": aliases,
+            "cnt": s_cnt,
+            "spent": s_spent,
+        })
+
+    for i in range(n):
+        p1 = parsed[i]
+        s1 = p1["supplier"]
         if s1.id in visited_ids:
             continue
 
-        norm1 = _normalize_supplier_name(s1.name)
-        tokens1 = set(norm1.split())
-        aliases1 = [_normalize_supplier_name(a) for a in _parse_aliases(s1.aliases)]
-        s1_cnt, s1_spent = tx_map.get(s1.id, (0, 0.0))
+        norm1 = p1["norm"]
+        len1 = p1["len"]
+        tokens1 = p1["tokens"]
+        aliases1 = p1["aliases"]
+        s1_cnt = p1["cnt"]
+        s1_spent = p1["spent"]
 
         duplicates = []
 
-        for j in range(i + 1, len(suppliers)):
-            s2 = suppliers[j]
+        for j in range(i + 1, n):
+            p2 = parsed[j]
+            s2 = p2["supplier"]
             if s2.id in visited_ids:
                 continue
 
-            norm2 = _normalize_supplier_name(s2.name)
-            tokens2 = set(norm2.split())
-            aliases2 = [_normalize_supplier_name(a) for a in _parse_aliases(s2.aliases)]
-            s2_cnt, s2_spent = tx_map.get(s2.id, (0, 0.0))
+            norm2 = p2["norm"]
+            len2 = p2["len"]
+            tokens2 = p2["tokens"]
+            aliases2 = p2["aliases"]
+            s2_cnt = p2["cnt"]
+            s2_spent = p2["spent"]
 
             reason = None
             sim_score = 0.0
 
-            # 1. Normalized exact match (misal huruf besar/kecil berbeda)
             if norm1 == norm2:
                 reason = "Nama persis sama (hanya beda kapitalisasi/spasi)"
                 sim_score = 1.0
-
-            # 2. Salah satu alias cocok
             elif norm2 in aliases1 or norm1 in aliases2:
                 reason = "Salah satu nama terdaftar sebagai alias"
                 sim_score = 0.95
-
-            # 3. Token subset (misal: "toko bahan makmur" vs "makmur")
             elif tokens1 and tokens2 and (tokens1.issubset(tokens2) or tokens2.issubset(tokens1)):
-                if min(len(norm1), len(norm2)) >= 4:
+                if min(len1, len2) >= 4:
                     reason = f"Nama merupakan bagian dari nama toko lain ('{s1.name}' & '{s2.name}')"
                     sim_score = 0.88
-
-            # 4. Fuzzy SequenceMatcher
             else:
-                ratio = SequenceMatcher(None, norm1, norm2).ratio()
-                if ratio >= threshold:
-                    reason = f"Kemiripan teks {int(ratio * 100)}%"
-                    sim_score = ratio
+                max_ratio = (2.0 * min(len1, len2)) / (len1 + len2) if (len1 + len2) > 0 else 0.0
+                if max_ratio >= threshold:
+                    union_tok = len(tokens1 | tokens2)
+                    jaccard = (len(tokens1 & tokens2) / union_tok) if union_tok > 0 else 0.0
+                    if jaccard > 0 or min(len1, len2) < 8 or (len1 >= 4 and len2 >= 4 and norm1[:4] == norm2[:4]):
+                        ratio = SequenceMatcher(None, norm1, norm2).ratio()
+                        if ratio >= threshold:
+                            reason = f"Kemiripan teks {int(ratio * 100)}%"
+                            sim_score = ratio
 
             if reason:
                 duplicates.append({
@@ -648,7 +770,6 @@ async def audit_duplicate_suppliers(
 
         if duplicates:
             visited_ids.add(s1.id)
-            # Tentukan saran master utama (yang punya transaksi terbanyak)
             all_in_cluster = [{
                 "id": s1.id,
                 "name": s1.name,
@@ -668,7 +789,6 @@ async def audit_duplicate_suppliers(
                 for d in duplicates
             ]
 
-            # Urutkan berdasarkan transaksi terbanyak
             all_in_cluster.sort(key=lambda x: (x["transaction_count"], x["total_spent"]), reverse=True)
             suggested_primary_id = all_in_cluster[0]["id"]
 
@@ -686,6 +806,33 @@ async def audit_duplicate_suppliers(
             })
 
     return clusters
+
+
+async def audit_duplicate_suppliers(
+    db: AsyncSession,
+    threshold: float = 0.75,
+) -> list[dict]:
+    """
+    Audit kemungkinan toko/supplier ganda atau penulisan mirip.
+    Mengembalikan cluster kandidat duplikat dengan kalkulasi threadpool non-blocking.
+    """
+    suppliers_res = await db.execute(
+        select(Supplier).order_by(Supplier.name)
+    )
+    suppliers = list(suppliers_res.scalars().all())
+
+    tx_counts_res = await db.execute(
+        select(
+            Expense.supplier_id,
+            func.count(Expense.id).label("cnt"),
+            func.coalesce(func.sum(Expense.total_price), 0).label("spent"),
+        )
+        .where(Expense.supplier_id.is_not(None))
+        .group_by(Expense.supplier_id)
+    )
+    tx_map = {row.supplier_id: (row.cnt, float(row.spent)) for row in tx_counts_res.all()}
+
+    return await asyncio.to_thread(_compute_supplier_duplicates, suppliers, tx_map, threshold)
 
 
 async def merge_suppliers(

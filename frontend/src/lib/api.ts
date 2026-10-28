@@ -12,6 +12,10 @@ import {
   SupplierDuplicateGroup,
   SupplierFormData,
   MasterDataOption,
+  BackgroundJob,
+  MasterItemMergeRequest,
+  MasterItemMergeResponse,
+  MasterItemAuditResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -178,6 +182,7 @@ export async function getExpenseAuditDuplicates(params?: {
 export async function getSuppliers(params?: {
   search?: string;
   is_active?: boolean;
+  has_unpaid?: boolean;
   page?: number;
   limit?: number;
   sort_by?: string;
@@ -186,6 +191,7 @@ export async function getSuppliers(params?: {
   const query = new URLSearchParams();
   if (params?.search?.trim()) query.set("search", params.search.trim());
   if (params?.is_active !== undefined) query.set("is_active", String(params.is_active));
+  if (params?.has_unpaid !== undefined) query.set("has_unpaid", String(params.has_unpaid));
   if (params?.page) query.set("page", String(params.page));
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.sort_by) query.set("sort_by", params.sort_by);
@@ -222,6 +228,7 @@ export async function getSupplierExpenses(
     start_date?: string;
     end_date?: string;
     category?: string;
+    pay_status?: string;
     page?: number;
     limit?: number;
   }
@@ -237,11 +244,23 @@ export async function getSupplierExpenses(
   if (params?.start_date) query.set("start_date", params.start_date);
   if (params?.end_date) query.set("end_date", params.end_date);
   if (params?.category) query.set("category", params.category);
+  if (params?.pay_status) query.set("pay_status", params.pay_status);
   if (params?.page) query.set("page", String(params.page));
   if (params?.limit) query.set("limit", String(params.limit));
 
   const queryStr = query.toString() ? `?${query.toString()}` : "";
   const res = await api.get(`/suppliers/${id}/expenses${queryStr}`);
+  return res.data;
+}
+
+export async function updateSupplierExpensePayStatus(
+  supplierId: number,
+  expenseId: number,
+  payStatus: string = "Lunas"
+): Promise<Expense> {
+  const res = await api.patch(`/suppliers/${supplierId}/expenses/${expenseId}/pay-status`, {
+    pay_status: payStatus,
+  });
   return res.data;
 }
 
@@ -349,6 +368,129 @@ export async function resetMasterDataDefaults(
   const res = await api.post("/config/master-data/reset-defaults", { type });
   return res.data;
 }
+
+// ──────────────────────────────────────────────
+// Background Queue & Actions API
+// ──────────────────────────────────────────────
+
+export async function getBackgroundJobs(params?: {
+  limit?: number;
+  status?: string;
+  job_type?: string;
+}): Promise<BackgroundJob[]> {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.status) query.set("status", params.status);
+  if (params?.job_type) query.set("job_type", params.job_type);
+
+  const queryStr = query.toString() ? `?${query.toString()}` : "";
+  const res = await api.get(`/jobs${queryStr}`);
+  return res.data;
+}
+
+export async function getBackgroundJob(jobId: string): Promise<BackgroundJob> {
+  const res = await api.get(`/jobs/${jobId}`);
+  return res.data;
+}
+
+export async function cancelBackgroundJob(jobId: string): Promise<{ ok: boolean; message: string }> {
+  const res = await api.post(`/jobs/${jobId}/cancel`);
+  return res.data;
+}
+
+export async function getMasterItemAuditDuplicates(params?: {
+  min_score?: number;
+  limit?: number;
+  supplier?: string;
+  supplier_id?: number;
+  strict_supplier?: boolean;
+}): Promise<MasterItemAuditResponse> {
+  const query = new URLSearchParams();
+  if (params?.min_score !== undefined) query.set("min_score", String(params.min_score));
+  if (params?.limit !== undefined) query.set("limit", String(params.limit));
+  if (params?.supplier) query.set("supplier", params.supplier);
+  if (params?.supplier_id !== undefined) query.set("supplier_id", String(params.supplier_id));
+  if (params?.strict_supplier !== undefined) query.set("strict_supplier", String(params.strict_supplier));
+  const qStr = query.toString() ? `?${query.toString()}` : "";
+  const res = await api.get(`/master-items/audit-duplicates${qStr}`);
+  return res.data;
+}
+
+export async function mergeMasterItems(payload: MasterItemMergeRequest): Promise<MasterItemMergeResponse> {
+  const res = await api.post("/master-items/merge", payload);
+  return res.data;
+}
+
+export async function enqueueMasterItemAudit(params?: {
+  min_score?: number;
+  limit?: number;
+  supplier?: string;
+  supplier_id?: number;
+  strict_supplier?: boolean;
+}): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/audit/master-items", {
+    min_score: params?.min_score ?? 0.7,
+    limit: params?.limit ?? 150,
+    supplier: params?.supplier,
+    supplier_id: params?.supplier_id,
+    strict_supplier: params?.strict_supplier ?? false,
+  });
+  return res.data;
+}
+
+export async function enqueueSupplierAudit(threshold: number = 0.75): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/audit/suppliers", { threshold });
+  return res.data;
+}
+
+export async function enqueueExpenseAudit(params?: {
+  min_similarity?: number;
+  month?: number;
+  year?: number;
+  category?: string;
+  limit?: number;
+}): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/audit/expenses", {
+    min_similarity: params?.min_similarity ?? 0.9,
+    month: params?.month,
+    year: params?.year,
+    category: params?.category,
+    limit: params?.limit ?? 150,
+  });
+  return res.data;
+}
+
+export async function enqueueMergeMasterItems(payload: MasterItemMergeRequest): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/merge/master-items", payload);
+  return res.data;
+}
+
+export async function enqueueMergeSuppliers(
+  targetId: number,
+  sourceIds: number[]
+): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/merge/suppliers", {
+    target_id: targetId,
+    source_ids: sourceIds,
+  });
+  return res.data;
+}
+
+export async function enqueueBatchMergeMasterItems(
+  merges: Array<{
+    target_item_id: number;
+    source_item_ids: number[];
+    custom_name?: string | null;
+    custom_category?: string | null;
+    custom_supplier?: string | null;
+    merge_aliases?: boolean;
+    update_expenses?: boolean;
+  }>
+): Promise<BackgroundJob> {
+  const res = await api.post("/jobs/merge/batch-master-items", { merges });
+  return res.data;
+}
+
 
 
 
