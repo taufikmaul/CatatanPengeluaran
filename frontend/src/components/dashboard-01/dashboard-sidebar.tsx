@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Store,
   HandCoins,
+  CalendarClock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -45,8 +46,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => void;
+  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   userRole?: string | null;
@@ -83,7 +84,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -247,6 +248,28 @@ export function DashboardSidebar({
                 {reimbursePendingCount > 0 && (
                   <SidebarMenuBadge className="ml-auto text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 rounded-md px-1.5 py-0.5 tabular-nums font-bold">
                     {reimbursePendingCount}
+                  </SidebarMenuBadge>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            {/* Belum Lunas (Tempo Supplier) */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "unpaid"}
+                onClick={() => handleSelectTab("unpaid")}
+                tooltip="Tagihan Belum Lunas & Tempo Terdekat"
+                className={`h-9.5 rounded-xl font-medium ${
+                  activeTab === "unpaid"
+                    ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <CalendarClock className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                <span className="truncate">Belum Lunas</span>
+                {unpaidCount > 0 && (
+                  <SidebarMenuBadge className="ml-auto text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 rounded-md px-1.5 py-0.5 tabular-nums font-bold">
+                    {unpaidCount}
                   </SidebarMenuBadge>
                 )}
               </SidebarMenuButton>

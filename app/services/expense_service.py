@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.models.expense import Expense
 from app.models.user import User
 from app.models.expense_log import ExpenseLog
+from app.utils.formatters import parse_due_date
 
 
 async def record_expense_log(
@@ -830,11 +831,23 @@ async def get_all_expenses_paginated(
     status: str | None = None,
     is_reimbursement: bool | None = None,
     user_id: int | None = None,
+    supplier_id: int | None = None,
+    supplier: str | None = None,
     special_type: str | None = None,
     reimbursed_status: str | None = None,
+    sort_by: str | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan)."""
-    query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
+    if sort_by == "due_date":
+        from sqlalchemy import case
+        query = select(Expense).order_by(
+            case((Expense.due_date.in_(("-", "", "None")), 1), else_=0),
+            Expense.due_date.asc(),
+            Expense.expense_date.desc(),
+            Expense.id.desc(),
+        )
+    else:
+        query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
 
     if special_type == "tukar_cash":
         query = query.where(
@@ -875,7 +888,7 @@ async def get_all_expenses_paginated(
                 Expense.supplier.ilike("%sicepat%"),
             )
         )
-    elif special_type in ("all", "talangan") or is_reimbursement is True:
+    elif special_type in ("all", "talangan", "unpaid") or is_reimbursement is True or (status and ("belum" in status.lower() or "hutang" in status.lower())):
         # Tampilkan semua kategori tanpa filter exclude Ongkir/Tukar Cash
         pass
     else:
@@ -909,6 +922,10 @@ async def get_all_expenses_paginated(
         query = query.where(Expense.reimbursed_at.isnot(None))
     if user_id is not None:
         query = query.where(Expense.user_id == user_id)
+    if supplier_id is not None:
+        query = query.where(Expense.supplier_id == supplier_id)
+    elif supplier:
+        query = query.where(Expense.supplier == supplier)
     if search:
         search_term = f"%{search.strip()}%"
         query = query.outerjoin(User, Expense.user_id == User.id).where(
@@ -1812,6 +1829,183 @@ async def get_reimbursement_summary(
         "total_nominal": pending_total + reimbursed_total,
         "by_user": by_user,
     }
+
+
+async def get_unpaid_summary(
+    db: AsyncSession,
+    month: int | None = None,
+    year: int | None = None,
+    supplier_id: int | None = None,
+) -> dict:
+    """Ringkasan statistik transaksi belum lunas, tempo terdekat, dan rekap per supplier."""
+    query = select(Expense).where(
+        or_(
+            Expense.pay_status.ilike("%belum%"),
+            Expense.pay_status.ilike("%hutang%"),
+            Expense.pay_status.ilike("%tempo%"),
+        )
+    )
+    if month and year:
+        start = date(year, month, 1)
+        end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+    if supplier_id is not None:
+        query = query.where(Expense.supplier_id == supplier_id)
+
+    res = await db.execute(query)
+    expenses = list(res.scalars().all())
+
+    today = date.today()
+    total_unpaid_count = len(expenses)
+    total_unpaid_nominal = 0.0
+    overdue_count = 0
+    overdue_nominal = 0.0
+    due_today_count = 0
+    due_today_nominal = 0.0
+    due_soon_count = 0
+    due_soon_nominal = 0.0
+
+    parsed_items = []
+    by_supplier_dict: dict[str, dict] = {}
+
+    for e in expenses:
+        nom = float(e.total_price or 0)
+        total_unpaid_nominal += nom
+
+        due_d = parse_due_date(e.due_date)
+        days_left = None
+        is_overdue = False
+        is_today = False
+
+        if due_d:
+            days_left = (due_d - today).days
+            if days_left < 0:
+                is_overdue = True
+                overdue_count += 1
+                overdue_nominal += nom
+            elif days_left == 0:
+                is_today = True
+                due_today_count += 1
+                due_today_nominal += nom
+            elif days_left <= 7:
+                due_soon_count += 1
+                due_soon_nominal += nom
+
+            parsed_items.append({
+                "expense_id": e.id,
+                "item_name": e.item_name,
+                "supplier": e.supplier or "-",
+                "due_date": str(e.due_date),
+                "total_price": nom,
+                "days_left": days_left,
+                "is_overdue": is_overdue,
+                "is_today": is_today,
+                "_due_d": due_d,
+            })
+
+        # Group by supplier
+        sup_name = (e.supplier or "-").strip()
+        if not sup_name or sup_name in ("-", "None", ""):
+            sup_name = "Tanpa Toko / Supplier"
+
+        if sup_name not in by_supplier_dict:
+            by_supplier_dict[sup_name] = {
+                "supplier_id": getattr(e, "supplier_id", None),
+                "supplier_name": sup_name,
+                "unpaid_count": 0,
+                "unpaid_total": 0.0,
+                "nearest_due_date": None,
+                "nearest_days_left": None,
+                "_earliest_date": None,
+            }
+
+        g = by_supplier_dict[sup_name]
+        g["unpaid_count"] += 1
+        g["unpaid_total"] += nom
+        if due_d:
+            if g["_earliest_date"] is None or due_d < g["_earliest_date"]:
+                g["_earliest_date"] = due_d
+                g["nearest_due_date"] = str(e.due_date)
+                g["nearest_days_left"] = (due_d - today).days
+
+    # Temukan jatuh tempo terdekat
+    # Diurutkan berdasarkan tanggal tempo terkecil (overdue/hari ini/paling awal di masa depan)
+    nearest_due = None
+    if parsed_items:
+        parsed_items.sort(key=lambda x: (x["_due_d"], -x["total_price"]))
+        top = parsed_items[0]
+        nearest_due = {
+            "expense_id": top["expense_id"],
+            "item_name": top["item_name"],
+            "supplier": top["supplier"],
+            "due_date": top["due_date"],
+            "total_price": top["total_price"],
+            "days_left": top["days_left"],
+            "is_overdue": top["is_overdue"],
+            "is_today": top["is_today"],
+        }
+
+    by_supplier = []
+    for g in by_supplier_dict.values():
+        g.pop("_earliest_date", None)
+        by_supplier.append(g)
+
+    by_supplier.sort(key=lambda s: -s["unpaid_total"])
+
+    return {
+        "ok": True,
+        "total_unpaid_count": total_unpaid_count,
+        "total_unpaid_nominal": total_unpaid_nominal,
+        "overdue_count": overdue_count,
+        "overdue_nominal": overdue_nominal,
+        "due_today_count": due_today_count,
+        "due_today_nominal": due_today_nominal,
+        "due_soon_count": due_soon_count,
+        "due_soon_nominal": due_soon_nominal,
+        "nearest_due": nearest_due,
+        "by_supplier": by_supplier,
+    }
+
+
+async def settle_unpaid_expenses(
+    db: AsyncSession,
+    expense_ids: list[int],
+    action: str = "mark_paid",
+    actor: str = "system",
+) -> list[Expense]:
+    """Tandai transaksi belum lunas menjadi lunas atau sebaliknya."""
+    if not expense_ids:
+        return []
+
+    res = await db.execute(select(Expense).where(Expense.id.in_(expense_ids)))
+    items = list(res.scalars().all())
+    updated = []
+
+    target_status = "Lunas" if action == "mark_paid" else "Belum Lunas"
+    for e in items:
+        old_status = e.pay_status
+        if old_status != target_status:
+            e.pay_status = target_status
+            e.sheets_synced = False
+            await record_expense_log(
+                db,
+                expense_id=e.id,
+                action="STATUS_CHANGE",
+                actor=actor,
+                details={
+                    "item_name": e.item_name,
+                    "changes": {
+                        "pay_status": {
+                            "old": old_status,
+                            "new": target_status,
+                        }
+                    },
+                },
+            )
+            updated.append(e)
+
+    await db.flush()
+    return updated
 
 
 async def get_expense_logs(

@@ -87,7 +87,8 @@ Instruksi Tambahan:
 - Status Pembayaran selain kasus COD di atas, asumsikan "Lunas" kecuali disebut sebaliknya.
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
-- Ekstrak "satuan" barang jika tertera di nota atau teks (misal: "box", "dus", "karton", "pouch", "kg", "kaleng", "pack", "sak", "bal", "botol", "tray", "pcs"). Jika tidak tertera, isi "Pcs".
+- Ekstrak "satuan" barang jika tertera di nota atau teks (misal: "bungkus", "box", "dus", "karton", "pouch", "kg", "gram", "kaleng", "pack", "sak", "bal", "botol", "tray", "pcs"). Jika tidak tertera, isi "Pcs".
+- Jika terdapat turunan kemasan atau berat/isi per bungkus (misal "1 bungkus isi 1kg", "500g", "isi 6 pouch 2kg"), sertakan di nama barang atau keterangan agar dapat dicocokkan ke turunan master.
 
 Aturan Biaya & Diskon (Khususnya Marketplace seperti Shopee/Tokopedia/TikTok):
 - "ongkir": Ongkos kirim BERSIH yang benar-benar ditagihkan/dibayar (ongkir asli dikurangi voucher diskon gratis ongkir). Jika gratis ongkir penuh, isi 0.

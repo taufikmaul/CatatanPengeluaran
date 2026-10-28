@@ -20,6 +20,8 @@ from app.api.schemas import (
     ExpenseAuditResponse,
     ReimbursementSummaryResponse,
     ReimbursementSettleRequest,
+    UnpaidSummaryResponse,
+    UnpaidSettleRequest,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
@@ -35,6 +37,8 @@ from app.services.expense_service import (
     audit_duplicate_expenses,
     get_reimbursement_summary,
     settle_reimbursements,
+    get_unpaid_summary,
+    settle_unpaid_expenses,
 )
 from app.services.ai_service import call_ai_image
 
@@ -90,8 +94,11 @@ async def list_expenses(
     status: str | None = Query(None),
     is_reimbursement: bool | None = Query(None),
     user_id: int | None = Query(None),
+    supplier_id: int | None = Query(None),
+    supplier: str | None = Query(None),
     special_type: str | None = Query(None),
     reimbursed_status: str | None = Query(None),
+    sort_by: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -105,8 +112,11 @@ async def list_expenses(
         status=status,
         is_reimbursement=is_reimbursement,
         user_id=user_id,
+        supplier_id=supplier_id,
+        supplier=supplier,
         special_type=special_type,
         reimbursed_status=reimbursed_status,
+        sort_by=sort_by,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -126,7 +136,18 @@ async def create_expense(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    from app.services.master_data_service import get_valid_units, normalize_unit_to_master
     from app.services.master_item_service import match_and_normalize_extracted_items
+
+    requested_unit = (payload.unit or "Pcs").strip()
+    norm_unit = await normalize_unit_to_master(db, requested_unit)
+    if not norm_unit:
+        valid_units = await get_valid_units(db)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Satuan '{requested_unit}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+        )
+    payload.unit = norm_unit
 
     normalized_list = await match_and_normalize_extracted_items(
         db,
@@ -385,6 +406,46 @@ async def settle_reimbursements_endpoint(
     }
 
 
+@router.get("/unpaid/summary", response_model=UnpaidSummaryResponse)
+async def get_unpaid_summary_endpoint(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2020),
+    supplier_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil ringkasan statistik tagihan belum lunas, tempo terdekat, dan rincian per supplier."""
+    data = await get_unpaid_summary(db, month=month, year=year, supplier_id=supplier_id)
+    return UnpaidSummaryResponse(**data)
+
+
+@router.post("/unpaid/settle")
+async def settle_unpaid_endpoint(
+    payload: UnpaidSettleRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tandai transaksi belum lunas menjadi lunas atau sebaliknya."""
+    if not payload.expense_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Daftar ID transaksi tidak boleh kosong.",
+        )
+    actor = f"dashboard:{get_current_role(request)}"
+    updated = await settle_unpaid_expenses(
+        db,
+        expense_ids=payload.expense_ids,
+        action=payload.action,
+        actor=actor,
+    )
+    await db.commit()
+    return {
+        "ok": True,
+        "action": payload.action,
+        "updated_count": len(updated),
+        "updated_ids": [e.id for e in updated],
+    }
+
+
 @router.get("/price-history")
 async def get_expense_price_history(
     item_name: str | None = Query(None),
@@ -589,6 +650,18 @@ async def update_expense_endpoint(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Nominal total pengeluaran tidak boleh Rp 0 atau minus.",
             )
+
+    if "unit" in updates and updates["unit"] is not None:
+        from app.services.master_data_service import get_valid_units, normalize_unit_to_master
+        raw_u = str(updates["unit"]).strip()
+        norm_u = await normalize_unit_to_master(db, raw_u)
+        if not norm_u:
+            valid_units = await get_valid_units(db)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Satuan '{raw_u}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+            )
+        updates["unit"] = norm_u
 
     actor = f"dashboard:{get_current_role(request)}"
     expense = await update_expense(db, expense_id, updates, actor=actor)

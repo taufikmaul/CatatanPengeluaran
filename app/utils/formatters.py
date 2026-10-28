@@ -1,7 +1,7 @@
 """
 app/utils/formatters.py — Helper format Rupiah, tanggal, progress bar, dll
 """
-from datetime import datetime
+from datetime import datetime, date
 from typing import Any
 
 
@@ -251,3 +251,38 @@ def extract_items_block_from_text(text: str) -> str:
     if match:
         return match.group(1).strip()
     return ""
+
+
+def parse_due_date(due_str: str | None) -> date | None:
+    """Parse string jatuh tempo ke date object. Mendukung YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY."""
+    if not due_str or str(due_str).strip() in ("-", "", "None", "null"):
+        return None
+    s = str(due_str).strip()
+    if "-" in s:
+        parts = s.split("-")
+        if len(parts) == 3:
+            if len(parts[0]) == 4 and parts[0].isdigit():
+                try:
+                    return date(int(parts[0]), int(parts[1]), int(parts[2]))
+                except ValueError:
+                    pass
+            elif len(parts[2]) == 4 and parts[2].isdigit():
+                try:
+                    return date(int(parts[2]), int(parts[1]), int(parts[0]))
+                except ValueError:
+                    pass
+    elif "/" in s:
+        parts = s.split("/")
+        if len(parts) == 3:
+            if len(parts[2]) == 4 and parts[2].isdigit():
+                try:
+                    return date(int(parts[2]), int(parts[1]), int(parts[0]))
+                except ValueError:
+                    pass
+            elif len(parts[0]) == 4 and parts[0].isdigit():
+                try:
+                    return date(int(parts[0]), int(parts[1]), int(parts[2]))
+                except ValueError:
+                    pass
+    return None
+

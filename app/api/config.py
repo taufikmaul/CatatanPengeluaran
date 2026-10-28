@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.models.expense import Expense
-from app.api.deps import require_admin_role
+from app.api.deps import require_admin_role, require_auth
 from app.api.schemas import (
     SystemConfigUpdate,
     MasterDataOptionCreate,
@@ -33,7 +33,7 @@ from app.services.sheets_service import (
     get_service_account_email,
 )
 
-router = APIRouter(prefix="/config", tags=["config"], dependencies=[Depends(require_admin_role)])
+router = APIRouter(prefix="/config", tags=["config"])
 
 ENV_MAP = {
     "telegram_token": "TELEGRAM_TOKEN",
@@ -90,7 +90,7 @@ def _update_env_file(env_dict: dict[str, str], env_file_path: str = ".env"):
         f.writelines(new_lines)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_admin_role)])
 async def get_system_config(
     db: AsyncSession = Depends(get_db),
 ):
@@ -175,7 +175,7 @@ async def get_system_config(
     }
 
 
-@router.put("")
+@router.put("", dependencies=[Depends(require_admin_role)])
 async def update_system_config(
     payload: SystemConfigUpdate,
 ):
@@ -232,7 +232,7 @@ async def update_system_config(
     }
 
 
-@router.post("/upload-credentials")
+@router.post("/upload-credentials", dependencies=[Depends(require_admin_role)])
 async def upload_google_credentials(
     file: UploadFile = File(...),
 ):
@@ -283,7 +283,7 @@ async def upload_google_credentials(
     }
 
 
-@router.post("/test-ai")
+@router.post("/test-ai", dependencies=[Depends(require_admin_role)])
 async def api_test_ai(
     text: str = Body(..., embed=True),
 ):
@@ -291,7 +291,7 @@ async def api_test_ai(
     return {"ok": not result.get("error"), "result": result}
 
 
-@router.post("/sync-sheets")
+@router.post("/sync-sheets", dependencies=[Depends(require_admin_role)])
 async def api_trigger_sheets_sync(
     db: AsyncSession = Depends(get_db),
 ):
@@ -335,7 +335,7 @@ async def api_trigger_sheets_sync(
         )
 
 
-@router.post("/sync-telegram-users")
+@router.post("/sync-telegram-users", dependencies=[Depends(require_admin_role)])
 async def api_trigger_telegram_users_sync(
     db: AsyncSession = Depends(get_db),
 ):
@@ -355,7 +355,7 @@ async def api_trigger_telegram_users_sync(
 # Master Data (Metode Bayar, Kategori, Satuan)
 # ──────────────────────────────────────────────
 
-@router.get("/master-data")
+@router.get("/master-data", dependencies=[Depends(require_auth)])
 async def api_get_master_data(
     type: str | None = None,
     active_only: bool = False,
@@ -366,7 +366,7 @@ async def api_get_master_data(
     return {"ok": True, "items": items}
 
 
-@router.post("/master-data")
+@router.post("/master-data", dependencies=[Depends(require_admin_role)])
 async def api_create_master_data(
     payload: MasterDataOptionCreate,
     db: AsyncSession = Depends(get_db),
@@ -387,7 +387,7 @@ async def api_create_master_data(
     }
 
 
-@router.put("/master-data/{item_id}")
+@router.put("/master-data/{item_id}", dependencies=[Depends(require_admin_role)])
 async def api_update_master_data(
     item_id: int,
     payload: MasterDataOptionUpdate,
@@ -410,7 +410,7 @@ async def api_update_master_data(
     }
 
 
-@router.delete("/master-data/{item_id}")
+@router.delete("/master-data/{item_id}", dependencies=[Depends(require_admin_role)])
 async def api_delete_master_data(
     item_id: int,
     force: bool = False,
@@ -421,7 +421,7 @@ async def api_delete_master_data(
     return res
 
 
-@router.post("/master-data/reset-defaults")
+@router.post("/master-data/reset-defaults", dependencies=[Depends(require_admin_role)])
 async def api_reset_master_data_defaults(
     type: str | None = Body(None, embed=True),
     db: AsyncSession = Depends(get_db),

@@ -55,7 +55,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   onBatchSubmit,
   categories,
   paymentMethods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
-  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
+  units = [
+    "Pcs", "Box", "Bungkus", "Pack", "Pouch", "Kg", "Gram", "Dus",
+    "Kaleng", "Sak", "Bal", "Botol", "Tray", "Liter", "Roll", "Lembar",
+    "Meter", "Ikat", "Butir", "Trans", "Trip"
+  ],
   initialData,
   repeatData,
   isSubmitting = false,
@@ -68,6 +72,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     reset,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm<ExpenseFormData>({
     defaultValues: {
@@ -117,6 +122,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [selectedSuggestionHint, setSelectedSuggestionHint] = useState<ItemSuggestion | null>(null);
+  const [showNewTurunan, setShowNewTurunan] = useState(false);
+  const [customTurunan, setCustomTurunan] = useState("");
 
   const itemNameVal = watch("item_name") || "";
   const supplierVal = watch("supplier") || "";
@@ -864,17 +871,26 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
                   Satuan Beli
                 </label>
-                <Input
-                  placeholder="Pcs, Box..."
-                  {...register("unit")}
-                  className="h-10 text-xs rounded-xl"
-                  list="expense-common-units"
-                />
-                <datalist id="expense-common-units">
-                  {units.map((u) => (
-                    <option key={u} value={u} />
-                  ))}
-                </datalist>
+                {isTukarCash ? (
+                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
+                    Trans
+                  </div>
+                ) : isOngkir ? (
+                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
+                    Trip
+                  </div>
+                ) : (
+                  <select
+                    {...register("unit", { required: true })}
+                    className="h-10 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    {units.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="col-span-5">
@@ -890,20 +906,25 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Hint & Selector Satuan dari Master Item */}
+            {/* Hint & Selector Satuan & Turunan dari Master Item */}
             {selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
-              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs space-y-1.5">
+              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs space-y-2">
                 <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
-                  <span>ℹ️ Kemasan Master Item:</span>
+                  <span className="flex items-center gap-1">
+                    <Package className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Kemasan & Turunan Master Item:</span>
+                  </span>
                   {selectedSuggestionHint.isi_paket && (
                     <span className="font-medium text-blue-700">
                       1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
                     </span>
                   )}
                 </div>
+
+                {/* Tombol Pemilihan Satuan Beli Paket / Ecer */}
                 {selectedSuggestionHint.tipe_satuan === "keduanya" && (
-                  <div className="flex items-center gap-2 pt-1 flex-wrap">
-                    <span className="text-[11px] text-slate-600">Pilih Satuan Beli:</span>
+                  <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+                    <span className="text-[11px] text-slate-600 font-medium">Satuan Master:</span>
                     <button
                       type="button"
                       onClick={() => setValue("unit", selectedSuggestionHint.satuan_beli || "Box")}
@@ -930,6 +951,86 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                     </button>
                   </div>
                 )}
+
+                {/* Varian Turunan Satuan (Misal: 1 Bungkus isi 1Kg vs 1 Bungkus isi 500g) */}
+                {(() => {
+                  const rawVariants = selectedSuggestionHint.isi_paket
+                    ? selectedSuggestionHint.isi_paket.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
+                    : [];
+                  return (
+                    <div className="pt-1 border-t border-blue-200/50 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-blue-900 font-medium">
+                          Pilih Varian Isi / Turunan:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewTurunan((prev) => !prev)}
+                          className="text-[10px] text-blue-700 hover:underline font-medium"
+                        >
+                          {showNewTurunan ? "Tutup input turunan" : "+ Turunan Baru"}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {rawVariants.map((variant, idx) => {
+                          const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
+                          const curNotes = watch("notes") || "";
+                          const isPicked = curNotes.toLowerCase().includes(cleanVar.toLowerCase());
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
+                                const stripped = curNotes.replace(/\|\s*Isi:[^|]+/gi, "").trim();
+                                const newTag = `Isi: ${cleanVar}`;
+                                const updatedNotes = !stripped || stripped === "-" ? newTag : `${stripped} | ${newTag}`;
+                                setValue("notes", updatedNotes);
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
+                                isPicked
+                                  ? "bg-emerald-600 text-white shadow-xs"
+                                  : "bg-white text-slate-700 border border-blue-200 hover:bg-blue-100/50"
+                              }`}
+                            >
+                              <span>{selectedSuggestionHint.satuan_beli || "Bungkus"} (isi {cleanVar})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {showNewTurunan && (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <Input
+                            placeholder="Contoh: 500g, 1Kg, 250ml"
+                            value={customTurunan}
+                            onChange={(e) => setCustomTurunan(e.target.value)}
+                            className="h-7 text-xs bg-white rounded-lg flex-1"
+                          />
+                          <button
+                            type="button"
+                            disabled={!customTurunan.trim()}
+                            onClick={() => {
+                              const cleanVar = customTurunan.trim();
+                              setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
+                              const curNotes = getValues("notes") || "";
+                              const stripped = curNotes.replace(/\|\s*Isi:[^|]+/gi, "").trim();
+                              const newTag = `Isi: ${cleanVar}`;
+                              const updatedNotes = !stripped || stripped === "-" ? newTag : `${stripped} | ${newTag}`;
+                              setValue("notes", updatedNotes);
+                              setCustomTurunan("");
+                              setShowNewTurunan(false);
+                            }}
+                            className="h-7 px-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Terapkan
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

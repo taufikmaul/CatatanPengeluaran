@@ -40,33 +40,40 @@ DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
     "satuan": [
         {"name": "Pcs", "description": "Pieces / satuan bijian umum", "sort_order": 1, "is_default": True},
         {"name": "Box", "description": "Kotak / kardus kecil", "sort_order": 2, "is_default": False},
-        {"name": "Pouch", "description": "Kemasan kantong / pouch berdiri", "sort_order": 3, "is_default": False},
-        {"name": "Kg", "description": "Kilogram (berat)", "sort_order": 4, "is_default": False},
-        {"name": "Dus", "description": "Karton besar / dus luar", "sort_order": 5, "is_default": False},
-        {"name": "Kaleng", "description": "Kemasan kaleng can / tin", "sort_order": 6, "is_default": False},
-        {"name": "Pack", "description": "Paket isi beberapa kemasan", "sort_order": 7, "is_default": False},
-        {"name": "Sak", "description": "Karung besar / sak (terigu, gula)", "sort_order": 8, "is_default": False},
-        {"name": "Bal", "description": "Bal besar (kemasan plastik/kertas)", "sort_order": 9, "is_default": False},
-        {"name": "Botol", "description": "Kemasan botol cairan / perisa", "sort_order": 10, "is_default": False},
-        {"name": "Tray", "description": "Rak telur / kemasan nampan", "sort_order": 11, "is_default": False},
-        {"name": "Liter", "description": "Liter (satuan volume)", "sort_order": 12, "is_default": False},
-        {"name": "Gram", "description": "Gram (satuan berat kecil)", "sort_order": 13, "is_default": False},
-        {"name": "Roll", "description": "Gulungan (plastik roll, pita)", "sort_order": 14, "is_default": False},
-        {"name": "Lembar", "description": "Lembaran kertas / stiker", "sort_order": 15, "is_default": False},
-        {"name": "Meter", "description": "Satuan panjang", "sort_order": 16, "is_default": False},
+        {"name": "Bungkus", "description": "Bungkus / kemasan pembungkus", "sort_order": 3, "is_default": False},
+        {"name": "Pack", "description": "Paket isi beberapa kemasan", "sort_order": 4, "is_default": False},
+        {"name": "Pouch", "description": "Kemasan kantong / pouch berdiri", "sort_order": 5, "is_default": False},
+        {"name": "Kg", "description": "Kilogram (berat)", "sort_order": 6, "is_default": False},
+        {"name": "Gram", "description": "Gram (satuan berat kecil)", "sort_order": 7, "is_default": False},
+        {"name": "Dus", "description": "Karton besar / dus luar", "sort_order": 8, "is_default": False},
+        {"name": "Kaleng", "description": "Kemasan kaleng can / tin", "sort_order": 9, "is_default": False},
+        {"name": "Sak", "description": "Karung besar / sak (terigu, gula)", "sort_order": 10, "is_default": False},
+        {"name": "Bal", "description": "Bal besar (kemasan plastik/kertas)", "sort_order": 11, "is_default": False},
+        {"name": "Botol", "description": "Kemasan botol cairan / perisa", "sort_order": 12, "is_default": False},
+        {"name": "Tray", "description": "Rak telur / kemasan nampan", "sort_order": 13, "is_default": False},
+        {"name": "Liter", "description": "Liter (satuan volume)", "sort_order": 14, "is_default": False},
+        {"name": "Roll", "description": "Gulungan (plastik roll, pita)", "sort_order": 15, "is_default": False},
+        {"name": "Lembar", "description": "Lembaran kertas / stiker", "sort_order": 16, "is_default": False},
+        {"name": "Meter", "description": "Satuan panjang", "sort_order": 17, "is_default": False},
+        {"name": "Ikat", "description": "Ikatan (daun pandan, sayur, dll)", "sort_order": 18, "is_default": False},
+        {"name": "Butir", "description": "Butir (telur, kelapa, buah)", "sort_order": 19, "is_default": False},
+        {"name": "Trans", "description": "Transaksi (Tukar Cash kasir)", "sort_order": 20, "is_default": False},
+        {"name": "Trip", "description": "Trip pengiriman kurir (Ongkir)", "sort_order": 21, "is_default": False},
     ],
 }
 
 
 async def ensure_default_master_data(db: AsyncSession) -> None:
-    """Pastikan data master default terisi bila tabel masih kosong."""
+    """Pastikan data master default terisi bila belum ada di tabel."""
+    changed = False
     for opt_type, items in DEFAULT_MASTER_DATA.items():
-        res = await db.execute(
-            select(func.count(MasterDataOption.id)).where(MasterDataOption.type == opt_type)
+        existing_res = await db.execute(
+            select(MasterDataOption.name).where(MasterDataOption.type == opt_type)
         )
-        count = res.scalar() or 0
-        if count == 0:
-            for itm in items:
+        existing_names = {row[0].strip().lower() for row in existing_res.fetchall()}
+
+        for itm in items:
+            if itm["name"].strip().lower() not in existing_names:
                 new_opt = MasterDataOption(
                     type=opt_type,
                     name=itm["name"],
@@ -78,7 +85,11 @@ async def ensure_default_master_data(db: AsyncSession) -> None:
                     updated_at=datetime.utcnow(),
                 )
                 db.add(new_opt)
-            await db.commit()
+                existing_names.add(itm["name"].strip().lower())
+                changed = True
+
+    if changed:
+        await db.commit()
 
 
 async def get_usage_count(db: AsyncSession, opt_type: str, name: str) -> int:
@@ -173,6 +184,26 @@ async def get_active_names(db: AsyncSession, opt_type: str) -> list[str]:
     res = await db.execute(query)
     names = [row[0] for row in res.fetchall()]
     return names
+
+
+async def get_valid_units(db: AsyncSession) -> list[str]:
+    """Ambil semua nama satuan yang terdaftar dan aktif di data master."""
+    return await get_active_names(db, "satuan")
+
+
+async def normalize_unit_to_master(db: AsyncSession, unit_str: str | None) -> str | None:
+    """
+    Cek apakah satuan yang diinput sesuai dengan data master satuan yang aktif (case-insensitive).
+    Mengembalikan nama satuan resmi dari master data jika cocok, atau None jika tidak terdaftar.
+    """
+    if not unit_str or not unit_str.strip():
+        return None
+    valid_units = await get_valid_units(db)
+    cleaned = unit_str.strip().lower()
+    for u in valid_units:
+        if u.strip().lower() == cleaned:
+            return u
+    return None
 
 
 async def sync_runtime_settings(db: AsyncSession) -> None:

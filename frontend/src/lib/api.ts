@@ -17,6 +17,7 @@ import {
   MasterItemMergeResponse,
   MasterItemAuditResponse,
   ReimbursementSummaryResponse,
+  UnpaidSummaryResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -510,6 +511,27 @@ export async function settleReimbursements(payload: {
   action: "mark_reimbursed" | "unmark";
 }): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
   const res = await api.post("/expenses/reimbursements/settle", payload);
+  return res.data;
+}
+
+export async function getUnpaidSummary(params?: {
+  month?: number | null;
+  year?: number | null;
+  supplierId?: number | null;
+}): Promise<UnpaidSummaryResponse> {
+  const q = new URLSearchParams();
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.supplierId) q.append("supplier_id", String(params.supplierId));
+  const res = await api.get(`/expenses/unpaid/summary?${q.toString()}`);
+  return res.data;
+}
+
+export async function settleUnpaidExpenses(payload: {
+  expense_ids: number[];
+  action?: "mark_paid" | "mark_unpaid";
+}): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
+  const res = await api.post("/expenses/unpaid/settle", payload);
   return res.data;
 }
 

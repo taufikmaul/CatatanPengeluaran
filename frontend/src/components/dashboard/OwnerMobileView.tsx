@@ -220,10 +220,7 @@ export function OwnerMobileView({
 
   // Quick switch ke transaksi dengan filter khusus
   const handleJumpToUnpaid = () => {
-    onStatusChange("Belum Lunas");
-    onReimbursementChange(null);
-    onNavigateTab?.("transactions");
-    setMobileTab("transaksi");
+    onNavigateTab?.("unpaid");
   };
 
   const handleJumpToReimburse = () => {

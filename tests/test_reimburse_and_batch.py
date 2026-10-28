@@ -545,3 +545,68 @@ class TestReimbursementEndpoints:
         reimb_ids = [item["id"] for item in list_data["data"]]
         assert e1.id in reimb_ids
         assert e2.id in reimb_ids
+
+
+class TestUnpaidEndpoints:
+    @pytest.mark.asyncio
+    async def test_unpaid_summary_nearest_due_and_settle(self, client, auth_cookies, db: AsyncSession):
+        client.cookies.update(auth_cookies)
+        from datetime import date, timedelta
+        today = date.today()
+        d_soon = today + timedelta(days=2)
+        d_overdue = today - timedelta(days=3)
+
+        u1 = Expense(
+            expense_date=today,
+            item_name="Tepung Cakra Kembar 25kg",
+            supplier="Toko Makmur Sejahtera",
+            total_price=Decimal("350000"),
+            pay_status="Belum Lunas",
+            due_date=str(d_overdue),
+        )
+        u2 = Expense(
+            expense_date=today,
+            item_name="Mentega Wisman 1kg",
+            supplier="Toko Makmur Sejahtera",
+            total_price=Decimal("150000"),
+            pay_status="Belum Lunas",
+            due_date=str(d_soon),
+        )
+        db.add_all([u1, u2])
+        await db.commit()
+        await db.refresh(u1)
+        await db.refresh(u2)
+
+        # 1. Summary API
+        res = await client.get("/api/v1/expenses/unpaid/summary")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["total_unpaid_count"] >= 2
+        assert data["total_unpaid_nominal"] >= 500000
+        assert data["overdue_count"] >= 1
+        assert data["due_soon_count"] >= 1
+        assert data["nearest_due"] is not None
+        # Tempo terdekat yang paling mendesak adalah yang sudah lewat tempo (u1)
+        assert data["nearest_due"]["expense_id"] == u1.id
+        assert data["nearest_due"]["is_overdue"] is True
+
+        # Supplier breakdown
+        sup_group = next((s for s in data["by_supplier"] if s["supplier_name"] == "Toko Makmur Sejahtera"), None)
+        assert sup_group is not None
+        assert sup_group["unpaid_count"] == 2
+        assert sup_group["unpaid_total"] == 500000
+
+        # 2. Settle mark_paid
+        settle_res = await client.post(
+            "/api/v1/expenses/unpaid/settle",
+            json={"expense_ids": [u1.id, u2.id], "action": "mark_paid"},
+        )
+        assert settle_res.status_code == 200
+        assert settle_res.json()["updated_count"] == 2
+
+        await db.refresh(u1)
+        assert u1.pay_status == "Lunas"
+        await db.refresh(u2)
+        assert u2.pay_status == "Lunas"
+

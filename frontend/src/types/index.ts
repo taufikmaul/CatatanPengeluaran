@@ -76,6 +76,48 @@ export interface ReimbursementSummaryResponse {
   by_user: ReimbursementUserSummary[];
 }
 
+export interface UnpaidNearestDue {
+  expense_id: number;
+  item_name: string;
+  supplier: string;
+  total_price: number;
+  due_date: string;
+  parsed_due_date: string;
+  days_left: number;
+  urgency: "overdue" | "today" | "soon" | "upcoming" | "unknown" | string;
+}
+
+export interface UnpaidSupplierSummary {
+  supplier_id: number | null;
+  supplier_name: string;
+  unpaid_count: number;
+  unpaid_total: number;
+  paid_count: number;
+  paid_total: number;
+  total_count: number;
+  total_nominal: number;
+  nearest_due_date: string | null;
+  nearest_days_left: number | null;
+  has_overdue: boolean;
+}
+
+export interface UnpaidSummaryResponse {
+  ok: boolean;
+  unpaid_count: number;
+  unpaid_total: number;
+  paid_count: number;
+  paid_total: number;
+  total_count: number;
+  total_nominal: number;
+  overdue_count: number;
+  overdue_total: number;
+  due_soon_count: number;
+  due_today_count: number;
+  no_due_date_count: number;
+  nearest_due: UnpaidNearestDue | null;
+  by_supplier: UnpaidSupplierSummary[];
+}
+
 export interface TopFrequentItem {
   item_name: string;
   category: string;
@@ -182,6 +224,7 @@ export interface MonthlyReport {
     count: number;
   }>;
   valid_categories: string[];
+  valid_units?: string[];
   reimburse_pending_count?: number;
   reimburse_pending_total?: number;
   top_frequent_items?: TopFrequentItem[];
@@ -350,6 +393,7 @@ export interface SystemConfig {
   sheets_creds_exists: boolean;
   service_account_email?: string | null;
   valid_categories: string[];
+  valid_units?: string[];
   payment_methods?: string[];
   units?: string[];
   master_data?: Record<string, MasterDataOption[]>;
@@ -472,6 +516,7 @@ export interface MonthlyBudgetDetail {
   category_amounts: Record<string, number>;
   is_custom: boolean;
   valid_categories: string[];
+  valid_units?: string[];
   message?: string;
 }
 

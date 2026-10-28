@@ -15,6 +15,7 @@ from app.services.expense_service import (
 )
 from app.services.ai_analysis_service import generate_ai_analysis
 from app.services.budget_service import get_effective_budget
+from app.services.master_data_service import get_valid_units
 
 router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_auth)])
 
@@ -107,6 +108,7 @@ async def get_monthly_analytics(
         list_hutang=report.get("list_hutang", []),
         daily_chart=daily_chart,
         valid_categories=settings.valid_categories,
+        valid_units=await get_valid_units(db),
         reimburse_pending_count=int(report.get("reimburse_pending_count", 0)),
         reimburse_pending_total=float(report.get("reimburse_pending_total", 0.0)),
         top_frequent_items=leaderboards.get("top_frequent_items", []),

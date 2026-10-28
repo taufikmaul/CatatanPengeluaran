@@ -13,6 +13,7 @@ from app.models.expense import Expense
 from app.models.expense_log import ExpenseLog
 from app.models.supplier import Supplier
 from app.config import settings
+from app.services.master_data_service import get_valid_units, normalize_unit_to_master
 
 
 def _normalize_str(s: str) -> str:
@@ -134,6 +135,93 @@ def append_original_name_to_notes(raw_name: str, master_name: str, current_notes
     return f"{notes} | {tag}"
 
 
+def _norm_variant(v: str) -> str:
+    s = (v or "").strip().lower()
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def extract_derivative(raw_text: str | None) -> str | None:
+    """
+    Ekstrak turunan satuan / isi kemasan dari teks nama barang atau catatan.
+    Contoh:
+    - 'Terigu Cakra 1kg' -> '1Kg'
+    - 'Terigu Cakra 1 Bungkus isi 500g' -> '500g'
+    - 'Susu Carnation 1 box isi 6 pouch 2kg' -> '6 pouch @ 2kg'
+    - 'Gula Pasir 500 gram' -> '500 Gram'
+    - 'Minyak Goreng 2L' -> '2 Liter'
+    - 'Kardus 20x20 isi 100 pcs' -> '100 Pcs'
+    """
+    if not raw_text:
+        return None
+    s = raw_text.strip()
+
+    # 1. 'isi ...' misal '1 bks isi 500g', 'isi 6 pouch @ 2kg', 'isi: 1kg'
+    m_isi = re.search(r'\bisi[:\s]+([^,;|]+)', s, re.IGNORECASE)
+    if m_isi:
+        val = m_isi.group(1).strip()
+        if val:
+            return val
+
+    # 2. Pola perkalian ecer: '6 pouch @ 2kg', '6 x 2kg', '10 x 500g'
+    m_mult = re.search(
+        r'(\d+\s*(?:pouch|box|pcs|bks|bungkus|kaleng|pack)?\s*(?:x|@)\s*\d+(?:[.,]\d+)?\s*(?:kg|kilo|gram|gr|g|liter|lt|l|ml|oz))\b',
+        s,
+        re.IGNORECASE,
+    )
+    if m_mult:
+        return m_mult.group(1).strip()
+
+    # 3. Satuan berat / volume: '1kg', '500g', '500 gram', '2 liter', '250ml', dll.
+    m_weight = re.search(
+        r'(\d+(?:[.,]\d+)?\s*(?:kg|kilo|gram|gr|g|liter|lt|l|ml|oz|lb))\b',
+        s,
+        re.IGNORECASE,
+    )
+    if m_weight:
+        val = m_weight.group(1).strip()
+        val_clean = re.sub(r'(\d+)\s*(kg|kilo)\b', r'\1 Kg', val, flags=re.IGNORECASE)
+        val_clean = re.sub(r'(\d+)\s*(gram|gr)\b', r'\1 Gram', val_clean, flags=re.IGNORECASE)
+        val_clean = re.sub(r'(\d+)\s*g\b', r'\1g', val_clean, flags=re.IGNORECASE)
+        val_clean = re.sub(r'(\d+)\s*(liter|lt|l)\b', r'\1 Liter', val_clean, flags=re.IGNORECASE)
+        val_clean = re.sub(r'(\d+)\s*ml\b', r'\1ml', val_clean, flags=re.IGNORECASE)
+        return val_clean
+
+    # 4. Satuan hitung / lembar / butir / pcs: '100 pcs', '50 lembar', '30 butir'
+    m_count = re.search(
+        r'(\d+\s*(?:pcs|lembar|butir|biji|sachet|pouch|kantong|roll))\b',
+        s,
+        re.IGNORECASE,
+    )
+    if m_count:
+        return m_count.group(1).strip()
+
+    return None
+
+
+def sync_derivative_to_isi_paket(current_isi: str | None, new_derivative: str | None) -> tuple[str, bool]:
+    """
+    Sinkronkan turunan satuan baru ke `isi_paket` MasterItem.
+    Contoh: jika sudah ada '1Kg', lalu ada varian baru '500g',
+    maka isi_paket menjadi '1Kg, 500g'.
+    Jika sudah ada varian yang identik, tidak diduplikasi.
+    """
+    if not new_derivative or not new_derivative.strip():
+        return current_isi or "", False
+
+    clean_new = new_derivative.strip()
+    if not current_isi or not current_isi.strip():
+        return clean_new, True
+
+    parts = [p.strip() for p in re.split(r"[,;]\s*", current_isi) if p.strip()]
+    norm_new = _norm_variant(clean_new)
+    for p in parts:
+        if _norm_variant(p) == norm_new:
+            return current_isi, False
+
+    updated = f"{current_isi}, {clean_new}"
+    return updated, True
+
+
 async def list_master_items(db: AsyncSession) -> list[MasterItem]:
     """Ambil semua daftar MasterItem diurutkan sesuai abjad."""
     result = await db.execute(select(MasterItem).order_by(MasterItem.item_name.asc()))
@@ -146,15 +234,42 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
     - Mengubah `barang` ke `MasterItem.item_name`
     - Menyesuaikan `kategori` ke `MasterItem.category` (kecuali kategori Tukar Cash)
     - Mengisi `toko_supplier` dengan `default_supplier` jika kosong/"-"
-    - Menyesuaikan `satuan` / `unit` berdasarkan MasterItem dan konteks paket/ecer
-    - Menyimpan nama asli struk ke `keterangan` jika namanya berubah
+    - Menyesuaikan `satuan` / `unit` agar SELALU sesuai data master yang terdaftar
+    - Mendeteksi turunan kemasan (mis. 1 Bungkus isi 1Kg vs 1 Bungkus isi 500g)
+      dan otomatis menyinkronkannya ke MasterItem.isi_paket
+    - Menyimpan nama asli struk & turunan ke `keterangan`
     """
     if not items:
         return items
 
     master_items = await list_master_items(db)
-    if not master_items:
-        return items
+    valid_units = await get_valid_units(db)
+
+    # Pemetaan kata kemasan di teks struk/input ke satuan master resmi
+    pkg_kw_map = {
+        "bungkus": "Bungkus",
+        "bks": "Bungkus",
+        "box": "Box",
+        "kotak": "Box",
+        "dus": "Dus",
+        "karton": "Dus",
+        "pack": "Pack",
+        "pak": "Pack",
+        "sak": "Sak",
+        "karung": "Sak",
+        "bal": "Bal",
+        "botol": "Botol",
+        "btl": "Botol",
+        "kaleng": "Kaleng",
+        "can": "Kaleng",
+        "pouch": "Pouch",
+        "tray": "Tray",
+        "roll": "Roll",
+        "lembar": "Lembar",
+        "meter": "Meter",
+        "ikat": "Ikat",
+        "butir": "Butir",
+    }
 
     for item in items:
         # Pengecekan Eksklusi: Ongkir & Tukar Cash TIDAK BOLEH dicocokkan ke MasterItem
@@ -168,6 +283,18 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
             or "tarik tunai" in raw_name_lower
         ):
             item["master_item_id"] = None
+            # Pastikan satuan khusus tukar cash / ongkir tetap valid
+            current_unit = (item.get("satuan") or item.get("unit") or "").strip()
+            if kat_check == "tukar cash" or "tukar cash" in raw_name_lower:
+                item["satuan"] = "Trans"
+                item["unit"] = "Trans"
+            elif kat_check == "ongkir" or raw_name_lower.startswith("ongkir"):
+                item["satuan"] = "Trip"
+                item["unit"] = "Trip"
+            elif current_unit:
+                norm_u = await normalize_unit_to_master(db, current_unit)
+                item["satuan"] = norm_u or "Pcs"
+                item["unit"] = norm_u or "Pcs"
             continue
 
         matched = None
@@ -179,24 +306,67 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
             matched = find_best_master_match(raw_name, master_items)
 
         if not matched:
+            # Jika tidak cocok ke master item, tetap pastikan satuan sesuai data master
+            current_unit = (item.get("satuan") or item.get("unit") or "").strip()
+            norm_u = await normalize_unit_to_master(db, current_unit)
+            final_unit = norm_u or "Pcs"
+            item["satuan"] = final_unit
+            item["unit"] = final_unit
             continue
 
         # Simpan nama asli ke keterangan bila berbeda
         old_notes = item.get("keterangan") if "keterangan" in item else item.get("notes", "-")
         new_notes = append_original_name_to_notes(raw_name, matched.item_name, old_notes)
 
-        # Deteksi satuan paket vs ecer dari teks input / nama struk jika belum diset eksplisit
+        # 1. Deteksi Turunan Satuan (misal: '1Kg', '500g', 'isi 500g', '6 pouch 2kg')
+        detected_derivative = (
+            extract_derivative(raw_name)
+            or extract_derivative(old_notes)
+            or (item.get("isi_paket") or item.get("turunan") or "").strip()
+        )
+        if detected_derivative:
+            # Sinkronkan otomatis ke MasterItem.isi_paket jika belum ada
+            updated_isi, changed = sync_derivative_to_isi_paket(matched.isi_paket, detected_derivative)
+            if changed:
+                matched.isi_paket = updated_isi
+                await db.flush()
+
+            # Catat turunan di keterangan agar histori transaksi tercatat jelas varian isinya
+            deriv_tag = f"Isi: {detected_derivative}"
+            if deriv_tag.lower() not in new_notes.lower():
+                new_notes = f"{new_notes} | {deriv_tag}" if new_notes and new_notes != "-" else deriv_tag
+
+            item["turunan"] = detected_derivative
+            item["isi_paket"] = detected_derivative
+
+        # 2. Penentuan Satuan (WAJIB SESUAI DATA MASTER YANG TERDAFTAR)
         current_unit = (item.get("satuan") or item.get("unit") or "").strip()
-        if not current_unit or current_unit.lower() == "pcs":
-            raw_lower = raw_name.lower()
-            if any(k in raw_lower for k in ("box", "dus", "karton", "bal", "sak", "pack", "tray", "peti", "lusin")):
-                chosen_unit = matched.satuan_beli or "Box"
-            elif any(k in raw_lower for k in ("pouch", "kaleng", "kg", "gram", "gr", "butir", "botol", "ecer", "biji", "lembar")):
-                chosen_unit = matched.satuan_ecer or matched.satuan_beli or "Pcs"
-            else:
-                chosen_unit = matched.satuan_beli or "Pcs"
+        norm_current = await normalize_unit_to_master(db, current_unit) if current_unit else None
+
+        chosen_unit = None
+        # Jika user sudah memilih satuan secara eksplisit dan bukan 'Pcs' default
+        if norm_current and norm_current.lower() != "pcs":
+            chosen_unit = norm_current
         else:
-            chosen_unit = current_unit
+            # Deteksi dari kata kemasan di teks nama struk
+            detected_pkg = None
+            for kw, candidate_unit in pkg_kw_map.items():
+                if re.search(r'\b' + re.escape(kw) + r'\b', raw_name_lower):
+                    detected_pkg = candidate_unit
+                    break
+
+            if detected_pkg:
+                chosen_unit = await normalize_unit_to_master(db, detected_pkg)
+
+            if not chosen_unit:
+                if any(k in raw_name_lower for k in ("ecer", "biji", "butir")):
+                    chosen_unit = await normalize_unit_to_master(db, matched.satuan_ecer)
+                else:
+                    chosen_unit = await normalize_unit_to_master(db, matched.satuan_beli)
+
+        # Fallback akhir ke satuan_beli atau Pcs, selalu divalidasi ke master
+        if not chosen_unit:
+            chosen_unit = await normalize_unit_to_master(db, matched.satuan_beli) or "Pcs"
 
         item["master_item_id"] = matched.id
         if "barang" in item:
@@ -234,6 +404,9 @@ async def create_master_item(
 ) -> MasterItem:
     """Buat satu MasterItem baru atau update jika nama sudah ada."""
     clean_name = item_name.strip()
+    norm_beli = (await normalize_unit_to_master(db, satuan_beli)) or "Pcs"
+    norm_ecer = (await normalize_unit_to_master(db, satuan_ecer)) or "Pcs"
+
     existing_res = await db.execute(
         select(MasterItem).where(func.lower(MasterItem.item_name) == clean_name.lower())
     )
@@ -245,13 +418,13 @@ async def create_master_item(
         if aliases:
             existing.aliases = aliases
         if satuan_beli:
-            existing.satuan_beli = satuan_beli
+            existing.satuan_beli = norm_beli
         if tipe_satuan:
             existing.tipe_satuan = tipe_satuan
         if isi_paket is not None:
             existing.isi_paket = isi_paket
         if satuan_ecer:
-            existing.satuan_ecer = satuan_ecer
+            existing.satuan_ecer = norm_ecer
         await db.flush()
         return existing
 
@@ -260,10 +433,10 @@ async def create_master_item(
         category=category if category in settings.valid_categories else "Bahan Kue",
         default_supplier=(default_supplier or "-").strip() or "-",
         aliases=(aliases or "").strip(),
-        satuan_beli=(satuan_beli or "Pcs").strip() or "Pcs",
+        satuan_beli=norm_beli,
         tipe_satuan=(tipe_satuan or "keduanya").strip() or "keduanya",
         isi_paket=(isi_paket or "").strip(),
-        satuan_ecer=(satuan_ecer or "Pcs").strip() or "Pcs",
+        satuan_ecer=norm_ecer,
     )
     db.add(item)
     await db.flush()
@@ -293,7 +466,6 @@ async def bulk_Import_master_items(
     existing_map = {m.item_name.strip().lower(): m for m in existing_items}
 
     for line in lines:
-        # Abaikan baris komentar atau bullet di awal
         cleaned_line = re.sub(r"^[\-\*\•\d\.\)\s]+", "", line).strip()
         if not cleaned_line:
             continue
@@ -306,10 +478,12 @@ async def bulk_Import_master_items(
         cat = parts[1] if len(parts) > 1 and parts[1] in settings.valid_categories else default_category
         aliases = parts[2] if len(parts) > 2 else ""
         supplier = parts[3] if len(parts) > 3 else "-"
-        satuan_beli = parts[4] if len(parts) > 4 and parts[4] else "Pcs"
+        raw_beli = parts[4] if len(parts) > 4 and parts[4] else "Pcs"
+        satuan_beli = (await normalize_unit_to_master(db, raw_beli)) or "Pcs"
         tipe_satuan = parts[5] if len(parts) > 5 and parts[5] in ("paket", "ecer", "keduanya") else "keduanya"
         isi_paket = parts[6] if len(parts) > 6 else ""
-        satuan_ecer = parts[7] if len(parts) > 7 and parts[7] else "Pcs"
+        raw_ecer = parts[7] if len(parts) > 7 and parts[7] else "Pcs"
+        satuan_ecer = (await normalize_unit_to_master(db, raw_ecer)) or "Pcs"
 
         key = name.lower()
         if key in existing_map:
@@ -321,13 +495,13 @@ async def bulk_Import_master_items(
             if supplier and supplier != "-":
                 m.default_supplier = supplier
             if len(parts) > 4 and parts[4]:
-                m.satuan_beli = parts[4]
+                m.satuan_beli = satuan_beli
             if len(parts) > 5 and parts[5]:
                 m.tipe_satuan = parts[5]
             if len(parts) > 6:
                 m.isi_paket = parts[6]
             if len(parts) > 7 and parts[7]:
-                m.satuan_ecer = parts[7]
+                m.satuan_ecer = satuan_ecer
             updated += 1
         else:
             new_m = MasterItem(
@@ -351,8 +525,10 @@ async def bulk_Import_master_items(
 async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
     """
     Cocokkan semua transaksi Expense yang sudah ada di DB dengan MasterItem baku.
-    Jika ada yang cocok dan namanya belum sama persis, ubah ke nama baku dan
-    simpan nama lama di kolom notes.
+    - Menyesuaikan nama item ke nama baku dan simpan nama lama di notes
+    - Menyesuaikan kategori ke MasterItem
+    - Menormalisasi satuan agar sesuai data master yang terdaftar
+    - Menemukan turunan satuan (isi kemasan) dan menyinkronkannya ke MasterItem.isi_paket
     """
     master_items = await list_master_items(db)
     if not master_items:
@@ -386,6 +562,27 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
             exp.category = matched.category
             exp.sheets_synced = False
             changed = True
+
+        # Normalisasi satuan transaksi ke data master
+        if exp.unit:
+            norm_u = await normalize_unit_to_master(db, exp.unit)
+            if norm_u and exp.unit != norm_u:
+                exp.unit = norm_u
+                exp.sheets_synced = False
+                changed = True
+
+        # Sinkronkan turunan kemasan dari raw_name / notes ke MasterItem.isi_paket
+        deriv = extract_derivative(raw_name) or extract_derivative(exp.notes)
+        if deriv:
+            updated_isi, isi_changed = sync_derivative_to_isi_paket(matched.isi_paket, deriv)
+            if isi_changed:
+                matched.isi_paket = updated_isi
+                changed = True
+            deriv_tag = f"Isi: {deriv}"
+            if deriv_tag.lower() not in (exp.notes or "").lower():
+                exp.notes = f"{exp.notes} | {deriv_tag}" if exp.notes and exp.notes != "-" else deriv_tag
+                exp.sheets_synced = False
+                changed = True
 
         if changed:
             updated_items.append({
@@ -610,9 +807,12 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
         for s in sorted(supplier_counts.values(), key=lambda x: (-x["count"], x["supplier"].lower()))
     ]
 
+    valid_units = await get_valid_units(db)
+
     return {
         "items": sorted_items[:250],
         "suppliers": sorted_suppliers[:100],
+        "units": valid_units,
     }
 
 

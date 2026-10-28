@@ -65,7 +65,11 @@ interface MasterItemsTabProps {
 
 export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   categories,
-  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
+  units = [
+    "Pcs", "Box", "Bungkus", "Pack", "Pouch", "Kg", "Gram", "Dus",
+    "Kaleng", "Sak", "Bal", "Botol", "Tray", "Liter", "Roll", "Lembar",
+    "Meter", "Ikat", "Butir", "Trans", "Trip"
+  ],
   onInspectItemPrice,
 }) => {
   const queryClient = useQueryClient();
@@ -620,38 +624,48 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block">Satuan Beli</label>
-                    <Input
+                    <select
                       value={editForm.satuan_beli}
                       onChange={(e) =>
                         setEditForm({ ...editForm, satuan_beli: e.target.value })
                       }
-                      placeholder="Box / Pcs"
-                      className="h-7 text-[11px] rounded px-1.5"
-                    />
+                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px]"
+                    >
+                      {units.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <div>
-                    <label className="text-[10px] text-slate-500 block">Isi Paket</label>
+                    <label className="text-[10px] text-slate-500 block">Turunan / Isi Paket</label>
                     <Input
                       value={editForm.isi_paket}
                       onChange={(e) =>
                         setEditForm({ ...editForm, isi_paket: e.target.value })
                       }
-                      placeholder="mis. 6 pouch @ 2kg"
+                      placeholder="mis. 1Kg, 500g"
                       className="h-7 text-[11px] rounded px-1.5"
                     />
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block">Satuan Ecer</label>
-                    <Input
+                    <select
                       value={editForm.satuan_ecer}
                       onChange={(e) =>
                         setEditForm({ ...editForm, satuan_ecer: e.target.value })
                       }
-                      placeholder="mis. Pouch"
-                      className="h-7 text-[11px] rounded px-1.5"
-                    />
+                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px]"
+                    >
+                      {units.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -678,8 +692,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 )}
               </div>
               {item.isi_paket && (
-                <div className="text-[11px] text-slate-500 font-normal">
-                  Isi: <span className="text-slate-700 font-medium">{item.isi_paket}</span>
+                <div className="text-[11px] text-slate-500 font-normal flex items-center gap-1 flex-wrap pt-0.5">
+                  <span className="text-[10px] text-slate-400">Turunan:</span>
+                  {item.isi_paket.split(/[,;]\s*/).filter(Boolean).map((p, i) => (
+                    <span key={i} className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 text-[10px] font-medium border border-blue-200">
+                      {p}
+                    </span>
+                  ))}
                 </div>
               )}
               {item.tipe_satuan === "keduanya" && item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
@@ -1057,18 +1076,17 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Satuan Beli / Kemasan
                 </label>
-                <Input
-                  placeholder="mis: Box, Pcs, Kg"
+                <select
                   value={satuanBeli}
                   onChange={(e) => setSatuanBeli(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                  list="master-item-units"
-                />
-                <datalist id="master-item-units">
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
                   {units.map((u) => (
-                    <option key={u} value={u} />
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
 
               <div className="md:col-span-2">
@@ -1088,10 +1106,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
               <div className="md:col-span-4">
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Isi Kemasan / Paket (Detail)
+                  Turunan / Isi Kemasan (Pisahkan Koma)
                 </label>
                 <Input
-                  placeholder="Contoh: 1 box isi 6 pouch 2kg, atau 25 kg"
+                  placeholder="Contoh: 1Kg, 500g atau 1 box isi 6 pouch 2kg"
                   value={isiPaket}
                   onChange={(e) => setIsiPaket(e.target.value)}
                   className="h-9 text-xs rounded-xl"
@@ -1102,14 +1120,18 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Satuan Eceran
                 </label>
-                <Input
-                  placeholder="mis: Pouch, Kaleng, Kg"
+                <select
                   value={satuanEcer}
                   onChange={(e) => setSatuanEcer(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
                   disabled={tipeSatuan === "paket"}
-                  list="master-item-units"
-                />
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
+                >
+                  {units.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="md:col-span-4">

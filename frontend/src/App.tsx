@@ -22,6 +22,7 @@ import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
 import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
 import { TalanganTab } from "@/components/talangan/TalanganTab";
+import { UnpaidTab } from "@/components/unpaid/UnpaidTab";
 import { SuppliersTab } from "@/components/supplier/SuppliersTab";
 import { SupplierDetailPage } from "@/components/supplier/SupplierDetailPage";
 import { LoginModal } from "@/components/auth/LoginModal";
@@ -62,7 +63,7 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
@@ -75,13 +76,15 @@ export function App() {
     activeTab = "tukar-cash-ongkir";
   } else if (pathname === "/talangan" || pathname === "/reimburse") {
     activeTab = "talangan";
+  } else if (pathname === "/unpaid" || pathname === "/belum-lunas" || pathname === "/hutang") {
+    activeTab = "unpaid";
   } else if (pathname === "/config") {
     activeTab = "config";
   } else {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -278,6 +281,29 @@ export function App() {
     enabled: !!authData?.authenticated && canManageConfig,
     staleTime: 5 * 60 * 1000,
   });
+
+  // 4b. Master Data Units Query (tersedia untuk semua role terautentikasi)
+  const { data: masterUnitsData } = useQuery<string[]>({
+    queryKey: ["master-units"],
+    queryFn: async () => {
+      const res = await api.get("/config/master-data?type=satuan&active_only=true");
+      return (res.data?.items || []).map((it: any) => it.name);
+    },
+    enabled: !!authData?.authenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activeUnits = (masterUnitsData && masterUnitsData.length > 0)
+    ? masterUnitsData
+    : (reportData?.valid_units && reportData.valid_units.length > 0)
+    ? reportData.valid_units
+    : (configData?.units && configData.units.length > 0)
+    ? configData.units
+    : [
+        "Pcs", "Box", "Bungkus", "Pack", "Pouch", "Kg", "Gram", "Dus",
+        "Kaleng", "Sak", "Bal", "Botol", "Tray", "Liter", "Roll", "Lembar",
+        "Meter", "Ikat", "Butir", "Trans", "Trip"
+      ];
 
   // 5. Autocomplete Suggestions (Master Items + Historical Items & Suppliers)
   const { data: suggestionsData } = useQuery<SuggestionsResponse>({
@@ -492,9 +518,7 @@ export function App() {
             unpaidTotal={totalUnpaidNominal}
             reimburseCount={reportData?.reimburse_pending_count || 0}
             onFilterUnpaid={() => {
-              navigate("/transactions");
-              setStatus("Belum Lunas");
-              setPage(1);
+              navigate("/unpaid");
             }}
             onFilterReimburse={() => {
               navigate("/talangan");
@@ -621,9 +645,7 @@ export function App() {
                         ongkirReimburseCount={reportData?.ongkir_reimburse_count || 0}
                         ongkirReimburseTotal={reportData?.ongkir_reimburse_total || 0}
                         onFilterUnpaid={() => {
-                          navigate("/transactions");
-                          setStatus("Belum Lunas");
-                          setPage(1);
+                          navigate("/unpaid");
                         }}
                         onFilterReimburse={() => {
                           navigate("/talangan");
@@ -668,9 +690,7 @@ export function App() {
                             unpaidList={reportData?.list_hutang || []}
                             onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
                             onViewAll={() => {
-                              navigate("/transactions");
-                              setStatus("Belum Lunas");
-                              setPage(1);
+                              navigate("/unpaid");
                             }}
                           />
                         </div>
@@ -1222,7 +1242,7 @@ export function App() {
             {activeTab === "master" && (
               <MasterItemsTab
                 categories={categories}
-                units={configData?.units}
+                units={activeUnits}
                 onInspectItemPrice={handleInspectItemPrice}
               />
             )}
@@ -1241,7 +1261,7 @@ export function App() {
                 canDelete={canDelete}
                 categories={categories}
                 paymentMethods={configData?.payment_methods}
-                units={configData?.units}
+                units={activeUnits}
               />
             )}
 
@@ -1333,6 +1353,49 @@ export function App() {
               />
             )}
 
+            {activeTab === "unpaid" && (
+              <UnpaidTab
+                currentMonth={month}
+                currentYear={year}
+                onEditExpense={(item) => {
+                  setRepeatingExpense(null);
+                  setEditingExpense(item);
+                  setIsFormOpen(true);
+                }}
+                onViewExpense={(item) => setViewingExpense(item)}
+                onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                onAddNewUnpaid={() => {
+                  setEditingExpense(null);
+                  const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                  setRepeatingExpense({
+                    id: 0,
+                    created_at: new Date().toISOString(),
+                    expense_date: new Date().toISOString().split("T")[0],
+                    category: "Bahan Baku",
+                    item_name: "",
+                    supplier: "",
+                    qty: 1,
+                    unit: "Pcs",
+                    unit_price: 0,
+                    shipping_fee: 0,
+                    tax: 0,
+                    other_fee: 0,
+                    discount: 0,
+                    total_price: 0,
+                    pay_method: "Tempo / Tagihan",
+                    pay_status: "Belum Lunas",
+                    due_date: in7Days,
+                    notes: "-",
+                    msg_link: "Web Dashboard",
+                    is_reimbursement: false,
+                    invoice_number: "-",
+                  } as Expense);
+                  setIsFormOpen(true);
+                }}
+                canDelete={canDelete}
+              />
+            )}
+
             {activeTab === "config" && canManageConfig && (
               <ConfigTab
                 config={configData || null}
@@ -1369,7 +1432,7 @@ export function App() {
           onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
           categories={categories}
           paymentMethods={configData?.payment_methods}
-          units={configData?.units}
+          units={activeUnits}
           initialData={editingExpense}
           repeatData={repeatingExpense}
           isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}

@@ -162,6 +162,45 @@ class ReimbursementSettleRequest(BaseModel):
     action: str = "mark_reimbursed"  # "mark_reimbursed" | "unmark"
 
 
+class UnpaidNearestDue(BaseModel):
+    expense_id: int
+    item_name: str
+    supplier: str
+    due_date: str
+    total_price: float
+    days_left: int | None = None
+    is_overdue: bool = False
+    is_today: bool = False
+
+
+class UnpaidSupplierSummary(BaseModel):
+    supplier_id: int | None = None
+    supplier_name: str
+    unpaid_count: int = 0
+    unpaid_total: float = 0.0
+    nearest_due_date: str | None = None
+    nearest_days_left: int | None = None
+
+
+class UnpaidSummaryResponse(BaseModel):
+    ok: bool = True
+    total_unpaid_count: int = 0
+    total_unpaid_nominal: float = 0.0
+    overdue_count: int = 0
+    overdue_nominal: float = 0.0
+    due_today_count: int = 0
+    due_today_nominal: float = 0.0
+    due_soon_count: int = 0
+    due_soon_nominal: float = 0.0
+    nearest_due: UnpaidNearestDue | None = None
+    by_supplier: list[UnpaidSupplierSummary] = []
+
+
+class UnpaidSettleRequest(BaseModel):
+    expense_ids: list[int]
+    action: str = "mark_paid"  # "mark_paid" | "mark_unpaid"
+
+
 class ExpenseLogResponse(BaseModel):
     id: int
     expense_id: int | None = None
@@ -204,6 +243,7 @@ class MonthlyReportResponse(BaseModel):
     list_hutang: list[dict[str, Any]]
     daily_chart: list[dict[str, Any]]
     valid_categories: list[str]
+    valid_units: list[str] = []
     reimburse_pending_count: int = 0
     reimburse_pending_total: float = 0.0
     top_frequent_items: list[dict[str, Any]] = []
@@ -384,7 +424,8 @@ class MonthlyBudgetDetailResponse(BaseModel):
     category_percentages: dict[str, float] = {}
     category_amounts: dict[str, float] = {}
     is_custom: bool = False
-    valid_categories: list[str] = []
+    valid_categories: list[str]
+    valid_units: list[str] = []
     message: str | None = None
 
 

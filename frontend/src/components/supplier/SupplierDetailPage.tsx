@@ -98,7 +98,11 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   canDelete,
   categories,
   paymentMethods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
-  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
+  units = [
+    "Pcs", "Box", "Bungkus", "Pack", "Pouch", "Kg", "Gram", "Dus",
+    "Kaleng", "Sak", "Bal", "Botol", "Tray", "Liter", "Roll", "Lembar",
+    "Meter", "Ikat", "Butir", "Trans", "Trip"
+  ],
 }) => {
   const queryClient = useQueryClient();
 
@@ -1430,18 +1434,17 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                   Satuan
                 </label>
-                <Input
+                <select
                   value={newUnit}
                   onChange={(e) => setNewUnit(e.target.value)}
-                  placeholder="Pcs/Kg/Pack"
-                  className="h-9 text-xs"
-                  list="supplier-units"
-                />
-                <datalist id="supplier-units">
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
                   {units.map((u) => (
-                    <option key={u} value={u} />
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
 
               <div>

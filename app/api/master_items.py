@@ -98,16 +98,34 @@ async def add_master_item(
     if not payload.item_name or not payload.item_name.strip():
         raise HTTPException(status_code=400, detail="Nama item baku wajib diisi")
 
+    from app.services.master_data_service import get_valid_units, normalize_unit_to_master
+
+    norm_beli = await normalize_unit_to_master(db, payload.satuan_beli)
+    if not norm_beli:
+        valid_units = await get_valid_units(db)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Satuan beli '{payload.satuan_beli}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+        )
+
+    norm_ecer = await normalize_unit_to_master(db, payload.satuan_ecer)
+    if not norm_ecer:
+        valid_units = await get_valid_units(db)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Satuan ecer '{payload.satuan_ecer}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+        )
+
     item = await create_master_item(
         db,
         item_name=payload.item_name,
         category=payload.category,
         default_supplier=payload.default_supplier,
         aliases=payload.aliases,
-        satuan_beli=payload.satuan_beli,
+        satuan_beli=norm_beli,
         tipe_satuan=payload.tipe_satuan,
         isi_paket=payload.isi_paket,
-        satuan_ecer=payload.satuan_ecer,
+        satuan_ecer=norm_ecer,
     )
     await db.commit()
     await db.refresh(item)
@@ -268,14 +286,30 @@ async def update_master_item(
         if name_changed and old_name.lower() not in [a.lower() for a in new_aliases]:
             new_aliases.append(old_name)
         item.aliases = ", ".join(new_aliases)
+    from app.services.master_data_service import get_valid_units, normalize_unit_to_master
+
     if payload.satuan_beli is not None:
-        item.satuan_beli = payload.satuan_beli.strip() or "Pcs"
+        norm_beli = await normalize_unit_to_master(db, payload.satuan_beli)
+        if not norm_beli:
+            valid_units = await get_valid_units(db)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Satuan beli '{payload.satuan_beli}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+            )
+        item.satuan_beli = norm_beli
     if payload.tipe_satuan is not None:
         item.tipe_satuan = payload.tipe_satuan.strip() or "keduanya"
     if payload.isi_paket is not None:
         item.isi_paket = payload.isi_paket.strip()
     if payload.satuan_ecer is not None:
-        item.satuan_ecer = payload.satuan_ecer.strip() or "Pcs"
+        norm_ecer = await normalize_unit_to_master(db, payload.satuan_ecer)
+        if not norm_ecer:
+            valid_units = await get_valid_units(db)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Satuan ecer '{payload.satuan_ecer}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
+            )
+        item.satuan_ecer = norm_ecer
 
     # Sinkronisasi order/transaksi yang terhubung ke produk ini
     from app.models.expense import Expense
