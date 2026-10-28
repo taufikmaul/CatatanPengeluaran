@@ -14,6 +14,7 @@ import {
   ArrowLeftRight,
   ShieldAlert,
   Store,
+  HandCoins,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -44,8 +45,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => void;
+  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   userRole?: string | null;
@@ -55,6 +56,7 @@ export interface DashboardSidebarProps {
   totalPengeluaran?: number;
   expenseCount?: number;
   unpaidCount?: number;
+  reimbursePendingCount?: number;
   username?: string;
   onLogout: () => void;
   isDarkMode: boolean;
@@ -73,6 +75,7 @@ export function DashboardSidebar({
   totalPengeluaran = 0,
   expenseCount = 0,
   unpaidCount = 0,
+  reimbursePendingCount = 0,
   username,
   onLogout,
   isDarkMode,
@@ -80,7 +83,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -225,6 +228,27 @@ export function DashboardSidebar({
               >
                 <ArrowLeftRight className="w-4 h-4" />
                 <span className="truncate">Tukar Cash & Ongkir</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "talangan"}
+                onClick={() => handleSelectTab("talangan")}
+                tooltip="Daftar Talangan (Reimburse Karyawan)"
+                className={`h-9.5 rounded-xl font-medium ${
+                  activeTab === "talangan"
+                    ? "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <HandCoins className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span className="truncate">Daftar Talangan</span>
+                {reimbursePendingCount > 0 && (
+                  <SidebarMenuBadge className="ml-auto text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 rounded-md px-1.5 py-0.5 tabular-nums font-bold">
+                    {reimbursePendingCount}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuButton>
             </SidebarMenuItem>
 

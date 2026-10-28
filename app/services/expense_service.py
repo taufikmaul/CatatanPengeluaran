@@ -831,8 +831,9 @@ async def get_all_expenses_paginated(
     is_reimbursement: bool | None = None,
     user_id: int | None = None,
     special_type: str | None = None,
+    reimbursed_status: str | None = None,
 ) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, dan special_type (tukar_cash, ongkir, all_cash_delivery)."""
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan)."""
     query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
 
     if special_type == "tukar_cash":
@@ -874,7 +875,8 @@ async def get_all_expenses_paginated(
                 Expense.supplier.ilike("%sicepat%"),
             )
         )
-    elif special_type == "all":
+    elif special_type in ("all", "talangan") or is_reimbursement is True:
+        # Tampilkan semua kategori tanpa filter exclude Ongkir/Tukar Cash
         pass
     else:
         # Default view (Daftar Pengeluaran Utama): EXCLUDE Ongkir dan Tukar Cash
@@ -901,6 +903,10 @@ async def get_all_expenses_paginated(
         query = query.where(Expense.pay_status.ilike(f"%{status}%"))
     if is_reimbursement is not None:
         query = query.where(Expense.is_reimbursement == is_reimbursement)
+    if reimbursed_status == "pending":
+        query = query.where(Expense.reimbursed_at.is_(None))
+    elif reimbursed_status == "reimbursed":
+        query = query.where(Expense.reimbursed_at.isnot(None))
     if user_id is not None:
         query = query.where(Expense.user_id == user_id)
     if search:
@@ -1655,6 +1661,157 @@ async def mark_reimbursed(
         )
     await db.flush()
     return items
+
+
+async def settle_reimbursements(
+    db: AsyncSession,
+    expense_ids: list[int],
+    action: str = "mark_reimbursed",
+    actor: str = "system",
+) -> list[Expense]:
+    """Tandai talangan sebagai sudah diganti atau batalkan status penggantian."""
+    if not expense_ids:
+        return []
+
+    res = await db.execute(
+        select(Expense)
+        .where(Expense.id.in_(expense_ids))
+        .where(Expense.is_reimbursement == True)  # noqa: E712
+    )
+    items = list(res.scalars().all())
+    now = datetime.utcnow()
+    updated = []
+
+    for e in items:
+        old_val = e.reimbursed_at
+        if action == "mark_reimbursed":
+            if e.reimbursed_at is None:
+                e.reimbursed_at = now
+                e.sheets_synced = False
+                await record_expense_log(
+                    db,
+                    expense_id=e.id,
+                    action="UPDATE",
+                    actor=actor,
+                    details={
+                        "item_name": e.item_name,
+                        "changes": {
+                            "reimbursed_at": {
+                                "old": None,
+                                "new": str(now),
+                            }
+                        },
+                    },
+                )
+                updated.append(e)
+        elif action == "unmark":
+            if e.reimbursed_at is not None:
+                e.reimbursed_at = None
+                e.sheets_synced = False
+                await record_expense_log(
+                    db,
+                    expense_id=e.id,
+                    action="UPDATE",
+                    actor=actor,
+                    details={
+                        "item_name": e.item_name,
+                        "changes": {
+                            "reimbursed_at": {
+                                "old": str(old_val),
+                                "new": None,
+                            }
+                        },
+                    },
+                )
+                updated.append(e)
+
+    await db.flush()
+    return updated
+
+
+async def get_reimbursement_summary(
+    db: AsyncSession,
+    month: int | None = None,
+    year: int | None = None,
+    user_id: int | None = None,
+) -> dict:
+    """Ringkasan statistik data talangan (reimbursement) & rincian per user."""
+    query = select(Expense).where(Expense.is_reimbursement == True)  # noqa: E712
+    if month and year:
+        start = date(year, month, 1)
+        end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+    if user_id is not None:
+        query = query.where(Expense.user_id == user_id)
+
+    res = await db.execute(query)
+    expenses = list(res.scalars().all())
+
+    user_ids = {e.user_id for e in expenses if e.user_id is not None}
+    users_map: dict[int, User] = {}
+    if user_ids:
+        u_res = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_map = {u.id: u for u in u_res.scalars().all()}
+
+    pending_count = 0
+    pending_total = 0.0
+    reimbursed_count = 0
+    reimbursed_total = 0.0
+
+    by_user_dict: dict[int | None, dict] = {}
+
+    for e in expenses:
+        nominal = float(e.total_price or 0)
+        is_pending = e.reimbursed_at is None
+
+        if is_pending:
+            pending_count += 1
+            pending_total += nominal
+        else:
+            reimbursed_count += 1
+            reimbursed_total += nominal
+
+        uid = e.user_id
+        if uid not in by_user_dict:
+            u = users_map.get(uid) if uid is not None else None
+            user_name = (u.name if u and u.name else None) or ("Tanpa User (Web)" if uid is None else f"User #{uid}")
+            by_user_dict[uid] = {
+                "user_id": uid,
+                "user_name": user_name,
+                "telegram_id": u.telegram_id if u else None,
+                "pending_count": 0,
+                "pending_total": 0.0,
+                "reimbursed_count": 0,
+                "reimbursed_total": 0.0,
+                "total_count": 0,
+                "total_nominal": 0.0,
+            }
+
+        g = by_user_dict[uid]
+        g["total_count"] += 1
+        g["total_nominal"] += nominal
+        if is_pending:
+            g["pending_count"] += 1
+            g["pending_total"] += nominal
+        else:
+            g["reimbursed_count"] += 1
+            g["reimbursed_total"] += nominal
+
+    by_user = sorted(
+        by_user_dict.values(),
+        key=lambda item: (-item["pending_total"], -item["total_nominal"])
+    )
+
+    return {
+        "ok": True,
+        "pending_count": pending_count,
+        "pending_total": pending_total,
+        "reimbursed_count": reimbursed_count,
+        "reimbursed_total": reimbursed_total,
+        "total_count": len(expenses),
+        "total_nominal": pending_total + reimbursed_total,
+        "by_user": by_user,
+    }
 
 
 async def get_expense_logs(

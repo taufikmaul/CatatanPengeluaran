@@ -16,6 +16,7 @@ import {
   MasterItemMergeRequest,
   MasterItemMergeResponse,
   MasterItemAuditResponse,
+  ReimbursementSummaryResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -488,6 +489,27 @@ export async function enqueueBatchMergeMasterItems(
   }>
 ): Promise<BackgroundJob> {
   const res = await api.post("/jobs/merge/batch-master-items", { merges });
+  return res.data;
+}
+
+export async function getReimbursementSummary(params?: {
+  month?: number | null;
+  year?: number | null;
+  userId?: number | null;
+}): Promise<ReimbursementSummaryResponse> {
+  const q = new URLSearchParams();
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.userId) q.append("user_id", String(params.userId));
+  const res = await api.get(`/expenses/reimbursements/summary?${q.toString()}`);
+  return res.data;
+}
+
+export async function settleReimbursements(payload: {
+  expense_ids: number[];
+  action: "mark_reimbursed" | "unmark";
+}): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
+  const res = await api.post("/expenses/reimbursements/settle", payload);
   return res.data;
 }
 

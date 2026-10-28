@@ -53,6 +53,29 @@ export interface ExpenseListResponse {
   total_pages: number;
 }
 
+export interface ReimbursementUserSummary {
+  user_id: number | null;
+  user_name: string;
+  telegram_id?: number | null;
+  pending_count: number;
+  pending_total: number;
+  reimbursed_count: number;
+  reimbursed_total: number;
+  total_count: number;
+  total_nominal: number;
+}
+
+export interface ReimbursementSummaryResponse {
+  ok: boolean;
+  pending_count: number;
+  pending_total: number;
+  reimbursed_count: number;
+  reimbursed_total: number;
+  total_count: number;
+  total_nominal: number;
+  by_user: ReimbursementUserSummary[];
+}
+
 export interface TopFrequentItem {
   item_name: string;
   category: string;

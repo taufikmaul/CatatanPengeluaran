@@ -473,3 +473,75 @@ class TestItemSearchPreservationInCallbacks:
         # Pastikan data di database terhapus
         assert await get_expense_by_id(db, saved[0].id) is None
         assert await get_expense_by_id(db, saved[1].id) is None
+
+
+class TestReimbursementEndpoints:
+    @pytest.mark.asyncio
+    async def test_reimbursement_summary_and_settlement_api(self, client, auth_cookies, db: AsyncSession):
+        client.cookies.update(auth_cookies)
+        user = User(telegram_id=8888, name="Staff Pastry", is_auth=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        e1 = Expense(
+            expense_date=date(2026, 10, 20),
+            item_name="Coklat Bubuk Tulen",
+            total_price=Decimal("50000"),
+            is_reimbursement=True,
+            user_id=user.id,
+        )
+        e2 = Expense(
+            expense_date=date(2026, 10, 21),
+            item_name="Vanili Cair 50ml",
+            total_price=Decimal("25000"),
+            is_reimbursement=True,
+            user_id=user.id,
+        )
+        db.add_all([e1, e2])
+        await db.commit()
+        await db.refresh(e1)
+        await db.refresh(e2)
+
+        # 1. Summary API
+        res = await client.get("/api/v1/expenses/reimbursements/summary?year=2026&month=10")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["pending_count"] >= 2
+        assert data["pending_total"] >= 75000
+        user_row = next((u for u in data["by_user"] if u["user_id"] == user.id), None)
+        assert user_row is not None
+        assert user_row["user_name"] == "Staff Pastry"
+        assert user_row["pending_count"] == 2
+        assert user_row["pending_total"] == 75000
+
+        # 2. Settle mark_reimbursed
+        settle_res = await client.post(
+            "/api/v1/expenses/reimbursements/settle",
+            json={"expense_ids": [e1.id, e2.id], "action": "mark_reimbursed"},
+        )
+        assert settle_res.status_code == 200
+        settle_data = settle_res.json()
+        assert settle_data["ok"] is True
+        assert settle_data["updated_count"] == 2
+
+        # 3. Verify updated in db
+        await db.refresh(e1)
+        assert e1.reimbursed_at is not None
+
+        # 4. Summary after settled
+        res2 = await client.get(f"/api/v1/expenses/reimbursements/summary?year=2026&month=10&user_id={user.id}")
+        assert res2.status_code == 200
+        data2 = res2.json()
+        assert data2["pending_count"] == 0
+        assert data2["reimbursed_count"] == 2
+        assert data2["reimbursed_total"] == 75000
+
+        # 5. Filter list_expenses by reimbursed_status
+        list_res = await client.get("/api/v1/expenses?is_reimbursement=true&reimbursed_status=reimbursed")
+        assert list_res.status_code == 200
+        list_data = list_res.json()
+        reimb_ids = [item["id"] for item in list_data["data"]]
+        assert e1.id in reimb_ids
+        assert e2.id in reimb_ids

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DataGrid,
   dataGridFeatures,
@@ -29,6 +30,8 @@ import {
   Package,
   LineChart as LineChartIcon,
   Minus,
+  ReceiptText,
+  ArrowRight,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -40,16 +43,20 @@ import {
   CartesianGrid,
 } from "recharts";
 
+export type PriceHistoryRecord = NonNullable<ItemPriceHistoryResponse["history"]>[number];
+
 interface PriceHistoryModalProps {
   itemName: string | null;
   itemId?: number | null;
   onClose: () => void;
+  onNavigateToExpense?: (record: PriceHistoryRecord) => void;
 }
 
 export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
   itemName,
   itemId,
   onClose,
+  onNavigateToExpense,
 }) => {
   const { data, isLoading } = useQuery<ItemPriceHistoryResponse>({
     queryKey: ["price-history", itemId, itemName],
@@ -131,8 +138,6 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
     ? "#10b981"
     : "#3b82f6";
 
-  type PriceHistoryRecord = NonNullable<ItemPriceHistoryResponse["history"]>[number];
-
   const priceHistoryColumns = useMemo<ColumnDef<DataGridFeatures, PriceHistoryRecord>[]>(
     () => [
       {
@@ -189,8 +194,32 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
         ),
         size: 110,
       },
+      {
+        id: "actions",
+        header: () => <div className="text-center w-full">Aksi</div>,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <div className="flex items-center justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onNavigateToExpense?.(item)}
+                className="h-7 px-2.5 text-[11px] font-semibold text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:border-blue-900/60 dark:hover:bg-blue-950/50 rounded-lg gap-1 transition-colors shrink-0"
+                title={`Buka transaksi ${item.item_name} di daftar transaksi`}
+              >
+                <ReceiptText className="w-3.5 h-3.5" />
+                <span>Lihat Transaksi</span>
+                <ArrowRight className="w-3 h-3 opacity-70" />
+              </Button>
+            </div>
+          );
+        },
+        size: 140,
+      },
     ],
-    []
+    [onNavigateToExpense]
   );
 
   const priceHistoryTable = useTable({

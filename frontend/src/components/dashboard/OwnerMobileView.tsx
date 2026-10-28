@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
 import { Expense, MonthlyReport, ExpenseUser, UnpaidExpenseItem } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
@@ -48,8 +49,8 @@ import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
 import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
 
 export interface OwnerMobileViewProps {
-  activeTab?: "overview" | "transactions";
-  onNavigateTab?: (tab: "overview" | "transactions") => void;
+  activeTab?: string;
+  onNavigateTab?: (tab: any) => void;
   reportData?: MonthlyReport;
   expenses: Expense[];
   isExpensesLoading: boolean;
@@ -86,6 +87,7 @@ export interface OwnerMobileViewProps {
   onOpenAddExpense: () => void;
   onOpenBudgetSettings?: () => void;
   onOpenTukarCashOngkir?: (subType?: "all" | "tukar_cash" | "ongkir") => void;
+  highlightedExpenseId?: number | null;
 }
 
 export function OwnerMobileView({
@@ -106,6 +108,7 @@ export function OwnerMobileView({
   onDeleteExpense,
   onViewExpense,
   canDelete = true,
+  highlightedExpenseId,
   month,
   year,
   category,
@@ -140,6 +143,23 @@ export function OwnerMobileView({
       setMobileTab("ringkasan");
     }
   }, [activeTab]);
+
+  // Scroll & highlight transaksi terpilih jika ada redirect dari riwayat harga
+  React.useEffect(() => {
+    if (!highlightedExpenseId) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`mobile-expense-row-${highlightedExpenseId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-blue-500", "bg-blue-50/80", "dark:bg-blue-950/60");
+        const clearTimer = setTimeout(() => {
+          el.classList.remove("ring-2", "ring-blue-500", "bg-blue-50/80", "dark:bg-blue-950/60");
+        }, 4000);
+        return () => clearTimeout(clearTimer);
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [highlightedExpenseId, expenses]);
 
   const totalUnpaidNominal = useMemo(() => {
     return reportData?.list_hutang?.reduce((sum, item) => sum + item.nominal, 0) || 0;
@@ -207,10 +227,7 @@ export function OwnerMobileView({
   };
 
   const handleJumpToReimburse = () => {
-    onReimbursementChange(true);
-    onStatusChange("");
-    onNavigateTab?.("transactions");
-    setMobileTab("transaksi");
+    onNavigateTab?.("talangan");
   };
 
   return (
@@ -798,11 +815,18 @@ export function OwnerMobileView({
                 const catColor = getCategoryColor(e.category);
                 const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
                 const tgMeta = parseTelegramLink(e.msg_link);
+                const isHighlighted = highlightedExpenseId === e.id;
 
                 return (
                   <div
                     key={e.id}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                    id={`mobile-expense-row-${e.id}`}
+                    className={cn(
+                      "p-4 rounded-2xl border shadow-xs space-y-3 transition-all",
+                      isHighlighted
+                        ? "bg-blue-50/80 dark:bg-blue-950/60 ring-2 ring-blue-500 border-blue-300 dark:border-blue-700"
+                        : "bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                    )}
                   >
                     {/* Header: Nama Barang & Badges */}
                     <div className="flex items-start justify-between gap-2">
@@ -816,6 +840,11 @@ export function OwnerMobileView({
                           >
                             {e.item_name}
                           </button>
+                          {isHighlighted && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 animate-pulse">
+                              Terpilih
+                            </span>
+                          )}
                           {e.is_reimbursement && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                               <Briefcase className="w-2.5 h-2.5" />

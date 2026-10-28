@@ -134,6 +134,34 @@ class ExpenseListResponse(BaseModel):
     total_pages: int
 
 
+class ReimbursementUserSummary(BaseModel):
+    user_id: int | None = None
+    user_name: str
+    telegram_id: int | None = None
+    pending_count: int = 0
+    pending_total: float = 0.0
+    reimbursed_count: int = 0
+    reimbursed_total: float = 0.0
+    total_count: int = 0
+    total_nominal: float = 0.0
+
+
+class ReimbursementSummaryResponse(BaseModel):
+    ok: bool = True
+    pending_count: int = 0
+    pending_total: float = 0.0
+    reimbursed_count: int = 0
+    reimbursed_total: float = 0.0
+    total_count: int = 0
+    total_nominal: float = 0.0
+    by_user: list[ReimbursementUserSummary] = []
+
+
+class ReimbursementSettleRequest(BaseModel):
+    expense_ids: list[int]
+    action: str = "mark_reimbursed"  # "mark_reimbursed" | "unmark"
+
+
 class ExpenseLogResponse(BaseModel):
     id: int
     expense_id: int | None = None

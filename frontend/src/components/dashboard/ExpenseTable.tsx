@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import { Expense } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
@@ -60,6 +61,7 @@ interface ExpenseTableProps {
   onOpenActivityLog?: () => void;
   onOpenAuditDuplicates?: () => void;
   canDelete?: boolean;
+  highlightedExpenseId?: number | null;
 }
 
 export const ExpenseTable: React.FC<ExpenseTableProps> = ({
@@ -78,6 +80,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onOpenActivityLog,
   onOpenAuditDuplicates,
   canDelete = true,
+  highlightedExpenseId,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -168,6 +171,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <span className="truncate">{e.item_name}</span>
                   <LineChart className="w-3 h-3 text-slate-400 hover:text-blue-500 shrink-0" />
                 </button>
+                {highlightedExpenseId === e.id && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 shrink-0 animate-pulse">
+                    Terpilih
+                  </span>
+                )}
                 {e.is_reimbursement && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
                     <Briefcase className="w-2.5 h-2.5" />
@@ -368,7 +376,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         size: 130,
       },
     ],
-    [onToggleStatus, onEditExpense, onRepeatExpense, onInspectItemPrice, onViewExpense, canDelete, deletingId]
+    [onToggleStatus, onEditExpense, onRepeatExpense, onInspectItemPrice, onViewExpense, canDelete, deletingId, highlightedExpenseId]
   );
 
   const pagination = useMemo<PaginationState>(
@@ -395,6 +403,26 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       onPageChange(next.pageIndex + 1);
     },
   });
+
+  useEffect(() => {
+    if (!highlightedExpenseId) return;
+
+    const timer = setTimeout(() => {
+      const rowEl = document.querySelector<HTMLElement>(`tr[data-row-id="${highlightedExpenseId}"]`);
+      const cardEl = document.getElementById(`expense-row-${highlightedExpenseId}`);
+      const target = rowEl || cardEl;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("ring-2", "ring-blue-500", "bg-blue-50/80", "dark:bg-blue-950/60");
+        const clearTimer = setTimeout(() => {
+          target.classList.remove("ring-2", "ring-blue-500", "bg-blue-50/80", "dark:bg-blue-950/60");
+        }, 4000);
+        return () => clearTimeout(clearTimer);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [highlightedExpenseId, expenses]);
 
   if (isLoading) {
     return (
@@ -489,14 +517,28 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             const tgMeta = parseTelegramLink(e.msg_link);
 
             return (
-              <div key={e.id} className="p-4 space-y-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+              <div
+                key={e.id}
+                id={`expense-row-${e.id}`}
+                className={cn(
+                  "p-4 space-y-3 transition-all",
+                  highlightedExpenseId === e.id
+                    ? "bg-blue-50/80 dark:bg-blue-950/60 ring-2 ring-blue-500 rounded-xl"
+                    : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                )}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                       {formatDateId(e.expense_date)}
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
-                      {e.item_name}
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug flex items-center gap-1.5 flex-wrap">
+                      <span>{e.item_name}</span>
+                      {highlightedExpenseId === e.id && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 shrink-0 animate-pulse">
+                          Terpilih
+                        </span>
+                      )}
                     </h4>
                     {e.notes && e.notes !== "-" && (
                       <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">

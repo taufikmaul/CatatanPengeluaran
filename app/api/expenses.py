@@ -18,6 +18,8 @@ from app.api.schemas import (
     ExpenseUserResponse,
     ExpenseLogResponse,
     ExpenseAuditResponse,
+    ReimbursementSummaryResponse,
+    ReimbursementSettleRequest,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
@@ -31,6 +33,8 @@ from app.services.expense_service import (
     get_expense_logs,
     get_recent_expense_logs,
     audit_duplicate_expenses,
+    get_reimbursement_summary,
+    settle_reimbursements,
 )
 from app.services.ai_service import call_ai_image
 
@@ -87,6 +91,7 @@ async def list_expenses(
     is_reimbursement: bool | None = Query(None),
     user_id: int | None = Query(None),
     special_type: str | None = Query(None),
+    reimbursed_status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -101,6 +106,7 @@ async def list_expenses(
         is_reimbursement=is_reimbursement,
         user_id=user_id,
         special_type=special_type,
+        reimbursed_status=reimbursed_status,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -337,6 +343,46 @@ async def list_expense_users(
         )
         for u in users
     ]
+
+
+@router.get("/reimbursements/summary", response_model=ReimbursementSummaryResponse)
+async def get_reimbursements_summary_endpoint(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2020),
+    user_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil ringkasan statistik reimbursement/talangan dan rincian per user."""
+    data = await get_reimbursement_summary(db, month=month, year=year, user_id=user_id)
+    return ReimbursementSummaryResponse(**data)
+
+
+@router.post("/reimbursements/settle")
+async def settle_reimbursements_endpoint(
+    payload: ReimbursementSettleRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tandai talangan sebagai sudah diganti atau batalkan status penggantian."""
+    if not payload.expense_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Daftar ID talangan tidak boleh kosong.",
+        )
+    actor = f"dashboard:{get_current_role(request)}"
+    updated = await settle_reimbursements(
+        db,
+        expense_ids=payload.expense_ids,
+        action=payload.action,
+        actor=actor,
+    )
+    await db.commit()
+    return {
+        "ok": True,
+        "action": payload.action,
+        "updated_count": len(updated),
+        "updated_ids": [e.id for e in updated],
+    }
 
 
 @router.get("/price-history")

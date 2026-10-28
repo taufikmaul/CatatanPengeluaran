@@ -21,6 +21,7 @@ import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
 import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
+import { TalanganTab } from "@/components/talangan/TalanganTab";
 import { SuppliersTab } from "@/components/supplier/SuppliersTab";
 import { SupplierDetailPage } from "@/components/supplier/SupplierDetailPage";
 import { LoginModal } from "@/components/auth/LoginModal";
@@ -33,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import confetti from "canvas-confetti";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { Plus, ReceiptText, ArrowRight } from "lucide-react";
 
 // Tangani SSO token dari URL (dikirim oleh HCTeams Hub) secara langsung sebelum render
@@ -61,7 +62,7 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
@@ -72,13 +73,15 @@ export function App() {
     activeTab = "transactions";
   } else if (pathname === "/tukar-cash-ongkir") {
     activeTab = "tukar-cash-ongkir";
+  } else if (pathname === "/talangan" || pathname === "/reimburse") {
+    activeTab = "talangan";
   } else if (pathname === "/config") {
     activeTab = "config";
   } else {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -106,6 +109,17 @@ export function App() {
   const [repeatingExpense, setRepeatingExpense] = useState<Expense | null>(null);
   const [inspectedItemName, setInspectedItemName] = useState<string | null>(null);
   const [inspectedItemId, setInspectedItemId] = useState<number | null>(null);
+  const [highlightedExpenseId, setHighlightedExpenseId] = useState<number | null>(null);
+
+  // Bersihkan highlight ID secara otomatis setelah beberapa detik
+  useEffect(() => {
+    if (highlightedExpenseId) {
+      const timer = setTimeout(() => {
+        setHighlightedExpenseId(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedExpenseId]);
 
   const handleInspectItemPrice = (name: string, id?: number | null) => {
     setInspectedItemName(name);
@@ -446,6 +460,7 @@ export function App() {
           totalPengeluaran={reportData?.total_pengeluaran}
           expenseCount={reportData?.expense_count}
           unpaidCount={reportData?.list_hutang?.length}
+          reimbursePendingCount={reportData?.reimburse_pending_count || 0}
           username={authData?.username}
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
@@ -482,9 +497,7 @@ export function App() {
               setPage(1);
             }}
             onFilterReimburse={() => {
-              navigate("/transactions");
-              setIsReimbursement(true);
-              setPage(1);
+              navigate("/talangan");
             }}
             isDarkMode={isDarkMode}
             onToggleDarkMode={handleToggleDarkMode}
@@ -613,9 +626,7 @@ export function App() {
                           setPage(1);
                         }}
                         onFilterReimburse={() => {
-                          navigate("/transactions");
-                          setIsReimbursement(true);
-                          setPage(1);
+                          navigate("/talangan");
                         }}
                         onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
                         onOpenTukarCashOngkir={(subType) => {
@@ -835,6 +846,7 @@ export function App() {
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       canDelete={canDelete}
+                      highlightedExpenseId={highlightedExpenseId}
                     />
                   </div>
                 )}
@@ -873,6 +885,7 @@ export function App() {
                         onDeleteExpense={(id) => deleteMutation.mutate(id)}
                         onViewExpense={(item) => setViewingExpense(item)}
                         canDelete={canDelete}
+                        highlightedExpenseId={highlightedExpenseId}
                         month={month}
                         year={year}
                         category={category}
@@ -1050,6 +1063,7 @@ export function App() {
                         onOpenActivityLog={() => setIsActivityLogOpen(true)}
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                         canDelete={canDelete}
+                        highlightedExpenseId={highlightedExpenseId}
                       />
                     </div>
                   </>
@@ -1198,6 +1212,7 @@ export function App() {
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       canDelete={canDelete}
+                      highlightedExpenseId={highlightedExpenseId}
                     />
                   </div>
                 )}
@@ -1275,6 +1290,49 @@ export function App() {
               />
             )}
 
+            {activeTab === "talangan" && (
+              <TalanganTab
+                currentMonth={month}
+                currentYear={year}
+                users={usersData}
+                onEditExpense={(item) => {
+                  setRepeatingExpense(null);
+                  setEditingExpense(item);
+                  setIsFormOpen(true);
+                }}
+                onViewExpense={(item) => setViewingExpense(item)}
+                onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                onAddNewTalangan={() => {
+                  setEditingExpense(null);
+                  setRepeatingExpense({
+                    id: 0,
+                    created_at: new Date().toISOString(),
+                    expense_date: new Date().toISOString().split("T")[0],
+                    category: "Operasional",
+                    item_name: "",
+                    supplier: "-",
+                    qty: 1,
+                    unit: "Pcs",
+                    unit_price: 0,
+                    shipping_fee: 0,
+                    tax: 0,
+                    other_fee: 0,
+                    discount: 0,
+                    total_price: 0,
+                    pay_method: "Tunai",
+                    pay_status: "Lunas",
+                    due_date: "-",
+                    notes: "Ditalangi karyawan",
+                    msg_link: "Web Dashboard",
+                    is_reimbursement: true,
+                    invoice_number: "-",
+                  } as Expense);
+                  setIsFormOpen(true);
+                }}
+                canDelete={canDelete}
+              />
+            )}
+
             {activeTab === "config" && canManageConfig && (
               <ConfigTab
                 config={configData || null}
@@ -1343,6 +1401,46 @@ export function App() {
           onClose={() => {
             setInspectedItemName(null);
             setInspectedItemId(null);
+          }}
+          onNavigateToExpense={(record) => {
+            // 1. Tutup modal riwayat harga & modal detail jika sedang terbuka
+            setInspectedItemName(null);
+            setInspectedItemId(null);
+            setViewingExpense(null);
+
+            // 2. Sesuaikan filter bulan & tahun sesuai tanggal transaksi riwayat terpilih
+            if (record.expense_date) {
+              const parts = record.expense_date.split("-");
+              if (parts.length >= 2) {
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                if (!isNaN(y) && !isNaN(m)) {
+                  setYear(y);
+                  setMonth(m);
+                }
+              }
+            }
+
+            // 3. Reset filter yang berpotensi menyembunyikan transaksi
+            setCategory("");
+            setStatus("");
+            setIsReimbursement(null);
+            setSelectedUserId(null);
+
+            // 4. Set kata kunci pencarian agar langsung menyaring ke barang tersebut
+            setSearch(record.item_name);
+            setPage(1);
+
+            // 5. Tandai ID transaksi untuk highlight di tabel / list
+            setHighlightedExpenseId(record.id);
+
+            // 6. Alihkan navigasi ke Daftar Transaksi
+            navigate("/transactions");
+
+            toast.info(`Membuka transaksi: ${record.item_name}`, {
+              description: `Menampilkan data tanggal ${formatDateId(record.expense_date)} pada Daftar Transaksi.`,
+              duration: 3500,
+            });
           }}
         />
 
