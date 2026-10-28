@@ -172,13 +172,24 @@ async def seed_master_items_from_history(db: AsyncSession = Depends(get_db)):
 async def audit_duplicates(
     min_score: float = 0.70,
     limit: int = 150,
+    supplier: str | None = None,
+    supplier_id: int | None = None,
+    strict_supplier: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Audit seluruh katalog nama item baku untuk mendeteksi potensi duplikat.
-    Mendeteksi perbedaan awalan/akhiran hasil scan AI nota belanja.
+    Audit katalog nama item baku untuk mendeteksi potensi duplikat.
+    Dapat difilter per toko / supplier tertentu untuk mengecek duplikasi barang belanjaan toko tersebut.
     """
-    result = await audit_duplicate_master_items(db, min_score=min_score, limit=limit)
+    result = await audit_duplicate_master_items(
+        db,
+        min_score=min_score,
+        limit=limit,
+        supplier_id=supplier_id,
+        supplier_name=supplier,
+        strict_supplier=strict_supplier,
+    )
+    await db.commit()
     return result
 
 

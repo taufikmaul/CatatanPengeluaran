@@ -83,6 +83,7 @@ Aturan Khusus Bukti Ongkir & Kurir Pengiriman Kue (GoSend Car, GoSend Bike, Grab
 
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
+- Jika terdapat beberapa baris/poin/nomor transaksi dalam 1 pesan (misal daftar beberapa ongkir pengiriman atau daftar beberapa karyawan tukar cash), WAJIB ekstrak SEMUA baris tersebut menjadi masing-masing 1 objek terpisah di array "items". JANGAN menggabungkan beberapa transaksi berbeda menjadi 1 total gabungan.
 - Status Pembayaran selain kasus COD di atas, asumsikan "Lunas" kecuali disebut sebaliknya.
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
@@ -142,6 +143,21 @@ async def _execute_fetch(messages: list[dict]) -> dict:
             else:
                 parsed = {"items": []}
 
+        # Deteksi konteks prompt pesan (berguna untuk multi-item dalam 1 chat)
+        user_msg_text = ""
+        for m in messages:
+            if m.get("role") == "user":
+                c = m.get("content")
+                if isinstance(c, str):
+                    user_msg_text += " " + c
+                elif isinstance(c, list):
+                    for part in c:
+                        if isinstance(part, dict) and part.get("type") == "text":
+                            user_msg_text += " " + str(part.get("text", ""))
+        user_msg_l = user_msg_text.lower()
+        is_ongkir_prompt = "/ongkir" in user_msg_l or "ongkir:" in user_msg_l
+        is_tukar_cash_prompt = "/tukercash" in user_msg_l or "tukar cash" in user_msg_l
+
         # Normalisasi tanggal pemesanan jika AI memakai key alternatif & pengamanan aturan COD (Skenario 1)
         normalized_items = []
         for item in parsed.get("items", []):
@@ -183,7 +199,8 @@ async def _execute_fetch(messages: list[dict]) -> dict:
 
             # Normalisasi Bukti Transfer / Tukar Cash Karyawan
             is_tukar_cash = (
-                "tukar cash" in barang_l
+                is_tukar_cash_prompt
+                or "tukar cash" in barang_l
                 or "tarik tunai" in barang_l
                 or "tukercash" in notes
                 or "tukar cash" in kat_l
@@ -223,7 +240,8 @@ async def _execute_fetch(messages: list[dict]) -> dict:
 
             # Normalisasi Bukti Ongkir & Kurir Instan
             is_ongkir = (
-                kat_l == "ongkir"
+                (is_ongkir_prompt and not is_tukar_cash)
+                or kat_l == "ongkir"
                 or "ongkir" in barang_l
                 or "ongkos kirim" in barang_l
                 or "gosend" in barang_l

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, enqueueMergeMasterItems, enqueueBatchMergeMasterItems } from "@/lib/api";
 import {
   MasterItem,
   DuplicatePair,
@@ -119,6 +119,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [customMergeSupplier, setCustomMergeSupplier] = useState("");
   const [mergeAliasesOption, setMergeAliasesOption] = useState(true);
   const [updateExpensesOption, setUpdateExpensesOption] = useState(true);
+  const [runMergeInBackground, setRunMergeInBackground] = useState(false);
 
   const { data: masterRes, isLoading } = useQuery<{
     ok: boolean;
@@ -281,7 +282,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     enabled: showAuditModal,
   });
 
-  // Merge Items Mutation
+  // Merge Items Mutation (Instant)
   const mergeMutation = useMutation({
     mutationFn: async (payload: MasterItemMergeRequest) => {
       return (await api.post("/master-items/merge", payload)).data;
@@ -298,6 +299,53 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     },
   });
 
+  // Batch Merge Mutation (Background Queue)
+  const batchMergeMutation = useMutation({
+    mutationFn: async (merges: any[]) => {
+      return await enqueueBatchMergeMasterItems(merges);
+    },
+    onSuccess: (data) => {
+      toast.success(
+        `Tugas penggabungan massal berhasil didaftarkan ke antrean latar belakang (#${data.id}).`
+      );
+      setShowAuditModal(false);
+      queryClient.invalidateQueries({ queryKey: ["background-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal mendaftarkan penggabungan massal");
+    },
+  });
+
+  const handleBatchMergeAllSuggested = () => {
+    if (auditPairs.length === 0) return;
+    const count = auditPairs.length;
+    if (
+      !confirm(
+        `Gabungkan ${count} pasang item duplikat sekaligus sesuai rekomendasi sistem? Tugas ini akan dieksekusi secara asinkron di antrean latar belakang.`
+      )
+    ) {
+      return;
+    }
+
+    const merges = auditPairs.map((pair) => {
+      const isAPrimary = pair.suggested_primary_id === pair.item_a.id;
+      const target = isAPrimary ? pair.item_a : pair.item_b;
+      const source = isAPrimary ? pair.item_b : pair.item_a;
+      return {
+        target_item_id: target.id,
+        source_item_ids: [source.id],
+        custom_name: target.item_name,
+        custom_category: target.category,
+        custom_supplier: target.default_supplier === "-" ? undefined : target.default_supplier,
+        merge_aliases: true,
+        update_expenses: true,
+      };
+    });
+
+    batchMergeMutation.mutate(merges);
+  };
+
   const openMergeDialogForItems = (items: MasterItem[], defaultPrimaryId?: number) => {
     if (items.length < 2) return;
     setMergeItemsList(items);
@@ -313,6 +361,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     setCustomMergeSupplier(primary.default_supplier === "-" ? "" : primary.default_supplier || "");
     setMergeAliasesOption(true);
     setUpdateExpensesOption(true);
+    setRunMergeInBackground(false);
     setMergeDialogOpen(true);
   };
 
@@ -325,7 +374,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     }
   };
 
-  const handleExecuteMerge = () => {
+  const handleExecuteMerge = async () => {
     if (!targetItemId) {
       toast.error("Pilih salah satu item sebagai item baku utama!");
       return;
@@ -335,7 +384,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       toast.error("Minimal harus ada satu item duplikat yang digabungkan!");
       return;
     }
-    mergeMutation.mutate({
+
+    const payload: MasterItemMergeRequest = {
       target_item_id: targetItemId,
       source_item_ids: sourceIds,
       custom_name: customMergeName.trim() || undefined,
@@ -343,7 +393,21 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       custom_supplier: customMergeSupplier.trim() || undefined,
       merge_aliases: mergeAliasesOption,
       update_expenses: updateExpensesOption,
-    });
+    };
+
+    if (runMergeInBackground) {
+      try {
+        const job = await enqueueMergeMasterItems(payload);
+        toast.success(`Penggabungan item didaftarkan ke antrean latar belakang (#${job.id}).`);
+        setMergeDialogOpen(false);
+        setSelectedIds([]);
+        queryClient.invalidateQueries({ queryKey: ["background-jobs"] });
+      } catch (err: any) {
+        toast.error(err.response?.data?.detail || "Gagal mendaftarkan tugas penggabungan");
+      }
+    } else {
+      mergeMutation.mutate(payload);
+    }
   };
 
   const toggleSelectItem = (id: number) => {
@@ -1244,6 +1308,21 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                {auditPairs.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleBatchMergeAllSuggested}
+                    disabled={batchMergeMutation.isPending}
+                    className="h-8 rounded-lg text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs"
+                    title="Gabungkan semua rekomendasi item duplikat sekaligus secara asinkron di antrean latar belakang"
+                  >
+                    <GitMerge className="w-3.5 h-3.5" />
+                    {batchMergeMutation.isPending
+                      ? "Mendaftarkan..."
+                      : `Gabungkan Semua (${auditPairs.length} Pasang) di Antrean`}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1586,6 +1665,22 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   <br />
                   <span className="text-slate-500 text-[10px]">
                     Nama asli di nota belanja fisik tetap tersimpan aman di kolom Catatan/Keterangan.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700 pt-1 border-t border-slate-200/50">
+                <input
+                  type="checkbox"
+                  checked={runMergeInBackground}
+                  onChange={(e) => setRunMergeInBackground(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  <strong>Jalankan di antrean latar belakang (Background Action)</strong>
+                  <br />
+                  <span className="text-slate-500 text-[10px]">
+                    Proses penggabungan berjalan secara asinkron tanpa menunggu di browser, ideal jika transaksi sangat banyak.
                   </span>
                 </span>
               </label>

@@ -238,3 +238,118 @@ async def test_merge_when_target_takes_source_name_does_not_violate_unique_const
     # Pastikan source terhapus
     deleted = await db.scalar(select(MasterItem).where(MasterItem.id == source.id))
     assert deleted is None
+
+
+@pytest.mark.asyncio
+async def test_audit_duplicate_master_items_by_supplier(db, client, auth_cookies):
+    """
+    Uji audit duplikat item yang difilter khusus untuk supplier tertentu.
+    Hanya pasangan duplikat dari supplier tersebut yang ditampilkan.
+    """
+    from app.models.supplier import Supplier
+
+    # Buat 2 supplier
+    supp1 = Supplier(name="Toko Roti Makmur", aliases="Roti Makmur, RM")
+    supp2 = Supplier(name="Toko Bangunan Sejahtera", aliases="Sejahtera Bangunan")
+    db.add_all([supp1, supp2])
+    await db.flush()
+
+    # Item untuk supplier 1 (duplikat tepung)
+    item1a = await create_master_item(
+        db,
+        item_name="Tepung Terigu Segitiga Biru 1kg",
+        category="Bahan Kue",
+        default_supplier="Toko Roti Makmur",
+    )
+    item1b = await create_master_item(
+        db,
+        item_name="Segitiga Biru 1 Kg Tepung",
+        category="Bahan Kue",
+        default_supplier="Toko Roti Makmur",
+    )
+
+    # Item untuk supplier 2 (duplikat semen)
+    item2a = await create_master_item(
+        db,
+        item_name="Semen Tiga Roda 50kg",
+        category="Renovasi",
+        default_supplier="Toko Bangunan Sejahtera",
+    )
+    item2b = await create_master_item(
+        db,
+        item_name="Semen Tiga Roda 50 Kg Sak",
+        category="Renovasi",
+        default_supplier="Toko Bangunan Sejahtera",
+    )
+    await db.commit()
+
+    # 1. Audit supplier 1 saja
+    res1 = await audit_duplicate_master_items(db, supplier_id=supp1.id, strict_supplier=True)
+    assert res1["ok"] is True
+    assert res1["total_duplicates"] == 1
+    pair = res1["pairs"][0]
+    pair_names = {pair["item_a"]["item_name"], pair["item_b"]["item_name"]}
+    assert "Tepung Terigu Segitiga Biru 1kg" in pair_names
+    assert "Segitiga Biru 1 Kg Tepung" in pair_names
+    assert pair["both_in_supplier"] is True
+
+    # 2. Audit via REST API dengan query parameter supplier
+    api_res = await client.get(
+        "/api/v1/master-items/audit-duplicates?supplier=Toko%20Roti%20Makmur&strict_supplier=true",
+        cookies=auth_cookies,
+    )
+    assert api_res.status_code == 200
+    data = api_res.json()
+    assert data["ok"] is True
+    assert data["total_duplicates"] == 1
+    assert data["pairs"][0]["both_in_supplier"] is True
+
+
+@pytest.mark.asyncio
+async def test_audit_duplicate_master_items_supplier_with_expenses(db):
+    """
+    Uji audit duplikat item toko ketika salah satu item baru dicatat di transaksi Expense
+    dan belum sempat didaftarkan manual di tabel master_items.
+    Sistem harus otomatis mendeteksi dan mengikutsertakannya dalam audit toko.
+    """
+    from app.models.supplier import Supplier
+
+    supp = Supplier(name="Toko Bahan Kue Ceria")
+    db.add(supp)
+    await db.flush()
+
+    # 1 master item terdaftar
+    master1 = await create_master_item(
+        db,
+        item_name="Mentega Blueband Serbaguna 200g",
+        category="Bahan Kue",
+        default_supplier="Toko Bahan Kue Ceria",
+    )
+
+    # 1 transaksi belanja dengan nama mirip tapi belum ada di master_item
+    exp = Expense(
+        expense_date=date(2026, 3, 1),
+        supplier="Toko Bahan Kue Ceria",
+        supplier_id=supp.id,
+        item_name="Blueband Serbaguna 200 g Mentega",
+        qty=5,
+        unit="Pcs",
+        unit_price=12000,
+        total_price=60000,
+        category="Bahan Kue",
+        pay_method="Tunai",
+        pay_status="Lunas",
+    )
+    db.add(exp)
+    await db.commit()
+
+    # Audit untuk toko Ceria
+    audit_res = await audit_duplicate_master_items(db, supplier_id=supp.id, strict_supplier=True)
+    assert audit_res["ok"] is True
+    assert audit_res["total_duplicates"] >= 1
+
+    pair = audit_res["pairs"][0]
+    names = {pair["item_a"]["item_name"], pair["item_b"]["item_name"]}
+    assert "Mentega Blueband Serbaguna 200g" in names
+    assert "Blueband Serbaguna 200 g Mentega" in names
+

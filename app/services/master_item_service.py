@@ -2,6 +2,7 @@
 app/services/master_item_service.py — Layanan Katalog Nama Item Baku (Master Item)
 & Pencocokan Otomatis (Fuzzy + Alias + Exact Match) untuk konsistensi pembukuan.
 """
+import asyncio
 import re
 from uuid import uuid4
 from difflib import SequenceMatcher
@@ -9,12 +10,16 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.master_item import MasterItem
 from app.models.expense import Expense
+from app.models.expense_log import ExpenseLog
+from app.models.supplier import Supplier
 from app.config import settings
 
 
 def _normalize_str(s: str) -> str:
-    """Bersihkan karakter non-alfanumerik berlebih dan kecilkan huruf."""
+    """Bersihkan karakter non-alfanumerik berlebih, pisahkan angka & satuan, dan kecilkan huruf."""
     s = (s or "").strip().lower()
+    s = re.sub(r"(\d+)([a-z]+)", r"\1 \2", s)
+    s = re.sub(r"([a-z]+)(\d+)", r"\1 \2", s)
     s = re.sub(r"[^a-z0-9\s]", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
@@ -611,91 +616,57 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     }
 
 
-async def audit_duplicate_master_items(
-    db: AsyncSession,
-    min_score: float = 0.70,
-    limit: int = 150,
-) -> dict:
-    """
-    Audit seluruh katalog master items untuk mendeteksi potensi duplikat.
-    Mendeteksi variasi input seperti perbedaan awalan/akhiran hasil scan AI
-    (mis. 'Kabel listrik NYM Dynamic 2 x 1.5' vs 'Kabel listrik NYM Dynamic 2 x 1.5 / Kabel tembaga').
-    """
-    master_items = await list_master_items(db)
-    if len(master_items) < 2:
-        return {"ok": True, "total_duplicates": 0, "pairs": []}
-
-    suggestions = await get_item_and_supplier_suggestions(db)
-    hist_by_id = {
-        s["id"]: s
-        for s in suggestions.get("items", [])
-        if s.get("id") is not None
-    }
-    hist_by_name = {
-        s["item_name"].strip().lower(): s
-        for s in suggestions.get("items", [])
-    }
-
-    def _get_item_stats(m: MasterItem) -> dict:
-        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
-        return {
-            "id": m.id,
-            "item_name": m.item_name,
-            "category": m.category,
-            "default_supplier": m.default_supplier or "-",
-            "aliases": m.aliases or "",
-            "satuan_beli": m.satuan_beli or "Pcs",
-            "tipe_satuan": m.tipe_satuan or "keduanya",
-            "isi_paket": m.isi_paket or "",
-            "satuan_ecer": m.satuan_ecer or "Pcs",
-            "last_unit_price": float(h.get("last_unit_price") or 0.0),
-            "last_supplier": h.get("last_supplier") or m.default_supplier or "-",
-            "tx_count": int(h.get("tx_count") or 0),
-            "created_at": m.created_at,
-        }
-
-    # Pre-calculate stats and normalized attributes
-    items_data = []
-    for m in master_items:
-        stats = _get_item_stats(m)
-        norm_name = _normalize_str(m.item_name)
-        tokens = set(norm_name.split())
-        nums = set(re.findall(r"\b\d+(?:[\.,]\d+)?\b", norm_name))
-        aliases_list = [_normalize_str(a) for a in _parse_aliases(m.aliases)]
-        items_data.append({
-            "model": m,
-            "stats": stats,
-            "norm_name": norm_name,
-            "tokens": tokens,
-            "nums": nums,
-            "aliases": aliases_list,
-        })
-
+def _compute_master_item_duplicates(
+    items_data: list[dict],
+    min_score: float,
+    limit: int,
+    supplier_item_ids: set[int] | None = None,
+    strict_supplier: bool = False,
+) -> list[dict]:
+    """Hitung duplikat antar item baku secara efisien di worker thread."""
     pairs = []
     n = len(items_data)
 
     for i in range(n):
         data_a = items_data[i]
+        id_a = data_a["stats"]["id"]
+        is_supp_a = bool(supplier_item_ids and id_a in supplier_item_ids)
+
+        # Jika filter supplier aktif dalam mode ketat, item a harus milik supplier
+        if supplier_item_ids is not None and strict_supplier and not is_supp_a:
+            continue
+
         norm_a = data_a["norm_name"]
         if not norm_a:
             continue
+        tokens_a = data_a["tokens"]
+        nums_a = data_a["nums"]
+        aliases_a = data_a["aliases"]
+        len_a = data_a["len"]
 
         for j in range(i + 1, n):
             data_b = items_data[j]
+            id_b = data_b["stats"]["id"]
+            is_supp_b = bool(supplier_item_ids and id_b in supplier_item_ids)
+
+            if supplier_item_ids is not None:
+                if strict_supplier and not is_supp_b:
+                    continue
+                if not strict_supplier and not (is_supp_a or is_supp_b):
+                    continue
+
             norm_b = data_b["norm_name"]
             if not norm_b:
                 continue
 
-            nums_a = data_a["nums"]
             nums_b = data_b["nums"]
-            # Cek jika ada perbedaan angka/dimensi spesifik yang bertentangan (mis. 2 vs 3, 20 vs 25)
             has_num_conflict = bool(nums_a and nums_b and (nums_a - nums_b) and (nums_b - nums_a))
 
-            # Cek kecocokan alias
+            aliases_b = data_b["aliases"]
             has_alias_match = (
-                norm_a in data_b["aliases"]
-                or norm_b in data_a["aliases"]
-                or bool(set(data_a["aliases"]) & set(data_b["aliases"]) - {""})
+                norm_a in aliases_b
+                or norm_b in aliases_a
+                or bool(set(aliases_a) & set(aliases_b) - {""})
             )
 
             similarity = 0.0
@@ -707,10 +678,8 @@ async def audit_duplicate_master_items(
                 match_type = "alias"
                 reason = "Kata kunci alias struk saling terhubung"
             elif has_num_conflict:
-                # Angka/dimensi berbeda (misal 2x1.5 vs 3x1.5), jangan deteksi sebagai duplikat
                 continue
             else:
-                tokens_a = data_a["tokens"]
                 tokens_b = data_b["tokens"]
                 is_sub_a_in_b = norm_a in norm_b
                 is_sub_b_in_a = norm_b in norm_a
@@ -742,14 +711,19 @@ async def audit_duplicate_master_items(
                         longer_name = data_b["stats"]["item_name"] if len(tokens_a) <= len(tokens_b) else data_a["stats"]["item_name"]
                         reason = f"Semua kata '{shorter_name}' termuat di '{longer_name}'"
                 else:
-                    seq_ratio = SequenceMatcher(None, norm_a, norm_b).ratio()
-                    union_len = len(tokens_a | tokens_b)
-                    jaccard = len(tokens_a & tokens_b) / union_len if union_len > 0 else 0.0
-                    combined = (seq_ratio * 0.6) + (jaccard * 0.4)
-                    if combined >= 0.76:
-                        similarity = round(combined, 2)
-                        match_type = "fuzzy"
-                        reason = f"Kemiripan teks {int(similarity * 100)}%"
+                    len_b = data_b["len"]
+                    max_seq = (2.0 * min(len_a, len_b)) / (len_a + len_b)
+                    if max_seq >= min_score - 0.10:
+                        union_len = len(tokens_a | tokens_b)
+                        inter_len = len(tokens_a & tokens_b)
+                        jaccard = inter_len / union_len if union_len > 0 else 0.0
+                        if jaccard >= 0.20:
+                            seq_ratio = SequenceMatcher(None, norm_a, norm_b).ratio()
+                            best_score = max(seq_ratio, (seq_ratio * 0.5) + (jaccard * 0.5))
+                            if best_score >= min_score:
+                                similarity = round(best_score, 2)
+                                match_type = "fuzzy"
+                                reason = f"Kemiripan teks {int(similarity * 100)}%"
 
             if match_type and similarity >= min_score:
                 tx_a = data_a["stats"]["tx_count"]
@@ -764,6 +738,8 @@ async def audit_duplicate_master_items(
                     else:
                         suggested_primary = data_b["stats"]["id"]
 
+                both_in_supp = (is_supp_a and is_supp_b) if supplier_item_ids is not None else True
+
                 pairs.append({
                     "item_a": data_a["stats"],
                     "item_b": data_b["stats"],
@@ -771,15 +747,216 @@ async def audit_duplicate_master_items(
                     "match_type": match_type,
                     "reason": reason,
                     "suggested_primary_id": suggested_primary,
+                    "both_in_supplier": both_in_supp,
                 })
 
-    # Urutkan berdasarkan similarity_score tertinggi
-    pairs.sort(key=lambda x: -x["similarity_score"])
+    if supplier_item_ids is not None:
+        pairs.sort(key=lambda x: (not x.get("both_in_supplier", False), -x["similarity_score"]))
+    else:
+        pairs.sort(key=lambda x: -x["similarity_score"])
+    return pairs[:limit]
+
+
+async def audit_duplicate_master_items(
+    db: AsyncSession,
+    min_score: float = 0.70,
+    limit: int = 150,
+    supplier_id: int | None = None,
+    supplier_name: str | None = None,
+    strict_supplier: bool = False,
+) -> dict:
+    """
+    Audit seluruh katalog master items untuk mendeteksi potensi duplikat.
+    Dapat difilter per toko / supplier tertentu untuk mengecek duplikasi barang belanjaan toko tersebut.
+    Dioptimalkan dengan agregasi SQL langsung, pruning token, dan komputasi di threadpool.
+    """
+    supplier_item_ids: set[int] | None = None
+
+    if supplier_id is not None or (supplier_name and supplier_name.strip()):
+        target_supplier: Supplier | None = None
+        supplier_names: set[str] = set()
+
+        if supplier_id is not None:
+            target_supplier = await db.get(Supplier, supplier_id)
+            if target_supplier:
+                supplier_names.add(target_supplier.name.strip().lower())
+                if target_supplier.aliases:
+                    for a in target_supplier.aliases.split(","):
+                        if a.strip():
+                            supplier_names.add(a.strip().lower())
+
+        if supplier_name and supplier_name.strip():
+            supplier_names.add(supplier_name.strip().lower())
+            if not target_supplier:
+                s_res = await db.execute(
+                    select(Supplier).where(func.lower(Supplier.name) == supplier_name.strip().lower())
+                )
+                target_supplier = s_res.scalar_one_or_none()
+                if target_supplier and target_supplier.aliases:
+                    for a in target_supplier.aliases.split(","):
+                        if a.strip():
+                            supplier_names.add(a.strip().lower())
+
+        # Kumpulkan filter transaksi pengeluaran untuk supplier ini
+        exp_conds = []
+        if target_supplier:
+            exp_conds.append(Expense.supplier_id == target_supplier.id)
+        if supplier_names:
+            exp_conds.append(func.lower(func.trim(Expense.supplier)).in_(list(supplier_names)))
+
+        supplier_filter = or_(*exp_conds) if exp_conds else None
+
+        existing_items = await list_master_items(db)
+        existing_map = {m.item_name.strip().lower(): m for m in existing_items}
+        new_master_added = False
+
+        if supplier_filter is not None:
+            exp_stmt = (
+                select(
+                    Expense.master_item_id,
+                    Expense.item_name,
+                    Expense.category,
+                    Expense.supplier,
+                )
+                .where(supplier_filter)
+                .where(Expense.category != "Tukar Cash")
+            )
+            exp_rows = (await db.execute(exp_stmt)).all()
+
+            for row in exp_rows:
+                raw_name = (row.item_name or "").strip()
+                if not raw_name or raw_name == "-":
+                    continue
+                cat_l = (row.category or "").strip().lower()
+                raw_l = raw_name.lower()
+                if cat_l in ("ongkir", "tukar cash") or raw_l.startswith("ongkir"):
+                    continue
+
+                if raw_l not in existing_map:
+                    new_m = MasterItem(
+                        item_name=raw_name,
+                        category=row.category or "Bahan Kue",
+                        default_supplier=row.supplier or (target_supplier.name if target_supplier else "-"),
+                        aliases="",
+                    )
+                    db.add(new_m)
+                    existing_map[raw_l] = new_m
+                    new_master_added = True
+
+        if new_master_added:
+            await db.flush()
+
+        supplier_item_ids = set()
+        for m in existing_map.values():
+            if m.default_supplier and m.default_supplier.strip().lower() in supplier_names:
+                supplier_item_ids.add(m.id)
+
+        if supplier_filter is not None:
+            tx_items_stmt = (
+                select(
+                    Expense.master_item_id,
+                    func.lower(func.trim(Expense.item_name)).label("item_lower"),
+                )
+                .where(supplier_filter)
+                .distinct()
+            )
+            tx_rows = (await db.execute(tx_items_stmt)).all()
+            for r in tx_rows:
+                if r.master_item_id:
+                    supplier_item_ids.add(r.master_item_id)
+                if r.item_lower and r.item_lower in existing_map:
+                    supplier_item_ids.add(existing_map[r.item_lower].id)
+
+        master_items = list(existing_map.values())
+        if not supplier_item_ids or (strict_supplier and len(supplier_item_ids) < 2):
+            return {"ok": True, "total_duplicates": 0, "pairs": []}
+    else:
+        master_items = await list_master_items(db)
+
+    if len(master_items) < 2:
+        return {"ok": True, "total_duplicates": 0, "pairs": []}
+
+    # Ambil statistik transaksi belanja sekaligus dengan agregasi SQL cepat
+    stats_query = (
+        select(
+            Expense.master_item_id,
+            func.lower(Expense.item_name).label("name_lower"),
+            func.count(Expense.id).label("tx_count"),
+            func.max(Expense.unit_price).label("last_unit_price"),
+            func.max(Expense.supplier).label("last_supplier"),
+        )
+        .where(Expense.category != "Tukar Cash")
+        .group_by(Expense.master_item_id, func.lower(Expense.item_name))
+    )
+    stats_res = await db.execute(stats_query)
+    hist_by_id: dict[int, dict] = {}
+    hist_by_name: dict[str, dict] = {}
+
+    for row in stats_res.all():
+        data = {
+            "tx_count": int(row.tx_count or 0),
+            "last_unit_price": float(row.last_unit_price or 0.0),
+            "last_supplier": row.last_supplier or "-",
+        }
+        if row.master_item_id:
+            if row.master_item_id not in hist_by_id:
+                hist_by_id[row.master_item_id] = data
+            else:
+                hist_by_id[row.master_item_id]["tx_count"] += data["tx_count"]
+                if data["last_unit_price"] > 0:
+                    hist_by_id[row.master_item_id]["last_unit_price"] = data["last_unit_price"]
+        if row.name_lower:
+            hist_by_name[row.name_lower] = data
+
+    def _get_item_stats(m: MasterItem) -> dict:
+        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
+        return {
+            "id": m.id,
+            "item_name": m.item_name,
+            "category": m.category,
+            "default_supplier": m.default_supplier or "-",
+            "aliases": m.aliases or "",
+            "satuan_beli": m.satuan_beli or "Pcs",
+            "tipe_satuan": m.tipe_satuan or "keduanya",
+            "isi_paket": m.isi_paket or "",
+            "satuan_ecer": m.satuan_ecer or "Pcs",
+            "last_unit_price": float(h.get("last_unit_price") or 0.0),
+            "last_supplier": h.get("last_supplier") or m.default_supplier or "-",
+            "tx_count": int(h.get("tx_count") or 0),
+            "created_at": m.created_at,
+        }
+
+    items_data = []
+    for m in master_items:
+        stats = _get_item_stats(m)
+        norm_name = _normalize_str(m.item_name)
+        tokens = set(norm_name.split())
+        nums = set(re.findall(r"\b\d+(?:[\.,]\d+)?\b", norm_name))
+        aliases_list = [_normalize_str(a) for a in _parse_aliases(m.aliases)]
+        items_data.append({
+            "model": m,
+            "stats": stats,
+            "norm_name": norm_name,
+            "tokens": tokens,
+            "nums": nums,
+            "aliases": aliases_list,
+            "len": len(norm_name),
+        })
+
+    # Jalankan matching CPU-bound di threadpool agar event loop tidak terblokir
+    pairs = await asyncio.to_thread(
+        _compute_master_item_duplicates,
+        items_data,
+        min_score,
+        limit,
+        supplier_item_ids,
+        strict_supplier,
+    )
 
     return {
         "ok": True,
         "total_duplicates": len(pairs),
-        "pairs": pairs[:limit],
+        "pairs": pairs,
     }
 
 
@@ -960,14 +1137,31 @@ async def merge_master_items(
 
     await db.flush()
 
-    # Ambil ulang stats target
-    suggestions = await get_item_and_supplier_suggestions(db)
-    hist_by_id = {
-        s["id"]: s
-        for s in suggestions.get("items", [])
-        if s.get("id") is not None
-    }
-    h = hist_by_id.get(target.id) or {}
+    # Ambil ulang stats target secara langsung tanpa scan seluruh katalog
+    target_stats_res = await db.execute(
+        select(
+            func.count(Expense.id).label("tx_count"),
+            func.max(Expense.unit_price).label("last_unit_price"),
+            func.max(Expense.supplier).label("last_supplier"),
+        ).where(Expense.master_item_id == target.id)
+    )
+    t_stats = target_stats_res.one_or_none()
+    tx_count = int(t_stats.tx_count or 0) if t_stats else 0
+    last_unit_price = float(t_stats.last_unit_price or 0.0) if t_stats else 0.0
+    last_supplier = (t_stats.last_supplier if t_stats and t_stats.last_supplier else None) or target.default_supplier or "-"
+
+    # Catat audit log penggabungan item baku
+    log = ExpenseLog(
+        expense_id=None,
+        action="MERGE_MASTER_ITEMS",
+        actor="system",
+        details=(
+            f"Menggabungkan {len(sources)} item duplikat ({', '.join(source_names)}) ke #{target.id} '{target.item_name}'. "
+            f"Sebanyak {reassigned_count} transaksi belanja dialihkan."
+        ),
+    )
+    db.add(log)
+    await db.flush()
 
     target_resp = {
         "id": target.id,
@@ -979,9 +1173,9 @@ async def merge_master_items(
         "tipe_satuan": target.tipe_satuan or "keduanya",
         "isi_paket": target.isi_paket or "",
         "satuan_ecer": target.satuan_ecer or "Pcs",
-        "last_unit_price": float(h.get("last_unit_price") or 0.0),
-        "last_supplier": h.get("last_supplier") or target.default_supplier or "-",
-        "tx_count": int(h.get("tx_count") or 0),
+        "last_unit_price": last_unit_price,
+        "last_supplier": last_supplier,
+        "tx_count": tx_count,
         "created_at": target.created_at,
     }
 

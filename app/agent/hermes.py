@@ -78,11 +78,51 @@ class HermesAgent:
             await self._handle_text_input(param or text, msg_link)
 
         elif intent == Intent.CMD_ONGKIR:
-            content = f"Ongkir: {param}" if param else text
+            if not param:
+                msg = (
+                    "🚚 *FORMAT LAPORAN ONGKIR (DELIVERY CAKE)*\n\n"
+                    "💡 *Format Lengkap (Paling Direkomendasikan):*\n"
+                    "```\n"
+                    "/ongkir\n"
+                    "Judul: Ongkir delivery cake\n"
+                    "Kurir: GoSend Car\n"
+                    "Biaya: 25.000\n"
+                    "Bayar: Gopay - Admin Toko\n"
+                    "Catatan: Pesanan bolu Bu Maya ke Tebet\n"
+                    "```\n\n"
+                    "⚡ *Format Cepat 1 Baris:*\n"
+                    "`/ongkir 25.000, GoSend Car, Gopay - Kasir, kirim ke Tebet`\n\n"
+                    "📸 *Kirim Screenshot Resi/App Kurir:*\n"
+                    "Kirim screenshot dari Gojek/Grab/Lalamove dengan caption:\n"
+                    "`/ongkir bayar Gopay - Admin, kue Bu Maya`"
+                )
+                await tg.send_message(self.chat_id, msg, self.thread_id)
+                return
+            content = f"Ongkir: {param}"
             await self._handle_text_input(content, msg_link)
 
         elif intent == Intent.CMD_TUKAR_CASH:
-            content = f"Tukar Cash /tukercash: {param}" if param else text
+            if not param:
+                msg = (
+                    "🔄 *FORMAT LAPORAN TUKAR CASH (TARIK TUNAI)*\n\n"
+                    "💡 *Format Lengkap (Paling Direkomendasikan):*\n"
+                    "```\n"
+                    "/tukercash\n"
+                    "Nama: Budi\n"
+                    "Nominal: 100.000\n"
+                    "Bank: Transfer BCA An Budi\n"
+                    "Catatan: Titip tarik tunai kasir (Ref: 123456)\n"
+                    "```\n\n"
+                    "⚡ *Format Cepat 1 Baris:*\n"
+                    "`/tukercash 100.000 - Budi (Transfer BCA)`\n\n"
+                    "📸 *Kirim Bukti Transfer:*\n"
+                    "Kirim foto/screenshot bukti transfer m-banking dengan caption:\n"
+                    "`/tukercash Tarik tunai Budi`\n\n"
+                    "_Catatan: Metode bayar otomatis tercatat Tunai (kas fisik kasir) & bukti bank otomatis masuk ke Catatan._"
+                )
+                await tg.send_message(self.chat_id, msg, self.thread_id)
+                return
+            content = f"Tukar Cash /tukercash: {param}"
             await self._handle_text_input(content, msg_link)
 
         elif intent == Intent.CMD_REKAP or intent == Intent.QUERY_REPORT:
@@ -613,6 +653,8 @@ class HermesAgent:
             "📋 *MENU UTAMA*\n\n"
             "🤖 /analisis - Analisis keuangan pintar AI\n"
             "📊 /rekap - Laporan bulan ini\n"
+            "🚚 /ongkir - Panduan & catat ongkir kurir\n"
+            "🔄 /tukercash - Panduan & catat tukar cash kasir\n"
             "💳 /hutang - Cek & lunasi tagihan\n"
             "💼 /reimburse - Review talangan (reimburse)\n"
             "🔍 /harga [nama] - Cari harga terakhir\n"
