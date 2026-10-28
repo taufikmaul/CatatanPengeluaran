@@ -11,6 +11,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
+import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
+import { Filters } from "@/components/reui/filters/filters";
+import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
+import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
+import { ColumnDef, useTable, PaginationState } from "@tanstack/react-table";
+import {
   ArrowLeftRight,
   Truck,
   Search,
@@ -40,6 +53,7 @@ interface TukarCashOngkirTabProps {
   onViewExpense?: (expense: Expense) => void;
   onToggleStatus: (expense: Expense) => void;
   onDeleteExpense: (id: number) => void;
+  onAddNewExpense?: (type: "ongkir" | "tukar_cash") => void;
   canDelete?: boolean;
 }
 
@@ -57,6 +71,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   onViewExpense,
   onToggleStatus,
   onDeleteExpense,
+  onAddNewExpense,
   canDelete = false,
 }) => {
   const [filterType, setFilterType] = useState<"all" | "tukar_cash" | "ongkir">(initialType);
@@ -130,6 +145,268 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   const ongkirReimburseTotal = reportData?.ongkir_reimburse_total || 0;
   const ongkirTunaiTotal = Math.max(0, totalOngkir - ongkirReimburseTotal);
 
+  const cashDeliveryFilterFields = useMemo<FilterField[]>(
+    () => [
+      {
+        id: "type",
+        label: "Jenis Transaksi",
+        type: "select",
+        options: [
+          { label: "Semua Jenis", value: "all" },
+          { label: "Tukar Cash", value: "tukar_cash" },
+          { label: "Ongkir Kurir", value: "ongkir" },
+        ],
+      },
+      {
+        id: "status",
+        label: "Status Bayar",
+        type: "select",
+        options: [
+          { label: "Semua Status", value: "all" },
+          { label: "Lunas", value: "Lunas" },
+          { label: "Belum Lunas / Pending", value: "Belum Lunas" },
+        ],
+      },
+    ],
+    []
+  );
+
+  const cashDeliveryFilterQuery = useMemo(() => {
+    const rules = [];
+    if (filterType && filterType !== "all") {
+      rules.push(createFilterRule({ id: "rule-type", path: ["type"], operator: "is", value: filterType }));
+    }
+    if (statusFilter && statusFilter !== "all") {
+      rules.push(createFilterRule({ id: "rule-status", path: ["status"], operator: "is", value: statusFilter }));
+    }
+    return createFilterQuery(rules, "and");
+  }, [filterType, statusFilter]);
+
+  const handleCashDeliveryQueryChange = (nextQuery: FilterQuery) => {
+    let nextType: "all" | "tukar_cash" | "ongkir" = "all";
+    let nextStatus = "";
+    const traverse = (nodes: FilterNode[]) => {
+      for (const node of nodes) {
+        if (isFilterRule(node)) {
+          if (node.path[0] === "type") nextType = (String(node.value ?? "all") as "all" | "tukar_cash" | "ongkir");
+          if (node.path[0] === "status") nextStatus = String(node.value ?? "");
+        } else if (node.rules) {
+          traverse(node.rules);
+        }
+      }
+    };
+    if (nextQuery?.rules) traverse(nextQuery.rules);
+    setFilterType(nextType);
+    setStatusFilter(nextStatus === "all" ? "" : nextStatus);
+    setPage(1);
+  };
+
+  const cashDeliveryColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
+    () => [
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-slate-600 whitespace-nowrap">
+            {formatDateId(row.original.expense_date)}
+          </span>
+        ),
+        size: 110,
+      },
+      {
+        id: "type",
+        header: () => <span>Jenis</span>,
+        cell: ({ row }) => {
+          const type = getItemType(row.original);
+          const isTukar = type === "tukar_cash";
+          return isTukar ? (
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
+              <ArrowLeftRight className="w-3 h-3 text-indigo-600" />
+              Tukar Cash
+            </Badge>
+          ) : (
+            <Badge className="bg-sky-50 text-sky-700 border-sky-200 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
+              <Truck className="w-3 h-3 text-sky-600" />
+              Ongkir Kurir
+            </Badge>
+          );
+        },
+        size: 130,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => <DataGridColumnHeader title="Item / Keterangan" column={column} />,
+        cell: ({ row }) => {
+          const e = row.original;
+          return (
+            <div
+              className="cursor-pointer group/item"
+              onClick={() => onViewExpense?.(e)}
+            >
+              <div className="font-semibold text-slate-900 group-hover/item:text-blue-600 max-w-xs truncate transition-colors">
+                {e.item_name}
+              </div>
+              {e.notes && e.notes !== "-" && (
+                <div className="text-[11px] text-slate-500 max-w-xs truncate mt-0.5">
+                  {e.notes}
+                </div>
+              )}
+              {e.invoice_number && e.invoice_number !== "-" && (
+                <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                  Ref/Inv: {e.invoice_number}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 220,
+      },
+      {
+        accessorKey: "supplier",
+        id: "supplier",
+        header: () => <span>Supplier / Provider</span>,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-700 font-medium">
+            {row.original.supplier || "-"}
+          </span>
+        ),
+        size: 150,
+      },
+      {
+        accessorKey: "pay_method",
+        id: "pay_method",
+        header: () => <span>Metode Bayar</span>,
+        cell: ({ row }) => {
+          const e = row.original;
+          return (
+            <div className="whitespace-nowrap flex items-center gap-1">
+              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
+                {e.pay_method}
+              </span>
+              {e.is_reimbursement && (
+                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">
+                  Reimburse
+                </span>
+              )}
+            </div>
+          );
+        },
+        size: 130,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: () => <div className="text-right">Nominal</div>,
+        cell: ({ row }) => (
+          <div className="text-right font-bold text-slate-900 tabular-nums whitespace-nowrap text-xs">
+            {formatRupiah(row.original.total_price)}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "pay_status",
+        id: "pay_status",
+        header: () => <div className="text-center">Status</div>,
+        cell: ({ row }) => {
+          const e = row.original;
+          return (
+            <div className="text-center whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => onToggleStatus(e)}
+                className="inline-flex items-center gap-1 transition-opacity hover:opacity-80"
+              >
+                {e.pay_status === "Lunas" ? (
+                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] gap-1 font-semibold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Lunas
+                  </Badge>
+                ) : (
+                  <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] gap-1 font-semibold">
+                    <Clock className="w-3 h-3 text-rose-600" />
+                    Pending
+                  </Badge>
+                )}
+              </button>
+            </div>
+          );
+        },
+        size: 110,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-center">Aksi</div>,
+        cell: ({ row }) => {
+          const e = row.original;
+          const tgLink = parseTelegramLink(e.msg_link);
+          return (
+            <div className="flex items-center justify-center gap-1" onClick={(ev) => ev.stopPropagation()}>
+              {tgLink?.url && (
+                <a
+                  href={tgLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="Buka pesan Telegram asli"
+                >
+                  <TelegramIcon className="w-3.5 h-3.5" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => onEditExpense(e)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Edit"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(e.id)}
+                  disabled={deletingId === e.id}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                  title="Hapus"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        },
+        size: 100,
+      },
+    ],
+    [canDelete, deletingId, onEditExpense, onToggleStatus, onViewExpense]
+  );
+
+  const cashDeliveryPagination = useMemo<PaginationState>(
+    () => ({
+      pageIndex: Math.max(0, page - 1),
+      pageSize: 30,
+    }),
+    [page]
+  );
+
+  const cashDeliveryTable = useTable({
+    features: dataGridFeatures,
+    columns: cashDeliveryColumns,
+    data: expenses,
+    manualPagination: true,
+    rowCount: totalCount,
+    getRowId: (row: Expense) => String(row.id),
+    state: {
+      pagination: cashDeliveryPagination,
+    },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === "function" ? updater(cashDeliveryPagination) : updater;
+      setPage(next.pageIndex + 1);
+    },
+  });
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -154,36 +431,60 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
             </p>
           </div>
 
-          {/* Quick Month/Year Switcher */}
-          <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-2xl border border-white/10 self-start md:self-auto">
-            <select
-              value={selectedMonth}
-              onChange={(e) => {
-                setSelectedMonth(Number(e.target.value));
-                setPage(1);
-              }}
-              className="bg-transparent text-white text-xs font-semibold px-2 py-1.5 rounded-xl border-none outline-none cursor-pointer focus:bg-slate-800"
-            >
-              {MONTH_NAMES.map((m, idx) => (
-                <option key={m} value={idx + 1} className="bg-slate-900 text-white">
-                  {m}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => {
-                setSelectedYear(Number(e.target.value));
-                setPage(1);
-              }}
-              className="bg-transparent text-white text-xs font-semibold px-2 py-1.5 rounded-xl border-none outline-none cursor-pointer focus:bg-slate-800"
-            >
-              {[selectedYear - 1, selectedYear, selectedYear + 1].map((y) => (
-                <option key={y} value={y} className="bg-slate-900 text-white">
-                  {y}
-                </option>
-              ))}
-            </select>
+          {/* Quick Month/Year Switcher & Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 self-start md:self-auto">
+            {onAddNewExpense && (
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onAddNewExpense("ongkir")}
+                  className="bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs h-9 px-3 font-semibold gap-1.5 shadow-xs"
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>+ Ongkir</span>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onAddNewExpense("tukar_cash")}
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs h-9 px-3 font-semibold gap-1.5 shadow-xs"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  <span>+ Tukar Cash</span>
+                </Button>
+              </div>
+            )}
+            <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-2xl border border-white/10">
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="bg-transparent text-white text-xs font-semibold px-2 py-1.5 rounded-xl border-none outline-none cursor-pointer focus:bg-slate-800"
+              >
+                {MONTH_NAMES.map((m, idx) => (
+                  <option key={m} value={idx + 1} className="bg-slate-900 text-white">
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(Number(e.target.value));
+                  setPage(1);
+                }}
+                className="bg-transparent text-white text-xs font-semibold px-2 py-1.5 rounded-xl border-none outline-none cursor-pointer focus:bg-slate-800"
+              >
+                {[selectedYear - 1, selectedYear, selectedYear + 1].map((y) => (
+                  <option key={y} value={y} className="bg-slate-900 text-white">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -346,9 +647,9 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
           </Button>
         </div>
 
-        {/* Input Search & Status */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-          <div className="sm:col-span-2 relative">
+        {/* Input Search, Filters, & Status */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 pt-1">
+          <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <Input
               type="text"
@@ -361,14 +662,24 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
               className="pl-9 h-10 text-xs rounded-xl"
             />
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            <Filters
+              variant="advanced"
+              advancedMode="popover"
+              advancedAlign="end"
+              reorderable
+              fields={cashDeliveryFilterFields}
+              query={cashDeliveryFilterQuery}
+              onQueryChange={handleCashDeliveryQueryChange}
+              className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+            />
             <select
               value={statusFilter}
               onChange={(e) => {
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700"
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700"
             >
               <option value="">Semua Status Bayar</option>
               <option value="Lunas">Hanya Lunas</option>
@@ -378,199 +689,21 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
         </div>
       </div>
 
-      {/* Tabel Data Transaksi */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-2xs overflow-hidden">
-        {isLoading ? (
-          <div className="p-6 space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded-xl" />
-            ))}
-          </div>
-        ) : expenses.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-              <Inbox className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-bold text-slate-800">Tidak ada transaksi ditemukan</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              {search
-                ? `Tidak ada transaksi yang cocok dengan kata kunci "${search}".`
-                : `Belum ada catatan transaksi ${
-                    filterType === "tukar_cash"
-                      ? "Tukar Cash"
-                      : filterType === "ongkir"
-                      ? "Ongkir"
-                      : "Tukar Cash / Ongkir"
-                  } pada bulan ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}.`}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
-                <tr>
-                  <th className="py-3 px-4">Tanggal</th>
-                  <th className="py-3 px-4">Jenis</th>
-                  <th className="py-3 px-4">Item / Keterangan</th>
-                  <th className="py-3 px-4">Supplier / Provider</th>
-                  <th className="py-3 px-4">Metode Bayar</th>
-                  <th className="py-3 px-4 text-right">Nominal</th>
-                  <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {expenses.map((e) => {
-                  const type = getItemType(e);
-                  const isTukar = type === "tukar_cash";
-                  const tgLink = parseTelegramLink(e.msg_link);
+      {/* ReUI DataGrid Data Transaksi */}
+      <DataGrid
+        table={cashDeliveryTable}
+        recordCount={totalCount}
+        isLoading={isLoading}
+        tableLayout={{ columnsResizable: true }}
+      >
+        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
+          <DataGridScrollArea className="min-h-[300px]">
+            <DataGridTable />
+          </DataGridScrollArea>
 
-                  return (
-                    <tr
-                      key={e.id}
-                      className="hover:bg-slate-50/80 transition-colors cursor-pointer"
-                      onClick={() => onViewExpense?.(e)}
-                    >
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
-                        {formatDateId(e.expense_date)}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        {isTukar ? (
-                          <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 gap-1 text-[10px] font-semibold py-0.5">
-                            <ArrowLeftRight className="w-3 h-3 text-indigo-600" />
-                            Tukar Cash
-                          </Badge>
-                        ) : (
-                          <Badge className="bg-sky-50 text-sky-700 border-sky-200 gap-1 text-[10px] font-semibold py-0.5">
-                            <Truck className="w-3 h-3 text-sky-600" />
-                            Ongkir Kurir
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900 max-w-xs truncate">
-                          {e.item_name}
-                        </div>
-                        {e.notes && e.notes !== "-" && (
-                          <div className="text-[11px] text-slate-500 max-w-xs truncate mt-0.5">
-                            {e.notes}
-                          </div>
-                        )}
-                        {e.invoice_number && e.invoice_number !== "-" && (
-                          <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                            Ref/Inv: {e.invoice_number}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap text-slate-700 font-medium">
-                        {e.supplier || "-"}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
-                          {e.pay_method}
-                        </span>
-                        {e.is_reimbursement && (
-                          <span className="ml-1 px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">
-                            Reimburse
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-slate-900 tabular-nums whitespace-nowrap text-sm">
-                        {formatRupiah(e.total_price)}
-                      </td>
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => onToggleStatus(e)}
-                          className="inline-flex items-center gap-1 transition-opacity hover:opacity-80"
-                        >
-                          {e.pay_status === "Lunas" ? (
-                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] gap-1 font-semibold">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Lunas
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] gap-1 font-semibold">
-                              <Clock className="w-3 h-3 text-rose-600" />
-                              Pending
-                            </Badge>
-                          )}
-                        </button>
-                      </td>
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          {tgLink?.url && (
-                            <a
-                              href={tgLink.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="Buka pesan Telegram asli"
-                            >
-                              <TelegramIcon className="w-3.5 h-3.5" />
-                            </a>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onEditExpense(e)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          {canDelete && (
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(e.id)}
-                              disabled={deletingId === e.id}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                              title="Hapus"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between p-4 border-t border-slate-100 text-xs text-slate-500">
-            <span>
-              Menampilkan {expenses.length} dari total {totalCount} transaksi
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="h-8 w-8 p-0 rounded-lg"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <span className="px-2 font-medium">
-                {page} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="h-8 w-8 p-0 rounded-lg"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
+          <DataGridPagination />
+        </Card>
+      </DataGrid>
     </div>
   );
 };

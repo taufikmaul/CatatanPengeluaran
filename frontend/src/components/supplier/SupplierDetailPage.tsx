@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSupplierById,
@@ -22,6 +22,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
+import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
+import { Filters } from "@/components/reui/filters/filters";
+import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
+import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
+import { ColumnDef, useTable, PaginationState } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -61,6 +82,8 @@ interface SupplierDetailPageProps {
   onBack: () => void;
   canDelete: boolean;
   categories: string[];
+  paymentMethods?: string[];
+  units?: string[];
 }
 
 export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
@@ -68,6 +91,8 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   onBack,
   canDelete,
   categories,
+  paymentMethods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
+  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
 }) => {
   const queryClient = useQueryClient();
 
@@ -267,6 +292,236 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       notes: newNotes.trim() || "-",
     });
   };
+
+  const supplierExpenseFilterFields = useMemo<FilterField[]>(
+    () => [
+      {
+        id: "category",
+        label: "Kategori",
+        type: "select",
+        options: categories.map((c) => ({ label: c, value: c })),
+      },
+      {
+        id: "start_date",
+        label: "Dari Tanggal (YYYY-MM-DD)",
+        type: "text",
+      },
+      {
+        id: "end_date",
+        label: "Sampai Tanggal (YYYY-MM-DD)",
+        type: "text",
+      },
+    ],
+    [categories]
+  );
+
+  const supplierExpenseFilterQuery = useMemo(() => {
+    const rules = [];
+    if (searchCategory) {
+      rules.push(createFilterRule({ id: "rule-cat", path: ["category"], operator: "is", value: searchCategory }));
+    }
+    if (startDate) {
+      rules.push(createFilterRule({ id: "rule-start", path: ["start_date"], operator: "is", value: startDate }));
+    }
+    if (endDate) {
+      rules.push(createFilterRule({ id: "rule-end", path: ["end_date"], operator: "is", value: endDate }));
+    }
+    return createFilterQuery(rules, "and");
+  }, [searchCategory, startDate, endDate]);
+
+  const handleSupplierExpenseQueryChange = (nextQuery: FilterQuery) => {
+    let nextCat = "";
+    let nextStart = "";
+    let nextEnd = "";
+    const traverse = (nodes: FilterNode[]) => {
+      for (const node of nodes) {
+        if (isFilterRule(node)) {
+          if (node.path[0] === "category") nextCat = String(node.value ?? "");
+          if (node.path[0] === "start_date") nextStart = String(node.value ?? "");
+          if (node.path[0] === "end_date") nextEnd = String(node.value ?? "");
+        } else if (node.rules) {
+          traverse(node.rules);
+        }
+      }
+    };
+    if (nextQuery?.rules) traverse(nextQuery.rules);
+    setSearchCategory(nextCat);
+    setStartDate(nextStart);
+    setEndDate(nextEnd);
+    setPage(1);
+  };
+
+  const supplierExpenseColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
+    () => {
+      const cols: ColumnDef<DataGridFeatures, Expense>[] = [
+        {
+          accessorKey: "expense_date",
+          id: "expense_date",
+          header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+          cell: ({ row }) => (
+            <span className="whitespace-nowrap text-slate-600 dark:text-slate-400">
+              {formatDateId(row.original.expense_date)}
+            </span>
+          ),
+          size: 110,
+        },
+        {
+          accessorKey: "item_name",
+          id: "item_name",
+          header: ({ column }) => <DataGridColumnHeader title="Nama Barang" column={column} />,
+          cell: ({ row }) => {
+            const exp = row.original;
+            return (
+              <div>
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {exp.item_name}
+                </span>
+                {exp.notes && exp.notes !== "-" && (
+                  <span className="block text-[10px] font-normal text-slate-400">
+                    {exp.notes}
+                  </span>
+                )}
+              </div>
+            );
+          },
+          size: 200,
+        },
+        {
+          accessorKey: "category",
+          id: "category",
+          header: () => <span>Kategori</span>,
+          cell: ({ row }) => (
+            <Badge variant="outline" className="text-[10px] font-normal">
+              {row.original.category}
+            </Badge>
+          ),
+          size: 120,
+        },
+        {
+          id: "qty",
+          header: () => <div className="text-right">Qty</div>,
+          cell: ({ row }) => {
+            const exp = row.original;
+            return (
+              <div className="text-right tabular-nums">
+                {exp.qty} {exp.unit || "Pcs"}
+              </div>
+            );
+          },
+          size: 90,
+        },
+        {
+          accessorKey: "unit_price",
+          id: "unit_price",
+          header: () => <div className="text-right">Harga Satuan</div>,
+          cell: ({ row }) => (
+            <div className="text-right tabular-nums text-slate-600 dark:text-slate-400">
+              {formatRupiah(row.original.unit_price)}
+            </div>
+          ),
+          size: 110,
+        },
+        {
+          accessorKey: "total_price",
+          id: "total_price",
+          header: () => <div className="text-right">Total</div>,
+          cell: ({ row }) => (
+            <div className="text-right font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {formatRupiah(row.original.total_price)}
+            </div>
+          ),
+          size: 120,
+        },
+        {
+          accessorKey: "pay_method",
+          id: "pay_method",
+          header: () => <span>Metode</span>,
+          cell: ({ row }) => (
+            <span className="text-slate-600 dark:text-slate-400">
+              {row.original.pay_method}
+            </span>
+          ),
+          size: 90,
+        },
+        {
+          accessorKey: "pay_status",
+          id: "pay_status",
+          header: () => <span>Status</span>,
+          cell: ({ row }) => {
+            const exp = row.original;
+            return (
+              <Badge
+                variant={exp.pay_status === "Lunas" ? "default" : "destructive"}
+                className={
+                  exp.pay_status === "Lunas"
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 text-[10px]"
+                    : "text-[10px]"
+                }
+              >
+                {exp.pay_status}
+              </Badge>
+            );
+          },
+          size: 90,
+        },
+      ];
+
+      if (canDelete) {
+        cols.push({
+          id: "actions",
+          header: () => <div className="text-right">Aksi</div>,
+          cell: ({ row }) => {
+            const exp = row.original;
+            return (
+              <div className="flex items-center justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm(`Hapus catatan belanja '${exp.item_name}'?`)) {
+                      deleteExpenseMutation.mutate(exp.id);
+                    }
+                  }}
+                  className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  title="Hapus transaksi"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            );
+          },
+          size: 60,
+        });
+      }
+
+      return cols;
+    },
+    [canDelete, deleteExpenseMutation]
+  );
+
+  const supplierExpensePagination = useMemo<PaginationState>(
+    () => ({
+      pageIndex: Math.max(0, page - 1),
+      pageSize: 15,
+    }),
+    [page]
+  );
+
+  const supplierExpenseTable = useTable({
+    features: dataGridFeatures,
+    columns: supplierExpenseColumns,
+    data: expenseData?.data ?? [],
+    manualPagination: true,
+    rowCount: expenseData?.total ?? 0,
+    getRowId: (row: Expense) => String(row.id),
+    state: {
+      pagination: supplierExpensePagination,
+    },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === "function" ? updater(supplierExpensePagination) : updater;
+      setPage(next.pageIndex + 1);
+    },
+  });
 
   if (isSupplierLoading) {
     return (
@@ -608,197 +863,97 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       </div>
 
       {/* Riwayat Belanja di Toko Ini */}
-      <div className="p-5 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-              Riwayat Belanja di {supplier.name}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Total {expenseData?.total || 0} transaksi tercatat
-            </p>
-          </div>
+      <DataGrid
+        table={supplierExpenseTable}
+        recordCount={expenseData?.total || 0}
+        isLoading={isExpensesLoading}
+        tableLayout={{ columnsResizable: true }}
+      >
+        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                Riwayat Belanja di {supplier.name}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Total {expenseData?.total || 0} transaksi tercatat
+              </p>
+            </div>
 
-          {/* Filter Bar */}
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={searchCategory}
-              onChange={(e) => {
-                setSearchCategory(e.target.value);
-                setPage(1);
-              }}
-              className="h-8 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 text-slate-700 dark:text-slate-300"
-            >
-              <option value="">Semua Kategori</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            {/* Filter Bar */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Filters
+                variant="advanced"
+                advancedMode="popover"
+                advancedAlign="end"
+                reorderable
+                fields={supplierExpenseFilterFields}
+                query={supplierExpenseFilterQuery}
+                onQueryChange={handleSupplierExpenseQueryChange}
+                className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+              />
 
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPage(1);
-              }}
-              className="h-8 text-xs rounded-xl w-32"
-            />
-            <span className="text-xs text-slate-400">-</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPage(1);
-              }}
-              className="h-8 text-xs rounded-xl w-32"
-            />
-
-            {(searchCategory || startDate || endDate) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchCategory("");
-                  setStartDate("");
-                  setEndDate("");
+              <select
+                value={searchCategory}
+                onChange={(e) => {
+                  setSearchCategory(e.target.value);
                   setPage(1);
                 }}
-                className="h-8 text-xs text-slate-500"
+                className="h-8 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 text-slate-700 dark:text-slate-300 font-medium"
               >
-                Reset
-              </Button>
-            )}
-          </div>
-        </div>
+                <option value="">Semua Kategori</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
 
-        {/* Tabel Transaksi */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 font-medium">
-                <th className="py-2.5 px-3">Tanggal</th>
-                <th className="py-2.5 px-3">Nama Barang</th>
-                <th className="py-2.5 px-3">Kategori</th>
-                <th className="py-2.5 px-3 text-right">Qty</th>
-                <th className="py-2.5 px-3 text-right">Harga Satuan</th>
-                <th className="py-2.5 px-3 text-right">Total</th>
-                <th className="py-2.5 px-3">Metode</th>
-                <th className="py-2.5 px-3">Status</th>
-                {canDelete && <th className="py-2.5 px-3 text-right">Aksi</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {isExpensesLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Memuat riwayat belanja...
-                  </td>
-                </tr>
-              ) : !expenseData?.data || expenseData.data.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
-                    Tidak ada catatan belanja yang sesuai filter.
-                  </td>
-                </tr>
-              ) : (
-                expenseData.data.map((exp: Expense) => (
-                  <tr key={exp.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
-                    <td className="py-2.5 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {formatDateId(exp.expense_date)}
-                    </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-slate-100">
-                      {exp.item_name}
-                      {exp.notes && exp.notes !== "-" && (
-                        <span className="block text-[10px] font-normal text-slate-400">
-                          {exp.notes}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge variant="outline" className="text-[10px] font-normal">
-                        {exp.category}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">
-                      {exp.qty} {exp.unit || "Pcs"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                      {formatRupiah(exp.unit_price)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-900 dark:text-slate-100">
-                      {formatRupiah(exp.total_price)}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400">
-                      {exp.pay_method}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <Badge
-                        variant={exp.pay_status === "Lunas" ? "default" : "destructive"}
-                        className={
-                          exp.pay_status === "Lunas"
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 text-[10px]"
-                            : "text-[10px]"
-                        }
-                      >
-                        {exp.pay_status}
-                      </Badge>
-                    </td>
-                    {canDelete && (
-                      <td className="py-2.5 px-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            if (confirm(`Hapus catatan belanja '${exp.item_name}'?`)) {
-                              deleteExpenseMutation.mutate(exp.id);
-                            }
-                          }}
-                          className="h-7 w-7 p-0 text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </td>
-                    )}
-                  </tr>
-                ))
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setPage(1);
+                }}
+                className="h-8 text-xs rounded-xl w-32"
+              />
+              <span className="text-xs text-slate-400">-</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setPage(1);
+                }}
+                className="h-8 text-xs rounded-xl w-32"
+              />
+
+              {(searchCategory || startDate || endDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchCategory("");
+                    setStartDate("");
+                    setEndDate("");
+                    setPage(1);
+                  }}
+                  className="h-8 text-xs text-slate-500"
+                >
+                  Reset
+                </Button>
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Paginasi Riwayat */}
-        {expenseData && expenseData.total_pages > 1 && (
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-            <span className="text-slate-500">
-              Halaman {expenseData.page} dari {expenseData.total_pages}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="h-8 px-2"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(expenseData.total_pages, p + 1))}
-                disabled={page >= expenseData.total_pages}
-                className="h-8 px-2"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
             </div>
           </div>
-        )}
-      </div>
+
+          <DataGridScrollArea className="min-h-[250px]">
+            <DataGridTable />
+          </DataGridScrollArea>
+
+          <DataGridPagination />
+        </Card>
+      </DataGrid>
 
       {/* Modal Edit Informasi Toko */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
@@ -1010,7 +1165,13 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                   onChange={(e) => setNewUnit(e.target.value)}
                   placeholder="Pcs/Kg/Pack"
                   className="h-9 text-xs"
+                  list="supplier-units"
                 />
+                <datalist id="supplier-units">
+                  {units.map((u) => (
+                    <option key={u} value={u} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
@@ -1051,10 +1212,11 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                   onChange={(e) => setNewPayMethod(e.target.value)}
                   className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
                 >
-                  <option value="Tunai">Tunai</option>
-                  <option value="Transfer">Transfer</option>
-                  <option value="QRIS">QRIS</option>
-                  <option value="Kartu Debit/Kredit">Kartu Debit/Kredit</option>
+                  {paymentMethods.map((pm) => (
+                    <option key={pm} value={pm}>
+                      {pm}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

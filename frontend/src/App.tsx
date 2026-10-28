@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import confetti from "canvas-confetti";
 import { formatRupiah } from "@/lib/formatters";
-import { Plus } from "lucide-react";
+import { Plus, ReceiptText, ArrowRight } from "lucide-react";
 
 // Tangani SSO token dari URL (dikirim oleh HCTeams Hub) secara langsung sebelum render
 try {
@@ -61,13 +61,15 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
     activeTab = "suppliers";
   } else if (pathname === "/master") {
     activeTab = "master";
+  } else if (pathname === "/transactions" || pathname === "/transaksi") {
+    activeTab = "transactions";
   } else if (pathname === "/tukar-cash-ongkir") {
     activeTab = "tukar-cash-ongkir";
   } else if (pathname === "/config") {
@@ -76,7 +78,7 @@ export function App() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -259,7 +261,8 @@ export function App() {
       const res = await api.get("/config");
       return res.data;
     },
-    enabled: activeTab === "config" && !!authData?.authenticated,
+    enabled: !!authData?.authenticated && canManageConfig,
+    staleTime: 5 * 60 * 1000,
   });
 
   // 5. Autocomplete Suggestions (Master Items + Historical Items & Suppliers)
@@ -474,12 +477,12 @@ export function App() {
             unpaidTotal={totalUnpaidNominal}
             reimburseCount={reportData?.reimburse_pending_count || 0}
             onFilterUnpaid={() => {
-              navigate("/");
+              navigate("/transactions");
               setStatus("Belum Lunas");
               setPage(1);
             }}
             onFilterReimburse={() => {
-              navigate("/");
+              navigate("/transactions");
               setIsReimbursement(true);
               setPage(1);
             }}
@@ -498,6 +501,8 @@ export function App() {
                     {/* 1. Tampilan Khusus Mobile Owner (Simple, Ergonomis & Cepat) */}
                     <div className="block md:hidden">
                       <OwnerMobileView
+                        activeTab="overview"
+                        onNavigateTab={(t) => handleTabChange(t)}
                         reportData={reportData}
                         expenses={expensesData?.data || []}
                         isExpensesLoading={isExpensesLoading}
@@ -602,8 +607,13 @@ export function App() {
                         ongkirCount={reportData?.ongkir_count || 0}
                         ongkirReimburseCount={reportData?.ongkir_reimburse_count || 0}
                         ongkirReimburseTotal={reportData?.ongkir_reimburse_total || 0}
-                        onFilterUnpaid={() => setStatus("Belum Lunas")}
+                        onFilterUnpaid={() => {
+                          navigate("/transactions");
+                          setStatus("Belum Lunas");
+                          setPage(1);
+                        }}
                         onFilterReimburse={() => {
+                          navigate("/transactions");
                           setIsReimbursement(true);
                           setPage(1);
                         }}
@@ -646,104 +656,38 @@ export function App() {
                           <UnpaidOrdersCard
                             unpaidList={reportData?.list_hutang || []}
                             onMarkPaid={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
-                            onViewAll={() => setStatus("Belum Lunas")}
+                            onViewAll={() => {
+                              navigate("/transactions");
+                              setStatus("Belum Lunas");
+                              setPage(1);
+                            }}
                           />
                         </div>
                       </div>
 
-                      {/* Leaderboard & Top Stats Section */}
-                      <LeaderboardCards
-                        topFrequentItems={reportData?.top_frequent_items || []}
-                        topExpensiveItems={reportData?.top_expensive_items || []}
-                        topUnitPriceItems={reportData?.top_unit_price_items || []}
-                        topPriceSpikes={reportData?.top_price_spikes || []}
-                        topSuppliers={reportData?.top_suppliers || []}
-                        summaryMetrics={reportData?.summary_metrics}
-                        monthName={reportData?.month_name || "Bulan Ini"}
-                        year={year}
-                      />
-
-                      {/* Desktop Filter Bar */}
-                      <FilterBar
-                        month={month}
-                        year={year}
-                        selectedCategory={category}
-                        search={search}
-                        status={status}
-                        isReimbursement={isReimbursement}
-                        users={usersData}
-                        selectedUserId={selectedUserId}
-                        categories={categories}
-                        onMonthChange={(m) => {
-                          setMonth(m);
-                          setPage(1);
-                        }}
-                        onYearChange={(y) => {
-                          setYear(y);
-                          setPage(1);
-                        }}
-                        onCategoryChange={(c) => {
-                          setCategory(c);
-                          setPage(1);
-                        }}
-                        onSearchChange={(s) => {
-                          setSearch(s);
-                          setPage(1);
-                        }}
-                        onStatusChange={(st) => {
-                          setStatus(st);
-                          setPage(1);
-                        }}
-                        onReimbursementChange={(val) => {
-                          setIsReimbursement(val);
-                          setPage(1);
-                        }}
-                        onUserChange={(uid) => {
-                          setSelectedUserId(uid);
-                          setPage(1);
-                        }}
-                        onReset={() => {
-                          setCategory("");
-                          setSearch("");
-                          setStatus("");
-                          setIsReimbursement(null);
-                          setSelectedUserId(null);
-                          setPage(1);
-                        }}
-                        onOpenAddExpense={() => {
-                          setEditingExpense(null);
-                          setRepeatingExpense(null);
-                          setIsFormOpen(true);
-                        }}
-                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
-                      />
-
-                      {/* Desktop Expense Data Table */}
-                      <ExpenseTable
-                        expenses={expensesData?.data || []}
-                        isLoading={isExpensesLoading}
-                        page={page}
-                        totalPages={expensesData?.total_pages || 1}
-                        totalCount={expensesData?.total || 0}
-                        onPageChange={setPage}
-                        onToggleStatus={handleToggleStatus}
-                        onEditExpense={(item) => {
-                          setRepeatingExpense(null);
-                          setEditingExpense(item);
-                          setIsFormOpen(true);
-                        }}
-                        onRepeatExpense={(item) => {
-                          setEditingExpense(null);
-                          setRepeatingExpense(item);
-                          setIsFormOpen(true);
-                        }}
-                        onInspectItemPrice={handleInspectItemPrice}
-                        onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                        onViewExpense={(item) => setViewingExpense(item)}
-                        onOpenActivityLog={() => setIsActivityLogOpen(true)}
-                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
-                        canDelete={canDelete}
-                      />
+                      {/* Banner Akses Halaman Baru Daftar Transaksi & Peringkat Belanja */}
+                      <div className="bg-gradient-to-r from-blue-50/80 via-white to-slate-50 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-slate-900 border border-blue-200/80 dark:border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                            <ReceiptText className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              Daftar Transaksi & Peringkat Belanja
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              Lihat rincian transaksi belanja, filter pengeluaran, serta peringkat item sering dibeli dan lonjakan harga.
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => navigate("/transactions")}
+                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 px-5 gap-2 shrink-0 shadow-xs"
+                        >
+                          <span>Buka Halaman Transaksi</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -897,9 +841,373 @@ export function App() {
               </>
             )}
 
+            {activeTab === "transactions" && (
+              <>
+                {canViewCharts ? (
+                  <>
+                    {/* 1. Tampilan Khusus Mobile Owner untuk Halaman Transaksi */}
+                    <div className="block md:hidden">
+                      <OwnerMobileView
+                        activeTab="transactions"
+                        onNavigateTab={(t) => handleTabChange(t)}
+                        reportData={reportData}
+                        expenses={expensesData?.data || []}
+                        isExpensesLoading={isExpensesLoading}
+                        page={page}
+                        totalPages={expensesData?.total_pages || 1}
+                        totalCount={expensesData?.total || 0}
+                        onPageChange={setPage}
+                        onToggleStatus={handleToggleStatus}
+                        onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
+                        onEditExpense={(item) => {
+                          setRepeatingExpense(null);
+                          setEditingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onRepeatExpense={(item) => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onInspectItemPrice={handleInspectItemPrice}
+                        onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                        onViewExpense={(item) => setViewingExpense(item)}
+                        canDelete={canDelete}
+                        month={month}
+                        year={year}
+                        category={category}
+                        search={search}
+                        status={status}
+                        isReimbursement={isReimbursement}
+                        users={usersData}
+                        selectedUserId={selectedUserId}
+                        categories={categories}
+                        onCategoryChange={(c) => {
+                          setCategory(c);
+                          setPage(1);
+                        }}
+                        onSearchChange={(s) => {
+                          setSearch(s);
+                          setPage(1);
+                        }}
+                        onStatusChange={(st) => {
+                          setStatus(st);
+                          setPage(1);
+                        }}
+                        onReimbursementChange={(val) => {
+                          setIsReimbursement(val);
+                          setPage(1);
+                        }}
+                        onUserChange={(uid) => {
+                          setSelectedUserId(uid);
+                          setPage(1);
+                        }}
+                        onResetFilters={() => {
+                          setCategory("");
+                          setSearch("");
+                          setStatus("");
+                          setIsReimbursement(null);
+                          setSelectedUserId(null);
+                          setPage(1);
+                        }}
+                        onOpenAddExpense={() => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(null);
+                          setIsFormOpen(true);
+                        }}
+                        onOpenBudgetSettings={() => setIsBudgetDialogOpen(true)}
+                        onOpenTukarCashOngkir={(subType) => {
+                          setCashDeliverySubtype(subType || "all");
+                          navigate("/tukar-cash-ongkir");
+                        }}
+                      />
+                    </div>
+
+                    {/* 2. Tampilan Desktop Halaman Daftar Transaksi */}
+                    <div className="hidden md:block space-y-6">
+                      {/* Header Halaman Transaksi */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-11 h-11 rounded-2xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                            <ReceiptText className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                                Daftar Transaksi & Peringkat Belanja
+                              </h2>
+                              <Badge variant="outline" className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40">
+                                {expensesData?.total || 0} Total Transaksi
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              Rincian nota transaksi operasional periode {reportData?.month_name || "Bulan Ini"} {year} dan analitika leaderboard belanja
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            setEditingExpense(null);
+                            setRepeatingExpense(null);
+                            setIsFormOpen(true);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Catat Pengeluaran Baru</span>
+                        </Button>
+                      </div>
+
+                      {/* Leaderboard & Top Stats Section (Top Sering Dibeli, Top Item Termahal, Top Naik Drastis, Top Toko & Mitra, Rata-rata / Hari, Rata-rata / Transaksi, Ragam Item Unik, Transaksi Terbesar) */}
+                      <LeaderboardCards
+                        topFrequentItems={reportData?.top_frequent_items || []}
+                        topExpensiveItems={reportData?.top_expensive_items || []}
+                        topUnitPriceItems={reportData?.top_unit_price_items || []}
+                        topPriceSpikes={reportData?.top_price_spikes || []}
+                        topSuppliers={reportData?.top_suppliers || []}
+                        summaryMetrics={reportData?.summary_metrics}
+                        monthName={reportData?.month_name || "Bulan Ini"}
+                        year={year}
+                      />
+
+                      {/* Desktop Filter Bar */}
+                      <FilterBar
+                        month={month}
+                        year={year}
+                        selectedCategory={category}
+                        search={search}
+                        status={status}
+                        isReimbursement={isReimbursement}
+                        users={usersData}
+                        selectedUserId={selectedUserId}
+                        categories={categories}
+                        onMonthChange={(m) => {
+                          setMonth(m);
+                          setPage(1);
+                        }}
+                        onYearChange={(y) => {
+                          setYear(y);
+                          setPage(1);
+                        }}
+                        onCategoryChange={(c) => {
+                          setCategory(c);
+                          setPage(1);
+                        }}
+                        onSearchChange={(s) => {
+                          setSearch(s);
+                          setPage(1);
+                        }}
+                        onStatusChange={(st) => {
+                          setStatus(st);
+                          setPage(1);
+                        }}
+                        onReimbursementChange={(val) => {
+                          setIsReimbursement(val);
+                          setPage(1);
+                        }}
+                        onUserChange={(uid) => {
+                          setSelectedUserId(uid);
+                          setPage(1);
+                        }}
+                        onReset={() => {
+                          setCategory("");
+                          setSearch("");
+                          setStatus("");
+                          setIsReimbursement(null);
+                          setSelectedUserId(null);
+                          setPage(1);
+                        }}
+                        onOpenAddExpense={() => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(null);
+                          setIsFormOpen(true);
+                        }}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      />
+
+                      {/* Desktop Expense Data Table */}
+                      <ExpenseTable
+                        expenses={expensesData?.data || []}
+                        isLoading={isExpensesLoading}
+                        page={page}
+                        totalPages={expensesData?.total_pages || 1}
+                        totalCount={expensesData?.total || 0}
+                        onPageChange={setPage}
+                        onToggleStatus={handleToggleStatus}
+                        onEditExpense={(item) => {
+                          setRepeatingExpense(null);
+                          setEditingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onRepeatExpense={(item) => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(item);
+                          setIsFormOpen(true);
+                        }}
+                        onInspectItemPrice={handleInspectItemPrice}
+                        onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                        onViewExpense={(item) => setViewingExpense(item)}
+                        onOpenActivityLog={() => setIsActivityLogOpen(true)}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                        canDelete={canDelete}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  /* Admin Input View pada Halaman Transaksi */
+                  <div className="space-y-4">
+                    {/* Banner Status Admin Input */}
+                    <div className="bg-amber-500/10 border border-amber-200/90 dark:border-amber-800/80 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xl shrink-0">
+                          ✍️
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100">
+                              Daftar Transaksi (Admin Input)
+                            </h2>
+                            <Badge variant="outline" className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
+                              Input & Koreksi
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                            Pencatatan pengeluaran harian dan koreksi transaksi operasional.
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          setEditingExpense(null);
+                          setRepeatingExpense(null);
+                          setIsFormOpen(true);
+                        }}
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0 w-full md:w-auto"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Catat Pengeluaran Baru</span>
+                      </Button>
+                    </div>
+
+                    {/* Ringkasan Angka Utama */}
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+                          Total Transaksi
+                        </div>
+                        <div className="text-sm sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+                          {reportData?.expense_count || 0}
+                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">item</span>
+                        </div>
+                      </div>
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Total Belanja</div>
+                        <div className="text-xs sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums truncate">
+                          {formatRupiah(reportData?.total_pengeluaran || 0)}
+                        </div>
+                      </div>
+                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
+                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Belum Lunas</div>
+                        <div className="text-xs sm:text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 tabular-nums truncate">
+                          {reportData?.list_hutang?.length || 0}
+                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">
+                            ({formatRupiah(totalUnpaidNominal)})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Admin Input Filter Bar */}
+                    <FilterBar
+                      month={month}
+                      year={year}
+                      selectedCategory={category}
+                      search={search}
+                      status={status}
+                      isReimbursement={isReimbursement}
+                      users={usersData}
+                      selectedUserId={selectedUserId}
+                      categories={categories}
+                      onMonthChange={(m) => {
+                        setMonth(m);
+                        setPage(1);
+                      }}
+                      onYearChange={(y) => {
+                        setYear(y);
+                        setPage(1);
+                      }}
+                      onCategoryChange={(c) => {
+                        setCategory(c);
+                        setPage(1);
+                      }}
+                      onSearchChange={(s) => {
+                        setSearch(s);
+                        setPage(1);
+                      }}
+                      onStatusChange={(st) => {
+                        setStatus(st);
+                        setPage(1);
+                      }}
+                      onReimbursementChange={(val) => {
+                        setIsReimbursement(val);
+                        setPage(1);
+                      }}
+                      onUserChange={(uid) => {
+                        setSelectedUserId(uid);
+                        setPage(1);
+                      }}
+                      onReset={() => {
+                        setCategory("");
+                        setSearch("");
+                        setStatus("");
+                        setIsReimbursement(null);
+                        setSelectedUserId(null);
+                        setPage(1);
+                      }}
+                      onOpenAddExpense={() => {
+                        setEditingExpense(null);
+                        setRepeatingExpense(null);
+                        setIsFormOpen(true);
+                      }}
+                      onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                    />
+
+                    {/* Admin Input Expense Table */}
+                    <ExpenseTable
+                      expenses={expensesData?.data || []}
+                      isLoading={isExpensesLoading}
+                      page={page}
+                      totalPages={expensesData?.total_pages || 1}
+                      totalCount={expensesData?.total || 0}
+                      onPageChange={setPage}
+                      onToggleStatus={handleToggleStatus}
+                      onEditExpense={(item) => {
+                        setRepeatingExpense(null);
+                        setEditingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onRepeatExpense={(item) => {
+                        setEditingExpense(null);
+                        setRepeatingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onInspectItemPrice={handleInspectItemPrice}
+                      onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                      onOpenActivityLog={() => setIsActivityLogOpen(true)}
+                      onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      canDelete={canDelete}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
             {activeTab === "master" && (
               <MasterItemsTab
                 categories={categories}
+                units={configData?.units}
                 onInspectItemPrice={handleInspectItemPrice}
               />
             )}
@@ -917,6 +1225,8 @@ export function App() {
                 onBack={() => navigate("/suppliers")}
                 canDelete={canDelete}
                 categories={categories}
+                paymentMethods={configData?.payment_methods}
+                units={configData?.units}
               />
             )}
 
@@ -934,6 +1244,33 @@ export function App() {
                 onViewExpense={(item) => setViewingExpense(item)}
                 onToggleStatus={handleToggleStatus}
                 onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                onAddNewExpense={(type) => {
+                  setEditingExpense(null);
+                  setRepeatingExpense({
+                    id: 0,
+                    created_at: new Date().toISOString(),
+                    expense_date: new Date().toISOString().split("T")[0],
+                    category: type === "tukar_cash" ? "Tukar Cash" : "Ongkir",
+                    item_name: type === "tukar_cash" ? "Tukar Cash - " : "ongkir delivery cake",
+                    supplier: "-",
+                    qty: 1,
+                    unit: type === "tukar_cash" ? "Trans" : "Trip",
+                    unit_price: 0,
+                    shipping_fee: 0,
+                    tax: 0,
+                    other_fee: 0,
+                    discount: 0,
+                    total_price: 0,
+                    pay_method: type === "tukar_cash" ? "Tunai" : "Gopay - Kasir",
+                    pay_status: "Lunas",
+                    due_date: "-",
+                    notes: "-",
+                    msg_link: "Web Dashboard",
+                    is_reimbursement: false,
+                    invoice_number: "-",
+                  } as Expense);
+                  setIsFormOpen(true);
+                }}
                 canDelete={canDelete}
               />
             )}
@@ -973,6 +1310,8 @@ export function App() {
           onSubmit={handleFormSubmit}
           onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
           categories={categories}
+          paymentMethods={configData?.payment_methods}
+          units={configData?.units}
           initialData={editingExpense}
           repeatData={repeatingExpense}
           isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}

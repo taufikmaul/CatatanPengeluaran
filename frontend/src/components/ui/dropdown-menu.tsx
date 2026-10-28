@@ -8,7 +8,26 @@ import { cn } from "@/lib/utils"
 
 const DropdownMenu = DropdownMenuPrimitive.Root
 
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+const DropdownMenuTrigger = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger> & {
+    render?: React.ReactNode
+  }
+>(({ render, children, asChild, ...props }, ref) => {
+  if (render) {
+    return (
+      <DropdownMenuPrimitive.Trigger ref={ref} asChild {...props}>
+        {render}
+      </DropdownMenuPrimitive.Trigger>
+    )
+  }
+  return (
+    <DropdownMenuPrimitive.Trigger ref={ref} asChild={asChild} {...props}>
+      {children}
+    </DropdownMenuPrimitive.Trigger>
+  )
+})
+DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName
 
 const DropdownMenuGroup = DropdownMenuPrimitive.Group
 
@@ -42,8 +61,10 @@ DropdownMenuSubTrigger.displayName =
 
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent> & {
+    side?: any
+  }
+>(({ className, side, ...props }, ref) => (
   <DropdownMenuPrimitive.SubContent
     ref={ref}
     className={cn(
@@ -78,12 +99,14 @@ const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean
+    variant?: "default" | "destructive" | string
   }
->(({ className, inset, ...props }, ref) => (
+>(({ className, inset, variant, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
       "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+      variant === "destructive" && "text-destructive focus:bg-destructive/10 focus:text-destructive",
       inset && "pl-8",
       className
     )}

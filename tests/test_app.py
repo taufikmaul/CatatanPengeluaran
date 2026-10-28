@@ -94,4 +94,5 @@ class TestSchemaConsistency:
             "suppliers",
             "monthly_budgets",
             "expense_logs",
+            "master_data_options",
         }

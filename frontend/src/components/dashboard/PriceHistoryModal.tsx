@@ -11,6 +11,16 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
+import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
+import { ColumnDef, useTable } from "@tanstack/react-table";
+import {
   Award,
   Store,
   TrendingDown,
@@ -120,6 +130,81 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
     : inflationStats.isDeflation
     ? "#10b981"
     : "#3b82f6";
+
+  type PriceHistoryRecord = NonNullable<ItemPriceHistoryResponse["history"]>[number];
+
+  const priceHistoryColumns = useMemo<ColumnDef<DataGridFeatures, PriceHistoryRecord>[]>(
+    () => [
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-600 dark:text-slate-400">
+            {formatDateId(row.original.expense_date)}
+          </span>
+        ),
+        size: 110,
+      },
+      {
+        accessorKey: "supplier",
+        id: "supplier",
+        header: () => <span>Toko / Supplier</span>,
+        cell: ({ row }) => (
+          <span className="text-slate-700 dark:text-slate-300 font-medium truncate max-w-[160px] block">
+            {row.original.supplier || "-"}
+          </span>
+        ),
+        size: 160,
+      },
+      {
+        id: "qty",
+        header: () => <div className="text-right">Qty</div>,
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+            {row.original.qty} {row.original.unit || "Pcs"}
+          </div>
+        ),
+        size: 80,
+      },
+      {
+        accessorKey: "unit_price",
+        id: "unit_price",
+        header: () => <div className="text-right">Harga Satuan</div>,
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+            {formatRupiah(row.original.unit_price)}
+          </div>
+        ),
+        size: 110,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: () => <div className="text-right">Total</div>,
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+            {formatRupiah(row.original.total_price)}
+          </div>
+        ),
+        size: 110,
+      },
+    ],
+    []
+  );
+
+  const priceHistoryTable = useTable({
+    features: dataGridFeatures,
+    columns: priceHistoryColumns,
+    data: data?.history ?? [],
+    getRowId: (row: PriceHistoryRecord) => String(row.id),
+    initialState: {
+      pagination: {
+        pageIndex: 0,
+        pageSize: 10,
+      },
+    },
+  });
 
   return (
     <Dialog open={!!(itemName || itemId)} onOpenChange={(open) => !open && onClose()}>
@@ -405,40 +490,19 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
                 <History className="w-3.5 h-3.5 text-slate-500" />
                 Riwayat Pembelian Terakhir ({data.history.length} transaksi)
               </h4>
-              <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 border-b border-slate-100 dark:border-slate-800 text-[11px]">
-                    <tr>
-                      <th className="py-2.5 px-3">Tanggal</th>
-                      <th className="py-2.5 px-3">Toko / Supplier</th>
-                      <th className="py-2.5 px-3 text-right">Qty</th>
-                      <th className="py-2.5 px-3 text-right">Harga Satuan</th>
-                      <th className="py-2.5 px-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {data.history.map((h) => (
-                      <tr key={h.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                        <td className="py-2 px-3 whitespace-nowrap text-slate-600 dark:text-slate-400">
-                          {formatDateId(h.expense_date)}
-                        </td>
-                        <td className="py-2 px-3 text-slate-700 dark:text-slate-300 font-medium truncate max-w-[160px]">
-                          {h.supplier}
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                          {h.qty} {h.unit || "Pcs"}
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
-                          {formatRupiah(h.unit_price)}
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                          {formatRupiah(h.total_price)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataGrid
+                table={priceHistoryTable}
+                recordCount={data.history.length}
+                isLoading={isLoading}
+                tableLayout={{ columnsResizable: true }}
+              >
+                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+                  <DataGridScrollArea className="max-h-[260px]">
+                    <DataGridTable />
+                  </DataGridScrollArea>
+                  {data.history.length > 10 && <DataGridPagination />}
+                </div>
+              </DataGrid>
             </div>
           </div>
         )}

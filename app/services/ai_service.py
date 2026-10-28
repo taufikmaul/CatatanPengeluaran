@@ -23,8 +23,9 @@ Perhatikan Aturan Khusus Klasifikasi Kategori:
 1. Bunga, bunga artificial, cake base, tatakan kue, dan stiker WAJIB masuk kategori "Kemasan".
 2. Light box dan poster WAJIB masuk kategori "Asset".
 3. Iuran, sumbangan, kerja bakti, dan sejenisnya WAJIB masuk kategori "Iuran".
-4. Jika caption mengandung "/tukercash", masukkan kategori "Tukar Cash".
-5. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
+4. Jika caption mengandung "/tukercash" atau teks/gambar bukti transfer tukar tunai, WAJIB masukkan kategori "Tukar Cash".
+5. Jika caption mengandung "/ongkir" atau teks/gambar pengiriman kue/kurir, WAJIB masukkan kategori "Ongkir".
+6. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
 {categories}
 
 Aturan Prioritas Tanggal Pemesanan (PENTING untuk mencegah false double input):
@@ -54,32 +55,31 @@ Aturan Khusus Bukti Transfer Bank / E-Wallet (Tukar Cash / Tarik Tunai Karyawan)
   * "satuan": "Trans"
   * "harga_satuan": nominal transfer yang tertera
   * "total_harga": nominal transfer yang tertera
-  * "toko_supplier": nama bank/layanan (misal: "BCA", "Mandiri", "BRI", "DANA")
-  * "metode_bayar": "Transfer"
+  * "toko_supplier": WAJIB "-" (TIDAK ADA SUPPLIER)
+  * "metode_bayar": WAJIB "Tunai" (karena kas fisik toko keluar dari laci kasir)
   * "status_pembayaran": "Lunas"
   * "no_invoice": nomor referensi / no. transaksi transfer jika ada, jika tidak isi "-"
-  * "keterangan": "Tarik tunai kasir (uang masuk ke rekening)"
+  * "keterangan": WAJIB cantumkan nama bank & pengirim transfer (contoh: "Transfer BCA dari Budi (Ref: 123456)")
   * "is_reimbursement": false
 
-Aturan Khusus Bukti Ongkir & Kurir Instan (GoSend, GrabExpress, Lalamove, Maxim, J&T, SiCepat):
-- Jika gambar adalah bukti pemesanan pengiriman/kurir atau struk ekspedisi:
-  * "kategori": WAJIB "Operasional"
-  * "barang": "Ongkir [Layanan] - [Penerima/Tujuan/Kue]" (contoh: "Ongkir GoSend - Bolu Ibu Maya", atau jika tidak tertera tujuan isi "Ongkir GoSend")
+Aturan Khusus Bukti Ongkir & Kurir Pengiriman Kue (GoSend Car, GoSend Bike, GrabExpress, Lalamove, Maxim, J&T, SiCepat):
+- Jika gambar adalah bukti pemesanan pengiriman/kurir atau struk ekspedisi delivery cake:
+  * "kategori": WAJIB "Ongkir"
+  * "barang": "ongkir delivery cake" atau "Ongkir [Layanan] - [Penerima/Tujuan/Kue]" (contoh: "ongkir delivery cake", "Ongkir GoSend - Bolu Ibu Maya")
   * "qty": 1
   * "satuan": "Trip"
   * "harga_satuan": total biaya ongkir bersih yang dibayar
   * "total_harga": total biaya ongkir bersih yang dibayar
-  * "toko_supplier": nama ekspedisi/aplikasi (contoh: "GoSend", "GrabExpress", "Lalamove", "J&T")
-  * Jika metode bayar yang tertera adalah saldo e-wallet (GoPay, OVO, DANA, ShopeePay) atau rekening pribadi karyawan (atau caption menyebutkan "reimburse", "talangan", "ditalangi"):
+  * "toko_supplier": nama kurir / armada (contoh: "GoSend Car", "GoSend Bike", "GrabExpress", "Lalamove", "Maxim", "J&T", "SiCepat", atau nama kurir khusus)
+  * "metode_bayar": metode bayar beserta akun jika ada (contoh: "GoPay - [akun]", "OVO - [akun]", "Transfer", "Tunai", "QRIS", misal "GoPay - Maya", "GoPay - Kasir", "Tunai")
+  * Jika metode bayar yang tertera adalah saldo e-wallet pribadi karyawan atau caption menyebutkan "reimburse", "talangan", "ditalangi":
     - "is_reimbursement": true
-    - "metode_bayar": nama e-wallet (misal: "GoPay")
     - "status_pembayaran": "Lunas"
-    - "keterangan": "Ongkir ditalangi e-wallet karyawan"
-  * Jika metode bayar tunai (Cash dari kasir):
+    - "keterangan": catatan pengiriman (misal: "Ongkir ditalangi e-wallet karyawan [nama] - Tujuan Kemang")
+  * Jika metode bayar tunai dari kasir toko:
     - "is_reimbursement": false
-    - "metode_bayar": "Tunai"
     - "status_pembayaran": "Lunas"
-    - "keterangan": "Ongkir tunai kasir"
+    - "keterangan": catatan pengiriman lainnya (misal: "Pengiriman cake ultah ke Tebet")
 
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
@@ -195,27 +195,57 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                 item["kategori"] = "Tukar Cash"
                 if not item.get("satuan") or item.get("satuan") == "Pcs":
                     item["satuan"] = "Trans"
-                if not item.get("metode_bayar") or item.get("metode_bayar") == "Tunai":
-                    item["metode_bayar"] = "Transfer"
+                # Metode bayar SELALU Cash / Tunai (kas fisik toko yang keluar)
+                item["metode_bayar"] = "Tunai"
                 item["status_pembayaran"] = "Lunas"
-                if not item.get("keterangan") or item.get("keterangan") == "-":
-                    item["keterangan"] = "Tarik tunai kasir (uang masuk ke rekening)"
+
+                # Bank transfer masuk ke Catatan saja, dan TIDAK ADA SUPPLIER (toko_supplier = "-")
+                bank_info = []
+                orig_sup = str(item.get("toko_supplier") or "").strip()
+                if orig_sup and orig_sup not in ("-", "None"):
+                    bank_info.append(f"Bank/Layanan: {orig_sup}")
+                inv_ref = str(item.get("no_invoice") or "").strip()
+                if inv_ref and inv_ref not in ("-", "None"):
+                    bank_info.append(f"Ref: {inv_ref}")
+
+                curr_notes = str(item.get("keterangan") or "").strip()
+                if curr_notes in ("-", "", "Tarik tunai kasir (uang masuk ke rekening)"):
+                    if bank_info:
+                        item["keterangan"] = f"Transfer {', '.join(bank_info)}"
+                    else:
+                        item["keterangan"] = "Tukar cash kasir (uang transfer masuk ke rekening)"
+                else:
+                    if bank_info and not any(bi in curr_notes for bi in bank_info):
+                        item["keterangan"] = f"{curr_notes} ({', '.join(bank_info)})"
+
+                # Tidak ada supplier untuk Tukar Cash
+                item["toko_supplier"] = "-"
 
             # Normalisasi Bukti Ongkir & Kurir Instan
             is_ongkir = (
-                "ongkir" in barang_l
+                kat_l == "ongkir"
+                or "ongkir" in barang_l
                 or "ongkos kirim" in barang_l
                 or "gosend" in barang_l
                 or "grabexpress" in barang_l
                 or "lalamove" in barang_l
-                or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "gojek", "grab"))
+                or "maxim" in barang_l
+                or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "maxim", "gojek", "grab", "j&t", "sicepat", "anteraja"))
             )
             if is_ongkir and item.get("kategori") != "Tukar Cash":
-                item["kategori"] = "Operasional"
+                item["kategori"] = "Ongkir"
                 if not any(item.get("barang", "").lower().startswith(p) for p in ("ongkir", "ongkos kirim")):
-                    item["barang"] = f"Ongkir {item.get('barang', 'Kurir')}"
+                    item["barang"] = f"Ongkir {item.get('barang', 'delivery cake')}"
                 if not item.get("satuan") or item.get("satuan") == "Pcs":
                     item["satuan"] = "Trip"
+                # Pastikan nama kurir di toko_supplier
+                if not item.get("toko_supplier") or item.get("toko_supplier") == "-":
+                    for kurir in ("GoSend Car", "GoSend Bike", "GoSend", "GrabExpress", "Lalamove", "Maxim", "J&T", "SiCepat"):
+                        if kurir.lower() in barang_l or kurir.lower() in notes:
+                            item["toko_supplier"] = kurir
+                            break
+                    if not item.get("toko_supplier") or item.get("toko_supplier") == "-":
+                        item["toko_supplier"] = "Kurir"
                 # Cek jika ditalangi e-wallet karyawan (GoPay, OVO, Dana, ShopeePay)
                 if any(ew in pay_m for ew in ("gopay", "ovo", "dana", "shopeepay")) or any(ew in notes for ew in ("reimburse", "talangan", "ditalangi")):
                     item["is_reimbursement"] = True

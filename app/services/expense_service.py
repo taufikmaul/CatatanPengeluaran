@@ -97,36 +97,64 @@ async def save_expenses(
 
         inv_num = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota") or "-"
 
-        # Resolusi master supplier (toko/vendor)
+        # Resolusi data khusus Tukar Cash & Ongkir
+        item_cat = (item.get("kategori") or item.get("category") or "").strip()
+        item_raw_name = (item.get("barang") or item.get("item_name") or "Barang").strip()
+        is_tukar = (
+            item_cat.lower() == "tukar cash"
+            or "tukar cash" in item_raw_name.lower()
+            or "tarik tunai" in item_raw_name.lower()
+        )
+        is_ongk = (
+            item_cat.lower() == "ongkir"
+            or item_raw_name.lower().startswith("ongkir")
+        )
+
         sup_id = item.get("supplier_id")
         sup_name = item.get("toko_supplier") or item.get("supplier") or "-"
-        if not sup_id and sup_name and str(sup_name).strip() not in ("-", "None", ""):
-            from app.services.supplier_service import get_or_create_supplier_by_name
-            supplier_obj = await get_or_create_supplier_by_name(db, str(sup_name), auto_create=True)
-            if supplier_obj:
-                sup_id = supplier_obj.id
-                sup_name = supplier_obj.name
-        elif sup_id and (not sup_name or sup_name == "-"):
-            from app.models.supplier import Supplier
-            s_obj = await db.get(Supplier, sup_id)
-            if s_obj:
-                sup_name = s_obj.name
+
+        if is_tukar:
+            item_cat = "Tukar Cash"
+            sup_name = "-"
+            sup_id = None
+            pay_method = "Tunai"
+            master_item_id = None
+        elif is_ongk:
+            item_cat = "Ongkir"
+            master_item_id = None
+            pay_method = item.get("metode_bayar") or item.get("pay_method") or "Tunai"
+        else:
+            item_cat = item_cat or "Operasional"
+            pay_method = item.get("metode_bayar") or item.get("pay_method") or "Tunai"
+            master_item_id = item.get("master_item_id")
+            # Resolusi master supplier (toko/vendor) hanya untuk belanja reguler
+            if not sup_id and sup_name and str(sup_name).strip() not in ("-", "None", ""):
+                from app.services.supplier_service import get_or_create_supplier_by_name
+                supplier_obj = await get_or_create_supplier_by_name(db, str(sup_name), auto_create=True)
+                if supplier_obj:
+                    sup_id = supplier_obj.id
+                    sup_name = supplier_obj.name
+            elif sup_id and (not sup_name or sup_name == "-"):
+                from app.models.supplier import Supplier
+                s_obj = await db.get(Supplier, sup_id)
+                if s_obj:
+                    sup_name = s_obj.name
 
         expense = Expense(
             expense_date=expense_date,
             supplier=sup_name,
             supplier_id=sup_id,
-            item_name=item.get("barang") or item.get("item_name") or "Barang",
+            item_name=item_raw_name,
             qty=qty if qty > 0 else Decimal("1"),
             unit=(item.get("satuan") or item.get("unit") or "Pcs").strip() or "Pcs",
-            category=item.get("kategori") or item.get("category") or "Operasional",
+            category=item_cat,
             unit_price=unit_price,
             shipping_fee=shipping_fee,
             tax=tax,
             other_fee=other_fee,
             discount=discount,
             total_price=total_price,
-            pay_method=item.get("metode_bayar") or item.get("pay_method") or "Tunai",
+            pay_method=pay_method,
             pay_status=item.get("status_pembayaran") or item.get("pay_status") or "Lunas",
             due_date=item.get("jatuh_tempo") or item.get("due_date") or "-",
             notes=item.get("keterangan") or item.get("notes") or "-",
@@ -134,7 +162,7 @@ async def save_expenses(
             invoice_number=str(inv_num),
             msg_link=msg_link,
             user_id=user_id,
-            master_item_id=item.get("master_item_id"),
+            master_item_id=master_item_id,
             sheets_synced=False,
         )
         db.add(expense)
@@ -521,7 +549,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
             kat.lower() == "ongkir"
             or item_l.startswith("ongkir")
             or "ongkir" in item_l
-            or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "j&t", "sicepat", "anteraja"))
+            or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "maxim", "j&t", "sicepat", "anteraja"))
         )
         if is_ongkir and not is_tukar_cash:
             total_ongkir += nominal
@@ -540,20 +568,30 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         metode = (e.pay_method or "Tunai").strip() or "Tunai"
         per_metode_bayar[metode] = per_metode_bayar.get(metode, 0.0) + nominal
 
-        if status == "lunas":
-            total_lunas += nominal
-            per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
-        elif "belum" in status or status in ("hutang", "tempo"):
-            list_hutang.append({
-                "id": e.id,
-                "barang": e.item_name,
-                "supplier": e.supplier or "-",
-                "nominal": nominal,
-                "tempo": e.due_date or "-",
-                "tanggal": str(e.expense_date),
-                "kategori": e.category or "Lainnya",
-                "status": e.pay_status or "Belum Lunas",
-            })
+        # Eksklusi Ongkir & Tukar Cash dari belanja toko reguler (total_lunas, list_hutang, per_kategori)
+        if not is_tukar_cash and not is_ongkir:
+            if status == "lunas":
+                total_lunas += nominal
+                per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
+            elif "belum" in status or status in ("hutang", "tempo"):
+                list_hutang.append({
+                    "id": e.id,
+                    "barang": e.item_name,
+                    "supplier": e.supplier or "-",
+                    "nominal": nominal,
+                    "tempo": e.due_date or "-",
+                    "tanggal": str(e.expense_date),
+                    "kategori": e.category or "Lainnya",
+                    "status": e.pay_status or "Belum Lunas",
+                })
+
+    regular_count = len([
+        e for e in expenses
+        if (e.category or "").lower() not in ("ongkir", "tukar cash")
+        and not (e.item_name or "").lower().startswith("ongkir")
+        and "tukar cash" not in (e.item_name or "").lower()
+        and "tarik tunai" not in (e.item_name or "").lower()
+    ])
 
     return {
         "total_lunas": total_lunas,
@@ -563,13 +601,13 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "ongkir_count": ongkir_count,
         "ongkir_reimburse_count": ongkir_reimburse_count,
         "ongkir_reimburse_total": ongkir_reimburse_total,
-        "total_belanja_riil": max(0.0, total_lunas - total_tukar_cash),
+        "total_belanja_riil": total_lunas,
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
         "list_hutang": list_hutang,
         "reimburse_pending_count": reimburse_pending_count,
         "reimburse_pending_total": reimburse_pending_total,
-        "expense_count": len(expenses),
+        "expense_count": regular_count,
         "month": month,
         "year": year,
     }
@@ -779,15 +817,15 @@ async def get_all_expenses_paginated(
     elif special_type == "ongkir":
         query = query.where(
             or_(
-                Expense.category.ilike("%ongkir%"),
+                Expense.category.ilike("ongkir%"),
                 Expense.item_name.ilike("ongkir%"),
                 Expense.item_name.ilike("%ongkir%"),
                 Expense.supplier.ilike("%gosend%"),
                 Expense.supplier.ilike("%grabexpress%"),
                 Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%maxim%"),
                 Expense.supplier.ilike("%j&t%"),
                 Expense.supplier.ilike("%sicepat%"),
-                Expense.shipping_fee > 0,
             )
         )
     elif special_type in ("all_cash_delivery", "cash_or_delivery", "tukar_cash_ongkir"):
@@ -796,17 +834,33 @@ async def get_all_expenses_paginated(
                 Expense.category.ilike("%tukar cash%"),
                 Expense.item_name.ilike("%tukar cash%"),
                 Expense.item_name.ilike("%tarik tunai%"),
-                Expense.category.ilike("%ongkir%"),
+                Expense.category.ilike("ongkir%"),
                 Expense.item_name.ilike("ongkir%"),
                 Expense.item_name.ilike("%ongkir%"),
                 Expense.supplier.ilike("%gosend%"),
                 Expense.supplier.ilike("%grabexpress%"),
                 Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%maxim%"),
                 Expense.supplier.ilike("%j&t%"),
                 Expense.supplier.ilike("%sicepat%"),
-                Expense.shipping_fee > 0,
             )
         )
+    elif special_type == "all":
+        pass
+    else:
+        # Default view (Daftar Pengeluaran Utama): EXCLUDE Ongkir dan Tukar Cash
+        if category not in ("Ongkir", "Tukar Cash"):
+            query = query.where(
+                and_(
+                    or_(
+                        Expense.category.is_(None),
+                        Expense.category.not_in(["Ongkir", "Tukar Cash"]),
+                    ),
+                    ~Expense.item_name.ilike("ongkir%"),
+                    ~Expense.item_name.ilike("%tukar cash%"),
+                    ~Expense.item_name.ilike("%tarik tunai%"),
+                )
+            )
 
     if category:
         query = query.where(Expense.category == category)
@@ -1023,7 +1077,7 @@ async def delete_expense(
 
 
 async def get_monthly_chart_data(db: AsyncSession, year: int, month: int) -> list[dict]:
-    """Mengambil akumulasi harian pengeluaran dalam satu bulan untuk visualisasi chart."""
+    """Mengambil akumulasi harian pengeluaran dalam satu bulan untuk visualisasi chart (exclude Tukar Cash & Ongkir)."""
     start = date(year, month, 1)
     end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
 
@@ -1033,7 +1087,19 @@ async def get_monthly_chart_data(db: AsyncSession, year: int, month: int) -> lis
             func.sum(Expense.total_price).label("daily_total"),
             func.count(Expense.id).label("count"),
         )
-        .where(and_(Expense.expense_date >= start, Expense.expense_date < end))
+        .where(
+            and_(
+                Expense.expense_date >= start,
+                Expense.expense_date < end,
+                or_(
+                    Expense.category.is_(None),
+                    Expense.category.not_in(["Ongkir", "Tukar Cash"]),
+                ),
+                ~Expense.item_name.ilike("ongkir%"),
+                ~Expense.item_name.ilike("%tukar cash%"),
+                ~Expense.item_name.ilike("%tarik tunai%"),
+            )
+        )
         .group_by(Expense.expense_date)
         .order_by(Expense.expense_date.asc())
     )
@@ -1066,7 +1132,15 @@ async def get_monthly_leaderboards(db: AsyncSession, year: int, month: int) -> d
         .where(and_(Expense.expense_date >= start_date, Expense.expense_date < end_date))
         .order_by(Expense.expense_date.asc(), Expense.id.asc())
     )
-    month_expenses = result.scalars().all()
+    all_raw_expenses = result.scalars().all()
+    # Exclude Ongkir & Tukar Cash dari analisis leaderboard belanja toko
+    month_expenses = [
+        e for e in all_raw_expenses
+        if (e.category or "").strip().lower() not in ("ongkir", "tukar cash")
+        and not (e.item_name or "").lower().startswith("ongkir")
+        and "tukar cash" not in (e.item_name or "").lower()
+        and "tarik tunai" not in (e.item_name or "").lower()
+    ]
 
     if not month_expenses:
         return {

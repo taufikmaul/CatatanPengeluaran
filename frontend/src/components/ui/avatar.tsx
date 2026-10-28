@@ -45,4 +45,16 @@ const AvatarFallback = React.forwardRef<
 ))
 AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName
 
-export { Avatar, AvatarImage, AvatarFallback }
+const AvatarGroup = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex -space-x-2 overflow-hidden", className)}
+    {...props}
+  />
+))
+AvatarGroup.displayName = "AvatarGroup"
+
+export { Avatar, AvatarImage, AvatarFallback, AvatarGroup }

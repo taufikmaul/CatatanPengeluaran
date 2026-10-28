@@ -11,6 +11,7 @@ import {
   SupplierPriciestItem,
   SupplierDuplicateGroup,
   SupplierFormData,
+  MasterDataOption,
 } from "@/types";
 
 export const api = axios.create({
@@ -297,5 +298,57 @@ export async function mergeSuppliers(
   });
   return res.data;
 }
+
+// ──────────────────────────────────────────────
+// Master Data API (Metode Bayar, Kategori, Satuan)
+// ──────────────────────────────────────────────
+
+export async function getMasterData(type?: string): Promise<MasterDataOption[]> {
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  const res = await api.get(`/config/master-data${query}`);
+  return res.data.items || [];
+}
+
+export async function createMasterData(payload: {
+  type: string;
+  name: string;
+  description?: string;
+  sort_order?: number;
+  is_default?: boolean;
+}): Promise<{ ok: boolean; item: MasterDataOption; message?: string }> {
+  const res = await api.post("/config/master-data", payload);
+  return res.data;
+}
+
+export async function updateMasterData(
+  id: number,
+  payload: {
+    name?: string;
+    description?: string;
+    sort_order?: number;
+    is_active?: boolean;
+    is_default?: boolean;
+  }
+): Promise<{ ok: boolean; item: MasterDataOption; message?: string }> {
+  const res = await api.put(`/config/master-data/${id}`, payload);
+  return res.data;
+}
+
+export async function deleteMasterData(
+  id: number,
+  force: boolean = false
+): Promise<{ ok: boolean; message: string }> {
+  const query = force ? "?force=true" : "";
+  const res = await api.delete(`/config/master-data/${id}${query}`);
+  return res.data;
+}
+
+export async function resetMasterDataDefaults(
+  type?: string
+): Promise<{ ok: boolean; message: string; restored_count?: number }> {
+  const res = await api.post("/config/master-data/reset-defaults", { type });
+  return res.data;
+}
+
 
 

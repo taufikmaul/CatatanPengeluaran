@@ -31,7 +31,7 @@ import {
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardHeaderProps {
-  activeTab: "overview" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
+  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
   month: number;
   year: number;
   onMonthChange: (month: number) => void;
@@ -83,7 +83,8 @@ export function DashboardHeader({
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
 
   const titleMap: Record<string, string> = {
-    overview: userRole === "admin_input" ? "Pencatatan Transaksi" : "Overview & Analisis",
+    overview: "Overview & Analisis Keuangan",
+    transactions: "Daftar Transaksi & Peringkat Belanja",
     master: "Katalog Master Item",
     suppliers: "Master Supplier / Toko",
     "supplier-detail": "Detail Toko & Histori Belanja",

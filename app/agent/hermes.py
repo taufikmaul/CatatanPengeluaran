@@ -77,6 +77,14 @@ class HermesAgent:
         elif intent in (Intent.CMD_CATAT, Intent.TEXT_INPUT):
             await self._handle_text_input(param or text, msg_link)
 
+        elif intent == Intent.CMD_ONGKIR:
+            content = f"Ongkir: {param}" if param else text
+            await self._handle_text_input(content, msg_link)
+
+        elif intent == Intent.CMD_TUKAR_CASH:
+            content = f"Tukar Cash /tukercash: {param}" if param else text
+            await self._handle_text_input(content, msg_link)
+
         elif intent == Intent.CMD_REKAP or intent == Intent.QUERY_REPORT:
             await self._handle_report()
 

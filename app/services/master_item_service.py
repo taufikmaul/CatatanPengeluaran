@@ -152,12 +152,24 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
         return items
 
     for item in items:
+        # Pengecekan Eksklusi: Ongkir & Tukar Cash TIDAK BOLEH dicocokkan ke MasterItem
+        kat_check = (item.get("kategori") or item.get("category") or "").strip().lower()
+        raw_name = (item.get("barang") or item.get("item_name") or "").strip()
+        raw_name_lower = raw_name.lower()
+        if (
+            kat_check in ("ongkir", "tukar cash")
+            or raw_name_lower.startswith("ongkir")
+            or "tukar cash" in raw_name_lower
+            or "tarik tunai" in raw_name_lower
+        ):
+            item["master_item_id"] = None
+            continue
+
         matched = None
         req_mid = item.get("master_item_id")
         if req_mid:
             matched = next((m for m in master_items if m.id == req_mid), None)
 
-        raw_name = (item.get("barang") or item.get("item_name") or "").strip()
         if not matched and raw_name:
             matched = find_best_master_match(raw_name, master_items)
 
@@ -405,6 +417,18 @@ async def import_master_items_from_history(db: AsyncSession) -> dict:
         raw_name = (e.item_name or "").strip()
         if not raw_name or raw_name == "-":
             continue
+
+        # Exclude Ongkir dan Tukar Cash dari import master items
+        cat_l = (e.category or "").strip().lower()
+        raw_l = raw_name.lower()
+        if (
+            cat_l in ("ongkir", "tukar cash")
+            or raw_l.startswith("ongkir")
+            or "tukar cash" in raw_l
+            or "tarik tunai" in raw_l
+        ):
+            continue
+
         key = raw_name.lower()
         if key not in grouped:
             grouped[key] = {
@@ -472,6 +496,17 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
         sup = (e.supplier or "").strip()
         price = float(e.unit_price or 0)
         dt_str = str(e.expense_date)
+
+        # Abaikan transaksi Ongkir & Tukar Cash agar tidak mengotori saran belanja barang umum
+        cat_l = (e.category or "").strip().lower()
+        name_l = name.lower()
+        if (
+            cat_l in ("ongkir", "tukar cash")
+            or name_l.startswith("ongkir")
+            or "tukar cash" in name_l
+            or "tarik tunai" in name_l
+        ):
+            continue
 
         # 1. Catat histori berdasarkan master_item_id (produk id)
         if e.master_item_id:

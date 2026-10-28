@@ -259,6 +259,19 @@ export interface SuggestionsResponse {
   suppliers: string[];
 }
 
+export interface MasterDataOption {
+  id: number;
+  type: "kategori" | "metode_bayar" | "satuan";
+  name: string;
+  description: string;
+  sort_order: number;
+  is_active: boolean;
+  is_default: boolean;
+  usage_count: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface SystemConfig {
   ok: boolean;
   total_expenses: number;
@@ -287,6 +300,9 @@ export interface SystemConfig {
   sheets_creds_exists: boolean;
   service_account_email?: string | null;
   valid_categories: string[];
+  payment_methods?: string[];
+  units?: string[];
+  master_data?: Record<string, MasterDataOption[]>;
   monthly_budget_limit?: number;
   category_budgets?: Record<string, number>;
 }

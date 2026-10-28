@@ -18,6 +18,8 @@ class Intent(str, Enum):
     CMD_CONFIG = "cmd_config"
     CMD_REIMBURSE = "cmd_reimburse"
     CMD_ANALISIS = "cmd_analisis"
+    CMD_ONGKIR = "cmd_ongkir"
+    CMD_TUKAR_CASH = "cmd_tukar_cash"
 
     # Input media
     SCAN_RECEIPT = "scan_receipt"    # foto struk
@@ -44,6 +46,8 @@ _COMMANDS = {
     r"^/config": Intent.CMD_CONFIG,
     r"^/(reimburse|reimbursement|talangan)": Intent.CMD_REIMBURSE,
     r"^/(analisis|analisa|ai_analisis|insight|evaluasi)": Intent.CMD_ANALISIS,
+    r"^/ongkir": Intent.CMD_ONGKIR,
+    r"^/(tukercash|tukarcash|tukar_cash)": Intent.CMD_TUKAR_CASH,
 }
 
 # Pola untuk natural language (tanpa command)

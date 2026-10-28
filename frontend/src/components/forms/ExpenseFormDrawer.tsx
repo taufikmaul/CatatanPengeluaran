@@ -39,6 +39,8 @@ interface ExpenseFormDrawerProps {
   onSubmit: (data: ExpenseFormData, expenseId?: number) => void;
   onBatchSubmit?: (items: ExpenseFormData[]) => void;
   categories: string[];
+  paymentMethods?: string[];
+  units?: string[];
   initialData?: Expense | null;
   repeatData?: Expense | null;
   isSubmitting?: boolean;
@@ -52,6 +54,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   onSubmit,
   onBatchSubmit,
   categories,
+  paymentMethods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
+  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
   initialData,
   repeatData,
   isSubmitting = false,
@@ -116,6 +120,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   const itemNameVal = watch("item_name") || "";
   const supplierVal = watch("supplier") || "";
+  const categoryVal = watch("category") || "";
+  const isOngkir = categoryVal.toLowerCase() === "ongkir";
+  const isTukarCash = categoryVal.toLowerCase() === "tukar cash";
   const qty = watch("qty") || 0;
   const unitPrice = watch("unit_price") || 0;
   const shippingFee = watch("shipping_fee") || 0;
@@ -125,6 +132,22 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const payStatus = watch("pay_status") || "Lunas";
   const msgLinkVal = watch("msg_link") || "";
   const initialTgMeta = parseTelegramLink(initialData?.msg_link);
+
+  // Auto-set defaults saat kategori berubah ke Tukar Cash atau Ongkir
+  useEffect(() => {
+    if (isTukarCash) {
+      setValue("supplier", "-");
+      setValue("pay_method", "Tunai");
+      setValue("unit", "Trans");
+      setValue("master_item_id", null);
+    } else if (isOngkir) {
+      const curUnit = watch("unit");
+      if (!curUnit || curUnit === "Pcs") {
+        setValue("unit", "Trip");
+      }
+      setValue("master_item_id", null);
+    }
+  }, [isTukarCash, isOngkir, setValue]);
 
   // Filter suggestions based on input
   const filteredItemSuggestions = useMemo(() => {
@@ -319,6 +342,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   };
 
   const handleFormSubmit = (data: ExpenseFormData) => {
+    if (isTukarCash) {
+      data.supplier = "-";
+      data.pay_method = "Tunai";
+      data.master_item_id = null;
+    } else if (isOngkir) {
+      data.master_item_id = null;
+    }
     onSubmit(data, initialData ? initialData.id : undefined);
     onClose();
   };
@@ -635,13 +665,17 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Nama Barang + Autocomplete Master Item & Histori */}
+            {/* Nama Barang / Judul Transaksi */}
             <div className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-600">
-                  Nama Barang / Keperluan *
+                  {isTukarCash
+                    ? "Judul Transaksi Tukar Cash *"
+                    : isOngkir
+                    ? "Judul Ongkir / Pengiriman *"
+                    : "Nama Barang / Keperluan *"}
                 </label>
-                {selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
+                {!isTukarCash && !isOngkir && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
                   <button
                     type="button"
                     onClick={() => setValue("unit_price", selectedSuggestionHint.last_unit_price)}
@@ -653,10 +687,18 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 )}
               </div>
               <Input
-                placeholder="Ketik atau pilih dari Master Item (mis: Tepung Terigu Cakra)"
+                placeholder={
+                  isTukarCash
+                    ? "mis: Tukar Cash - Budi"
+                    : isOngkir
+                    ? "mis: ongkir delivery cake, kue bu maya, dll"
+                    : "Ketik atau pilih dari Master Item (mis: Tepung Terigu Cakra)"
+                }
                 autoComplete="off"
-                {...register("item_name", { required: "Nama barang wajib diisi" })}
-                onFocus={() => setShowItemDropdown(true)}
+                {...register("item_name", { required: "Nama barang / judul transaksi wajib diisi" })}
+                onFocus={() => {
+                  if (!isTukarCash && !isOngkir) setShowItemDropdown(true);
+                }}
                 onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
                 className="h-10 text-xs rounded-xl"
               />
@@ -664,8 +706,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 <span className="text-[11px] text-red-500">{errors.item_name.message}</span>
               )}
 
-              {/* Dropdown Autocomplete */}
-              {showItemDropdown && filteredItemSuggestions.length > 0 && (
+              {/* Dropdown Autocomplete hanya untuk belanja reguler */}
+              {!isTukarCash && !isOngkir && showItemDropdown && filteredItemSuggestions.length > 0 && (
                 <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100">
                   {filteredItemSuggestions.map((s) => (
                     <button
@@ -707,17 +749,48 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               )}
             </div>
 
-            {/* Toko / Supplier */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">
-                Toko / Supplier
-              </label>
-              <Input
-                placeholder="mis: Toko Roti Makmur, Super Indo, atau -"
-                {...register("supplier")}
-                className="h-10 text-xs rounded-xl"
-              />
-            </div>
+            {/* Toko / Supplier / Kurir */}
+            {isTukarCash ? (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex items-center gap-2.5">
+                <Store className="w-4 h-4 text-slate-400 shrink-0" />
+                <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di kolom Catatan.</span>
+                <input type="hidden" {...register("supplier")} value="-" />
+              </div>
+            ) : isOngkir ? (
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  Nama Kurir / Armada Pengiriman *
+                </label>
+                <Input
+                  placeholder="mis: GoSend Car, GoSend Bike, GrabExpress, Lalamove, Maxim..."
+                  list="ongkir-courier-list"
+                  {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
+                  className="h-10 text-xs rounded-xl"
+                />
+                <datalist id="ongkir-courier-list">
+                  <option value="GoSend Car" />
+                  <option value="GoSend Bike" />
+                  <option value="GrabExpress Instant" />
+                  <option value="GrabExpress SameDay" />
+                  <option value="Lalamove" />
+                  <option value="Maxim" />
+                  <option value="J&T Express" />
+                  <option value="SiCepat" />
+                  <option value="Anteraja" />
+                </datalist>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">
+                  Toko / Supplier
+                </label>
+                <Input
+                  placeholder="mis: Toko Roti Makmur, Super Indo, atau -"
+                  {...register("supplier")}
+                  className="h-10 text-xs rounded-xl"
+                />
+              </div>
+            )}
 
             {/* No. Invoice / Nota & Checkbox Reimbursement */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -798,17 +871,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   list="expense-common-units"
                 />
                 <datalist id="expense-common-units">
-                  <option value="Box" />
-                  <option value="Pouch" />
-                  <option value="Kg" />
-                  <option value="Pcs" />
-                  <option value="Dus" />
-                  <option value="Kaleng" />
-                  <option value="Pack" />
-                  <option value="Sak" />
-                  <option value="Bal" />
-                  <option value="Botol" />
-                  <option value="Tray" />
+                  {units.map((u) => (
+                    <option key={u} value={u} />
+                  ))}
                 </datalist>
               </div>
 
@@ -868,61 +933,65 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             )}
 
-            {/* Ongkir, Pajak, Biaya Lainnya, Diskon */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Ongkir / Pengiriman (Rp)
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("shipping_fee", { valueAsNumber: true })}
-                  className="h-9 text-xs rounded-xl"
-                  placeholder="0"
-                />
+            {/* Ongkir, Pajak, Biaya Lainnya, Diskon (hanya untuk non-Tukar Cash) */}
+            {!isTukarCash && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Ongkir / Pengiriman (Rp)
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("shipping_fee", { valueAsNumber: true })}
+                    className="h-9 text-xs rounded-xl"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Pajak (PPN/PB1) (Rp)
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("tax", { valueAsNumber: true })}
+                    className="h-9 text-xs rounded-xl"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Biaya Lainnya (Admin/App) (Rp)
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("other_fee", { valueAsNumber: true })}
+                    className="h-9 text-xs rounded-xl"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Diskon / Potongan (Rp)
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("discount", { valueAsNumber: true })}
+                    className="h-9 text-xs rounded-xl"
+                    placeholder="0"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Pajak (PPN/PB1) (Rp)
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("tax", { valueAsNumber: true })}
-                  className="h-9 text-xs rounded-xl"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Biaya Lainnya (Admin/App) (Rp)
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("other_fee", { valueAsNumber: true })}
-                  className="h-9 text-xs rounded-xl"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Diskon / Potongan (Rp)
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("discount", { valueAsNumber: true })}
-                  className="h-9 text-xs rounded-xl"
-                  placeholder="0"
-                />
-              </div>
-            </div>
+            )}
 
             {/* Calculated Total Highlight Box */}
             <div className="p-3.5 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between">
-              <span className="text-xs font-medium text-blue-900">Total Pengeluaran</span>
+              <span className="text-xs font-medium text-blue-900">
+                {isTukarCash ? "Nominal Tukar Cash" : isOngkir ? "Total Biaya Ongkir" : "Total Pengeluaran"}
+              </span>
               <span className="text-base font-bold text-blue-700 tabular-nums">
                 {formatRupiah(calculatedTotal)}
               </span>
@@ -933,16 +1002,43 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
                   Metode Bayar
                 </label>
-                <select
-                  {...register("pay_method")}
-                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium"
-                >
-                  <option value="Transfer">Transfer</option>
-                  <option value="Tunai">Tunai</option>
-                  <option value="QRIS">QRIS</option>
-                  <option value="Debit">Debit</option>
-                  <option value="Kredit">Kartu Kredit</option>
-                </select>
+                {isTukarCash ? (
+                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center justify-between text-slate-800">
+                    <span>Tunai / Cash (Otomatis)</span>
+                    <Badge variant="outline" className="text-[10px] bg-white text-emerald-700 border-emerald-200">
+                      Kas Fisik
+                    </Badge>
+                  </div>
+                ) : isOngkir ? (
+                  <>
+                    <Input
+                      list="ongkir-pay-methods"
+                      placeholder="mis: Gopay - [akun], Ovo, Tunai, Qris..."
+                      {...register("pay_method")}
+                      className="h-10 text-xs rounded-xl"
+                    />
+                    <datalist id="ongkir-pay-methods">
+                      <option value="Gopay - Kasir" />
+                      <option value="Gopay - Owner" />
+                      <option value="Gopay - Maya" />
+                      <option value="Ovo - Akun" />
+                      <option value="Tunai" />
+                      <option value="QRIS" />
+                      <option value="Transfer" />
+                    </datalist>
+                  </>
+                ) : (
+                  <select
+                    {...register("pay_method")}
+                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium"
+                  >
+                    {paymentMethods.map((pm) => (
+                      <option key={pm} value={pm}>
+                        {pm}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
@@ -975,10 +1071,20 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">
-                Catatan Tambahan
+                {isTukarCash
+                  ? "Bukti Transfer Bank & Catatan *"
+                  : isOngkir
+                  ? "Catatan Pengiriman / Penerima"
+                  : "Catatan Tambahan"}
               </label>
               <Input
-                placeholder="Keterangan pengeluaran..."
+                placeholder={
+                  isTukarCash
+                    ? "mis: Transfer BCA dari Budi (Ref: 123456)"
+                    : isOngkir
+                    ? "mis: Penerima Bu Rita (Kemang), No Pesanan GK-123"
+                    : "Keterangan pengeluaran..."
+                }
                 {...register("notes")}
                 className="h-10 text-xs rounded-xl"
               />

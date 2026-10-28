@@ -141,7 +141,7 @@ class Settings(BaseSettings):
     valid_categories: list[str] = [
         "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
         "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
-        "Asset", "Iuran", "Tukar Cash"
+        "Asset", "Iuran", "Tukar Cash", "Ongkir"
     ]
 
     @property

@@ -360,6 +360,39 @@ class MonthlyBudgetDetailResponse(BaseModel):
 
 
 # ──────────────────────────────────────────────
+# Master Data Options Schemas (Metode Bayar, Kategori, Satuan)
+# ──────────────────────────────────────────────
+
+class MasterDataOptionCreate(BaseModel):
+    type: str  # "kategori" | "metode_bayar" | "satuan"
+    name: str
+    description: str = ""
+    sort_order: int | None = None
+    is_default: bool = False
+
+
+class MasterDataOptionUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+    is_default: bool | None = None
+
+
+class MasterDataOptionResponse(BaseModel):
+    id: int
+    type: str
+    name: str
+    description: str = ""
+    sort_order: int = 0
+    is_active: bool = True
+    is_default: bool = False
+    usage_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+# ──────────────────────────────────────────────
 # Master Supplier / Toko Schemas
 # ──────────────────────────────────────────────
 

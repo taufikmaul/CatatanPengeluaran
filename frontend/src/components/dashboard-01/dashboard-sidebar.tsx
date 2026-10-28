@@ -1,6 +1,7 @@
 import React from "react";
 import {
   LayoutDashboard,
+  ReceiptText,
   PackageCheck,
   Upload,
   Settings,
@@ -43,8 +44,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
-  onTabChange: (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => void;
+  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   userRole?: string | null;
@@ -79,7 +80,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -140,11 +141,12 @@ export function DashboardSidebar({
             Menu Utama
           </SidebarGroupLabel>
           <SidebarMenu className="gap-1 mt-1">
+            {/* Overview Keuangan */}
             <SidebarMenuItem>
               <SidebarMenuButton
                 isActive={activeTab === "overview"}
                 onClick={() => handleSelectTab("overview")}
-                tooltip="Overview Transaksi"
+                tooltip="Overview Keuangan"
                 className={`h-9.5 rounded-xl font-medium ${
                   activeTab === "overview"
                     ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
@@ -152,9 +154,24 @@ export function DashboardSidebar({
                 }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
-                <span className="truncate">
-                  {userRole === "admin_input" ? "Daftar Transaksi" : "Overview Keuangan"}
-                </span>
+                <span className="truncate">Overview Keuangan</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            {/* Daftar Transaksi (Halaman / Route Baru) */}
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "transactions"}
+                onClick={() => handleSelectTab("transactions")}
+                tooltip="Daftar Transaksi & Peringkat Belanja"
+                className={`h-9.5 rounded-xl font-medium ${
+                  activeTab === "transactions"
+                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <ReceiptText className="w-4 h-4" />
+                <span className="truncate">Daftar Transaksi</span>
                 {expenseCount > 0 && (
                   <SidebarMenuBadge className="ml-auto text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 rounded-md px-1.5 py-0.5 tabular-nums">
                     {expenseCount}

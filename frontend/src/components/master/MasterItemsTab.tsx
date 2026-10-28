@@ -7,10 +7,23 @@ import {
   MasterItemAuditResponse,
   MasterItemMergeRequest,
 } from "@/types";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
+import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
+import { Filters } from "@/components/reui/filters/filters";
+import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
+import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
+import { ColumnDef, useTable, PaginationState } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -46,11 +59,13 @@ import {
 
 interface MasterItemsTabProps {
   categories: string[];
+  units?: string[];
   onInspectItemPrice?: (itemName: string, itemId?: number) => void;
 }
 
 export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   categories,
+  units = ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram"],
   onInspectItemPrice,
 }) => {
   const queryClient = useQueryClient();
@@ -374,6 +389,419 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     });
   };
 
+  const [tablePagination, setTablePagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 25,
+  });
+
+  const masterFilterFields: FilterField[] = useMemo(
+    () => [
+      {
+        id: "category",
+        label: "Kategori",
+        type: "select",
+        options: categories.map((c) => ({ label: c, value: c })),
+      },
+      {
+        id: "tipe_satuan",
+        label: "Tipe Satuan",
+        type: "select",
+        options: [
+          { label: "Paket & Ecer", value: "keduanya" },
+          { label: "Hanya Paket", value: "paket" },
+          { label: "Hanya Ecer", value: "ecer" },
+        ],
+      },
+    ],
+    [categories]
+  );
+
+  const masterFilterQuery = useMemo(() => {
+    const rules = [];
+    if (filterCat) {
+      rules.push(createFilterRule({ id: "rule-cat", path: ["category"], operator: "is", value: filterCat }));
+    }
+    return createFilterQuery(rules, "and");
+  }, [filterCat]);
+
+  const handleMasterQueryChange = (nextQuery: FilterQuery) => {
+    let newCat = "";
+    const traverse = (nodes: FilterNode[]) => {
+      for (const node of nodes) {
+        if (isFilterRule(node)) {
+          if (node.path[0] === "category") newCat = String(node.value ?? "");
+        } else if (node.rules) {
+          traverse(node.rules);
+        }
+      }
+    };
+    if (nextQuery?.rules) traverse(nextQuery.rules);
+    setFilterCat(newCat);
+  };
+
+  const masterColumns = useMemo<ColumnDef<DataGridFeatures, MasterItem>[]>(
+    () => [
+      {
+        id: "select",
+        header: () => (
+          <div className="w-10 text-center">
+            <input
+              type="checkbox"
+              aria-label="Pilih semua item yang tampil"
+              checked={
+                filteredItems.length > 0 &&
+                filteredItems.every((i) => selectedIds.includes(i.id))
+              }
+              onChange={handleToggleSelectAllVisible}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+            />
+          </div>
+        ),
+        cell: ({ row }) => {
+          const item = row.original;
+          const isSelected = selectedIds.includes(item.id);
+          return (
+            <div className="w-10 text-center">
+              <input
+                type="checkbox"
+                aria-label={`Pilih ${item.item_name}`}
+                checked={isSelected}
+                onChange={() => toggleSelectItem(item.id)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+              />
+            </div>
+          );
+        },
+        size: 50,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => <DataGridColumnHeader title="Nama Item Baku" column={column} />,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          return isEditing ? (
+            <Input
+              value={editForm.item_name}
+              onChange={(e) => setEditForm({ ...editForm, item_name: e.target.value })}
+              className="h-8 text-xs rounded-lg"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => onInspectItemPrice?.(item.item_name, item.id)}
+              className="hover:text-blue-600 hover:underline inline-flex items-center gap-1.5 text-left font-semibold text-slate-900"
+              title="Klik untuk lihat riwayat harga & perbandingan toko"
+            >
+              <span>{item.item_name}</span>
+              <LineChart className="w-3 h-3 text-slate-300" />
+            </button>
+          );
+        },
+        size: 200,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "category",
+        id: "category",
+        header: ({ column }) => <DataGridColumnHeader title="Kategori" column={column} />,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          return isEditing ? (
+            <select
+              value={editForm.category}
+              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
+            >
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Badge variant="outline" className="text-[10px] font-medium">
+              {item.category}
+            </Badge>
+          );
+        },
+        size: 130,
+        enableSorting: true,
+      },
+      {
+        id: "satuan",
+        header: () => <span>Satuan & Kemasan</span>,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          if (isEditing) {
+            return (
+              <div className="space-y-1.5 min-w-[210px]">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[10px] text-slate-500 block">Tipe</label>
+                    <select
+                      value={editForm.tipe_satuan}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, tipe_satuan: e.target.value as any })
+                      }
+                      className="h-7 w-full rounded border border-slate-200 bg-white px-1.5 text-[11px]"
+                    >
+                      <option value="keduanya">Paket & Ecer</option>
+                      <option value="paket">Hanya Paket</option>
+                      <option value="ecer">Hanya Ecer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 block">Satuan Beli</label>
+                    <Input
+                      value={editForm.satuan_beli}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, satuan_beli: e.target.value })
+                      }
+                      placeholder="Box / Pcs"
+                      className="h-7 text-[11px] rounded px-1.5"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[10px] text-slate-500 block">Isi Paket</label>
+                    <Input
+                      value={editForm.isi_paket}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, isi_paket: e.target.value })
+                      }
+                      placeholder="mis. 6 pouch @ 2kg"
+                      className="h-7 text-[11px] rounded px-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 block">Satuan Ecer</label>
+                    <Input
+                      value={editForm.satuan_ecer}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, satuan_ecer: e.target.value })
+                      }
+                      placeholder="mis. Pouch"
+                      className="h-7 text-[11px] rounded px-1.5"
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-0.5 min-w-[140px]">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold text-slate-800 text-xs">
+                  {item.satuan_beli || "Pcs"}
+                </span>
+                {item.tipe_satuan === "keduanya" ? (
+                  <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                    Paket & Ecer
+                  </Badge>
+                ) : item.tipe_satuan === "paket" ? (
+                  <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                    Paket
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 h-4 font-medium">
+                    Ecer
+                  </Badge>
+                )}
+              </div>
+              {item.isi_paket && (
+                <div className="text-[11px] text-slate-500 font-normal">
+                  Isi: <span className="text-slate-700 font-medium">{item.isi_paket}</span>
+                </div>
+              )}
+              {item.tipe_satuan === "keduanya" && item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
+                <div className="text-[10px] text-slate-500">
+                  Ecer: <span className="text-slate-600 font-medium">{item.satuan_ecer}</span>
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 190,
+      },
+      {
+        accessorKey: "aliases",
+        id: "aliases",
+        header: ({ column }) => <DataGridColumnHeader title="Kata Kunci / Alias Struk" column={column} />,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          if (isEditing) {
+            return (
+              <Input
+                value={editForm.aliases}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, aliases: e.target.value })
+                }
+                placeholder="alias1, alias2"
+                className="h-8 text-xs rounded-lg"
+              />
+            );
+          }
+          return item.aliases ? (
+            <div className="flex flex-wrap gap-1">
+              {item.aliases.split(",").map((a) => (
+                <span
+                  key={a}
+                  className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]"
+                >
+                  {a.trim()}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="text-slate-300">-</span>
+          );
+        },
+        size: 170,
+      },
+      {
+        accessorKey: "default_supplier",
+        id: "default_supplier",
+        header: ({ column }) => <DataGridColumnHeader title="Toko Default" column={column} />,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          if (isEditing) {
+            return (
+              <Input
+                value={editForm.default_supplier}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, default_supplier: e.target.value })
+                }
+                className="h-8 text-xs rounded-lg"
+              />
+            );
+          }
+          return <span>{item.last_supplier || item.default_supplier || "-"}</span>;
+        },
+        size: 140,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "last_unit_price",
+        id: "last_unit_price",
+        header: ({ column }) => <DataGridColumnHeader title="Harga Terakhir" column={column} className="justify-end text-right" />,
+        cell: ({ row }) => (
+          <div className="text-right font-semibold tabular-nums text-emerald-700">
+            {row.original.last_unit_price > 0 ? formatRupiah(row.original.last_unit_price) : "-"}
+          </div>
+        ),
+        size: 120,
+        enableSorting: true,
+      },
+      {
+        accessorKey: "tx_count",
+        id: "tx_count",
+        header: ({ column }) => <DataGridColumnHeader title="Transaksi" column={column} className="justify-center text-center" />,
+        cell: ({ row }) => (
+          <div className="text-center">
+            <Badge variant="secondary" className="text-[10px]">
+              {row.original.tx_count}x
+            </Badge>
+          </div>
+        ),
+        size: 90,
+        enableSorting: true,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Aksi</div>,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          if (isEditing) {
+            return (
+              <div className="flex items-center justify-end gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    updateMutation.mutate({ id: item.id, payload: editForm })
+                  }
+                  className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-50"
+                  title="Simpan"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setEditingId(null)}
+                  className="h-7 w-7 p-0 text-slate-500 hover:bg-slate-100"
+                  title="Batal"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center justify-end gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSelectedIds((prev) =>
+                    prev.includes(item.id) ? prev : [...prev, item.id]
+                  );
+                  toast.info(
+                    `'${item.item_name}' ditandai. Centang item lain di tabel untuk digabungkan.`
+                  );
+                }}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+                title="Pilih untuk digabung"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => startEdit(item)}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+                title="Edit"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => deleteMutation.mutate(item.id)}
+                className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
+                title="Hapus"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          );
+        },
+        size: 110,
+      },
+    ],
+    [filteredItems, selectedIds, editingId, editForm, categories, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
+  );
+
+  const masterTable = useTable({
+    features: dataGridFeatures,
+    columns: masterColumns,
+    data: filteredItems,
+    rowCount: filteredItems.length,
+    getRowId: (row) => String(row.id),
+    state: {
+      pagination: tablePagination,
+    },
+    onPaginationChange: setTablePagination,
+  });
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -570,7 +998,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   value={satuanBeli}
                   onChange={(e) => setSatuanBeli(e.target.value)}
                   className="h-9 text-xs rounded-xl"
+                  list="master-item-units"
                 />
+                <datalist id="master-item-units">
+                  {units.map((u) => (
+                    <option key={u} value={u} />
+                  ))}
+                </datalist>
               </div>
 
               <div className="md:col-span-2">
@@ -610,6 +1044,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   onChange={(e) => setSatuanEcer(e.target.value)}
                   className="h-9 text-xs rounded-xl"
                   disabled={tipeSatuan === "paket"}
+                  list="master-item-units"
                 />
               </div>
 
@@ -640,380 +1075,102 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         </CardContent>
       </Card>
 
-      {/* Filter & Table List */}
-      <Card className="border-slate-200/90 bg-white rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <Input
-              placeholder="Cari nama item baku atau kata kunci alias..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 text-xs rounded-xl bg-slate-50/70"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={filterCat}
-              onChange={(e) => setFilterCat(e.target.value)}
-              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium"
-            >
-              <option value="">Semua Kategori ({masterItems.length})</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Selected Items Merge Action Bar */}
-        {selectedIds.length > 0 && (
-          <div className="bg-blue-50/80 border-b border-blue-100 px-4 py-2.5 flex items-center justify-between gap-3 text-xs animate-in fade-in">
-            <div className="flex items-center gap-2 text-blue-900 font-medium">
-              <Layers className="w-4 h-4 text-blue-600" />
-              <span>
-                <strong>{selectedIds.length}</strong> item dipilih
-                {selectedIds.length < 2 && (
-                  <span className="text-slate-500 font-normal ml-1">
-                    (Pilih minimal 2 item untuk digabungkan)
-                  </span>
-                )}
-              </span>
+      {/* Filter & ReUI DataGrid List */}
+      <DataGrid
+        table={masterTable}
+        recordCount={filteredItems.length}
+        isLoading={isLoading}
+        tableLayout={{ columnsResizable: true }}
+      >
+        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Input
+                placeholder="Cari nama item baku atau kata kunci alias..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9 text-xs rounded-xl bg-slate-50/70 dark:bg-slate-800/70"
+              />
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                disabled={selectedIds.length < 2}
-                onClick={() => {
-                  const selectedItems = masterItems.filter((m) =>
-                    selectedIds.includes(m.id)
-                  );
-                  openMergeDialogForItems(selectedItems);
-                }}
-                className="h-8 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+              <Filters
+                variant="advanced"
+                advancedMode="popover"
+                advancedAlign="end"
+                reorderable
+                fields={masterFilterFields}
+                query={masterFilterQuery}
+                onQueryChange={handleMasterQueryChange}
+                className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+              />
+              <select
+                value={filterCat}
+                onChange={(e) => setFilterCat(e.target.value)}
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
               >
-                <GitMerge className="w-3.5 h-3.5" />
-                Gabungkan ({selectedIds.length}) Jadi 1 Item
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedIds([])}
-                className="h-8 rounded-xl text-xs text-slate-600 hover:text-slate-900"
-              >
-                Batal
-              </Button>
+                <option value="">Semua Kategori ({masterItems.length})</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                <th className="w-10 py-3 px-3 text-center">
-                  <input
-                    type="checkbox"
-                    aria-label="Pilih semua item yang tampil"
-                    checked={
-                      filteredItems.length > 0 &&
-                      filteredItems.every((i) => selectedIds.includes(i.id))
-                    }
-                    onChange={handleToggleSelectAllVisible}
-                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
-                  />
-                </th>
-                <th className="py-3 px-4">Nama Item Baku</th>
-                <th className="py-3 px-4">Kategori</th>
-                <th className="py-3 px-4">Satuan & Kemasan</th>
-                <th className="py-3 px-4">Kata Kunci / Alias Struk</th>
-                <th className="py-3 px-4">Toko Default</th>
-                <th className="py-3 px-4 text-right">Harga Terakhir</th>
-                <th className="py-3 px-4 text-center">Transaksi</th>
-                <th className="py-3 px-4 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-500">
-                    Memuat katalog item baku...
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-500">
-                    Belum ada item baku yang terdaftar. Tambahkan di atas atau klik{" "}
-                    <strong>"Paste Daftar Item Massal"</strong>.
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => {
-                  const isEditing = editingId === item.id;
-                  const isSelected = selectedIds.includes(item.id);
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`hover:bg-slate-50/60 transition-colors ${
-                        isSelected ? "bg-blue-50/40" : ""
-                      }`}
-                    >
-                      <td className="w-10 py-3 px-3 text-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`Pilih ${item.item_name}`}
-                          checked={isSelected}
-                          onChange={() => toggleSelectItem(item.id)}
-                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
-                        />
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-900">
-                        {isEditing ? (
-                          <Input
-                            value={editForm.item_name}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, item_name: e.target.value })
-                            }
-                            className="h-8 text-xs rounded-lg"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => onInspectItemPrice?.(item.item_name, item.id)}
-                            className="hover:text-blue-600 hover:underline inline-flex items-center gap-1.5 text-left"
-                            title="Klik untuk lihat riwayat harga & perbandingan toko"
-                          >
-                            <span>{item.item_name}</span>
-                            <LineChart className="w-3 h-3 text-slate-300" />
-                          </button>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        {isEditing ? (
-                          <select
-                            value={editForm.category}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, category: e.target.value })
-                            }
-                            className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
-                          >
-                            {categories.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] font-medium">
-                            {item.category}
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        {isEditing ? (
-                          <div className="space-y-1.5 min-w-[210px]">
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <div>
-                                <label className="text-[10px] text-slate-500 block">Tipe</label>
-                                <select
-                                  value={editForm.tipe_satuan}
-                                  onChange={(e) =>
-                                    setEditForm({ ...editForm, tipe_satuan: e.target.value as any })
-                                  }
-                                  className="h-7 w-full rounded border border-slate-200 bg-white px-1.5 text-[11px]"
-                                >
-                                  <option value="keduanya">Paket & Ecer</option>
-                                  <option value="paket">Hanya Paket</option>
-                                  <option value="ecer">Hanya Ecer</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="text-[10px] text-slate-500 block">Satuan Beli</label>
-                                <Input
-                                  value={editForm.satuan_beli}
-                                  onChange={(e) =>
-                                    setEditForm({ ...editForm, satuan_beli: e.target.value })
-                                  }
-                                  placeholder="Box / Pcs"
-                                  className="h-7 text-[11px] rounded px-1.5"
-                                />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <div>
-                                <label className="text-[10px] text-slate-500 block">Isi Paket</label>
-                                <Input
-                                  value={editForm.isi_paket}
-                                  onChange={(e) =>
-                                    setEditForm({ ...editForm, isi_paket: e.target.value })
-                                  }
-                                  placeholder="mis. 6 pouch @ 2kg"
-                                  className="h-7 text-[11px] rounded px-1.5"
-                                />
-                              </div>
-                              <div>
-                                <label className="text-[10px] text-slate-500 block">Satuan Ecer</label>
-                                <Input
-                                  value={editForm.satuan_ecer}
-                                  onChange={(e) =>
-                                    setEditForm({ ...editForm, satuan_ecer: e.target.value })
-                                  }
-                                  placeholder="mis. Pouch"
-                                  className="h-7 text-[11px] rounded px-1.5"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-0.5 min-w-[140px]">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-slate-800 text-xs">
-                                {item.satuan_beli || "Pcs"}
-                              </span>
-                              {item.tipe_satuan === "keduanya" ? (
-                                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 h-4 font-medium">
-                                  Paket & Ecer
-                                </Badge>
-                              ) : item.tipe_satuan === "paket" ? (
-                                <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0 h-4 font-medium">
-                                  Paket
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 h-4 font-medium">
-                                  Ecer
-                                </Badge>
-                              )}
-                            </div>
-                            {item.isi_paket && (
-                              <div className="text-[11px] text-slate-500 font-normal">
-                                Isi: <span className="text-slate-700 font-medium">{item.isi_paket}</span>
-                              </div>
-                            )}
-                            {item.tipe_satuan === "keduanya" && item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
-                              <div className="text-[10px] text-slate-500">
-                                Ecer: <span className="text-slate-600 font-medium">{item.satuan_ecer}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500">
-                        {isEditing ? (
-                          <Input
-                            value={editForm.aliases}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, aliases: e.target.value })
-                            }
-                            placeholder="alias1, alias2"
-                            className="h-8 text-xs rounded-lg"
-                          />
-                        ) : item.aliases ? (
-                          <div className="flex flex-wrap gap-1">
-                            {item.aliases.split(",").map((a) => (
-                              <span
-                                key={a}
-                                className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]"
-                              >
-                                {a.trim()}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {isEditing ? (
-                          <Input
-                            value={editForm.default_supplier}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, default_supplier: e.target.value })
-                            }
-                            className="h-8 text-xs rounded-lg"
-                          />
-                        ) : (
-                          item.last_supplier || item.default_supplier || "-"
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold tabular-nums text-emerald-700">
-                        {item.last_unit_price > 0 ? formatRupiah(item.last_unit_price) : "-"}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge variant="secondary" className="text-[10px]">
-                          {item.tx_count}x
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                updateMutation.mutate({ id: item.id, payload: editForm })
-                              }
-                              className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-50"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditingId(null)}
-                              className="h-7 w-7 p-0 text-slate-500 hover:bg-slate-100"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setSelectedIds((prev) =>
-                                  prev.includes(item.id) ? prev : [...prev, item.id]
-                                );
-                                toast.info(
-                                  `'${item.item_name}' ditandai. Centang item lain di tabel untuk digabungkan.`
-                                );
-                              }}
-                              className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                              title="Pilih untuk digabung"
-                            >
-                              <GitMerge className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => startEdit(item)}
-                              className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                              title="Edit"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => deleteMutation.mutate(item.id)}
-                              className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
-                              title="Hapus"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+          {/* Selected Items Merge Action Bar */}
+          {selectedIds.length > 0 && (
+            <div className="bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900 px-4 py-2.5 flex items-center justify-between gap-3 text-xs animate-in fade-in">
+              <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200 font-medium">
+                <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>
+                  <strong>{selectedIds.length}</strong> item dipilih
+                  {selectedIds.length < 2 && (
+                    <span className="text-slate-500 font-normal ml-1">
+                      (Pilih minimal 2 item untuk digabungkan)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled={selectedIds.length < 2}
+                  onClick={() => {
+                    const selectedItems = masterItems.filter((m) =>
+                      selectedIds.includes(m.id)
+                    );
+                    openMergeDialogForItems(selectedItems);
+                  }}
+                  className="h-8 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                  Gabungkan ({selectedIds.length}) Jadi 1 Item
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedIds([])}
+                  className="h-8 rounded-xl text-xs text-slate-600 hover:text-slate-900"
+                >
+                  Batal
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <CardContent className="p-0">
+            <DataGridScrollArea>
+              <DataGridTable />
+            </DataGridScrollArea>
+          </CardContent>
+
+          <CardFooter className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 bg-slate-50/50 dark:bg-slate-900/50">
+            <DataGridPagination />
+          </CardFooter>
+        </Card>
+      </DataGrid>
 
       {/* Floating Action Bar ketika item dipilih */}
       {selectedIds.length >= 2 && (

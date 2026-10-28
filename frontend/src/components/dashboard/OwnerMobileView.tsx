@@ -48,6 +48,8 @@ import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
 import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
 
 export interface OwnerMobileViewProps {
+  activeTab?: "overview" | "transactions";
+  onNavigateTab?: (tab: "overview" | "transactions") => void;
   reportData?: MonthlyReport;
   expenses: Expense[];
   isExpensesLoading: boolean;
@@ -87,6 +89,8 @@ export interface OwnerMobileViewProps {
 }
 
 export function OwnerMobileView({
+  activeTab = "overview",
+  onNavigateTab,
   reportData,
   expenses,
   isExpensesLoading,
@@ -122,9 +126,20 @@ export function OwnerMobileView({
   onOpenTukarCashOngkir,
 }: OwnerMobileViewProps) {
   // Mobile Sub-Tab: "ringkasan" | "transaksi" | "analisis"
-  const [mobileTab, setMobileTab] = useState<"ringkasan" | "transaksi" | "analisis">("ringkasan");
+  const [mobileTab, setMobileTab] = useState<"ringkasan" | "transaksi" | "analisis">(() =>
+    activeTab === "transactions" ? "transaksi" : "ringkasan"
+  );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Sinkronkan tab mobile jika route/activeTab berubah dari luar
+  React.useEffect(() => {
+    if (activeTab === "transactions") {
+      setMobileTab("transaksi");
+    } else if (activeTab === "overview" && mobileTab === "transaksi") {
+      setMobileTab("ringkasan");
+    }
+  }, [activeTab]);
 
   const totalUnpaidNominal = useMemo(() => {
     return reportData?.list_hutang?.reduce((sum, item) => sum + item.nominal, 0) || 0;
@@ -187,12 +202,14 @@ export function OwnerMobileView({
   const handleJumpToUnpaid = () => {
     onStatusChange("Belum Lunas");
     onReimbursementChange(null);
+    onNavigateTab?.("transactions");
     setMobileTab("transaksi");
   };
 
   const handleJumpToReimburse = () => {
     onReimbursementChange(true);
     onStatusChange("");
+    onNavigateTab?.("transactions");
     setMobileTab("transaksi");
   };
 
@@ -206,7 +223,10 @@ export function OwnerMobileView({
         <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/80 dark:bg-slate-900 rounded-2xl">
           <button
             type="button"
-            onClick={() => setMobileTab("ringkasan")}
+            onClick={() => {
+              onNavigateTab?.("overview");
+              setMobileTab("ringkasan");
+            }}
             className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileTab === "ringkasan"
                 ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
@@ -219,7 +239,10 @@ export function OwnerMobileView({
 
           <button
             type="button"
-            onClick={() => setMobileTab("transaksi")}
+            onClick={() => {
+              onNavigateTab?.("transactions");
+              setMobileTab("transaksi");
+            }}
             className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all relative ${
               mobileTab === "transaksi"
                 ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
@@ -235,7 +258,10 @@ export function OwnerMobileView({
 
           <button
             type="button"
-            onClick={() => setMobileTab("analisis")}
+            onClick={() => {
+              onNavigateTab?.("overview");
+              setMobileTab("analisis");
+            }}
             className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileTab === "analisis"
                 ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
@@ -535,7 +561,10 @@ export function OwnerMobileView({
           {/* Quick Jump Buttons */}
           <div className="space-y-2 pt-1">
             <Button
-              onClick={() => setMobileTab("transaksi")}
+              onClick={() => {
+                onNavigateTab?.("transactions");
+                setMobileTab("transaksi");
+              }}
               className="w-full min-h-[44px] rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 text-white font-bold text-xs justify-between px-4 shadow-xs"
             >
               <span>Buka Daftar Transaksi ({reportData?.expense_count || 0} item)</span>
@@ -559,7 +588,19 @@ export function OwnerMobileView({
 
       {/* Tab: Daftar Transaksi Mobile */}
       {mobileTab === "transaksi" && (
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* Leaderboard & Top Stats Section */}
+          <LeaderboardCards
+            topFrequentItems={reportData?.top_frequent_items || []}
+            topExpensiveItems={reportData?.top_expensive_items || []}
+            topUnitPriceItems={reportData?.top_unit_price_items || []}
+            topPriceSpikes={reportData?.top_price_spikes || []}
+            topSuppliers={reportData?.top_suppliers || []}
+            summaryMetrics={reportData?.summary_metrics}
+            monthName={reportData?.month_name || "Bulan Ini"}
+            year={year}
+          />
+
           {/* Search Bar Mobile */}
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -990,18 +1031,6 @@ export function OwnerMobileView({
             unpaidList={reportData?.list_hutang || []}
             onMarkPaid={onMarkPaidById}
             onViewAll={handleJumpToUnpaid}
-          />
-
-          {/* Leaderboard Cards */}
-          <LeaderboardCards
-            topFrequentItems={reportData?.top_frequent_items || []}
-            topExpensiveItems={reportData?.top_expensive_items || []}
-            topUnitPriceItems={reportData?.top_unit_price_items || []}
-            topPriceSpikes={reportData?.top_price_spikes || []}
-            topSuppliers={reportData?.top_suppliers || []}
-            summaryMetrics={reportData?.summary_metrics}
-            monthName={reportData?.month_name || "Bulan Ini"}
-            year={year}
           />
         </div>
       )}

@@ -7,6 +7,7 @@ from app.models.master_item import MasterItem
 from app.models.supplier import Supplier
 from app.models.budget import MonthlyBudget
 from app.models.expense_log import ExpenseLog
+from app.models.master_data import MasterDataOption
 
 __all__ = [
     "User",
@@ -18,5 +19,6 @@ __all__ = [
     "Supplier",
     "MonthlyBudget",
     "ExpenseLog",
+    "MasterDataOption",
 ]
 

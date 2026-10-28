@@ -12,7 +12,19 @@ from app.database.connection import get_db
 from app.config import settings
 from app.models.expense import Expense
 from app.api.deps import require_admin_role
-from app.api.schemas import SystemConfigUpdate
+from app.api.schemas import (
+    SystemConfigUpdate,
+    MasterDataOptionCreate,
+    MasterDataOptionUpdate,
+)
+from app.services.master_data_service import (
+    get_master_options,
+    get_active_names,
+    create_master_option,
+    update_master_option,
+    delete_master_option,
+    reset_master_data_defaults,
+)
 from app.services.ai_service import call_ai_text, get_system_prompt
 from app.services.sheets_service import (
     sync_to_sheets,
@@ -109,6 +121,21 @@ async def get_system_config(
         except Exception:
             pass
 
+    # Master Data aktif
+    try:
+        active_cats = await get_active_names(db, "kategori")
+        if active_cats:
+            settings.valid_categories = active_cats
+        pay_methods = await get_active_names(db, "metode_bayar")
+        units = await get_active_names(db, "satuan")
+    except Exception:
+        active_cats = settings.valid_categories
+        pay_methods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"]
+        units = [
+            "Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak",
+            "Bal", "Botol", "Tray", "Liter", "Gram", "Roll", "Lembar", "Meter"
+        ]
+
     return {
         "ok": True,
         "total_expenses": total_expenses,
@@ -140,7 +167,9 @@ async def get_system_config(
         "sheets_creds_path": settings.google_credentials_json,
         "sheets_creds_exists": creds_exist,
         "service_account_email": sa_email,
-        "valid_categories": settings.valid_categories,
+        "valid_categories": active_cats or settings.valid_categories,
+        "payment_methods": pay_methods or ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
+        "units": units or ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram", "Roll", "Lembar", "Meter"],
         "monthly_budget_limit": settings.monthly_budget_limit,
         "category_budgets": settings.category_budgets,
     }
@@ -320,3 +349,84 @@ async def api_trigger_telegram_users_sync(
             detail=res.get("error", "Gagal menyinkronkan user dari Telegram."),
         )
     return res
+
+
+# ──────────────────────────────────────────────
+# Master Data (Metode Bayar, Kategori, Satuan)
+# ──────────────────────────────────────────────
+
+@router.get("/master-data")
+async def api_get_master_data(
+    type: str | None = None,
+    active_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil daftar opsi master data sistem (kategori, metode_bayar, satuan)."""
+    items = await get_master_options(db, opt_type=type, active_only=active_only)
+    return {"ok": True, "items": items}
+
+
+@router.post("/master-data")
+async def api_create_master_data(
+    payload: MasterDataOptionCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah opsi baru ke master data."""
+    item = await create_master_option(
+        db,
+        opt_type=payload.type,
+        name=payload.name,
+        description=payload.description,
+        sort_order=payload.sort_order,
+        is_default=payload.is_default,
+    )
+    return {
+        "ok": True,
+        "item": item,
+        "message": f"Opsi '{item['name']}' berhasil ditambahkan ke master {item['type']}.",
+    }
+
+
+@router.put("/master-data/{item_id}")
+async def api_update_master_data(
+    item_id: int,
+    payload: MasterDataOptionUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Perbarui opsi master data (nama, deskripsi, urutan, aktif/nonaktif, default)."""
+    item = await update_master_option(
+        db,
+        item_id=item_id,
+        name=payload.name,
+        description=payload.description,
+        sort_order=payload.sort_order,
+        is_active=payload.is_active,
+        is_default=payload.is_default,
+    )
+    return {
+        "ok": True,
+        "item": item,
+        "message": f"Opsi '{item['name']}' berhasil diperbarui.",
+    }
+
+
+@router.delete("/master-data/{item_id}")
+async def api_delete_master_data(
+    item_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Hapus opsi master data. Menolak jika masih dipakai dalam transaksi (kecuali force=True)."""
+    res = await delete_master_option(db, item_id=item_id, force=force)
+    return res
+
+
+@router.post("/master-data/reset-defaults")
+async def api_reset_master_data_defaults(
+    type: str | None = Body(None, embed=True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pulihkan opsi-opsi default yang terhapus atau belum ada."""
+    res = await reset_master_data_defaults(db, opt_type=type)
+    return res
+

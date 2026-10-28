@@ -77,8 +77,10 @@ async def test_auto_detect_bank_transfer_to_tukar_cash():
         assert item["kategori"] == "Tukar Cash"
         assert item["satuan"] == "Trans"
         assert item["total_harga"] == 100000
-        assert item["metode_bayar"] == "Transfer"
+        assert item["metode_bayar"] == "Tunai"
         assert item["status_pembayaran"] == "Lunas"
+        assert item["toko_supplier"] == "-"
+        assert "BCA Mobile" in item["keterangan"] or "Transfer" in item["keterangan"]
 
 
 @pytest.mark.asyncio
@@ -114,7 +116,7 @@ async def test_auto_detect_gosend_ongkir_with_reimbursement():
         res = await _execute_fetch([{"role": "user", "content": "screenshot gosend"}])
 
         item = res["items"][0]
-        assert item["kategori"] == "Operasional"
+        assert item["kategori"] == "Ongkir"
         assert "Ongkir" in item["barang"]
         assert item["satuan"] == "Trip"
         assert item["is_reimbursement"] is True
@@ -150,7 +152,8 @@ async def test_monthly_report_separates_tukar_cash(db):
     await db.flush()
 
     report = await get_monthly_report(db, 2026, 10)
-    assert report["total_lunas"] == 220000
+    # total_lunas dan total_belanja_riil toko mengecualikan tukar cash (murni belanja 120.000)
+    assert report["total_lunas"] == 120000
     assert report["total_tukar_cash"] == 100000
     assert report["tukar_cash_count"] == 1
     assert report["total_belanja_riil"] == 120000
@@ -162,24 +165,26 @@ async def test_special_type_filters_tukar_cash_and_ongkir(db):
 
     e1 = Expense(
         expense_date=date(2026, 10, 26),
-        supplier="BCA",
+        supplier="-",
         item_name="Tukar Cash Karyawan",
         qty=Decimal("1"),
         unit="Trans",
         category="Tukar Cash",
         unit_price=Decimal("50000"),
         total_price=Decimal("50000"),
+        pay_method="Tunai",
         pay_status="Lunas",
     )
     e2 = Expense(
         expense_date=date(2026, 10, 26),
-        supplier="GoSend",
+        supplier="GoSend Car",
         item_name="Ongkir GoSend Instant - Bu Rita",
         qty=Decimal("1"),
         unit="Trip",
-        category="Operasional",
+        category="Ongkir",
         unit_price=Decimal("25000"),
         total_price=Decimal("25000"),
+        pay_method="Gopay - Kasir",
         pay_status="Lunas",
         is_reimbursement=True,
     )
@@ -192,22 +197,53 @@ async def test_special_type_filters_tukar_cash_and_ongkir(db):
         category="Bahan Kue",
         unit_price=Decimal("150000"),
         total_price=Decimal("300000"),
+        pay_method="Tunai",
         pay_status="Lunas",
     )
     db.add_all([e1, e2, e3])
     await db.flush()
 
-    # Filter tukar cash
+    # 1. Default view (special_type=None): WAJIB EXCLUDE Ongkir dan Tukar Cash!
+    items, total = await get_all_expenses_paginated(db, special_type=None, month=10, year=2026)
+    assert total == 1
+    assert items[0].item_name == "Butter Anchor"
+
+    # 2. Filter tukar cash
     items, total = await get_all_expenses_paginated(db, special_type="tukar_cash", month=10, year=2026)
     assert total >= 1
     assert all("tukar cash" in i.category.lower() or "tukar cash" in i.item_name.lower() for i in items)
 
-    # Filter ongkir
+    # 3. Filter ongkir
     items, total = await get_all_expenses_paginated(db, special_type="ongkir", month=10, year=2026)
     assert total >= 1
-    assert any("ongkir" in i.item_name.lower() or i.supplier.lower() == "gosend" for i in items)
+    assert any("ongkir" in i.item_name.lower() or "gosend" in i.supplier.lower() for i in items)
 
-    # Filter combined cash_or_delivery
+    # 4. Filter combined cash_or_delivery
     items, total = await get_all_expenses_paginated(db, special_type="cash_or_delivery", month=10, year=2026)
     assert total >= 2
+
+
+@pytest.mark.asyncio
+async def test_master_item_excludes_ongkir_and_tukar_cash(db):
+    from app.services.master_item_service import (
+        match_and_normalize_extracted_items,
+        import_master_items_from_history,
+        list_master_items,
+    )
+
+    items = [
+        {"barang": "ongkir delivery cake", "kategori": "Ongkir", "toko_supplier": "GoSend Car"},
+        {"barang": "Tukar Cash - Budi", "kategori": "Tukar Cash", "toko_supplier": "-"},
+    ]
+    # Pastikan tidak dicocokkan ke MasterItem
+    res = await match_and_normalize_extracted_items(db, items)
+    assert res[0].get("master_item_id") is None
+    assert res[1].get("master_item_id") is None
+
+    # Pastikan import dari history juga mengabaikan Ongkir & Tukar Cash
+    import_res = await import_master_items_from_history(db)
+    master_list = await list_master_items(db)
+    master_names = [m.item_name.lower() for m in master_list]
+    assert not any("ongkir" in name for name in master_names)
+    assert not any("tukar cash" in name for name in master_names)
 

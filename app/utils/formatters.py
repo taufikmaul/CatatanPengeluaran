@@ -103,11 +103,26 @@ def build_items_summary(items: list[dict]) -> tuple[str, float]:
 
         meta = []
         supplier = item.get("toko_supplier") or item.get("supplier")
-        if supplier and supplier != "-":
-            meta.append(f"Toko: {escape_markdown(supplier)}")
-        inv = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota")
-        if inv and inv != "-":
-            meta.append(f"Nota: {escape_markdown(inv)}")
+        cat = (item.get("kategori") or item.get("category") or "").strip().lower()
+        pay = item.get("metode_bayar") or item.get("pay_method")
+        raw_barang = (item.get("barang") or item.get("item_name") or "").lower()
+
+        if cat == "ongkir" or raw_barang.startswith("ongkir"):
+            if supplier and supplier != "-":
+                meta.append(f"Kurir: {escape_markdown(supplier)}")
+            if pay and pay != "-":
+                meta.append(f"Bayar: {escape_markdown(pay)}")
+        elif cat == "tukar cash" or "tukar cash" in raw_barang or "tarik tunai" in raw_barang:
+            meta.append("Metode: Cash/Tunai")
+            notes = item.get("keterangan") or item.get("notes")
+            if notes and notes != "-":
+                meta.append(f"Catatan: {escape_markdown(notes)}")
+        else:
+            if supplier and supplier != "-":
+                meta.append(f"Toko: {escape_markdown(supplier)}")
+            inv = item.get("no_invoice") or item.get("invoice_number") or item.get("no_nota")
+            if inv and inv != "-":
+                meta.append(f"Nota: {escape_markdown(inv)}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
         satuan = (item.get("satuan") or item.get("unit") or "").strip()
@@ -156,10 +171,25 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
         total += item_total
 
         meta = []
-        if supplier and supplier != "-":
-            meta.append(f"Toko: {escape_markdown(supplier)}")
-        if inv and inv != "-":
-            meta.append(f"Nota: {escape_markdown(inv)}")
+        cat = (getattr(exp, "category", "") or (exp.get("kategori") if isinstance(exp, dict) else "") or "").lower()
+        pay = getattr(exp, "pay_method", None) or (exp.get("metode_bayar") if isinstance(exp, dict) else None)
+        notes = getattr(exp, "notes", None) or (exp.get("keterangan") if isinstance(exp, dict) else None)
+        name_lower = name.lower()
+
+        if cat == "ongkir" or name_lower.startswith("ongkir"):
+            if supplier and supplier != "-":
+                meta.append(f"Kurir: {escape_markdown(supplier)}")
+            if pay and pay != "-":
+                meta.append(f"Bayar: {escape_markdown(pay)}")
+        elif cat == "tukar cash" or "tukar cash" in name_lower or "tarik tunai" in name_lower:
+            meta.append("Metode: Cash/Tunai")
+            if notes and notes != "-":
+                meta.append(f"Catatan: {escape_markdown(notes)}")
+        else:
+            if supplier and supplier != "-":
+                meta.append(f"Toko: {escape_markdown(supplier)}")
+            if inv and inv != "-":
+                meta.append(f"Nota: {escape_markdown(inv)}")
         meta_str = f" _({', '.join(meta)})_" if meta else ""
 
         unit_label = f" {escape_markdown(satuan)}" if satuan and satuan.lower() != "pcs" else "x"
