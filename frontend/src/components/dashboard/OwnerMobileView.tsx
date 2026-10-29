@@ -40,6 +40,7 @@ import {
   Truck,
   Sparkles,
   ShieldAlert,
+  BookOpen,
 } from "lucide-react";
 
 // Sub-components untuk tab Analisis & Grafik
@@ -222,6 +223,18 @@ export function OwnerMobileView({
     }));
   }, [reportData, totalPengeluaran]);
 
+  const categoryCoaMap = useMemo(() => {
+    const map: Record<string, { code: string; name: string; group: string }> = {};
+    reportData?.accounting_breakdown?.forEach((item) => {
+      map[item.category] = {
+        code: item.account_code,
+        name: item.account_name,
+        group: item.account_group,
+      };
+    });
+    return map;
+  }, [reportData]);
+
   // Handler Hapus dengan konfirmasi
   const handleDelete = (id: number) => {
     if (confirm("Hapus catatan pengeluaran ini?")) {
@@ -240,22 +253,22 @@ export function OwnerMobileView({
   };
 
   return (
-    <div className="space-y-4 pb-28">
+    <div className="space-y-3 pb-safe-fab" style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}>
       {/* 1. Mobile Segmented Tab Switcher */}
       <nav
         aria-label="Navigasi Tampilan Mobile Owner"
-        className="sticky top-16 z-10 -mx-4 px-4 py-2 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800"
+        className="sticky top-16 z-10 -mx-4 px-4 py-2 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-800/80"
       >
-        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/80 dark:bg-slate-900 rounded-2xl">
+        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/60 dark:bg-slate-900 rounded-xl">
           <button
             type="button"
             onClick={() => {
               onNavigateTab?.("overview");
               setMobileTab("ringkasan");
             }}
-            className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            className={`min-h-[44px] px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileTab === "ringkasan"
-                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
+                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
@@ -269,9 +282,9 @@ export function OwnerMobileView({
               onNavigateTab?.("transactions");
               setMobileTab("transaksi");
             }}
-            className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all relative ${
+            className={`min-h-[44px] px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all relative ${
               mobileTab === "transaksi"
-                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
+                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
@@ -288,9 +301,9 @@ export function OwnerMobileView({
               onNavigateTab?.("overview");
               setMobileTab("analisis");
             }}
-            className={`min-h-[44px] px-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            className={`min-h-[44px] px-2 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               mobileTab === "analisis"
-                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
+                ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
             }`}
           >
@@ -472,6 +485,41 @@ export function OwnerMobileView({
               </div>
             </div>
           </div>
+
+          {/* Klasifikasi Akuntansi SAK EMKM */}
+          {reportData?.per_account_group && (
+            <div className="p-3.5 rounded-2xl bg-slate-900 text-white shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold flex items-center gap-1.5 text-amber-300">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Akuntansi (SAK EMKM)</span>
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Beban Riil: {formatRupiah((reportData.per_account_group["HPP"] || 0) + (reportData.per_account_group["OPEX"] || 0))}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-amber-300 block font-semibold">HPP (Pokok)</span>
+                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
+                    {formatRupiah(reportData.per_account_group["HPP"] || 0)}
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-sky-300 block font-semibold">OPEX (Beban)</span>
+                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
+                    {formatRupiah(reportData.per_account_group["OPEX"] || 0)}
+                  </span>
+                </div>
+                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-purple-300 block font-semibold">Aset (Neraca)</span>
+                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
+                    {formatRupiah(reportData.per_account_group["ASSET"] || 0)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Progress Anggaran Bulanan (Jika Aktif) */}
           {monthlyBudgetLimit > 0 ? (
@@ -961,13 +1009,23 @@ export function OwnerMobileView({
 
                     {/* Kategori Badge & Catatan */}
                     <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                      <span
-                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${catColor.bg} ${catColor.border} dark:bg-slate-800 dark:border-slate-700`}
-                      >
-                        {e.category || "Operasional"}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${catColor.bg} ${catColor.border} dark:bg-slate-800 dark:border-slate-700`}
+                        >
+                          {e.category || "Operasional"}
+                        </span>
+                        {categoryCoaMap[e.category || "Operasional"] && (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                            title={categoryCoaMap[e.category || "Operasional"].name}
+                          >
+                            {categoryCoaMap[e.category || "Operasional"].code}
+                          </span>
+                        )}
+                      </div>
                       {e.notes && e.notes !== "-" && (
-                        <span className="text-[11px] text-slate-500 truncate max-w-[200px]" title={e.notes}>
+                        <span className="text-[11px] text-slate-500 truncate max-w-[180px]" title={e.notes}>
                           {e.notes}
                         </span>
                       )}
@@ -1124,6 +1182,8 @@ export function OwnerMobileView({
           <CategoryDonutChart
             categoryData={reportData?.per_kategori || {}}
             totalAmount={reportData?.total_lunas || 0}
+            perAccountGroup={reportData?.per_account_group}
+            accountingBreakdown={reportData?.accounting_breakdown}
           />
 
           {/* Chart Metode Pembayaran */}
@@ -1149,7 +1209,8 @@ export function OwnerMobileView({
         type="button"
         onClick={onOpenAddExpense}
         aria-label="Catat Pengeluaran Baru"
-        className="fixed bottom-6 right-5 z-30 min-h-[50px] px-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 transition-all"
+        className="fixed right-5 z-30 min-h-[50px] px-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 transition-all"
+        style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
       >
         <Plus className="w-4 h-4" />
         <span>Catat Baru</span>

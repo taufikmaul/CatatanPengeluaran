@@ -240,6 +240,8 @@ class MonthlyReportResponse(BaseModel):
     is_custom_budget: bool = False
     per_kategori: dict[str, float]
     per_metode_bayar: dict[str, float] = {}
+    per_account_group: dict[str, float] = {}
+    accounting_breakdown: list[dict[str, Any]] = []
     list_hutang: list[dict[str, Any]]
     daily_chart: list[dict[str, Any]]
     valid_categories: list[str]

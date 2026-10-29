@@ -153,3 +153,19 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.6);
 }
+
+/* Hide scrollbar for horizontal chip rows without losing scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Mobile FAB safe-area clearance — reserves space below fixed action buttons on phones with home indicator */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe-fab {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+  }
+}

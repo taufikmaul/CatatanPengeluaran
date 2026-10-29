@@ -190,6 +190,16 @@ export interface UnpaidExpenseItem {
   status?: string;
 }
 
+export interface AccountingBreakdownItem {
+  account_code: string;
+  account_name: string;
+  account_group: "HPP" | "OPEX" | "ASSET" | "CASH_TRANSFER" | string;
+  report_type: "LABA_RUGI" | "NERACA" | "ARUS_KAS" | string;
+  category: string;
+  total: number;
+  percentage: number;
+}
+
 export interface MonthlyReport {
   ok: boolean;
   month: number;
@@ -217,6 +227,8 @@ export interface MonthlyReport {
   is_custom_budget?: boolean;
   per_kategori: Record<string, number>;
   per_metode_bayar?: Record<string, number>;
+  per_account_group?: Record<string, number>;
+  accounting_breakdown?: AccountingBreakdownItem[];
   list_hutang: UnpaidExpenseItem[];
   daily_chart: Array<{
     date: string;

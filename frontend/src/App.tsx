@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, createExpenseBatch, getExpenseUsers } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
@@ -499,6 +499,18 @@ export function App() {
   const totalUnpaidNominal =
     reportData?.list_hutang?.reduce((sum, item) => sum + item.nominal, 0) || 0;
 
+  const categoryCoaMap = useMemo(() => {
+    const map: Record<string, { code: string; name: string; group: string }> = {};
+    reportData?.accounting_breakdown?.forEach((item) => {
+      map[item.category] = {
+        code: item.account_code,
+        name: item.account_name,
+        group: item.account_group,
+      };
+    });
+    return map;
+  }, [reportData]);
+
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="flex min-h-screen w-full bg-slate-50/60 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
@@ -678,6 +690,8 @@ export function App() {
                         categoryBudgetPercentages={reportData?.category_budget_percentages}
                         isCustomBudget={reportData?.is_custom_budget}
                         perKategori={reportData?.per_kategori}
+                        perAccountGroup={reportData?.per_account_group}
+                        accountingBreakdown={reportData?.accounting_breakdown}
                         reimbursePendingCount={reportData?.reimburse_pending_count || 0}
                         reimbursePendingTotal={reportData?.reimburse_pending_total || 0}
                         totalTukarCash={reportData?.total_tukar_cash || 0}
@@ -712,6 +726,8 @@ export function App() {
                           <CategoryDonutChart
                             categoryData={reportData?.per_kategori || {}}
                             totalAmount={reportData?.total_lunas || 0}
+                            perAccountGroup={reportData?.per_account_group}
+                            accountingBreakdown={reportData?.accounting_breakdown}
                           />
                         </div>
                         <div className="lg:col-span-6">
@@ -841,6 +857,7 @@ export function App() {
                       users={usersData}
                       selectedUserId={selectedUserId}
                       categories={categories}
+                      categoryCoaMap={categoryCoaMap}
                       onMonthChange={(m) => {
                         setMonth(m);
                         setPage(1);
@@ -917,6 +934,7 @@ export function App() {
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       canDelete={canDelete}
+                      categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
                     />
                   </div>
@@ -1074,6 +1092,7 @@ export function App() {
                         users={usersData}
                         selectedUserId={selectedUserId}
                         categories={categories}
+                        categoryCoaMap={categoryCoaMap}
                         onMonthChange={(m) => {
                           setMonth(m);
                           setPage(1);
@@ -1227,6 +1246,7 @@ export function App() {
                       users={usersData}
                       selectedUserId={selectedUserId}
                       categories={categories}
+                      categoryCoaMap={categoryCoaMap}
                       onMonthChange={(m) => {
                         setMonth(m);
                         setPage(1);
@@ -1303,6 +1323,7 @@ export function App() {
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       canDelete={canDelete}
+                      categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
                     />
                   </div>

@@ -64,6 +64,7 @@ interface ExpenseTableProps {
   onOpenDataHygiene?: () => void;
   canDelete?: boolean;
   highlightedExpenseId?: number | null;
+  categoryCoaMap?: Record<string, { code: string; name: string; group: string }>;
 }
 
 export const ExpenseTable: React.FC<ExpenseTableProps> = ({
@@ -84,6 +85,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onOpenDataHygiene,
   canDelete = true,
   highlightedExpenseId,
+  categoryCoaMap,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -218,16 +220,28 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           <DataGridColumnHeader title="Kategori" column={column} />
         ),
         cell: ({ row }) => {
-          const catColor = getCategoryColor(row.original.category);
+          const cat = row.original.category || "Operasional";
+          const catColor = getCategoryColor(cat);
+          const coa = categoryCoaMap?.[cat];
           return (
-            <span
-              className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap ${catColor.bg} ${catColor.border}`}
-            >
-              {row.original.category || "Operasional"}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span
+                className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap ${catColor.bg} ${catColor.border}`}
+              >
+                {cat}
+              </span>
+              {coa?.code && (
+                <span
+                  className="font-mono text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                  title={`${coa.code} - ${coa.name} (${coa.group})`}
+                >
+                  {coa.code}
+                </span>
+              )}
+            </div>
           );
         },
-        size: 130,
+        size: 160,
         enableSorting: true,
       },
       {
@@ -567,11 +581,18 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       </p>
                     )}
                   </div>
-                  <span
-                    className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border shrink-0 ${catColor.bg} ${catColor.border}`}
-                  >
-                    {e.category || "Operasional"}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${catColor.bg} ${catColor.border}`}
+                    >
+                      {e.category || "Operasional"}
+                    </span>
+                    {categoryCoaMap?.[e.category || "Operasional"]?.code && (
+                      <span className="font-mono text-[9px] px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                        {categoryCoaMap[e.category || "Operasional"].code}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">

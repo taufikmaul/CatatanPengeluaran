@@ -3,7 +3,22 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
-import { Wallet, Receipt, AlertCircle, Layers, TrendingUp, TrendingDown, Target, Tag, ArrowLeftRight, Truck } from "lucide-react";
+import {
+  Wallet,
+  Receipt,
+  AlertCircle,
+  Layers,
+  TrendingUp,
+  TrendingDown,
+  Target,
+  Tag,
+  ArrowLeftRight,
+  Truck,
+  BookOpen,
+  Package,
+  Building2,
+  Landmark,
+} from "lucide-react";
 
 interface StatCardsProps {
   totalLunas: number;
@@ -25,6 +40,16 @@ interface StatCardsProps {
   categoryBudgetPercentages?: Record<string, number>;
   isCustomBudget?: boolean;
   perKategori?: Record<string, number>;
+  perAccountGroup?: Record<string, number>;
+  accountingBreakdown?: Array<{
+    account_code: string;
+    account_name: string;
+    account_group: string;
+    report_type: string;
+    category: string;
+    total: number;
+    percentage: number;
+  }>;
   reimbursePendingCount?: number;
   reimbursePendingTotal?: number;
   totalTukarCash?: number;
@@ -59,6 +84,8 @@ export const StatCards: React.FC<StatCardsProps> = ({
   categoryBudgetPercentages = {},
   isCustomBudget = false,
   perKategori = {},
+  perAccountGroup = {},
+  accountingBreakdown = [],
   reimbursePendingCount = 0,
   reimbursePendingTotal = 0,
   totalTukarCash = 0,
@@ -242,6 +269,95 @@ export const StatCards: React.FC<StatCardsProps> = ({
             </motion.div>
           );
         })}
+      </div>
+
+      {/* Ringkasan Akuntansi Standar (HPP vs OPEX vs Capex Aset) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl text-amber-300">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs md:text-sm font-bold text-white">Klasifikasi Akuntansi (SAK EMKM)</span>
+                <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/30 text-[10px] font-semibold">
+                  Bagan Akun (COA)
+                </Badge>
+              </div>
+              <p className="text-[11px] text-slate-300 mt-0.5">
+                Pemisahan Harga Pokok Penjualan (HPP), Beban Operasional (OPEX), dan Belanja Modal (Aset)
+              </p>
+            </div>
+          </div>
+          <div className="text-left sm:text-right">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Beban Laba Rugi Riil</span>
+            <span className="text-sm md:text-base font-bold text-amber-300 tabular-nums">
+              {formatRupiah((perAccountGroup["HPP"] || 0) + (perAccountGroup["OPEX"] || 0))}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* HPP Card */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-amber-300 text-xs font-semibold">
+                <Package className="w-3.5 h-3.5" />
+                <span>HPP / Biaya Pokok</span>
+              </div>
+              <Badge className="bg-amber-500/20 text-amber-200 border-amber-500/30 text-[9px] py-0 px-1.5 h-4">
+                Laba Rugi (HPP)
+              </Badge>
+            </div>
+            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+              {formatRupiah(perAccountGroup["HPP"] || 0)}
+            </div>
+            <p className="text-[10px] text-slate-300 leading-tight">
+              Bahan baku kue, minuman, kemasan, topper & ongkir kirim.
+            </p>
+          </div>
+
+          {/* OPEX Card */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-sky-300 text-xs font-semibold">
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Beban Operasional</span>
+              </div>
+              <Badge className="bg-sky-500/20 text-sky-200 border-sky-500/30 text-[9px] py-0 px-1.5 h-4">
+                Laba Rugi (OPEX)
+              </Badge>
+            </div>
+            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+              {formatRupiah(perAccountGroup["OPEX"] || 0)}
+            </div>
+            <p className="text-[10px] text-slate-300 leading-tight">
+              Listrik, gas, galon, kebersihan, ATK & pemeliharaan toko.
+            </p>
+          </div>
+
+          {/* Aset Tetap / Capex Card */}
+          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-purple-300 text-xs font-semibold">
+                <Landmark className="w-3.5 h-3.5" />
+                <span>Aset Tetap (Capex)</span>
+              </div>
+              <Badge className="bg-purple-500/20 text-purple-200 border-purple-500/30 text-[9px] py-0 px-1.5 h-4">
+                Neraca (Aset)
+              </Badge>
+            </div>
+            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+              {formatRupiah(perAccountGroup["ASSET"] || 0)}
+            </div>
+            <p className="text-[10px] text-purple-200/90 leading-tight">
+              {(perAccountGroup["ASSET"] || 0) > 0
+                ? "Peralatan tahan lama (mixer, oven, showcase). Tidak memotong laba langsung."
+                : "Tidak ada belanja aset baru bulan ini."}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* 2 Card Terpisah: Tukar Cash & Ongkir Kurir */}

@@ -649,6 +649,71 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         and "tarik tunai" not in (e.item_name or "").lower()
     ])
 
+    # Ambil pemetaan Chart of Accounts (COA) untuk klasifikasi akuntansi standar
+    from app.services.master_data_service import get_category_accounting_map
+    coa_map = await get_category_accounting_map(db)
+
+    per_account_group: dict[str, float] = {
+        "HPP": 0.0,
+        "OPEX": 0.0,
+        "ASSET": 0.0,
+        "CASH_TRANSFER": total_tukar_cash,
+    }
+
+    # Ongkir dialokasikan ke HPP (Beban Angkut Penjualan)
+    per_account_group["HPP"] += total_ongkir
+
+    for kat, amount in per_kategori.items():
+        coa = coa_map.get(kat, {})
+        grp = coa.get("account_group") or "OPEX"
+        per_account_group[grp] = per_account_group.get(grp, 0.0) + amount
+
+    total_laba_rugi = per_account_group.get("HPP", 0.0) + per_account_group.get("OPEX", 0.0)
+
+    accounting_breakdown: list[dict] = []
+    for kat, amount in per_kategori.items():
+        coa = coa_map.get(kat, {})
+        code = coa.get("account_code") or "-"
+        name = coa.get("account_name") or kat
+        grp = coa.get("account_group") or "OPEX"
+        rep = coa.get("report_type") or "LABA_RUGI"
+        pct = round((amount / total_laba_rugi) * 100, 1) if total_laba_rugi > 0 and grp in ("HPP", "OPEX") else 0.0
+        accounting_breakdown.append({
+            "category": kat,
+            "account_code": code,
+            "account_name": name,
+            "account_group": grp,
+            "report_type": rep,
+            "total": amount,
+            "percentage": pct,
+        })
+
+    if total_ongkir > 0:
+        ongkir_coa = coa_map.get("Ongkir", {})
+        accounting_breakdown.append({
+            "category": "Ongkir",
+            "account_code": ongkir_coa.get("account_code") or "5-1500",
+            "account_name": ongkir_coa.get("account_name") or "Beban Angkut Penjualan (Delivery)",
+            "account_group": "HPP",
+            "report_type": "LABA_RUGI",
+            "total": total_ongkir,
+            "percentage": round((total_ongkir / total_laba_rugi) * 100, 1) if total_laba_rugi > 0 else 0.0,
+        })
+
+    if total_tukar_cash > 0:
+        tukar_coa = coa_map.get("Tukar Cash", {})
+        accounting_breakdown.append({
+            "category": "Tukar Cash",
+            "account_code": tukar_coa.get("account_code") or "1-1199",
+            "account_name": tukar_coa.get("account_name") or "Kas Kliring / Penukaran Tunai",
+            "account_group": "CASH_TRANSFER",
+            "report_type": "ARUS_KAS",
+            "total": total_tukar_cash,
+            "percentage": 0.0,
+        })
+
+    accounting_breakdown.sort(key=lambda x: (x["account_code"], -x["total"]))
+
     return {
         "total_lunas": total_lunas,
         "total_tukar_cash": total_tukar_cash,
@@ -660,6 +725,8 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "total_belanja_riil": total_lunas,
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
+        "per_account_group": per_account_group,
+        "accounting_breakdown": accounting_breakdown,
         "list_hutang": list_hutang,
         "reimburse_pending_count": reimburse_pending_count,
         "reimburse_pending_total": reimburse_pending_total,

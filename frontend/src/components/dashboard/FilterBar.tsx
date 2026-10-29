@@ -19,6 +19,7 @@ interface FilterBarProps {
   users?: ExpenseUser[];
   selectedUserId?: number | null;
   categories: string[];
+  categoryCoaMap?: Record<string, { code: string; name: string; group: string }>;
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
   onCategoryChange: (category: string) => void;
@@ -50,6 +51,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   users = [],
   selectedUserId,
   categories,
+  categoryCoaMap,
   onMonthChange,
   onYearChange,
   onCategoryChange,
@@ -69,7 +71,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       id: "category",
       label: "Kategori",
       type: "select",
-      options: categories.map((c) => ({ label: c, value: c })),
+      options: categories.map((c) => ({
+        label: categoryCoaMap?.[c]?.code ? `${c} (${categoryCoaMap[c].code})` : c,
+        value: c,
+      })),
     },
     {
       id: "status",

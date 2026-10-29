@@ -105,6 +105,8 @@ async def get_monthly_analytics(
         is_custom_budget=is_custom_budget,
         per_kategori=report.get("per_kategori", {}),
         per_metode_bayar=report.get("per_metode_bayar", {}),
+        per_account_group=report.get("per_account_group", {}),
+        accounting_breakdown=report.get("accounting_breakdown", []),
         list_hutang=report.get("list_hutang", []),
         daily_chart=daily_chart,
         valid_categories=settings.valid_categories,
