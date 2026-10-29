@@ -439,6 +439,10 @@ class MasterDataOptionCreate(BaseModel):
     description: str = ""
     sort_order: int | None = None
     is_default: bool = False
+    account_code: str | None = None
+    account_name: str | None = None
+    account_group: str | None = None
+    report_type: str | None = None
 
 
 class MasterDataOptionUpdate(BaseModel):
@@ -447,6 +451,10 @@ class MasterDataOptionUpdate(BaseModel):
     sort_order: int | None = None
     is_active: bool | None = None
     is_default: bool | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    account_group: str | None = None
+    report_type: str | None = None
 
 
 class MasterDataOptionResponse(BaseModel):
@@ -458,6 +466,10 @@ class MasterDataOptionResponse(BaseModel):
     is_active: bool = True
     is_default: bool = False
     usage_count: int = 0
+    account_code: str | None = None
+    account_name: str | None = None
+    account_group: str | None = None
+    report_type: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 

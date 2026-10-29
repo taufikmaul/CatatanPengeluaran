@@ -24,6 +24,13 @@ class MasterDataOption(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Pemetaan Akuntansi Standar (Chart of Accounts / COA)
+    account_code: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    account_name: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
+    account_group: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    report_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

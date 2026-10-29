@@ -360,6 +360,10 @@ export interface MasterDataOption {
   sort_order: number;
   is_active: boolean;
   is_default: boolean;
+  account_code?: string | null;
+  account_name?: string | null;
+  account_group?: string | null;
+  report_type?: string | null;
   usage_count: number;
   created_at?: string;
   updated_at?: string;

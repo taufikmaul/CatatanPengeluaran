@@ -18,26 +18,26 @@ VALID_TYPES = ("kategori", "metode_bayar", "satuan")
 
 DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
     "kategori": [
-        {"name": "Bahan Kue", "description": "Bahan baku pembuatan kue & roti", "sort_order": 1, "is_default": False},
-        {"name": "Bahan Minuman", "description": "Bahan baku minuman, sirup, teh, kopi", "sort_order": 2, "is_default": False},
-        {"name": "Kebersihan", "description": "Sabun, plastik sampah, pembersih lantai, spon", "sort_order": 3, "is_default": False},
-        {"name": "Kantor", "description": "ATK, kertas nota, pulpen, lakban", "sort_order": 4, "is_default": False},
-        {"name": "Kemasan", "description": "Box kue, standing pouch, kantong plastik, pita", "sort_order": 5, "is_default": False},
-        {"name": "Operasional", "description": "Gas LPG, listrik, galon air, es batu, transportasi", "sort_order": 6, "is_default": False},
-        {"name": "Topper & Mainan", "description": "Lilin ultah, topper cake, hiasan kue", "sort_order": 7, "is_default": False},
-        {"name": "Renovasi", "description": "Perbaikan toko, cat, peralatan tukang", "sort_order": 8, "is_default": False},
-        {"name": "Asset", "description": "Peralatan tahan lama, mixer, loyang, showcase", "sort_order": 9, "is_default": False},
-        {"name": "Iuran", "description": "Iuran sampah, keamanan, lingkungan", "sort_order": 10, "is_default": False},
-        {"name": "Tukar Cash", "description": "Tarik tunai kasir / titip transfer kas", "sort_order": 11, "is_default": False},
-        {"name": "Ongkir", "description": "Ongkos kirim kurir delivery pesanan", "sort_order": 12, "is_default": False},
+        {"name": "Bahan Kue", "description": "Bahan baku pembuatan kue & roti", "sort_order": 1, "is_default": False, "account_code": "5-1100", "account_name": "Beban Pokok Bahan Baku Kue", "account_group": "HPP", "report_type": "LABA_RUGI"},
+        {"name": "Bahan Minuman", "description": "Bahan baku minuman, sirup, teh, kopi", "sort_order": 2, "is_default": False, "account_code": "5-1200", "account_name": "Beban Pokok Bahan Minuman", "account_group": "HPP", "report_type": "LABA_RUGI"},
+        {"name": "Kebersihan", "description": "Sabun, plastik sampah, pembersih lantai, spon", "sort_order": 3, "is_default": False, "account_code": "6-1200", "account_name": "Beban Perlengkapan & Sanitasi", "account_group": "OPEX", "report_type": "LABA_RUGI"},
+        {"name": "Kantor", "description": "ATK, kertas nota, pulpen, lakban", "sort_order": 4, "is_default": False, "account_code": "6-1300", "account_name": "Beban Administrasi & ATK", "account_group": "OPEX", "report_type": "LABA_RUGI"},
+        {"name": "Kemasan", "description": "Box kue, standing pouch, kantong plastik, pita", "sort_order": 5, "is_default": False, "account_code": "5-1300", "account_name": "Beban Bahan Pembantu & Kemasan", "account_group": "HPP", "report_type": "LABA_RUGI"},
+        {"name": "Operasional", "description": "Gas LPG, listrik, galon air, es batu, transportasi", "sort_order": 6, "is_default": False, "account_code": "6-1100", "account_name": "Beban Utilitas & Operasional Toko", "account_group": "OPEX", "report_type": "LABA_RUGI"},
+        {"name": "Topper & Mainan", "description": "Lilin ultah, topper cake, hiasan kue", "sort_order": 7, "is_default": False, "account_code": "5-1400", "account_name": "Beban Aksesoris & Ornamen Produk", "account_group": "HPP", "report_type": "LABA_RUGI"},
+        {"name": "Renovasi", "description": "Perbaikan toko, cat, peralatan tukang", "sort_order": 8, "is_default": False, "account_code": "6-1400", "account_name": "Beban Pemeliharaan & Perbaikan", "account_group": "OPEX", "report_type": "LABA_RUGI"},
+        {"name": "Asset", "description": "Peralatan tahan lama, mixer, loyang, showcase", "sort_order": 9, "is_default": False, "account_code": "1-2100", "account_name": "Aset Tetap - Peralatan & Mesin", "account_group": "ASSET", "report_type": "NERACA"},
+        {"name": "Iuran", "description": "Iuran sampah, keamanan, lingkungan", "sort_order": 10, "is_default": False, "account_code": "6-1500", "account_name": "Beban Retribusi & Lingkungan", "account_group": "OPEX", "report_type": "LABA_RUGI"},
+        {"name": "Tukar Cash", "description": "Tarik tunai kasir / titip transfer kas", "sort_order": 11, "is_default": False, "account_code": "1-1199", "account_name": "Kas Kliring / Penukaran Tunai", "account_group": "CASH_TRANSFER", "report_type": "ARUS_KAS"},
+        {"name": "Ongkir", "description": "Ongkos kirim kurir delivery pesanan", "sort_order": 12, "is_default": False, "account_code": "5-1500", "account_name": "Beban Angkut Penjualan (Delivery)", "account_group": "HPP", "report_type": "LABA_RUGI"},
     ],
     "metode_bayar": [
-        {"name": "Tunai", "description": "Uang tunai kasir toko", "sort_order": 1, "is_default": True},
-        {"name": "Transfer", "description": "Transfer bank (BCA, Mandiri, BRI, dll)", "sort_order": 2, "is_default": False},
-        {"name": "QRIS", "description": "Pembayaran barcode QRIS", "sort_order": 3, "is_default": False},
-        {"name": "Debit", "description": "Kartu debit EDC", "sort_order": 4, "is_default": False},
-        {"name": "Kredit", "description": "Kartu kredit EDC / tempo bank", "sort_order": 5, "is_default": False},
-        {"name": "COD", "description": "Cash on Delivery / Bayar di Tempat (Kasir)", "sort_order": 6, "is_default": False},
+        {"name": "Tunai", "description": "Uang tunai kasir toko", "sort_order": 1, "is_default": True, "account_code": "1-1110", "account_name": "Kas Tunai Kasir", "account_group": "KAS", "report_type": "NERACA"},
+        {"name": "Transfer", "description": "Transfer bank (BCA, Mandiri, BRI, dll)", "sort_order": 2, "is_default": False, "account_code": "1-1120", "account_name": "Bank Operasional", "account_group": "BANK", "report_type": "NERACA"},
+        {"name": "QRIS", "description": "Pembayaran barcode QRIS", "sort_order": 3, "is_default": False, "account_code": "1-1121", "account_name": "QRIS Settlement", "account_group": "BANK", "report_type": "NERACA"},
+        {"name": "Debit", "description": "Kartu debit EDC", "sort_order": 4, "is_default": False, "account_code": "1-1122", "account_name": "EDC Debit", "account_group": "BANK", "report_type": "NERACA"},
+        {"name": "Kredit", "description": "Kartu kredit EDC / tempo bank", "sort_order": 5, "is_default": False, "account_code": "2-1110", "account_name": "Kartu Kredit / Tempo", "account_group": "HUTANG", "report_type": "NERACA"},
+        {"name": "COD", "description": "Cash on Delivery / Bayar di Tempat (Kasir)", "sort_order": 6, "is_default": False, "account_code": "1-1110", "account_name": "Kas Tunai Kasir (COD)", "account_group": "KAS", "report_type": "NERACA"},
     ],
     "satuan": [
         {"name": "Pcs", "description": "Pieces / satuan bijian umum", "sort_order": 1, "is_default": True},
@@ -66,16 +66,18 @@ DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
 
 
 async def ensure_default_master_data(db: AsyncSession) -> None:
-    """Pastikan data master default terisi bila belum ada di tabel."""
+    """Pastikan data master default terisi bila belum ada di tabel, dan lengkapi akun akuntansi jika kosong."""
     changed = False
     for opt_type, items in DEFAULT_MASTER_DATA.items():
         existing_res = await db.execute(
-            select(MasterDataOption.name).where(MasterDataOption.type == opt_type)
+            select(MasterDataOption).where(MasterDataOption.type == opt_type)
         )
-        existing_names = {row[0].strip().lower() for row in existing_res.fetchall()}
+        existing_items = existing_res.scalars().all()
+        existing_map = {row.name.strip().lower(): row for row in existing_items}
 
         for itm in items:
-            if itm["name"].strip().lower() not in existing_names:
+            key = itm["name"].strip().lower()
+            if key not in existing_map:
                 new_opt = MasterDataOption(
                     type=opt_type,
                     name=itm["name"],
@@ -83,12 +85,25 @@ async def ensure_default_master_data(db: AsyncSession) -> None:
                     sort_order=itm.get("sort_order", 0),
                     is_active=True,
                     is_default=itm.get("is_default", False),
+                    account_code=itm.get("account_code"),
+                    account_name=itm.get("account_name"),
+                    account_group=itm.get("account_group"),
+                    report_type=itm.get("report_type"),
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                 )
                 db.add(new_opt)
-                existing_names.add(itm["name"].strip().lower())
+                existing_map[key] = new_opt
                 changed = True
+            else:
+                existing_item = existing_map[key]
+                if not existing_item.account_code and itm.get("account_code"):
+                    existing_item.account_code = itm.get("account_code")
+                    existing_item.account_name = itm.get("account_name")
+                    existing_item.account_group = itm.get("account_group")
+                    existing_item.report_type = itm.get("report_type")
+                    existing_item.updated_at = datetime.utcnow()
+                    changed = True
 
     if changed:
         await db.commit()
@@ -167,6 +182,10 @@ async def get_master_options(
             "sort_order": itm.sort_order,
             "is_active": itm.is_active,
             "is_default": itm.is_default,
+            "account_code": itm.account_code,
+            "account_name": itm.account_name,
+            "account_group": itm.account_group,
+            "report_type": itm.report_type,
             "usage_count": usage,
             "created_at": itm.created_at.isoformat() if itm.created_at else None,
             "updated_at": itm.updated_at.isoformat() if itm.updated_at else None,
@@ -298,6 +317,10 @@ async def create_master_option(
     description: str = "",
     sort_order: int | None = None,
     is_default: bool = False,
+    account_code: str | None = None,
+    account_name: str | None = None,
+    account_group: str | None = None,
+    report_type: str | None = None,
 ) -> dict[str, Any]:
     """Tambah opsi master data baru."""
     clean_type = opt_type.strip().lower()
@@ -350,6 +373,10 @@ async def create_master_option(
         sort_order=sort_order,
         is_active=True,
         is_default=is_default,
+        account_code=account_code.strip() if account_code and account_code.strip() else None,
+        account_name=account_name.strip() if account_name and account_name.strip() else None,
+        account_group=account_group.strip() if account_group and account_group.strip() else None,
+        report_type=report_type.strip() if report_type and report_type.strip() else None,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -368,6 +395,10 @@ async def create_master_option(
         "sort_order": new_opt.sort_order,
         "is_active": new_opt.is_active,
         "is_default": new_opt.is_default,
+        "account_code": new_opt.account_code,
+        "account_name": new_opt.account_name,
+        "account_group": new_opt.account_group,
+        "report_type": new_opt.report_type,
         "usage_count": 0,
         "created_at": new_opt.created_at.isoformat(),
         "updated_at": new_opt.updated_at.isoformat(),
@@ -382,6 +413,10 @@ async def update_master_option(
     sort_order: int | None = None,
     is_active: bool | None = None,
     is_default: bool | None = None,
+    account_code: str | None = None,
+    account_name: str | None = None,
+    account_group: str | None = None,
+    report_type: str | None = None,
 ) -> dict[str, Any]:
     """Perbarui opsi master data."""
     res = await db.execute(select(MasterDataOption).where(MasterDataOption.id == item_id))
@@ -435,6 +470,18 @@ async def update_master_option(
         else:
             item.is_default = False
 
+    if account_code is not None:
+        item.account_code = account_code.strip() if account_code.strip() else None
+
+    if account_name is not None:
+        item.account_name = account_name.strip() if account_name.strip() else None
+
+    if account_group is not None:
+        item.account_group = account_group.strip() if account_group.strip() else None
+
+    if report_type is not None:
+        item.report_type = report_type.strip() if report_type.strip() else None
+
     item.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(item)
@@ -451,9 +498,13 @@ async def update_master_option(
         "sort_order": item.sort_order,
         "is_active": item.is_active,
         "is_default": item.is_default,
+        "account_code": item.account_code,
+        "account_name": item.account_name,
+        "account_group": item.account_group,
+        "report_type": item.report_type,
         "usage_count": usage,
-        "created_at": item.created_at.isoformat(),
-        "updated_at": item.updated_at.isoformat(),
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
     }
 
 
@@ -522,15 +573,30 @@ async def reset_master_data_defaults(
                     sort_order=itm.get("sort_order", 0),
                     is_active=True,
                     is_default=itm.get("is_default", False),
+                    account_code=itm.get("account_code"),
+                    account_name=itm.get("account_name"),
+                    account_group=itm.get("account_group"),
+                    report_type=itm.get("report_type"),
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                 )
                 db.add(new_opt)
                 restored_count += 1
             else:
+                updated_fields = False
                 # Pastikan aktif kembali jika sebelumnya dinonaktifkan
                 if not existing.is_active:
                     existing.is_active = True
+                    updated_fields = True
+                # Perbarui akun akuntansi jika masih kosong
+                if not existing.account_code and itm.get("account_code"):
+                    existing.account_code = itm.get("account_code")
+                    existing.account_name = itm.get("account_name")
+                    existing.account_group = itm.get("account_group")
+                    existing.report_type = itm.get("report_type")
+                    updated_fields = True
+                if updated_fields:
+                    existing.updated_at = datetime.utcnow()
                     restored_count += 1
 
     await db.commit()
@@ -541,3 +607,32 @@ async def reset_master_data_defaults(
         "message": f"Berhasil memulihkan opsi default ({restored_count} opsi ditambahkan/diaktifkan kembali).",
         "restored_count": restored_count,
     }
+
+
+async def get_category_accounting_map(db: AsyncSession) -> dict[str, dict[str, str | None]]:
+    """
+    Ambil kamus pemetaan kategori ke bagan akun standar (Chart of Accounts):
+    {
+        "Bahan Kue": {
+            "account_code": "5-1100",
+            "account_name": "Beban Pokok Bahan Baku Kue",
+            "account_group": "HPP",
+            "report_type": "LABA_RUGI"
+        },
+        ...
+    }
+    """
+    await ensure_default_master_data(db)
+    res = await db.execute(
+        select(MasterDataOption).where(MasterDataOption.type == "kategori")
+    )
+    items = res.scalars().all()
+    mapping: dict[str, dict[str, str | None]] = {}
+    for itm in items:
+        mapping[itm.name] = {
+            "account_code": itm.account_code,
+            "account_name": itm.account_name,
+            "account_group": itm.account_group,
+            "report_type": itm.report_type,
+        }
+    return mapping

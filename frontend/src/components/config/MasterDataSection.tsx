@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Info,
   Check,
+  BookOpen,
 } from "lucide-react";
 
 type MasterDataType = "kategori" | "metode_bayar" | "satuan";
@@ -100,6 +101,10 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
     sort_order: 1,
     is_default: false,
     is_active: true,
+    account_code: "",
+    account_name: "",
+    account_group: "",
+    report_type: "",
   });
 
   // Dialog Delete State
@@ -214,6 +219,10 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       sort_order: (currentItems.length > 0 ? Math.max(...currentItems.map((i) => i.sort_order)) : 0) + 1,
       is_default: false,
       is_active: true,
+      account_code: "",
+      account_name: "",
+      account_group: activeType === "kategori" ? "HPP" : activeType === "metode_bayar" ? "KAS" : "",
+      report_type: activeType === "kategori" ? "LABA_RUGI" : activeType === "metode_bayar" ? "NERACA" : "",
     });
     setIsDialogOpen(true);
   };
@@ -226,6 +235,10 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       sort_order: item.sort_order,
       is_default: item.is_default,
       is_active: item.is_active,
+      account_code: item.account_code || "",
+      account_name: item.account_name || "",
+      account_group: item.account_group || "",
+      report_type: item.report_type || "",
     });
     setIsDialogOpen(true);
   };
@@ -237,24 +250,27 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       return;
     }
 
+    const payload = {
+      name: formData.name.trim(),
+      description: formData.description.trim(),
+      sort_order: Number(formData.sort_order) || 0,
+      is_default: formData.is_default,
+      is_active: formData.is_active,
+      account_code: formData.account_code.trim() || null,
+      account_name: formData.account_name.trim() || null,
+      account_group: formData.account_group.trim() || null,
+      report_type: formData.report_type.trim() || null,
+    };
+
     if (editingItem) {
       updateMutation.mutate({
         id: editingItem.id,
-        payload: {
-          name: formData.name.trim(),
-          description: formData.description.trim(),
-          sort_order: Number(formData.sort_order) || 0,
-          is_default: formData.is_default,
-          is_active: formData.is_active,
-        },
+        payload,
       });
     } else {
       createMutation.mutate({
         type: activeType,
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        sort_order: Number(formData.sort_order) || 0,
-        is_default: formData.is_default,
+        ...payload,
       });
     }
   };
@@ -465,11 +481,49 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                               Belum digunakan
                             </span>
                           )}
+
+                          {item.account_code && (
+                            <Badge
+                              variant="outline"
+                              className="font-mono text-[10px] bg-sky-50 text-sky-800 border-sky-200 px-1.5 py-0 h-4.5"
+                              title={`Akun: ${item.account_code} - ${item.account_name || item.name}`}
+                            >
+                              COA: {item.account_code}
+                            </Badge>
+                          )}
+
+                          {item.account_group && (
+                            <Badge
+                              variant="secondary"
+                              className={`text-[9px] font-semibold px-1.5 py-0 h-4.5 uppercase ${
+                                item.account_group === "HPP"
+                                  ? "bg-amber-100 text-amber-900 border-amber-200"
+                                  : item.account_group === "OPEX"
+                                  ? "bg-slate-100 text-slate-800 border-slate-200"
+                                  : item.account_group === "ASSET"
+                                  ? "bg-purple-100 text-purple-900 border-purple-200"
+                                  : item.account_group === "CASH_TRANSFER"
+                                  ? "bg-emerald-100 text-emerald-900 border-emerald-200"
+                                  : "bg-blue-100 text-blue-900 border-blue-200"
+                              }`}
+                            >
+                              {item.account_group}
+                            </Badge>
+                          )}
                         </div>
 
                         {item.description ? (
                           <p className="text-[11px] text-slate-500 truncate max-w-xl">
                             {item.description}
+                            {item.account_name && item.account_name !== item.name && (
+                              <span className="text-slate-400 ml-1.5 font-normal">
+                                • {item.account_name}
+                              </span>
+                            )}
+                          </p>
+                        ) : item.account_name ? (
+                          <p className="text-[11px] text-slate-500 truncate max-w-xl">
+                            Akun Standar: {item.account_name}
                           </p>
                         ) : (
                           <p className="text-[11px] text-slate-400 italic">Tanpa keterangan</p>
@@ -600,6 +654,85 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                 </label>
               </div>
             </div>
+
+            {/* Pemetaan Akuntansi (COA) Khusus Kategori & Metode Bayar */}
+            {(activeType === "kategori" || activeType === "metode_bayar") && (
+              <div className="p-3.5 rounded-xl border border-sky-200/80 bg-sky-50/40 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-950">
+                  <BookOpen className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                  <span>Pemetaan Akuntansi Standar (Chart of Accounts / COA)</span>
+                </div>
+                <p className="text-[11px] text-sky-800 leading-tight">
+                  {activeType === "kategori"
+                    ? "Hubungkan kategori ini dengan kode akun buku besar untuk integrasi Laporan Laba Rugi dan Neraca."
+                    : "Hubungkan metode pembayaran ini dengan akun kas/bank pada Neraca."}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Kode Akun (COA)
+                    </label>
+                    <Input
+                      value={formData.account_code}
+                      onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
+                      placeholder={activeType === "kategori" ? "Contoh: 5-1100" : "Contoh: 1-1110"}
+                      className="h-9 text-xs rounded-xl font-mono bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Kelompok Akun
+                    </label>
+                    <select
+                      value={formData.account_group}
+                      onChange={(e) => setFormData({ ...formData, account_group: e.target.value })}
+                      className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    >
+                      <option value="">Pilih Kelompok...</option>
+                      <option value="HPP">HPP (Harga Pokok Penjualan / Bahan Baku)</option>
+                      <option value="OPEX">OPEX (Beban Operasional & Umum)</option>
+                      <option value="ASSET">ASSET (Aset Tetap / Peralatan Tahan Lama)</option>
+                      <option value="CASH_TRANSFER">CASH_TRANSFER (Mutasi / Kliring Kas)</option>
+                      <option value="KAS">KAS (Kas Tunai Kasir)</option>
+                      <option value="BANK">BANK (Kas Rekening Bank)</option>
+                      <option value="HUTANG">HUTANG (Hutang Usaha / Supplier)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Nama Akun Standar
+                    </label>
+                    <Input
+                      value={formData.account_name}
+                      onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
+                      placeholder="Contoh: Beban Pokok Bahan Baku Kue"
+                      className="h-9 text-xs rounded-xl bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                      Masuk ke Laporan
+                    </label>
+                    <select
+                      value={formData.report_type}
+                      onChange={(e) => setFormData({ ...formData, report_type: e.target.value })}
+                      className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    >
+                      <option value="">Pilih Laporan...</option>
+                      <option value="LABA_RUGI">Laba Rugi (Income Statement)</option>
+                      <option value="NERACA">Neraca (Balance Sheet)</option>
+                      <option value="ARUS_KAS">Arus Kas (Cash Flow)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Default Checkbox (Metode Bayar / Satuan) */}
             {activeType !== "kategori" && (

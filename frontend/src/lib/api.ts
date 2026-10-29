@@ -336,6 +336,10 @@ export async function createMasterData(payload: {
   description?: string;
   sort_order?: number;
   is_default?: boolean;
+  account_code?: string | null;
+  account_name?: string | null;
+  account_group?: string | null;
+  report_type?: string | null;
 }): Promise<{ ok: boolean; item: MasterDataOption; message?: string }> {
   const res = await api.post("/config/master-data", payload);
   return res.data;
@@ -349,6 +353,10 @@ export async function updateMasterData(
     sort_order?: number;
     is_active?: boolean;
     is_default?: boolean;
+    account_code?: string | null;
+    account_name?: string | null;
+    account_group?: string | null;
+    report_type?: string | null;
   }
 ): Promise<{ ok: boolean; item: MasterDataOption; message?: string }> {
   const res = await api.put(`/config/master-data/${id}`, payload);

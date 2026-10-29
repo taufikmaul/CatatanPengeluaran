@@ -42,6 +42,17 @@ async def test_ensure_default_master_data_seeded(db):
     assert "Kemasan" in cats
     assert "Tukar Cash" in cats
 
+    # Pastikan kode akun terpetakan
+    from app.services.master_data_service import get_category_accounting_map
+    coa_map = await get_category_accounting_map(db)
+    assert "Bahan Kue" in coa_map
+    assert coa_map["Bahan Kue"]["account_code"] == "5-1100"
+    assert coa_map["Bahan Kue"]["account_group"] == "HPP"
+    assert coa_map["Asset"]["account_code"] == "1-2100"
+    assert coa_map["Asset"]["report_type"] == "NERACA"
+    assert coa_map["Tukar Cash"]["account_code"] == "1-1199"
+    assert coa_map["Tukar Cash"]["account_group"] == "CASH_TRANSFER"
+
     assert len(pay_methods) >= 5
     assert "Tunai" in pay_methods
     assert "Transfer" in pay_methods
@@ -107,11 +118,17 @@ async def test_api_master_data_endpoints(client):
         "description": "E-wallet ShopeePay",
         "sort_order": 10,
         "is_default": False,
+        "account_code": "1-1123",
+        "account_name": "E-Wallet ShopeePay",
+        "account_group": "BANK",
+        "report_type": "NERACA",
     }
     res_create = await client.post("/api/v1/config/master-data", json=new_payload, headers=headers)
     assert res_create.status_code == 200
     created_item = res_create.json()["item"]
     assert created_item["name"] == "ShopeePay"
+    assert created_item["account_code"] == "1-1123"
+    assert created_item["account_group"] == "BANK"
     item_id = created_item["id"]
 
     # 4. Cek duplikasi ditolak
@@ -121,11 +138,17 @@ async def test_api_master_data_endpoints(client):
     # 5. Update opsi
     res_update = await client.put(
         f"/api/v1/config/master-data/{item_id}",
-        json={"name": "ShopeePay Merchant", "description": "Akun toko"},
+        json={
+            "name": "ShopeePay Merchant",
+            "description": "Akun toko",
+            "account_code": "1-1124",
+            "account_name": "ShopeePay Merchant Toko",
+        },
         headers=headers,
     )
     assert res_update.status_code == 200
     assert res_update.json()["item"]["name"] == "ShopeePay Merchant"
+    assert res_update.json()["item"]["account_code"] == "1-1124"
 
     # 6. Delete opsi
     res_del = await client.delete(f"/api/v1/config/master-data/{item_id}", headers=headers)

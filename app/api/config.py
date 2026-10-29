@@ -403,6 +403,10 @@ async def api_create_master_data(
         description=payload.description,
         sort_order=payload.sort_order,
         is_default=payload.is_default,
+        account_code=payload.account_code,
+        account_name=payload.account_name,
+        account_group=payload.account_group,
+        report_type=payload.report_type,
     )
     return {
         "ok": True,
@@ -417,7 +421,7 @@ async def api_update_master_data(
     payload: MasterDataOptionUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Perbarui opsi master data (nama, deskripsi, urutan, aktif/nonaktif, default)."""
+    """Perbarui opsi master data (nama, deskripsi, urutan, aktif/nonaktif, default, kode akun)."""
     item = await update_master_option(
         db,
         item_id=item_id,
@@ -426,6 +430,10 @@ async def api_update_master_data(
         sort_order=payload.sort_order,
         is_active=payload.is_active,
         is_default=payload.is_default,
+        account_code=payload.account_code,
+        account_name=payload.account_name,
+        account_group=payload.account_group,
+        report_type=payload.report_type,
     )
     return {
         "ok": True,
