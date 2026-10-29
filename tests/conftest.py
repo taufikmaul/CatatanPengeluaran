@@ -65,6 +65,30 @@ async def db(engine) -> AsyncSession:
         await session.rollback()
 
 
+from httpx import AsyncClient, ASGITransport
+from app.main import app
+from app.database.connection import get_db
+from app.services.dashboard_auth_service import create_session_token, SESSION_COOKIE_NAME
+
+
+@pytest.fixture
+async def client(db: AsyncSession):
+    async def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_cookies():
+    token = create_session_token()
+    return {SESSION_COOKIE_NAME: token}
+
+
 @pytest.fixture
 def sample_items() -> list[dict]:
     """Contoh hasil ekstraksi AI yang valid."""

@@ -95,4 +95,5 @@ class TestSchemaConsistency:
             "monthly_budgets",
             "expense_logs",
             "master_data_options",
+            "system_settings",
         }

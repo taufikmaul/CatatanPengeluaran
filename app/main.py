@@ -23,6 +23,17 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("✅ Database initialized")
 
+    # Load persistent system settings from database
+    try:
+        from app.database.connection import AsyncSessionLocal
+        from app.services.system_setting_service import load_and_apply_system_settings
+        async with AsyncSessionLocal() as session:
+            loaded_settings = await load_and_apply_system_settings(session)
+            if loaded_settings:
+                print(f"✅ Loaded {len(loaded_settings)} system settings from database")
+    except Exception as e:
+        print(f"⚠️  Gagal memuat system settings dari database: {e}")
+
     # Register webhook ke Telegram
     from app.config import settings
     from app.bot.telegram_client import set_webhook

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, RotateCcw, Plus, Filter, Tag, ShieldAlert } from "lucide-react";
+import { Search, RotateCcw, Plus, Filter, Tag, ShieldAlert, Sparkles } from "lucide-react";
 import { ExpenseUser } from "@/types";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
@@ -30,6 +30,7 @@ interface FilterBarProps {
   onReset: () => void;
   onOpenAddExpense: () => void;
   onOpenAuditDuplicates?: () => void;
+  onOpenDataHygiene?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -60,6 +61,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onReset,
   onOpenAddExpense,
   onOpenAuditDuplicates,
+  onOpenDataHygiene,
 }) => {
   // ReUI Filter Fields schema
   const filterFields: FilterField[] = useMemo(() => [
@@ -217,6 +219,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             onQueryChange={handleQueryChange}
             className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
           />
+
+          {onOpenDataHygiene && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onOpenDataHygiene}
+              className="rounded-xl shadow-xs gap-1.5 h-10 font-medium px-3 text-xs border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0"
+              title="Cek kesehatan & rapikan data transaksi secara otomatis"
+            >
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span>Rapikan Data</span>
+            </Button>
+          )}
 
           {onOpenAuditDuplicates && (
             <Button

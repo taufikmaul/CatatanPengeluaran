@@ -38,6 +38,8 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   Truck,
+  Sparkles,
+  ShieldAlert,
 } from "lucide-react";
 
 // Sub-components untuk tab Analisis & Grafik
@@ -88,6 +90,8 @@ export interface OwnerMobileViewProps {
   onUserChange?: (userId: number | null) => void;
   onResetFilters: () => void;
   onOpenAddExpense: () => void;
+  onOpenAuditDuplicates?: () => void;
+  onOpenDataHygiene?: () => void;
   onOpenBudgetSettings?: () => void;
   onOpenTukarCashOngkir?: (subType?: "all" | "tukar_cash" | "ongkir") => void;
   highlightedExpenseId?: number | null;
@@ -131,6 +135,8 @@ export function OwnerMobileView({
   onUserChange,
   onResetFilters,
   onOpenAddExpense,
+  onOpenAuditDuplicates,
+  onOpenDataHygiene,
   onOpenBudgetSettings,
   onOpenTukarCashOngkir,
 }: OwnerMobileViewProps) {
@@ -602,6 +608,20 @@ export function OwnerMobileView({
               </span>
               <ChevronRight className="w-4 h-4 text-slate-500" />
             </Button>
+
+            {onOpenDataHygiene && (
+              <Button
+                variant="outline"
+                onClick={onOpenDataHygiene}
+                className="w-full min-h-[44px] rounded-xl border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold justify-between px-4"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Rapikan Data Transaksi & Satuan</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-500" />
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -640,6 +660,36 @@ export function OwnerMobileView({
               </button>
             )}
           </div>
+
+          {/* Quick Utility Actions */}
+          {(onOpenDataHygiene || onOpenAuditDuplicates) && (
+            <div className="flex items-center gap-2">
+              {onOpenDataHygiene && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenDataHygiene}
+                  className="flex-1 min-h-[38px] rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Rapikan Data</span>
+                </Button>
+              )}
+              {onOpenAuditDuplicates && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenAuditDuplicates}
+                  className="flex-1 min-h-[38px] rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-semibold"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Audit Duplikat</span>
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Quick Filter Status Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">

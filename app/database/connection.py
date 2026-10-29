@@ -64,7 +64,7 @@ async def init_db():
     Development: set AUTO_CREATE_TABLES=true untuk memakai create_all.
     """
     # Import semua models agar Base.metadata mengenali mereka
-    from app.models import expense, user, session as sess  # noqa: F401
+    import app.models  # noqa: F401
 
     if not settings.auto_create_tables:
         return

@@ -13,6 +13,7 @@ import {
   Home,
   ArrowLeftRight,
   ShieldAlert,
+  Sparkles,
   Store,
   HandCoins,
   CalendarClock,
@@ -50,6 +51,7 @@ export interface DashboardSidebarProps {
   onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
+  onOpenDataHygiene?: () => void;
   userRole?: string | null;
   canManageConfig?: boolean;
   monthlyBudgetLimit?: number | null;
@@ -69,6 +71,7 @@ export function DashboardSidebar({
   onTabChange,
   onOpenImport,
   onOpenAuditDuplicates,
+  onOpenDataHygiene,
   userRole,
   canManageConfig = false,
   monthlyBudgetLimit,
@@ -274,6 +277,22 @@ export function DashboardSidebar({
                 )}
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            {onOpenDataHygiene && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => {
+                    onOpenDataHygiene();
+                    if (isMobile) setOpenMobile(false);
+                  }}
+                  tooltip="Cek kesehatan & rapikan data transaksi secara otomatis"
+                  className="h-9.5 rounded-xl font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                >
+                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="truncate">Rapikan Data</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
 
             {onOpenAuditDuplicates && (
               <SidebarMenuItem>

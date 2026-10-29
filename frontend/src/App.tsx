@@ -511,6 +511,7 @@ export function App() {
           onTabChange={handleTabChange}
           onOpenImport={() => setIsImportOpen(true)}
           onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+          onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
           userRole={userRole}
           canManageConfig={canManageConfig}
           monthlyBudgetLimit={reportData?.monthly_budget_limit}
@@ -649,6 +650,8 @@ export function App() {
                           setCashDeliverySubtype(subType || "all");
                           navigate("/tukar-cash-ongkir");
                         }}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                        onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       />
                     </div>
 
@@ -885,6 +888,7 @@ export function App() {
                         setIsFormOpen(true);
                       }}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                     />
 
                     {/* Admin Input Expense Table */}
@@ -1007,6 +1011,8 @@ export function App() {
                           setCashDeliverySubtype(subType || "all");
                           navigate("/tukar-cash-ongkir");
                         }}
+                        onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                        onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       />
                     </div>
 
@@ -1110,6 +1116,7 @@ export function App() {
                           setIsFormOpen(true);
                         }}
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                        onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       />
 
                       {/* Desktop Expense Data Table */}
@@ -1136,6 +1143,7 @@ export function App() {
                         onViewExpense={(item) => setViewingExpense(item)}
                         onOpenActivityLog={() => setIsActivityLogOpen(true)}
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                        onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                         canDelete={canDelete}
                         highlightedExpenseId={highlightedExpenseId}
                       />
@@ -1266,6 +1274,7 @@ export function App() {
                         setIsFormOpen(true);
                       }}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                     />
 
                     {/* Admin Input Expense Table */}

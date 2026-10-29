@@ -180,12 +180,15 @@ async def get_system_config(
 @router.put("", dependencies=[Depends(require_admin_role)])
 async def update_system_config(
     payload: SystemConfigUpdate,
+    db: AsyncSession = Depends(get_db),
 ):
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         return {"ok": True, "message": "Tidak ada perubahan"}
 
     env_updates: dict[str, str] = {}
+    db_updates: dict[str, Any] = {}
+
     if "category_budgets" in updates and updates["category_budgets"] is not None:
         clean_cat_budgets = {
             str(k): float(v)
@@ -196,6 +199,7 @@ async def update_system_config(
         env_updates["CATEGORY_BUDGETS_JSON"] = json_str
         os.environ["CATEGORY_BUDGETS_JSON"] = json_str
         settings.category_budgets_json = json_str
+        db_updates["category_budgets_json"] = json_str
 
     for attr, val in updates.items():
         if val is not None and attr in ENV_MAP:
@@ -205,6 +209,7 @@ async def update_system_config(
                 str_val = extract_spreadsheet_id(str_val)
             env_updates[env_key] = str_val
             os.environ[env_key] = str_val
+            db_updates[attr] = str_val
 
             # Update runtime settings
             if hasattr(settings, attr):
@@ -216,8 +221,19 @@ async def update_system_config(
                 else:
                     setattr(settings, attr, str_val)
 
+    # Simpan ke PostgreSQL agar persisten melintasi deploy/container recreate
+    if db_updates:
+        try:
+            from app.services.system_setting_service import save_bulk_system_settings
+            await save_bulk_system_settings(db, db_updates)
+        except Exception:
+            pass
+
     if env_updates:
-        _update_env_file(env_updates)
+        try:
+            _update_env_file(env_updates)
+        except Exception:
+            pass
 
     # Jika webhook_url atau telegram_token diupdate, re-register webhook jika ada
     if "WEBHOOK_URL" in env_updates or "TELEGRAM_TOKEN" in env_updates:
@@ -230,13 +246,14 @@ async def update_system_config(
 
     return {
         "ok": True,
-        "message": "Konfigurasi sistem berhasil disimpan ke .env dan diperbarui di memori!",
+        "message": "Konfigurasi sistem berhasil disimpan ke database dan diperbarui!",
     }
 
 
 @router.post("/upload-credentials", dependencies=[Depends(require_admin_role)])
 async def upload_google_credentials(
     file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
 ):
     """Unggah file Google Service Account JSON (credentials.json) untuk Google Sheets sync."""
     if not file.filename or not file.filename.lower().endswith(".json"):
@@ -272,10 +289,15 @@ async def upload_google_credentials(
             detail=f"Gagal menyimpan file ke disk: {str(e)}",
         )
 
-    # Update config & env
+    # Update config & env & database
     _update_env_file({"GOOGLE_CREDENTIALS_JSON": save_path})
     settings.google_credentials_json = save_path
     os.environ["GOOGLE_CREDENTIALS_JSON"] = save_path
+    try:
+        from app.services.system_setting_service import save_bulk_system_settings
+        await save_bulk_system_settings(db, {"google_credentials_json": save_path})
+    except Exception:
+        pass
 
     return {
         "ok": True,
