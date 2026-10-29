@@ -155,3 +155,108 @@ class TestParseDueDateAndStatus:
         assert "Besok" in st_tomorrow["label"]
 
 
+class TestIsOngkirOrTukarCash:
+    def test_detects_ongkir_from_category_or_name(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        assert is_ongkir_or_tukar_cash(category="Ongkir") is True
+        assert is_ongkir_or_tukar_cash(category="ongkir") is True
+        assert is_ongkir_or_tukar_cash(item_name="ongkir delivery cake") is True
+        assert is_ongkir_or_tukar_cash(item_name="GoSend Ongkir") is True
+
+    def test_detects_tukar_cash_from_category_or_name(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        assert is_ongkir_or_tukar_cash(category="Tukar Cash") is True
+        assert is_ongkir_or_tukar_cash(category="tukar cash") is True
+        assert is_ongkir_or_tukar_cash(item_name="Tukar Cash - Budi") is True
+        assert is_ongkir_or_tukar_cash(item_name="Tarik Tunai Kasir") is True
+
+    def test_detects_from_topic_type(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        assert is_ongkir_or_tukar_cash(topic_type="ongkir") is True
+        assert is_ongkir_or_tukar_cash(topic_type="tukar_cash") is True
+        assert is_ongkir_or_tukar_cash(topic_type=None) is False
+
+    def test_detects_from_items_list(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        ongkir_items = [{"barang": "GoSend Instant", "kategori": "Ongkir"}]
+        assert is_ongkir_or_tukar_cash(items=ongkir_items) is True
+
+        cash_items = [{"barang": "Tukar Cash - Kasir", "kategori": "Tukar Cash"}]
+        assert is_ongkir_or_tukar_cash(items=cash_items) is True
+
+        regular_items = [{"barang": "Tepung Terigu", "kategori": "Bahan Kue"}]
+        assert is_ongkir_or_tukar_cash(items=regular_items) is False
+
+    def test_detects_from_text_fallback(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        assert is_ongkir_or_tukar_cash(text="Pencatatan Ongkir kurir") is True
+        assert is_ongkir_or_tukar_cash(text="/tukercash 50.000") is True
+        assert is_ongkir_or_tukar_cash(text="Beli mentega wijsman") is False
+
+    def test_regular_expense_returns_false(self):
+        from app.utils.formatters import is_ongkir_or_tukar_cash
+        assert is_ongkir_or_tukar_cash(category="Bahan Kue", item_name="Gula Pasir") is False
+        assert is_ongkir_or_tukar_cash(category="Operasional", item_name="Listrik PLN") is False
+
+
+class TestBuildExpenseActionKeyboard:
+    def test_regular_expense_has_all_action_buttons(self):
+        from app.utils.formatters import build_expense_action_keyboard
+        kb = build_expense_action_keyboard(
+            ids_str="10,11",
+            is_paid=True,
+            is_reimb=False,
+            dashboard_url="https://dashboard.example.com",
+            category="Bahan Kue",
+            item_name="Tepung Terigu",
+        )
+        buttons = [btn["text"] for row in kb["inline_keyboard"] for btn in row]
+        assert "🗑️ Batal Simpan" in buttons
+        assert "⏳ Set Belum Lunas" in buttons
+        assert "💼 Tandai Reimburse" in buttons
+        assert "🌐 Lihat Dashboard" in buttons
+
+    def test_ongkir_expense_removes_unpaid_reimb_and_dashboard(self):
+        from app.utils.formatters import build_expense_action_keyboard
+        kb = build_expense_action_keyboard(
+            ids_str="20",
+            is_paid=True,
+            is_reimb=False,
+            dashboard_url="https://dashboard.example.com",
+            category="Ongkir",
+            item_name="GoSend delivery",
+        )
+        buttons = [btn["text"] for row in kb["inline_keyboard"] for btn in row]
+        assert "🗑️ Batal Simpan" in buttons
+        # Actions to be removed: Set Belum Lunas, Tandai Reimburse, Lihat Dashboard
+        assert "⏳ Set Belum Lunas" not in buttons
+        assert "✅ Tandai Lunas" not in buttons
+        assert "💼 Tandai Reimburse" not in buttons
+        assert "💼 Reimburse: YA (Ubah)" not in buttons
+        assert "🌐 Lihat Dashboard" not in buttons
+        # Only 1 row with 1 button
+        assert len(kb["inline_keyboard"]) == 1
+        assert len(kb["inline_keyboard"][0]) == 1
+
+    def test_tukar_cash_expense_removes_unpaid_reimb_and_dashboard(self):
+        from app.utils.formatters import build_expense_action_keyboard
+        kb = build_expense_action_keyboard(
+            ids_str="21",
+            is_paid=True,
+            is_reimb=False,
+            dashboard_url="https://dashboard.example.com",
+            is_ongkir_or_cash=True,
+        )
+        buttons = [btn["text"] for row in kb["inline_keyboard"] for btn in row]
+        assert "🗑️ Batal Simpan" in buttons
+        # Actions to be removed: Set Belum Lunas, Tandai Reimburse, Lihat Dashboard
+        assert "⏳ Set Belum Lunas" not in buttons
+        assert "✅ Tandai Lunas" not in buttons
+        assert "💼 Tandai Reimburse" not in buttons
+        assert "💼 Reimburse: YA (Ubah)" not in buttons
+        assert "🌐 Lihat Dashboard" not in buttons
+        assert len(kb["inline_keyboard"]) == 1
+        assert len(kb["inline_keyboard"][0]) == 1
+
+
+

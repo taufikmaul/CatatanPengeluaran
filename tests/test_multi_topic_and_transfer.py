@@ -338,4 +338,113 @@ async def test_multi_item_in_single_chat_ongkir_and_tukar_cash():
         assert "Mandiri" in items[1]["keterangan"]
 
 
+@pytest.mark.asyncio
+async def test_ongkir_and_tukar_cash_save_success_keyboard_actions(db):
+    from app.agent.hermes import HermesAgent
+    from app.services.expense_service import save_expenses
+    from app.bot import telegram_client as tg
+
+    sent_messages = []
+    edited_messages = []
+
+    async def fake_send_message(chat_id, text, thread_id=None, reply_markup=None):
+        sent_messages.append({"chat_id": chat_id, "text": text, "reply_markup": reply_markup})
+        return {"result": {"message_id": 999}}
+
+    async def fake_edit_message(chat_id, message_id, text, reply_markup=None):
+        edited_messages.append({"chat_id": chat_id, "message_id": message_id, "text": text, "reply_markup": reply_markup})
+        return {"ok": True}
+
+    with patch.object(tg, "send_message", side_effect=fake_send_message), \
+         patch.object(tg, "edit_message", side_effect=fake_edit_message):
+
+        agent = HermesAgent(db, 1, 12345, 15)
+
+        # 1. Test Ongkir save success
+        ongkir_items = [{
+            "barang": "Ongkir GoSend Cake Bu Maya",
+            "kategori": "Ongkir",
+            "qty": 1,
+            "satuan": "Trip",
+            "harga_satuan": 30000,
+            "total_harga": 30000,
+        }]
+        saved_ongkir = await save_expenses(db, ongkir_items, user_id=1)
+        await agent._send_save_success(msg_id=101, items=ongkir_items, saved_expenses=saved_ongkir)
+
+        assert len(edited_messages) == 1
+        kb_ongkir = edited_messages[-1]["reply_markup"]
+        all_buttons = [btn["text"] for row in kb_ongkir["inline_keyboard"] for btn in row]
+        assert "🗑️ Batal Simpan" in all_buttons
+        assert "⏳ Set Belum Lunas" not in all_buttons
+        assert "✅ Tandai Lunas" not in all_buttons
+        assert "💼 Tandai Reimburse" not in all_buttons
+        assert "💼 Reimburse: YA (Ubah)" not in all_buttons
+        assert "🌐 Lihat Dashboard" not in all_buttons
+
+        # 2. Test Tukar Cash save success
+        tukar_items = [{
+            "barang": "Tukar Cash - Karyawan",
+            "kategori": "Tukar Cash",
+            "qty": 1,
+            "satuan": "Trans",
+            "harga_satuan": 100000,
+            "total_harga": 100000,
+        }]
+        saved_tukar = await save_expenses(db, tukar_items, user_id=1)
+        await agent._send_save_success(msg_id=102, items=tukar_items, saved_expenses=saved_tukar)
+
+        assert len(edited_messages) == 2
+        kb_tukar = edited_messages[-1]["reply_markup"]
+        all_buttons_tukar = [btn["text"] for row in kb_tukar["inline_keyboard"] for btn in row]
+        assert "🗑️ Batal Simpan" in all_buttons_tukar
+        assert "⏳ Set Belum Lunas" not in all_buttons_tukar
+        assert "✅ Tandai Lunas" not in all_buttons_tukar
+        assert "💼 Tandai Reimburse" not in all_buttons_tukar
+        assert "💼 Reimburse: YA (Ubah)" not in all_buttons_tukar
+        assert "🌐 Lihat Dashboard" not in all_buttons_tukar
+
+
+@pytest.mark.asyncio
+async def test_undo_save_ongkir_removes_dashboard_button(db):
+    from app.services.expense_service import save_expenses, get_expense_by_id
+    from app.bot.callbacks import handle_callback_query
+    from app.bot import telegram_client as tg
+
+    edited_messages = []
+
+    async def fake_edit_message(chat_id, message_id, text, reply_markup=None):
+        edited_messages.append({"chat_id": chat_id, "message_id": message_id, "text": text, "reply_markup": reply_markup})
+        return {"ok": True}
+
+    with patch.object(tg, "edit_message", side_effect=fake_edit_message), \
+         patch.object(tg, "answer_callback_query", return_value=None):
+
+        ongkir_items = [{
+            "barang": "Ongkir Lalamove",
+            "kategori": "Ongkir",
+            "qty": 1,
+            "satuan": "Trip",
+            "harga_satuan": 45000,
+            "total_harga": 45000,
+        }]
+        saved = await save_expenses(db, ongkir_items, user_id=1)
+        exp_id = saved[0].id
+
+        cb_undo = {
+            "id": "cb-undo-ongkir",
+            "from": {"id": 111},
+            "message": {"message_id": 201, "chat": {"id": 12345}},
+            "data": f"undo_save:{exp_id}",
+        }
+        await handle_callback_query(cb_undo, db)
+
+        assert await get_expense_by_id(db, exp_id) is None
+        assert len(edited_messages) == 1
+        markup = edited_messages[-1]["reply_markup"]
+        # Empty inline keyboard to remove buttons, NO "Lihat Dashboard"
+        assert markup == {"inline_keyboard": []}
+
+
+
 

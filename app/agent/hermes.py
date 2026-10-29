@@ -18,6 +18,7 @@ from app.utils.formatters import (
     build_items_summary,
     build_progress_text,
     build_expense_action_keyboard,
+    is_ongkir_or_tukar_cash,
 )
 from app.config import settings
 
@@ -839,16 +840,20 @@ class HermesAgent:
             f"{insight}"
         )
 
-        # Susun tombol aksi cepat (Undo, Set Belum Lunas, Reimbursement) jika ID tersedia
+        # Susun tombol aksi cepat jika ID tersedia
         saved_ids = [
             str(e.id) for e in (saved_expenses or [])[:10] if getattr(e, "id", None) is not None
         ]
         ids_str = ",".join(saved_ids)
+        topic_type = settings.get_thread_topic_type(self.thread_id)
         keyboard = build_expense_action_keyboard(
             ids_str,
             is_paid=is_paid,
             is_reimb=is_reimb,
             dashboard_url=settings.public_dashboard_url,
+            items=items,
+            expenses=saved_expenses,
+            topic_type=topic_type,
         )
 
         if msg_id:

@@ -9,6 +9,7 @@ from app.utils.formatters import (
     fmt_rupiah,
     format_expense_items_summary,
     build_expense_action_keyboard,
+    is_ongkir_or_tukar_cash,
     extract_insight_from_text,
     extract_items_block_from_text,
 )
@@ -207,11 +208,19 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             f"{items_block}"
             f"{total_block}"
         )
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}]
-            ]
-        }
+        is_ongkir_or_cash = is_ongkir_or_tukar_cash(
+            expenses=expenses_to_delete,
+            topic_type=settings.get_thread_topic_type(thread_id),
+            text=cb.get("message", {}).get("text", ""),
+        )
+        if is_ongkir_or_cash:
+            keyboard = {"inline_keyboard": []} if msg_id else None
+        else:
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "🌐 Lihat Dashboard", "url": settings.public_dashboard_url}]
+                ]
+            }
         if msg_id:
             await tg.edit_message(chat_id, msg_id, cancel_text, keyboard)
         else:
@@ -253,6 +262,8 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             is_paid=False,
             is_reimb=is_reimb,
             dashboard_url=settings.public_dashboard_url,
+            expenses=updated_expenses,
+            topic_type=settings.get_thread_topic_type(thread_id),
         )
         if msg_id:
             await tg.edit_message(chat_id, msg_id, unpaid_text, keyboard)
@@ -295,6 +306,8 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             is_paid=True,
             is_reimb=is_reimb,
             dashboard_url=settings.public_dashboard_url,
+            expenses=updated_expenses,
+            topic_type=settings.get_thread_topic_type(thread_id),
         )
         if msg_id:
             await tg.edit_message(chat_id, msg_id, paid_text, keyboard)
@@ -354,6 +367,8 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
             is_paid=is_paid,
             is_reimb=new_state,
             dashboard_url=settings.public_dashboard_url,
+            expenses=expenses_to_update,
+            topic_type=settings.get_thread_topic_type(thread_id),
         )
         if msg_id:
             await tg.edit_message(chat_id, msg_id, reimb_text, keyboard)

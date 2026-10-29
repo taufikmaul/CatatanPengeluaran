@@ -205,30 +205,102 @@ def format_expense_items_summary(expenses: list, strikethrough: bool = False) ->
     return "\n".join(lines), total
 
 
+def is_ongkir_or_tukar_cash(
+    category: str | None = None,
+    item_name: str | None = None,
+    items: list[dict] | None = None,
+    expenses: list | None = None,
+    topic_type: str | None = None,
+    text: str | None = None,
+) -> bool:
+    """Deteksi apakah transaksi merupakan pengeluaran Ongkir atau Tukar Cash."""
+    if topic_type in ("ongkir", "tukar_cash"):
+        return True
+
+    def _check_single(cat: str | None, name: str | None) -> bool:
+        c = (cat or "").strip().lower()
+        n = (name or "").strip().lower()
+        is_ongkir = c == "ongkir" or c.startswith("ongkir") or n.startswith("ongkir") or "ongkir" in n
+        is_cash = c == "tukar cash" or "tukar cash" in c or "tarik tunai" in c or "tukar cash" in n or "tarik tunai" in n
+        return is_ongkir or is_cash
+
+    if category is not None or item_name is not None:
+        if _check_single(category, item_name):
+            return True
+
+    if items:
+        item_checks = []
+        for it in items:
+            cat = it.get("kategori") or it.get("category")
+            name = it.get("barang") or it.get("item_name")
+            item_checks.append(_check_single(cat, name))
+        if item_checks and any(item_checks):
+            return True
+
+    if expenses:
+        exp_checks = []
+        for e in expenses:
+            cat = getattr(e, "category", None)
+            name = getattr(e, "item_name", None)
+            exp_checks.append(_check_single(cat, name))
+        if exp_checks and any(exp_checks):
+            return True
+
+    if text:
+        t = text.lower()
+        if "ongkir" in t or "tukar cash" in t or "tarik tunai" in t or "/ongkir" in t or "/tukercash" in t:
+            return True
+
+    return False
+
+
 def build_expense_action_keyboard(
     ids_str: str,
     is_paid: bool,
     is_reimb: bool,
     dashboard_url: str = "",
+    is_ongkir_or_cash: bool = False,
+    category: str | None = None,
+    item_name: str | None = None,
+    expenses: list | None = None,
+    items: list | None = None,
+    topic_type: str | None = None,
 ) -> dict:
     """Buat inline keyboard konsisten untuk aksi pengeluaran di Telegram."""
-    pay_btn = (
-        {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_str}"}
-        if is_paid
-        else {"text": "✅ Tandai Lunas", "callback_data": f"mark_paid:{ids_str}"}
-    )
-    reimb_btn = "💼 Reimburse: YA (Ubah)" if is_reimb else "💼 Tandai Reimburse"
+    if not is_ongkir_or_cash:
+        is_ongkir_or_cash = is_ongkir_or_tukar_cash(
+            category=category,
+            item_name=item_name,
+            items=items,
+            expenses=expenses,
+            topic_type=topic_type,
+        )
 
     rows = []
     if ids_str:
-        rows.append([
-            {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
-            pay_btn,
-        ])
-        rows.append([
-            {"text": reimb_btn, "callback_data": f"toggle_reimb:{ids_str}"},
-        ])
-    if dashboard_url:
+        if is_ongkir_or_cash:
+            # Pengeluaran Ongkir & Tukar Cash:
+            # Hilangkan tombol Set Belum Lunas, Tandai Reimburse, dan Lihat Dashboard.
+            # Hanya sisakan tombol Batal Simpan.
+            rows.append([
+                {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
+            ])
+        else:
+            pay_btn = (
+                {"text": "⏳ Set Belum Lunas", "callback_data": f"unpaid_save:{ids_str}"}
+                if is_paid
+                else {"text": "✅ Tandai Lunas", "callback_data": f"mark_paid:{ids_str}"}
+            )
+            reimb_btn = "💼 Reimburse: YA (Ubah)" if is_reimb else "💼 Tandai Reimburse"
+            rows.append([
+                {"text": "🗑️ Batal Simpan", "callback_data": f"undo_save:{ids_str}"},
+                pay_btn,
+            ])
+            rows.append([
+                {"text": reimb_btn, "callback_data": f"toggle_reimb:{ids_str}"},
+            ])
+
+    if dashboard_url and not is_ongkir_or_cash:
         rows.append([{"text": "🌐 Lihat Dashboard", "url": dashboard_url}])
 
     return {"inline_keyboard": rows}
