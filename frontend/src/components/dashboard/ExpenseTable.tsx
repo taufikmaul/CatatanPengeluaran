@@ -43,6 +43,7 @@ import {
   Briefcase,
   History,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -60,6 +61,7 @@ interface ExpenseTableProps {
   onViewExpense?: (expense: Expense) => void;
   onOpenActivityLog?: () => void;
   onOpenAuditDuplicates?: () => void;
+  onOpenDataHygiene?: () => void;
   canDelete?: boolean;
   highlightedExpenseId?: number | null;
 }
@@ -79,6 +81,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onViewExpense,
   onOpenActivityLog,
   onOpenAuditDuplicates,
+  onOpenDataHygiene,
   canDelete = true,
   highlightedExpenseId,
 }) => {
@@ -477,6 +480,19 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             </Badge>
           </div>
           <CardAction className="flex items-center gap-2">
+            {onOpenDataHygiene && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onOpenDataHygiene}
+                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                title="Cek kesehatan & rapikan data transaksi secara otomatis"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span>Rapikan Data</span>
+              </Button>
+            )}
             {onOpenAuditDuplicates && (
               <Button
                 type="button"

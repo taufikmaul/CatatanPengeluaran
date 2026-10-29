@@ -115,3 +115,43 @@ class TestEscapeMarkdown:
     def test_plain_text_untouched(self):
         assert escape_markdown("Tepung Terigu 1kg") == "Tepung Terigu 1kg"
 
+
+class TestParseDueDateAndStatus:
+    def test_parse_iso_format(self):
+        from app.utils.formatters import parse_due_date
+        d = parse_due_date("2026-11-15")
+        assert d == date(2026, 11, 15)
+
+    def test_parse_slash_format(self):
+        from app.utils.formatters import parse_due_date
+        d = parse_due_date("15/11/2026")
+        assert d == date(2026, 11, 15)
+
+    def test_parse_relative_terms(self):
+        from app.utils.formatters import parse_due_date
+        ref = date(2026, 10, 29)
+        assert parse_due_date("besok", ref_date=ref) == date(2026, 10, 30)
+        assert parse_due_date("lusa", ref_date=ref) == date(2026, 10, 31)
+        assert parse_due_date("1 minggu", ref_date=ref) == date(2026, 11, 5)
+        assert parse_due_date("2 minggu", ref_date=ref) == date(2026, 11, 12)
+
+    def test_due_date_status_labels(self):
+        from app.utils.formatters import get_due_date_status_label
+        ref = date(2026, 10, 29)
+        # Overdue
+        st_overdue = get_due_date_status_label("2026-10-27", ref_date=ref)
+        assert st_overdue["is_overdue"] is True
+        assert st_overdue["urgency"] == "overdue"
+        assert "Lewat 2 hari" in st_overdue["label"]
+
+        # Today
+        st_today = get_due_date_status_label("2026-10-29", ref_date=ref)
+        assert st_today["urgency"] == "today"
+        assert "HARI INI" in st_today["label"]
+
+        # Tomorrow
+        st_tomorrow = get_due_date_status_label("2026-10-30", ref_date=ref)
+        assert st_tomorrow["urgency"] == "soon"
+        assert "Besok" in st_tomorrow["label"]
+
+

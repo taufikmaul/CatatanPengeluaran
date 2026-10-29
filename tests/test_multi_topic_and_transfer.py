@@ -100,7 +100,7 @@ async def test_auto_detect_gosend_ongkir_with_reimbursement():
                             "toko_supplier": "GoSend",
                             "metode_bayar": "GoPay",
                             "status_pembayaran": "Lunas",
-                            "keterangan": "-"
+                            "keterangan": "ditalangi e-wallet kasir"
                         }
                     ]
                 }"""

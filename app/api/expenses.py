@@ -39,6 +39,9 @@ from app.services.expense_service import (
     settle_reimbursements,
     get_unpaid_summary,
     settle_unpaid_expenses,
+    get_data_hygiene_stats,
+    run_bulk_data_clean,
+    check_invoice_duplicate,
 )
 from app.services.ai_service import call_ai_image
 
@@ -495,6 +498,41 @@ async def audit_duplicate_expense_entries(
         category=category,
         limit=limit,
     )
+
+
+@router.get("/data-hygiene")
+async def get_data_hygiene_endpoint(
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil metrik kerapian dan kesehatan data transaksi pengeluaran."""
+    return await get_data_hygiene_stats(db)
+
+
+@router.post("/bulk-clean", dependencies=[Depends(require_admin_role)])
+async def bulk_clean_data_endpoint(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Jalankan normalisasi & pembersihan massal:
+    1. Sinkronisasi transaksi lama ke Master Item
+    2. Sinkronisasi transaksi lama ke Master Supplier
+    3. Standarisasi satuan ke master data
+    4. Standarisasi metode pembayaran
+    5. Standarisasi format kategori
+    """
+    actor = f"dashboard:{get_current_role(request)}"
+    return await run_bulk_data_clean(db, actor=actor)
+
+
+@router.get("/check-invoice")
+async def check_invoice_endpoint(
+    invoice_number: str = Query(..., description="Nomor nota / invoice untuk dicek"),
+    exclude_id: int | None = Query(None, description="ID expense yang sedang diedit agar tidak terdeteksi sebagai duplikat diri sendiri"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pengecekan soft duplicate nomor invoice/nota sebelum disimpan."""
+    return await check_invoice_duplicate(db, invoice_number=invoice_number, exclude_expense_id=exclude_id)
 
 
 @router.get("/logs/recent", response_model=list[ExpenseLogResponse])

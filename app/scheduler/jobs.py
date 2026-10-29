@@ -100,7 +100,7 @@ async def job_send_unpaid_reminder() -> None:
             from sqlalchemy import select, or_
             from app.models.expense import Expense
             from app.bot.telegram_client import send_message
-            from app.utils.formatters import fmt_rupiah
+            from app.utils.formatters import fmt_rupiah, get_due_date_status_label
 
             result = await db.execute(
                 select(Expense)
@@ -117,8 +117,20 @@ async def job_send_unpaid_reminder() -> None:
             if not unpaid_list:
                 return
 
-            today_str = datetime.now().date().isoformat()
+            today = datetime.now().date()
             total_hutang = sum(float(e.total_price or 0) for e in unpaid_list)
+
+            # Prioritaskan tagihan yang sudah lewat tempo (overdue) atau hari ini / segera
+            def _unpaid_sort_priority(exp):
+                st = get_due_date_status_label(exp.due_date, ref_date=today)
+                urgency_rank = {"overdue": 0, "today": 1, "soon": 2, "upcoming": 3, "none": 4}
+                return (
+                    urgency_rank.get(st["urgency"], 4),
+                    st["days_left"] if st["days_left"] is not None else 9999,
+                    exp.expense_date,
+                )
+
+            sorted_unpaid = sorted(unpaid_list, key=_unpaid_sort_priority)
 
             msg = (
                 f"⏰ *PENGINGAT TAGIHAN BELUM LUNAS*\n"
@@ -126,15 +138,19 @@ async def job_send_unpaid_reminder() -> None:
             )
 
             inline_rows = []
-            for idx, e in enumerate(unpaid_list[:8], start=1):
+            for idx, e in enumerate(sorted_unpaid[:8], start=1):
                 nominal = fmt_rupiah(float(e.total_price or 0))
                 sup = f" ({e.supplier})" if e.supplier and e.supplier != "-" else ""
                 tempo_info = ""
-                if e.due_date and e.due_date != "-":
-                    if e.due_date <= today_str:
-                        tempo_info = f" 🚨 *Jatuh Tempo: {e.due_date}*"
+                if e.due_date and str(e.due_date).strip() != "-":
+                    st = get_due_date_status_label(e.due_date, ref_date=today)
+                    if st["urgency"] in ("overdue", "today", "soon"):
+                        tempo_info = f"\n   ↳ {st['label']}"
+                    elif st["parsed_date"]:
+                        tempo_info = f" _(Tempo: {st['iso_string']})_"
                     else:
                         tempo_info = f" _(Tempo: {e.due_date})_"
+
                 msg += f"{idx}. *#{e.id} {e.item_name}*{sup} — {nominal}{tempo_info}\n"
                 inline_rows.append([
                     {

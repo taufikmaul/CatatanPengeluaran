@@ -546,6 +546,28 @@ export interface ExpenseAuditResponse {
   pairs: ExpenseDuplicatePair[];
 }
 
+export interface DataHygieneStats {
+  total_expenses: number;
+  unlinked_master_item_count: number;
+  unlinked_supplier_count: number;
+  unnormalized_units_count: number;
+  unnormalized_pay_methods_count: number;
+  unnormalized_categories_count: number;
+  hygiene_score: number;
+  is_clean: boolean;
+}
+
+export interface BulkCleanResponse {
+  ok: boolean;
+  message: string;
+  items_matched: number;
+  suppliers_synced: number;
+  units_normalized: number;
+  pay_methods_normalized: number;
+  categories_normalized: number;
+  total_changes: number;
+}
+
 export interface Supplier {
   id: number;
   name: string;

@@ -1,7 +1,7 @@
 """
 app/utils/formatters.py — Helper format Rupiah, tanggal, progress bar, dll
 """
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any
 
 
@@ -253,11 +253,31 @@ def extract_items_block_from_text(text: str) -> str:
     return ""
 
 
-def parse_due_date(due_str: str | None) -> date | None:
-    """Parse string jatuh tempo ke date object. Mendukung YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY."""
+def parse_due_date(due_str: str | None, ref_date: date | None = None) -> date | None:
+    """
+    Parse string jatuh tempo ke date object.
+    Mendukung format:
+    - YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY
+    - Ekspresi bahasa alami: 'besok', 'lusa', 'minggu depan', '1 minggu', '2 minggu', '1 bulan'
+    """
     if not due_str or str(due_str).strip() in ("-", "", "None", "null"):
         return None
-    s = str(due_str).strip()
+    s = str(due_str).strip().lower()
+    base_date = ref_date or date.today()
+
+    # Kata relatif bahasa Indonesia
+    if s in ("besok", "1 hari", "1 hari lagi"):
+        return base_date + timedelta(days=1)
+    if s in ("lusa", "2 hari", "2 hari lagi"):
+        return base_date + timedelta(days=2)
+    if s in ("minggu depan", "1 minggu", "1 minggu lagi", "seminggu"):
+        return base_date + timedelta(days=7)
+    if s in ("2 minggu", "2 minggu lagi"):
+        return base_date + timedelta(days=14)
+    if s in ("1 bulan", "sebulan", "bulan depan"):
+        return base_date + timedelta(days=30)
+
+    # Format YYYY-MM-DD atau DD-MM-YYYY
     if "-" in s:
         parts = s.split("-")
         if len(parts) == 3:
@@ -271,6 +291,7 @@ def parse_due_date(due_str: str | None) -> date | None:
                     return date(int(parts[2]), int(parts[1]), int(parts[0]))
                 except ValueError:
                     pass
+    # Format DD/MM/YYYY atau YYYY/MM/DD
     elif "/" in s:
         parts = s.split("/")
         if len(parts) == 3:
@@ -285,4 +306,51 @@ def parse_due_date(due_str: str | None) -> date | None:
                 except ValueError:
                     pass
     return None
+
+
+def get_due_date_status_label(due_date_str: str | None, ref_date: date | None = None) -> dict:
+    """
+    Analisis status jatuh tempo tagihan:
+    Kembalikan info urgensi, jumlah hari tersisa, dan label deskriptif.
+    """
+    today = ref_date or date.today()
+    parsed = parse_due_date(due_date_str, ref_date=today)
+    if not parsed:
+        return {
+            "parsed_date": None,
+            "iso_string": str(due_date_str or "-"),
+            "is_overdue": False,
+            "days_left": None,
+            "label": str(due_date_str or "-"),
+            "urgency": "none",
+        }
+
+    delta_days = (parsed - today).days
+    iso_str = parsed.isoformat()
+
+    if delta_days < 0:
+        overdue_days = abs(delta_days)
+        label = f"🚨 Lewat {overdue_days} hari ({fmt_date_id(parsed)})"
+        urgency = "overdue"
+    elif delta_days == 0:
+        label = f"🚨 HARI INI ({fmt_date_id(parsed)})"
+        urgency = "today"
+    elif delta_days == 1:
+        label = f"⚠️ Besok ({fmt_date_id(parsed)})"
+        urgency = "soon"
+    elif delta_days <= 3:
+        label = f"⚠️ Sisa {delta_days} hari ({fmt_date_id(parsed)})"
+        urgency = "soon"
+    else:
+        label = f"📅 Sisa {delta_days} hari ({fmt_date_id(parsed)})"
+        urgency = "upcoming"
+
+    return {
+        "parsed_date": parsed,
+        "iso_string": iso_str,
+        "is_overdue": delta_days < 0,
+        "days_left": delta_days,
+        "label": label,
+        "urgency": urgency,
+    }
 

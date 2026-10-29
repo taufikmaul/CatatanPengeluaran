@@ -268,3 +268,44 @@ class TestAuditDuplicatesApi:
         assert pair["total_price"] == 25000.0
         assert pair["similarity_pct"] >= 90
         assert "Tanggal sama" in pair["reason"]
+
+
+class TestCheckInvoiceDuplicate:
+    async def test_detects_existing_invoice(self, client, auth_cookies, db):
+        from app.services.expense_service import check_invoice_duplicate
+
+        exp = Expense(
+            expense_date=date(2026, 10, 28),
+            supplier="Toko Kemasan Makmur",
+            item_name="Box Kue 20x20",
+            total_price=Decimal("125000"),
+            invoice_number="INV/2026/X/998",
+        )
+        db.add(exp)
+        await db.commit()
+        await db.refresh(exp)
+
+        # 1. Service direct check
+        check = await check_invoice_duplicate(db, "inv/2026/x/998")
+        assert check["is_duplicate"] is True
+        assert check["existing_expense"]["id"] == exp.id
+        assert "sudah tercatat" in check["message"]
+
+        # Check with exclude self ID
+        check_self = await check_invoice_duplicate(db, "inv/2026/x/998", exclude_expense_id=exp.id)
+        assert check_self["is_duplicate"] is False
+
+        # Check with different invoice
+        check_none = await check_invoice_duplicate(db, "INV-BARU-001")
+        assert check_none["is_duplicate"] is False
+
+        # 2. API Endpoint check
+        resp = await client.get(
+            "/api/v1/expenses/check-invoice?invoice_number=INV%2F2026%2FX%2F998",
+            cookies=auth_cookies,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_duplicate"] is True
+        assert data["existing_expense"]["item_name"] == "Box Kue 20x20"
+

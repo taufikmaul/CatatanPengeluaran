@@ -16,6 +16,7 @@ import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
 import { BudgetSetupDialog } from "@/components/dashboard/BudgetSetupDialog";
 import { ExpenseActivityLogModal } from "@/components/dashboard/ExpenseActivityLogModal";
 import { AuditDuplicatesModal } from "@/components/dashboard/AuditDuplicatesModal";
+import { DataHygieneModal } from "@/components/dashboard/DataHygieneModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
@@ -134,6 +135,7 @@ export function App() {
   const [isBudgetDialogOpen, setIsBudgetDialogOpen] = useState(false);
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isDataHygieneModalOpen, setIsDataHygieneModalOpen] = useState(false);
 
   // Theme state with localStorage persistence
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -324,6 +326,17 @@ export function App() {
     ? configData.payment_methods
     : ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"];
 
+  // 4d. Master Data Categories Query (tersedia untuk semua role terautentikasi)
+  const { data: masterCategoriesData } = useQuery<string[]>({
+    queryKey: ["master-categories"],
+    queryFn: async () => {
+      const res = await api.get("/config/master-data?type=kategori&active_only=true");
+      return (res.data?.items || []).map((it: any) => it.name);
+    },
+    enabled: !!authData?.authenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // 5. Autocomplete Suggestions (Master Items + Historical Items & Suppliers)
   const { data: suggestionsData } = useQuery<SuggestionsResponse>({
     queryKey: ["suggestions"],
@@ -473,15 +486,15 @@ export function App() {
     }
   };
 
-  const categories = reportData?.valid_categories || [
-    "Bahan Baku",
-    "Bahan Tambahan",
-    "Kemasan",
-    "Operasional",
-    "Peralatan",
-    "Gaji / SDM",
-    "Lainnya",
-  ];
+  const categories = (masterCategoriesData && masterCategoriesData.length > 0)
+    ? masterCategoriesData
+    : (reportData?.valid_categories && reportData.valid_categories.length > 0)
+    ? reportData.valid_categories
+    : [
+        "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
+        "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
+        "Asset", "Iuran", "Tukar Cash", "Ongkir"
+      ];
 
   const totalUnpaidNominal =
     reportData?.list_hutang?.reduce((sum, item) => sum + item.nominal, 0) || 0;
@@ -898,6 +911,7 @@ export function App() {
                       onViewExpense={(item) => setViewingExpense(item)}
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       canDelete={canDelete}
                       highlightedExpenseId={highlightedExpenseId}
                     />
@@ -1278,6 +1292,7 @@ export function App() {
                       onViewExpense={(item) => setViewingExpense(item)}
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                      onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       canDelete={canDelete}
                       highlightedExpenseId={highlightedExpenseId}
                     />
@@ -1575,6 +1590,13 @@ export function App() {
             refetchExpenses();
             refetchReport();
           }}
+        />
+
+        {/* Data Hygiene & Normalizer Modal */}
+        <DataHygieneModal
+          isOpen={isDataHygieneModalOpen}
+          onClose={() => setIsDataHygieneModalOpen(false)}
+          canClean={canDelete}
         />
 
         {/* Audit Duplikat Modal (Nama Mirip >=90% + Tanggal Sama + Nominal Sama) */}

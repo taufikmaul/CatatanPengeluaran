@@ -881,6 +881,62 @@ async def test_hermes_duplicate_warning_explains_which_data_and_when(db, monkeyp
     assert "cancel_duplicate" in button_callbacks
 
 
+@pytest.mark.asyncio
+async def test_data_hygiene_and_bulk_clean(client, db, auth_cookies):
+    from app.models.master_item import MasterItem
+    from app.models.supplier import Supplier
+    from app.models.expense import Expense
+    from app.services.expense_service import save_expenses
+
+    # 1. Tambah MasterItem & Supplier baku
+    m_item = MasterItem(
+        item_name="Tepung Terigu Cakra Kembar",
+        category="Bahan Kue",
+        satuan_beli="Sak",
+    )
+    db.add(m_item)
+    supp = Supplier(
+        name="Toko Bahan Kue Sejahtera",
+        aliases="TBK Sejahtera, Toko Sejahtera",
+        is_active=True,
+    )
+    db.add(supp)
+    await db.commit()
+
+    # 2. Tambah Expense dengan nama mirip dan satuan tidak baku
+    expenses = await save_expenses(
+        db,
+        [
+            {
+                "tanggal": "2026-10-25",
+                "barang": "tepung terigu cakra",
+                "toko_supplier": "TBK Sejahtera",
+                "qty": 2,
+                "satuan": "sak",
+                "harga_satuan": 250000,
+                "total_harga": 500000,
+                "metode_bayar": "transfer bca",
+            }
+        ],
+    )
+    await db.commit()
+
+    # 3. Cek stats hygiene
+    res = await client.get("/api/v1/expenses/data-hygiene", cookies=auth_cookies)
+    assert res.status_code == 200
+    data = res.json()
+    assert "total_expenses" in data
+    assert "hygiene_score" in data
+
+    # 4. Jalankan bulk clean
+    clean_res = await client.post("/api/v1/expenses/bulk-clean", cookies=auth_cookies)
+    assert clean_res.status_code == 200
+    clean_data = clean_res.json()
+    assert clean_data["ok"] is True
+    assert "total_changes" in clean_data
+
+
+
 
 
 

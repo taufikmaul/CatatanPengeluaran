@@ -831,16 +831,33 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
         key=lambda x: (not x["is_master"], -x["tx_count"], x["item_name"].lower()),
     )
 
-    sorted_suppliers = [
-        s["supplier"]
-        for s in sorted(supplier_counts.values(), key=lambda x: (-x["count"], x["supplier"].lower()))
-    ]
+    # Ambil master supplier aktif dari tabel suppliers agar toko baru yang didaftarkan langsung muncul
+    from app.models.supplier import Supplier
+    supp_res = await db.execute(
+        select(Supplier.name).where(Supplier.is_active.is_(True))
+    )
+    master_suppliers_set = {r[0].strip() for r in supp_res.fetchall() if r[0] and r[0].strip() not in ("-", "None", "")}
+
+    # Gabungkan: supplier yang sering dipakai lebih dahulu, diikuti master supplier terdaftar lainnya
+    seen_supp_lower = set()
+    combined_suppliers: list[str] = []
+
+    for s in sorted(supplier_counts.values(), key=lambda x: (-x["count"], x["supplier"].lower())):
+        s_name = s["supplier"].strip()
+        if s_name and s_name.lower() not in seen_supp_lower and s_name not in ("-", "None"):
+            seen_supp_lower.add(s_name.lower())
+            combined_suppliers.append(s_name)
+
+    for ms_name in sorted(master_suppliers_set, key=lambda x: x.lower()):
+        if ms_name.lower() not in seen_supp_lower:
+            seen_supp_lower.add(ms_name.lower())
+            combined_suppliers.append(ms_name)
 
     valid_units = await get_valid_units(db)
 
     return {
         "items": sorted_items[:250],
-        "suppliers": sorted_suppliers[:100],
+        "suppliers": combined_suppliers[:150],
         "units": valid_units,
     }
 

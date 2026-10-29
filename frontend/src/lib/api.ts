@@ -537,6 +537,40 @@ export async function settleUnpaidExpenses(payload: {
   return res.data;
 }
 
+export async function getDataHygieneStats(): Promise<import("@/types").DataHygieneStats> {
+  const res = await api.get("/expenses/data-hygiene");
+  return res.data;
+}
+
+export async function runBulkDataClean(): Promise<import("@/types").BulkCleanResponse> {
+  const res = await api.post("/expenses/bulk-clean");
+  return res.data;
+}
+
+export async function checkInvoiceDuplicate(
+  invoiceNumber: string,
+  excludeId?: number
+): Promise<{
+  is_duplicate: boolean;
+  invoice_number: string;
+  existing_expense: {
+    id: number;
+    item_name: string;
+    supplier: string;
+    expense_date: string;
+    total_price: number;
+  } | null;
+  message: string | null;
+}> {
+  if (!invoiceNumber || invoiceNumber.trim() === "-" || !invoiceNumber.trim()) {
+    return { is_duplicate: false, invoice_number: "", existing_expense: null, message: null };
+  }
+  const q = new URLSearchParams({ invoice_number: invoiceNumber.trim() });
+  if (excludeId) q.append("exclude_id", String(excludeId));
+  const res = await api.get(`/expenses/check-invoice?${q.toString()}`);
+  return res.data;
+}
+
 
 
 

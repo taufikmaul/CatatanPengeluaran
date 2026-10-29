@@ -150,16 +150,22 @@ async def save_expenses(
         from app.services.master_data_service import normalize_payment_method_name
         pay_method = normalize_payment_method_name(pay_method)
 
-        if pay_method == "COD":
+        raw_stat = str(item.get("status_pembayaran") or item.get("pay_status") or "").strip().lower()
+        if raw_stat in ("belum lunas", "hutang", "tempo", "unpaid"):
+            resolved_pay_status = "Belum Lunas"
+        elif pay_method == "COD":
             notes_clean = str(item.get("keterangan") or item.get("notes") or "").lower()
             is_explicit_paid = any(k in notes_clean for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
-            raw_stat = str(item.get("status_pembayaran") or item.get("pay_status") or "").strip().lower()
             if is_explicit_paid or raw_stat == "lunas":
                 resolved_pay_status = "Lunas"
             else:
                 resolved_pay_status = "Belum Lunas"
         else:
             resolved_pay_status = "Lunas"
+
+        raw_due = item.get("jatuh_tempo") or item.get("due_date") or "-"
+        parsed_due = parse_due_date(raw_due)
+        normalized_due = parsed_due.isoformat() if parsed_due else (str(raw_due).strip() or "-")
 
         expense = Expense(
             expense_date=expense_date,
@@ -177,7 +183,7 @@ async def save_expenses(
             total_price=total_price,
             pay_method=pay_method,
             pay_status=resolved_pay_status,
-            due_date=item.get("jatuh_tempo") or item.get("due_date") or "-",
+            due_date=normalized_due,
             notes=item.get("keterangan") or item.get("notes") or "-",
             is_reimbursement=is_reimb,
             invoice_number=str(inv_num),
@@ -1022,6 +1028,10 @@ async def update_expense(
                     val = date.fromisoformat(val[:10])
                 except (ValueError, TypeError):
                     continue
+            elif field == "due_date" and val is not None:
+                parsed_d = parse_due_date(str(val))
+                if parsed_d:
+                    val = parsed_d.isoformat()
 
             # Deteksi perubahan nilai
             if str(old_val) != str(val):
@@ -1067,6 +1077,22 @@ async def update_expense(
         s_obj = await db.get(Supplier, updates["supplier_id"])
         if s_obj and s_obj.name != expense.supplier:
             expense.supplier = s_obj.name
+
+    # Normalisasi satuan ke master data yang terdaftar
+    if "unit" in updates and expense.unit:
+        from app.services.master_data_service import normalize_unit_to_master
+        norm_u = await normalize_unit_to_master(db, expense.unit)
+        if norm_u and norm_u != expense.unit:
+            changes["unit"] = {"old": expense.unit, "new": norm_u}
+            expense.unit = norm_u
+
+    # Normalisasi metode bayar ke format baku
+    if "pay_method" in updates and expense.pay_method:
+        from app.services.master_data_service import normalize_payment_method_name
+        norm_pm = normalize_payment_method_name(expense.pay_method)
+        if norm_pm and norm_pm != expense.pay_method:
+            changes["pay_method"] = {"old": expense.pay_method, "new": norm_pm}
+            expense.pay_method = norm_pm
 
     # Tandai sheets_synced = False agar perubahan tersinkron ulang jika perlu
     expense.sheets_synced = False
@@ -2179,3 +2205,248 @@ async def restore_deleted_expense(
     )
 
     return expense
+
+
+async def get_data_hygiene_stats(db: AsyncSession) -> dict:
+    """
+    Hitung statistik kesehatan & kerapian data pengeluaran:
+    - total_expenses
+    - unlinked_master_item_count: Belanja reguler yang belum memiliki master_item_id
+    - unlinked_supplier_count: Belanja reguler dengan nama supplier tapi belum terhubung ke supplier_id
+    - unnormalized_units_count: Satuan tidak baku
+    - unnormalized_pay_methods_count: Metode bayar tidak baku
+    - hygiene_score: Skor 0 - 100
+    """
+    from app.services.master_data_service import get_valid_units, get_active_names
+    from app.config import settings
+
+    total_res = await db.execute(select(func.count(Expense.id)))
+    total_expenses = total_res.scalar() or 0
+
+    if total_expenses == 0:
+        return {
+            "total_expenses": 0,
+            "unlinked_master_item_count": 0,
+            "unlinked_supplier_count": 0,
+            "unnormalized_units_count": 0,
+            "unnormalized_pay_methods_count": 0,
+            "unnormalized_categories_count": 0,
+            "hygiene_score": 100,
+            "is_clean": True,
+        }
+
+    # Belanja reguler yang belum terhubung master_item_id (exclude Tukar Cash & Ongkir)
+    unlinked_items_query = select(func.count(Expense.id)).where(
+        Expense.master_item_id.is_(None),
+        func.lower(Expense.category) != "tukar cash",
+        func.lower(Expense.category) != "ongkir",
+        ~func.lower(Expense.item_name).like("%tukar cash%"),
+        ~func.lower(Expense.item_name).like("%tarik tunai%"),
+        ~func.lower(Expense.item_name).like("ongkir%"),
+    )
+    unlinked_items_res = await db.execute(unlinked_items_query)
+    unlinked_master_item_count = unlinked_items_res.scalar() or 0
+
+    # Belanja dengan nama supplier valid tapi belum terhubung supplier_id
+    unlinked_supp_query = select(func.count(Expense.id)).where(
+        Expense.supplier_id.is_(None),
+        Expense.supplier.is_not(None),
+        func.trim(Expense.supplier) != "",
+        func.trim(Expense.supplier) != "-",
+        func.trim(Expense.supplier) != "None",
+        func.lower(Expense.category) != "tukar cash",
+    )
+    unlinked_supp_res = await db.execute(unlinked_supp_query)
+    unlinked_supplier_count = unlinked_supp_res.scalar() or 0
+
+    valid_units = set(await get_valid_units(db))
+    valid_pay_methods = set(await get_active_names(db, "metode_bayar"))
+    if not valid_pay_methods:
+        valid_pay_methods = set(settings.valid_payment_methods)
+
+    all_exp_res = await db.execute(select(Expense.id, Expense.unit, Expense.pay_method, Expense.category))
+    rows = all_exp_res.fetchall()
+
+    unnormalized_units_count = 0
+    unnormalized_pay_methods_count = 0
+    unnormalized_categories_count = 0
+    valid_cats = {c.lower(): c for c in settings.valid_categories}
+
+    for _, unit, pm, cat in rows:
+        if unit and unit not in valid_units:
+            unnormalized_units_count += 1
+        if pm and pm not in valid_pay_methods:
+            unnormalized_pay_methods_count += 1
+        if cat and (cat not in settings.valid_categories and cat.lower() in valid_cats):
+            unnormalized_categories_count += 1
+
+    total_issues = (
+        unlinked_master_item_count
+        + unlinked_supplier_count
+        + unnormalized_units_count
+        + unnormalized_pay_methods_count
+        + unnormalized_categories_count
+    )
+    max_possible = max(total_expenses * 3, 1)
+    score = max(0, min(100, round(100 - (total_issues / max_possible * 100))))
+
+    return {
+        "total_expenses": total_expenses,
+        "unlinked_master_item_count": unlinked_master_item_count,
+        "unlinked_supplier_count": unlinked_supplier_count,
+        "unnormalized_units_count": unnormalized_units_count,
+        "unnormalized_pay_methods_count": unnormalized_pay_methods_count,
+        "unnormalized_categories_count": unnormalized_categories_count,
+        "hygiene_score": score,
+        "is_clean": total_issues == 0,
+    }
+
+
+async def run_bulk_data_clean(db: AsyncSession, actor: str = "system") -> dict:
+    """
+    Eksekusi satu kali untuk membersihkan dan menstandarisasi semua data belanja yang ada:
+    1. Sinkronisasi master item (fuzzy matching ke master item & standarisasi nama)
+    2. Sinkronisasi supplier (hubungkan ke master supplier toko)
+    3. Standarisasi satuan ke master data
+    4. Standarisasi metode pembayaran
+    5. Standarisasi casing nama kategori
+    """
+    from app.services.master_item_service import sync_existing_expenses_to_master
+    from app.services import supplier_service
+    from app.services.master_data_service import normalize_unit_to_master, normalize_payment_method_name
+    from app.config import settings
+
+    # 1. Sync ke Master Item
+    item_sync_res = await sync_existing_expenses_to_master(db)
+    items_matched = item_sync_res.get("matched_count", 0)
+
+    # 2. Sync ke Master Supplier
+    supp_sync_res = await supplier_service.sync_existing_expenses(db)
+    suppliers_synced = supp_sync_res.get("synced_count", 0)
+
+    # 3. Normalisasi Satuan, Metode Bayar & Kategori pada seluruh record
+    all_expenses_res = await db.execute(select(Expense).order_by(Expense.id.asc()))
+    all_expenses = all_expenses_res.scalars().all()
+
+    units_normalized = 0
+    pay_methods_normalized = 0
+    categories_normalized = 0
+    valid_cats = {c.lower(): c for c in settings.valid_categories}
+
+    for exp in all_expenses:
+        changed = False
+
+        # Satuan
+        if exp.unit:
+            norm_u = await normalize_unit_to_master(db, exp.unit)
+            if norm_u and norm_u != exp.unit:
+                exp.unit = norm_u
+                changed = True
+                units_normalized += 1
+
+        # Metode Bayar
+        if exp.pay_method:
+            norm_pm = normalize_payment_method_name(exp.pay_method)
+            if norm_pm and norm_pm != exp.pay_method:
+                exp.pay_method = norm_pm
+                changed = True
+                pay_methods_normalized += 1
+
+        # Casing Kategori
+        if exp.category and exp.category in valid_cats and exp.category != valid_cats[exp.category.lower()]:
+            exp.category = valid_cats[exp.category.lower()]
+            changed = True
+            categories_normalized += 1
+
+        if changed:
+            exp.sheets_synced = False
+
+    await db.flush()
+
+    total_changes = items_matched + suppliers_synced + units_normalized + pay_methods_normalized + categories_normalized
+
+    await record_expense_log(
+        db,
+        expense_id=None,
+        action="BULK_DATA_CLEAN",
+        actor=actor,
+        details={
+            "items_matched": items_matched,
+            "suppliers_synced": suppliers_synced,
+            "units_normalized": units_normalized,
+            "pay_methods_normalized": pay_methods_normalized,
+            "categories_normalized": categories_normalized,
+            "total_changes": total_changes,
+        },
+    )
+    await db.commit()
+
+    return {
+        "ok": True,
+        "message": f"Berhasil membersihkan data: {items_matched} item dicocokkan, {suppliers_synced} supplier ditautkan, {units_normalized} satuan & {pay_methods_normalized} metode bayar distandarisasi.",
+        "items_matched": items_matched,
+        "suppliers_synced": suppliers_synced,
+        "units_normalized": units_normalized,
+        "pay_methods_normalized": pay_methods_normalized,
+        "categories_normalized": categories_normalized,
+        "total_changes": total_changes,
+    }
+
+
+async def check_invoice_duplicate(
+    db: AsyncSession,
+    invoice_number: str,
+    exclude_expense_id: int | None = None,
+) -> dict:
+    """
+    Cek apakah nomor invoice sudah pernah dicatat di database.
+    Mencegah pencatatan nota berulang dari supplier yang sama atau sesi belanja yang sama.
+    """
+    if not invoice_number or str(invoice_number).strip() in ("-", "", "None", "null"):
+        return {
+            "is_duplicate": False,
+            "invoice_number": "",
+            "existing_expense": None,
+            "message": None,
+        }
+
+    inv_clean = str(invoice_number).strip()
+    stmt = (
+        select(Expense)
+        .where(
+            func.lower(Expense.invoice_number) == inv_clean.lower(),
+            Expense.invoice_number != "-",
+        )
+    )
+    if exclude_expense_id:
+        stmt = stmt.where(Expense.id != exclude_expense_id)
+
+    stmt = stmt.order_by(Expense.expense_date.desc(), Expense.id.desc()).limit(1)
+    res = await db.execute(stmt)
+    existing = res.scalar_one_or_none()
+
+    if existing:
+        from app.utils.formatters import fmt_rupiah, fmt_date_id
+        sup_info = f" (Toko: {existing.supplier})" if existing.supplier and existing.supplier != "-" else ""
+        date_info = fmt_date_id(existing.expense_date)
+        nom_info = fmt_rupiah(float(existing.total_price or 0))
+        msg = f"No. Invoice '{inv_clean}' sudah tercatat pada {date_info}{sup_info} — {existing.item_name} ({nom_info})."
+        return {
+            "is_duplicate": True,
+            "invoice_number": inv_clean,
+            "existing_expense": {
+                "id": existing.id,
+                "item_name": existing.item_name,
+                "supplier": existing.supplier,
+                "expense_date": str(existing.expense_date),
+                "total_price": float(existing.total_price or 0),
+            },
+            "message": msg,
+        }
+
+    return {
+        "is_duplicate": False,
+        "invoice_number": inv_clean,
+        "existing_expense": None,
+        "message": None,
+    }
