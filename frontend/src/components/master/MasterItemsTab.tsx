@@ -1323,6 +1323,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   onChange={(e) => setAuditMinScore(parseFloat(e.target.value))}
                   className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium"
                 >
+                  <option value={0.90}>Sangat Ketat (90% kemiripan)</option>
                   <option value={0.80}>Ketat (80% kemiripan)</option>
                   <option value={0.70}>Normal (70% kemiripan - Rekomendasi)</option>
                   <option value={0.60}>Sensitif / Luas (60% kemiripan)</option>

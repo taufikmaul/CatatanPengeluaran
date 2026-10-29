@@ -353,3 +353,66 @@ async def test_audit_duplicate_master_items_supplier_with_expenses(db):
     assert "Mentega Blueband Serbaguna 200g" in names
     assert "Blueband Serbaguna 200 g Mentega" in names
 
+
+@pytest.mark.asyncio
+async def test_audit_duplicate_master_items_with_min_score_90(db, client, auth_cookies):
+    """
+    Uji audit duplikat katalog item baku dengan tingkat kemiripan min_score=0.90 (90%).
+    - Item dengan kemiripan sangat tinggi (>= 90%) tetap terdeteksi.
+    - Item dengan kemiripan sedang (~75%) terdeteksi di min_score=0.70 tetapi tersaring keluar di min_score=0.90.
+    """
+    client.cookies.update(auth_cookies)
+
+    # Pasangan 1: Sangat mirip (kemiripan substring tinggi, >= 90%)
+    item1 = await create_master_item(
+        db,
+        item_name="Minyak Goreng Bimoli 2 Liter",
+        category="Bahan Baku",
+        default_supplier="Toko Sembako",
+    )
+    item2 = await create_master_item(
+        db,
+        item_name="Minyak Goreng Bimoli 2 Liter Refill",
+        category="Bahan Baku",
+        default_supplier="Toko Sembako",
+    )
+
+    # Pasangan 2: Kemiripan sedang (~75-77%)
+    item3 = await create_master_item(
+        db,
+        item_name="Gula Pasir Gulaku Kuning",
+        category="Bahan Baku",
+        default_supplier="Toko Sembako",
+    )
+    item4 = await create_master_item(
+        db,
+        item_name="Gula Pasir Gulaku Hijau",
+        category="Bahan Baku",
+        default_supplier="Toko Sembako",
+    )
+    await db.commit()
+
+    # 1. Audit via Service dengan min_score=0.70 -> Keduanya harus terdeteksi
+    res_70 = await audit_duplicate_master_items(db, min_score=0.70)
+    assert res_70["ok"] is True
+    pair_ids_70 = [{p["item_a"]["id"], p["item_b"]["id"]} for p in res_70["pairs"]]
+    assert {item1.id, item2.id} in pair_ids_70
+    assert {item3.id, item4.id} in pair_ids_70
+
+    # 2. Audit via Service dengan min_score=0.90 -> Pasangan 1 (>=90%) lolos, Pasangan 2 (<90%) terfilter
+    res_90 = await audit_duplicate_master_items(db, min_score=0.90)
+    assert res_90["ok"] is True
+    pair_ids_90 = [{p["item_a"]["id"], p["item_b"]["id"]} for p in res_90["pairs"]]
+    assert {item1.id, item2.id} in pair_ids_90
+    assert {item3.id, item4.id} not in pair_ids_90
+
+    # 3. Audit via REST API endpoint dengan query parameter ?min_score=0.90
+    api_resp = await client.get("/api/v1/master-items/audit-duplicates?min_score=0.90")
+    assert api_resp.status_code == 200
+    api_data = api_resp.json()
+    assert api_data["ok"] is True
+    api_pair_ids = [{p["item_a"]["id"], p["item_b"]["id"]} for p in api_data["pairs"]]
+    assert {item1.id, item2.id} in api_pair_ids
+    assert {item3.id, item4.id} not in api_pair_ids
+
+
