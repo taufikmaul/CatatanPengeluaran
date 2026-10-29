@@ -13,9 +13,13 @@ from app.config import settings
 # System Prompt (identik dengan GAS + enhanced)
 # ──────────────────────────────────────────────
 
-def get_system_prompt(extra: str = "") -> str:
+def get_system_prompt(extra: str = "", pay_methods: list[str] | None = None) -> str:
     today = date.today().isoformat()
     categories = "\n".join(f"- {c}" for c in settings.valid_categories)
+    valid_pms = pay_methods or getattr(
+        settings, "valid_payment_methods", ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"]
+    )
+    pms_str = "\n".join(f"- {pm}" for pm in valid_pms)
     return f"""Anda asisten keuangan pintar untuk toko kue Historycake. Ekstrak data belanja/mutasi/invoice ke JSON murni.
 Tanggal hari ini: {today}.
 
@@ -28,6 +32,21 @@ Perhatikan Aturan Khusus Klasifikasi Kategori:
 6. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
 {categories}
 
+Aturan Khusus Metode Pembayaran & Status (PENTING):
+1. METODE PEMBAYARAN WAJIB DIPILIH DARI SALAH SATU DAFTAR MASTER BERIKUT (Harus sama persis):
+{pms_str}
+- JANGAN mengarang metode pembayaran di luar daftar master di atas.
+- Jika ada rincian bank (BCA, Mandiri, BRI, BNI), e-wallet (GoPay, OVO, ShopeePay, DANA), atau kartu, catat nama/rincian tersebut di kolom "keterangan". Kolom "metode_bayar" tetap WAJIB memilih salah satu opsi master di atas (misal: "Transfer" untuk bank/e-wallet transfer, "QRIS" untuk scan QRIS, "Tunai" untuk cash kasir, "COD" untuk bayar di tempat).
+- Jika pada struk, nota, invoice, atau screenshot pesanan tertera metode pembayaran COD / Cash on Delivery / Bayar di Tempat, WAJIB pilih "COD".
+
+2. Aturan Status Pembayaran:
+- SELAIN PEMBAYARAN COD, MAKA STATUS PEMBAYARAN NYA WAJIB "Lunas" (misal Tunai, Transfer, QRIS, Debit, Kredit semuanya berstatus "Lunas").
+- Khusus pembayaran COD:
+  * Set "metode_bayar": "COD"
+  * KECUALI jika ada keterangan/caption eksplisit bahwa pesanan sudah dibayar/lunas kasir (misal: "sudah dibayar", "lunas", "sudah lunas"), WAJIB set "status_pembayaran": "Belum Lunas".
+  * Jika kolom "keterangan" kosong atau "-", isi dengan "COD - Bayar di Kasir".
+  * Alasan: Uang kas fisik kasir baru akan dibayarkan saat kurir tiba mengantar barang di toko, sehingga saat baru di-checkout/dipesan harus berstatus "Belum Lunas".
+
 Aturan Prioritas Tanggal Pemesanan (PENTING untuk mencegah false double input):
 - Pada struk, nota, invoice, atau screenshot marketplace (Shopee, Tokopedia, TikTok Shop, Grab, Gojek, dll), WAJIB LIHAT DAN UTAMAKAN "TANGGAL PEMESANAN" / "WAKTU PESANAN" / "TANGGAL TRANSAKSI" / "TANGGAL NOTA" terlebih dahulu sebagai nilai "tanggal" (format YYYY-MM-DD).
 - Konversikan waktu/tanggal pesanan tersebut (misal: "24-10-2026 15:30" atau "24 Okt 2026") menjadi "YYYY-MM-DD" (contoh: "2026-10-24").
@@ -39,13 +58,6 @@ Aturan Nilai Pengeluaran (TIDAK BOLEH 0 ATAU MINUS):
 - Pastikan total_harga > 0 dan harga_satuan > 0.
 - Jika ada diskon besar atau voucher, total_harga tidak boleh menjadi 0 atau negatif.
 - Baris promo gratis, voucher belanja, atau cashback bernilai 0 atau minus JANGAN dimasukkan sebagai baris pengeluaran.
-
-Aturan Pembayaran COD (Cash on Delivery / Bayar di Tempat) - Skenario Kasir:
-- Jika pada struk, nota, invoice, atau screenshot pesanan (Shopee, Tokopedia, TikTok Shop, dll) tertera metode pembayaran "COD", "Cash on Delivery", atau "Bayar di Tempat":
-  * Set "metode_bayar": "COD"
-  * KECUALI jika ada keterangan/caption eksplisit bahwa pesanan sudah dibayar/lunas (misal: "sudah dibayar", "lunas", "sudah lunas"), WAJIB set "status_pembayaran": "Belum Lunas".
-  * Jika kolom "keterangan" kosong atau "-", isi dengan "COD - Bayar di Kasir".
-  * Alasan: Uang kas fisik kasir baru akan dibayarkan saat kurir tiba mengantar barang di toko, sehingga saat baru di-checkout/dipesan harus berstatus "Belum Lunas".
 
 Aturan Khusus Bukti Transfer Bank / E-Wallet (Tukar Cash / Tarik Tunai Karyawan):
 - Jika gambar adalah bukti transfer bank (m-BCA, Livin Mandiri, BRImo, BNI, Permata, DANA, GoPay Transfer, OVO, QRIS Transfer, dll) atau terdapat mutasi kirim uang/transfer dari karyawan ke rekening toko/owner:
@@ -71,20 +83,17 @@ Aturan Khusus Bukti Ongkir & Kurir Pengiriman Kue (GoSend Car, GoSend Bike, Grab
   * "harga_satuan": total biaya ongkir bersih yang dibayar
   * "total_harga": total biaya ongkir bersih yang dibayar
   * "toko_supplier": nama kurir / armada (contoh: "GoSend Car", "GoSend Bike", "GrabExpress", "Lalamove", "Maxim", "J&T", "SiCepat", atau nama kurir khusus)
-  * "metode_bayar": metode bayar beserta akun jika ada (contoh: "GoPay - [akun]", "OVO - [akun]", "Transfer", "Tunai", "QRIS", misal "GoPay - Maya", "GoPay - Kasir", "Tunai")
-  * Jika metode bayar yang tertera adalah saldo e-wallet pribadi karyawan atau caption menyebutkan "reimburse", "talangan", "ditalangi":
-    - "is_reimbursement": true
-    - "status_pembayaran": "Lunas"
-    - "keterangan": catatan pengiriman (misal: "Ongkir ditalangi e-wallet karyawan [nama] - Tujuan Kemang")
-  * Jika metode bayar tunai dari kasir toko:
-    - "is_reimbursement": false
-    - "status_pembayaran": "Lunas"
-    - "keterangan": catatan pengiriman lainnya (misal: "Pengiriman cake ultah ke Tebet")
+  * "metode_bayar": metode bayar beserta akun jika ada (contoh: "GoPay", "OVO", "Transfer", "Tunai", "QRIS"). WAJIB dinormalisasi sesuai master data.
+  * Status & Reimbursement:
+    - "status_pembayaran": "Lunas" (ongkir selalu lunas)
+    - "is_reimbursement": WAJIB false secara default (data ongkir by default BUKAN talangan).
+    - HANYA set "is_reimbursement": true jika caption atau teks secara EKSPLISIT menyebutkan bahwa ongkir ditalangi karyawan / minta direimburse (kata kunci: "reimburse", "rembes", "talangan", "ditalangi"). Jika tidak ada kata kunci eksplisit tersebut, WAJIB false.
+    - "keterangan": catatan pengiriman (misal: "Pengiriman cake ultah ke Tebet")
 
 Instruksi Tambahan:
 - Pisahkan transaksi beda entitas menjadi beberapa objek di array "items".
 - Jika terdapat beberapa baris/poin/nomor transaksi dalam 1 pesan (misal daftar beberapa ongkir pengiriman atau daftar beberapa karyawan tukar cash), WAJIB ekstrak SEMUA baris tersebut menjadi masing-masing 1 objek terpisah di array "items". JANGAN menggabungkan beberapa transaksi berbeda menjadi 1 total gabungan.
-- Status Pembayaran selain kasus COD di atas, asumsikan "Lunas" kecuali disebut sebaliknya.
+- Status Pembayaran: Selain kasus COD di atas, status pembayaran WAJIB "Lunas".
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
 - Ekstrak "satuan" barang jika tertera di nota atau teks (misal: "bungkus", "box", "dus", "karton", "pouch", "kg", "gram", "kaleng", "pack", "sak", "bal", "botol", "tray", "pcs"). Jika tidak tertera, isi "Pcs".
@@ -175,28 +184,33 @@ async def _execute_fetch(messages: list[dict]) -> dict:
             if order_date:
                 item["tanggal"] = str(order_date)[:10]
 
-            # Aturan COD (Skenario 1: Uang kas kasir baru keluar saat barang tiba)
-            pay_m = str(item.get("metode_bayar") or "").strip().lower()
+            from app.services.master_data_service import normalize_payment_method_name
+
+            raw_pm = str(item.get("metode_bayar") or "").strip()
             notes = str(item.get("keterangan") or "").strip().lower()
             status_p = str(item.get("status_pembayaran") or "").strip().lower()
             barang_l = str(item.get("barang") or "").strip().lower()
             sup_l = str(item.get("toko_supplier") or "").strip().lower()
             kat_l = str(item.get("kategori") or "").strip().lower()
 
-            is_cod = any(k in pay_m for k in ("cod", "bayar di tempat", "cash on delivery"))
-            if is_cod:
-                item["metode_bayar"] = "COD"
+            # Normalisasi metode bayar agar SELALU sesuai dengan master data
+            norm_pm = normalize_payment_method_name(raw_pm)
+            item["metode_bayar"] = norm_pm
+            pay_m = norm_pm.lower()
+
+            # Aturan Status Pembayaran: selain pembayaran COD maka status nya lunas
+            if norm_pm == "COD":
                 # Jika tidak dinyatakan eksplisit sudah lunas, pastikan status Belum Lunas
                 is_explicit_paid = any(k in notes for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
-                if not is_explicit_paid and status_p != "lunas":
+                if not is_explicit_paid:
                     item["status_pembayaran"] = "Belum Lunas"
                     if not item.get("keterangan") or item.get("keterangan") == "-":
                         item["keterangan"] = "COD - Bayar di Kasir"
-                elif not is_explicit_paid and status_p == "lunas":
-                    # AI default ke lunas karena asumsi prompt umum, tapi ini transaksi COD
-                    item["status_pembayaran"] = "Belum Lunas"
-                    if not item.get("keterangan") or item.get("keterangan") == "-":
-                        item["keterangan"] = "COD - Bayar di Kasir"
+                else:
+                    item["status_pembayaran"] = "Lunas"
+            else:
+                # Selain pembayaran COD maka status nya lunas
+                item["status_pembayaran"] = "Lunas"
 
             # Normalisasi Bukti Transfer / Tukar Cash Karyawan
             is_tukar_cash = (
@@ -265,11 +279,19 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                             break
                     if not item.get("toko_supplier") or item.get("toko_supplier") == "-":
                         item["toko_supplier"] = "Kurir"
-                # Cek jika ditalangi e-wallet karyawan (GoPay, OVO, Dana, ShopeePay)
-                if any(ew in pay_m for ew in ("gopay", "ovo", "dana", "shopeepay")) or any(ew in notes for ew in ("reimburse", "talangan", "ditalangi")):
+                # Ongkir by default TIDAK masuk talangan (is_reimbursement = False)
+                # HANYA jika caption/catatan secara eksplisit menyebutkan talangan/reimburse
+                has_reimb_keyword = any(
+                    k in notes for k in ("reimburse", "rembes", "talangan", "ditalangi")
+                ) or any(
+                    k in barang_l for k in ("reimburse", "rembes", "talangan", "ditalangi")
+                )
+                if has_reimb_keyword:
                     item["is_reimbursement"] = True
                     if not item.get("keterangan") or item.get("keterangan") == "-":
-                        item["keterangan"] = "Ongkir ditalangi e-wallet karyawan"
+                        item["keterangan"] = "Ongkir ditalangi karyawan"
+                else:
+                    item["is_reimbursement"] = False
 
             normalized_items.append(item)
         parsed["items"] = normalized_items

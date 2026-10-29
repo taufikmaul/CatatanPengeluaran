@@ -101,6 +101,7 @@ export function App() {
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [status, setStatus] = useState<string>("");
+  const [payMethod, setPayMethod] = useState<string>("");
   const [isReimbursement, setIsReimbursement] = useState<boolean | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [page, setPage] = useState<number>(1);
@@ -244,7 +245,7 @@ export function App() {
     isLoading: isExpensesLoading,
     refetch: refetchExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, month, year, category, search, status, isReimbursement, selectedUserId],
+    queryKey: ["expenses", page, month, year, category, search, status, payMethod, isReimbursement, selectedUserId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -255,6 +256,7 @@ export function App() {
       if (category) params.append("category", category);
       if (search) params.append("search", search);
       if (status) params.append("status", status);
+      if (payMethod) params.append("pay_method", payMethod);
       if (isReimbursement !== null) params.append("is_reimbursement", String(isReimbursement));
       if (selectedUserId !== null) params.append("user_id", String(selectedUserId));
 
@@ -304,6 +306,23 @@ export function App() {
         "Kaleng", "Sak", "Bal", "Botol", "Tray", "Liter", "Roll", "Lembar",
         "Meter", "Ikat", "Butir", "Trans", "Trip"
       ];
+
+  // 4c. Master Data Payment Methods Query (tersedia untuk semua role terautentikasi)
+  const { data: masterPayMethodsData } = useQuery<string[]>({
+    queryKey: ["master-pay-methods"],
+    queryFn: async () => {
+      const res = await api.get("/config/master-data?type=metode_bayar&active_only=true");
+      return (res.data?.items || []).map((it: any) => it.name);
+    },
+    enabled: !!authData?.authenticated,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const activePayMethods = (masterPayMethodsData && masterPayMethodsData.length > 0)
+    ? masterPayMethodsData
+    : (configData?.payment_methods && configData.payment_methods.length > 0)
+    ? configData.payment_methods
+    : ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"];
 
   // 5. Autocomplete Suggestions (Master Items + Historical Items & Suppliers)
   const { data: suggestionsData } = useQuery<SuggestionsResponse>({
@@ -568,6 +587,8 @@ export function App() {
                         category={category}
                         search={search}
                         status={status}
+                        payMethod={payMethod}
+                        payMethods={activePayMethods}
                         isReimbursement={isReimbursement}
                         users={usersData}
                         selectedUserId={selectedUserId}
@@ -584,6 +605,10 @@ export function App() {
                           setStatus(st);
                           setPage(1);
                         }}
+                        onPayMethodChange={(pm) => {
+                          setPayMethod(pm);
+                          setPage(1);
+                        }}
                         onReimbursementChange={(val) => {
                           setIsReimbursement(val);
                           setPage(1);
@@ -596,6 +621,7 @@ export function App() {
                           setCategory("");
                           setSearch("");
                           setStatus("");
+                          setPayMethod("");
                           setIsReimbursement(null);
                           setSelectedUserId(null);
                           setPage(1);
@@ -793,6 +819,8 @@ export function App() {
                       selectedCategory={category}
                       search={search}
                       status={status}
+                      payMethod={payMethod}
+                      payMethods={activePayMethods}
                       isReimbursement={isReimbursement}
                       users={usersData}
                       selectedUserId={selectedUserId}
@@ -817,6 +845,10 @@ export function App() {
                         setStatus(st);
                         setPage(1);
                       }}
+                      onPayMethodChange={(pm) => {
+                        setPayMethod(pm);
+                        setPage(1);
+                      }}
                       onReimbursementChange={(val) => {
                         setIsReimbursement(val);
                         setPage(1);
@@ -829,6 +861,7 @@ export function App() {
                         setCategory("");
                         setSearch("");
                         setStatus("");
+                        setPayMethod("");
                         setIsReimbursement(null);
                         setSelectedUserId(null);
                         setPage(1);
@@ -911,6 +944,8 @@ export function App() {
                         category={category}
                         search={search}
                         status={status}
+                        payMethod={payMethod}
+                        payMethods={activePayMethods}
                         isReimbursement={isReimbursement}
                         users={usersData}
                         selectedUserId={selectedUserId}
@@ -927,6 +962,10 @@ export function App() {
                           setStatus(st);
                           setPage(1);
                         }}
+                        onPayMethodChange={(pm) => {
+                          setPayMethod(pm);
+                          setPage(1);
+                        }}
                         onReimbursementChange={(val) => {
                           setIsReimbursement(val);
                           setPage(1);
@@ -939,6 +978,7 @@ export function App() {
                           setCategory("");
                           setSearch("");
                           setStatus("");
+                          setPayMethod("");
                           setIsReimbursement(null);
                           setSelectedUserId(null);
                           setPage(1);
@@ -1159,6 +1199,8 @@ export function App() {
                       selectedCategory={category}
                       search={search}
                       status={status}
+                      payMethod={payMethod}
+                      payMethods={activePayMethods}
                       isReimbursement={isReimbursement}
                       users={usersData}
                       selectedUserId={selectedUserId}
@@ -1183,6 +1225,10 @@ export function App() {
                         setStatus(st);
                         setPage(1);
                       }}
+                      onPayMethodChange={(pm) => {
+                        setPayMethod(pm);
+                        setPage(1);
+                      }}
                       onReimbursementChange={(val) => {
                         setIsReimbursement(val);
                         setPage(1);
@@ -1195,6 +1241,7 @@ export function App() {
                         setCategory("");
                         setSearch("");
                         setStatus("");
+                        setPayMethod("");
                         setIsReimbursement(null);
                         setSelectedUserId(null);
                         setPage(1);
@@ -1431,7 +1478,7 @@ export function App() {
           onSubmit={handleFormSubmit}
           onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
           categories={categories}
-          paymentMethods={configData?.payment_methods}
+          paymentMethods={activePayMethods}
           units={activeUnits}
           initialData={editingExpense}
           repeatData={repeatingExpense}

@@ -13,7 +13,12 @@ from app.models.expense import Expense
 from app.models.expense_log import ExpenseLog
 from app.models.supplier import Supplier
 from app.config import settings
-from app.services.master_data_service import get_valid_units, normalize_unit_to_master
+from app.services.master_data_service import (
+    get_valid_units,
+    normalize_unit_to_master,
+    get_active_names,
+    normalize_payment_method_name,
+)
 
 
 def _normalize_str(s: str) -> str:
@@ -244,6 +249,7 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
 
     master_items = await list_master_items(db)
     valid_units = await get_valid_units(db)
+    valid_pms = await get_active_names(db, "metode_bayar")
 
     # Pemetaan kata kemasan di teks struk/input ke satuan master resmi
     pkg_kw_map = {
@@ -272,6 +278,29 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
     }
 
     for item in items:
+        # 1. Normalisasi metode bayar dan status pembayaran agar selalu sesuai master data
+        curr_pm = item.get("metode_bayar") or item.get("pay_method")
+        if curr_pm:
+            norm_pm = normalize_payment_method_name(str(curr_pm), valid_methods=valid_pms)
+            if "metode_bayar" in item:
+                item["metode_bayar"] = norm_pm
+            if "pay_method" in item:
+                item["pay_method"] = norm_pm
+
+            # Status pembayaran: selain pembayaran COD maka statusnya lunas
+            notes_str = str(item.get("keterangan") or item.get("notes") or "").lower()
+            if norm_pm == "COD":
+                is_explicit_paid = any(k in notes_str for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
+                cod_status = "Lunas" if is_explicit_paid else "Belum Lunas"
+                if "status_pembayaran" in item or "pay_status" not in item:
+                    item["status_pembayaran"] = item.get("status_pembayaran") or cod_status
+                if "pay_status" in item:
+                    item["pay_status"] = item.get("pay_status") or cod_status
+            else:
+                if "status_pembayaran" in item:
+                    item["status_pembayaran"] = "Lunas"
+                if "pay_status" in item:
+                    item["pay_status"] = "Lunas"
         # Pengecekan Eksklusi: Ongkir & Tukar Cash TIDAK BOLEH dicocokkan ke MasterItem
         kat_check = (item.get("kategori") or item.get("category") or "").strip().lower()
         raw_name = (item.get("barang") or item.get("item_name") or "").strip()

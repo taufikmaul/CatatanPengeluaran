@@ -144,6 +144,11 @@ class Settings(BaseSettings):
         "Asset", "Iuran", "Tukar Cash", "Ongkir"
     ]
 
+    # Metode pembayaran yang valid (sesuai master data, default)
+    valid_payment_methods: list[str] = [
+        "Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"
+    ]
+
     @property
     def public_dashboard_url(self) -> str:
         """URL dashboard yang bisa dibuka user dari Telegram.

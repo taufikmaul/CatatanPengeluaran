@@ -13,6 +13,8 @@ interface FilterBarProps {
   selectedCategory: string;
   search: string;
   status: string;
+  payMethod?: string;
+  payMethods?: string[];
   isReimbursement?: boolean | null;
   users?: ExpenseUser[];
   selectedUserId?: number | null;
@@ -22,6 +24,7 @@ interface FilterBarProps {
   onCategoryChange: (category: string) => void;
   onSearchChange: (search: string) => void;
   onStatusChange: (status: string) => void;
+  onPayMethodChange?: (payMethod: string) => void;
   onReimbursementChange?: (val: boolean | null) => void;
   onUserChange?: (userId: number | null) => void;
   onReset: () => void;
@@ -40,6 +43,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   selectedCategory,
   search,
   status,
+  payMethod = "",
+  payMethods = [],
   isReimbursement,
   users = [],
   selectedUserId,
@@ -49,6 +54,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onCategoryChange,
   onSearchChange,
   onStatusChange,
+  onPayMethodChange,
   onReimbursementChange,
   onUserChange,
   onReset,
@@ -71,6 +77,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         { label: "Lunas", value: "Lunas" },
         { label: "Belum Lunas", value: "Belum Lunas" },
       ],
+    },
+    {
+      id: "pay_method",
+      label: "Metode Bayar",
+      type: "select",
+      options: (payMethods && payMethods.length > 0 ? payMethods : [
+        "Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"
+      ]).map((pm) => ({ label: pm, value: pm })),
     },
     {
       id: "user",
@@ -99,7 +113,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         { label: "Tidak (Bukan Talangan)", value: "false" },
       ],
     },
-  ], [categories, users]);
+  ], [categories, users, payMethods]);
 
   // Build active FilterQuery tree from state
   const filterQuery: FilterQuery = useMemo(() => {
@@ -109,6 +123,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     }
     if (status) {
       rules.push(createFilterRule({ id: "rule-status", path: ["status"], operator: "is", value: status }));
+    }
+    if (payMethod) {
+      rules.push(createFilterRule({ id: "rule-pay-method", path: ["pay_method"], operator: "is", value: payMethod }));
     }
     if (selectedUserId !== null && selectedUserId !== undefined) {
       rules.push(createFilterRule({ id: "rule-user", path: ["user"], operator: "is", value: String(selectedUserId) }));
@@ -123,12 +140,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       rules.push(createFilterRule({ id: "rule-reimb", path: ["is_reimbursement"], operator: "is", value: isReimbursement ? "true" : "false" }));
     }
     return createFilterQuery(rules, "and");
-  }, [selectedCategory, status, selectedUserId, month, year, isReimbursement]);
+  }, [selectedCategory, status, payMethod, selectedUserId, month, year, isReimbursement]);
 
   // Handle updates from ReUI Filters popover
   const handleQueryChange = (nextQuery: FilterQuery) => {
     let newCategory = "";
     let newStatus = "";
+    let newPayMethod = "";
     let newUserId: number | null = null;
     let newMonth = month;
     let newYear = year;
@@ -141,6 +159,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           const val = String(node.value ?? "");
           if (fieldId === "category") newCategory = val;
           if (fieldId === "status") newStatus = val;
+          if (fieldId === "pay_method") newPayMethod = val;
           if (fieldId === "user") newUserId = val ? Number(val) : null;
           if (fieldId === "month") newMonth = Number(val) || month;
           if (fieldId === "year") newYear = Number(val) || year;
@@ -157,6 +176,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
     if (newCategory !== selectedCategory) onCategoryChange(newCategory);
     if (newStatus !== status) onStatusChange(newStatus);
+    if (newPayMethod !== (payMethod || "") && onPayMethodChange) onPayMethodChange(newPayMethod);
     if (newUserId !== selectedUserId && onUserChange) onUserChange(newUserId);
     if (newMonth !== month) onMonthChange(newMonth);
     if (newYear !== year) onYearChange(newYear);
@@ -268,6 +288,25 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           ))}
         </select>
 
+        {/* Payment Method Dropdown */}
+        {onPayMethodChange && (
+          <select
+            value={payMethod || ""}
+            onChange={(e) => onPayMethodChange(e.target.value)}
+            className="h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[140px] truncate"
+            title="Filter Metode Bayar"
+          >
+            <option value="">Semua Metode</option>
+            {(payMethods && payMethods.length > 0 ? payMethods : [
+              "Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"
+            ]).map((pm) => (
+              <option key={pm} value={pm}>
+                {pm}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* User Filter Dropdown */}
         {users && users.length > 0 && (
           <select
@@ -332,7 +371,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
 
         {/* Reset button */}
-        {(selectedCategory || search || status || isReimbursement) && (
+        {(selectedCategory || search || status || isReimbursement || payMethod) && (
           <Button
             variant="ghost"
             size="sm"

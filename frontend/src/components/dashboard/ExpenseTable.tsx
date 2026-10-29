@@ -302,6 +302,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </>
                 )}
               </button>
+              {row.original.pay_method && (
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
+                  {row.original.pay_method}
+                </div>
+              )}
             </div>
           );
         },

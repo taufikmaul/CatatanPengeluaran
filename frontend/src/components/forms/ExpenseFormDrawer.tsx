@@ -301,8 +301,16 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     if (item.kategori && categories.includes(item.kategori)) {
       setValue("category", item.kategori);
     }
-    if (item.metode_bayar) setValue("pay_method", item.metode_bayar);
-    if (item.status_pembayaran) setValue("pay_status", item.status_pembayaran);
+    if (item.metode_bayar) {
+      setValue("pay_method", item.metode_bayar);
+      if (item.metode_bayar === "COD") {
+        setValue("pay_status", item.status_pembayaran || "Belum Lunas");
+      } else {
+        setValue("pay_status", "Lunas");
+      }
+    } else if (item.status_pembayaran) {
+      setValue("pay_status", item.status_pembayaran);
+    }
     if (item.no_invoice && item.no_invoice !== "-") {
       setValue("invoice_number", item.no_invoice);
     }
@@ -382,6 +390,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       const tot = Number(it.total_harga || 0);
       const totalPrice = tot > 0 ? tot : (qty * unitPrice) + shippingFee + tax + otherFee - discount;
 
+      const itPm = it.metode_bayar || currentPayMethod;
+      const itPs = itPm === "COD" ? (it.status_pembayaran || currentPayStatus || "Belum Lunas") : "Lunas";
+
       return {
         expense_date: it.tanggal || currentExpenseDate,
         supplier: it.toko_supplier || currentSupplier,
@@ -395,8 +406,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         other_fee: otherFee,
         discount,
         total_price: totalPrice,
-        pay_method: it.metode_bayar || currentPayMethod,
-        pay_status: it.status_pembayaran || currentPayStatus,
+        pay_method: itPm,
+        pay_status: itPs,
         due_date: currentDueDate,
         notes: (it.keterangan && it.keterangan !== "-") ? it.keterangan : currentNotes,
         invoice_number: (it.no_invoice && it.no_invoice !== "-") ? it.no_invoice : currentInvoice,
@@ -1126,11 +1137,21 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                       <option value="Tunai" />
                       <option value="QRIS" />
                       <option value="Transfer" />
+                      <option value="COD" />
                     </datalist>
                   </>
                 ) : (
                   <select
-                    {...register("pay_method")}
+                    {...register("pay_method", {
+                      onChange: (e) => {
+                        const val = e.target.value;
+                        if (val === "COD") {
+                          setValue("pay_status", "Belum Lunas");
+                        } else {
+                          setValue("pay_status", "Lunas");
+                        }
+                      },
+                    })}
                     className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium"
                   >
                     {paymentMethods.map((pm) => (

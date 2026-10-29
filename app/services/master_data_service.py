@@ -2,6 +2,7 @@
 """
 app/services/master_data_service.py — Service Layer Master Data (Kategori, Metode Bayar, Satuan)
 """
+import re
 from datetime import datetime
 from typing import Any
 from sqlalchemy import select, func, or_, update
@@ -36,6 +37,7 @@ DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
         {"name": "QRIS", "description": "Pembayaran barcode QRIS", "sort_order": 3, "is_default": False},
         {"name": "Debit", "description": "Kartu debit EDC", "sort_order": 4, "is_default": False},
         {"name": "Kredit", "description": "Kartu kredit EDC / tempo bank", "sort_order": 5, "is_default": False},
+        {"name": "COD", "description": "Cash on Delivery / Bayar di Tempat (Kasir)", "sort_order": 6, "is_default": False},
     ],
     "satuan": [
         {"name": "Pcs", "description": "Pieces / satuan bijian umum", "sort_order": 1, "is_default": True},
@@ -207,10 +209,86 @@ async def normalize_unit_to_master(db: AsyncSession, unit_str: str | None) -> st
 
 
 async def sync_runtime_settings(db: AsyncSession) -> None:
-    """Sinkronkan settings.valid_categories dengan master data aktif di DB."""
+    """Sinkronkan settings.valid_categories dan valid_payment_methods dengan master data aktif di DB."""
     active_cats = await get_active_names(db, "kategori")
     if active_cats:
         settings.valid_categories = active_cats
+    active_pay_methods = await get_active_names(db, "metode_bayar")
+    if active_pay_methods:
+        settings.valid_payment_methods = active_pay_methods
+
+
+def normalize_payment_method_name(
+    raw_name: str | None,
+    valid_methods: list[str] | None = None,
+) -> str:
+    """
+    Normalisasi input metode bayar agar SELALU sesuai dengan master data metode pembayaran.
+    - Mencocokkan case-insensitive ke master options
+    - Menangani sinonim umum: COD / bayar di tempat, Tunai / cash, Transfer / bank / tf, QRIS / qr, Debit, Kredit
+    - Menjamin hasil mengembalikan salah satu nama opsi di master data
+    """
+    methods = valid_methods or getattr(
+        settings, "valid_payment_methods", ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"]
+    )
+    if not methods:
+        methods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"]
+
+    # Cari nama canonical dengan case-insensitive mapping
+    method_map = {m.strip().lower(): m.strip() for m in methods}
+    default_method = methods[0] if methods else "Tunai"
+    if "tunai" in method_map:
+        default_method = method_map["tunai"]
+
+    if not raw_name or not str(raw_name).strip() or str(raw_name).strip() in ("-", "None"):
+        return default_method
+
+    cleaned = str(raw_name).strip()
+    cleaned_lower = cleaned.lower()
+
+    # 1. Exact match (case-insensitive)
+    if cleaned_lower in method_map:
+        return method_map[cleaned_lower]
+
+    # 2. Sinonim QRIS (dicek awal agar tidak terpotong kata lain)
+    if re.search(r"\b(qris|qr|scan qr|barcode|qris dinamik|qris statis)\b", cleaned_lower) or "qr code" in cleaned_lower or "qris" in cleaned_lower:
+        if "qris" in method_map:
+            return method_map["qris"]
+
+    # 3. Sinonim COD (Cash on Delivery / Bayar di Tempat)
+    if re.search(r"\b(cod|cash on delivery)\b", cleaned_lower) or "bayar di tempat" in cleaned_lower or "bayar ditempat" in cleaned_lower:
+        if "cod" in method_map:
+            return method_map["cod"]
+        for k, v in method_map.items():
+            if "cod" in k:
+                return v
+
+    # 4. Sinonim Tunai / Cash
+    if re.search(r"\b(tunai|cash|kasir|uang fisik|laci)\b", cleaned_lower):
+        if "tunai" in method_map:
+            return method_map["tunai"]
+
+    # 5. Sinonim Kartu Debit
+    if re.search(r"\b(debit|kartu debit|edc debit)\b", cleaned_lower):
+        if "debit" in method_map:
+            return method_map["debit"]
+
+    # 6. Sinonim Kartu Kredit
+    if re.search(r"\b(kredit|credit|cc|kartu kredit)\b", cleaned_lower):
+        if "kredit" in method_map:
+            return method_map["kredit"]
+
+    # 7. Sinonim Transfer Bank & E-Wallet
+    if re.search(r"\b(transfer|tf|bank|bca|mandiri|bri|bni|permata|dana|gopay|ovo|shopeepay|linkaja|m-banking|livin|brimo)\b", cleaned_lower):
+        if "transfer" in method_map:
+            return method_map["transfer"]
+
+    # 8. Substring match pada master options lainnya
+    for k, v in method_map.items():
+        if k in cleaned_lower or cleaned_lower in k:
+            return v
+
+    return default_method
 
 
 async def create_master_option(

@@ -73,6 +73,8 @@ export interface OwnerMobileViewProps {
   category: string;
   search: string;
   status: string;
+  payMethod?: string;
+  payMethods?: string[];
   isReimbursement: boolean | null;
   users?: ExpenseUser[];
   selectedUserId?: number | null;
@@ -81,6 +83,7 @@ export interface OwnerMobileViewProps {
   onCategoryChange: (cat: string) => void;
   onSearchChange: (search: string) => void;
   onStatusChange: (status: string) => void;
+  onPayMethodChange?: (payMethod: string) => void;
   onReimbursementChange: (val: boolean | null) => void;
   onUserChange?: (userId: number | null) => void;
   onResetFilters: () => void;
@@ -114,6 +117,8 @@ export function OwnerMobileView({
   category,
   search,
   status,
+  payMethod = "",
+  payMethods = [],
   isReimbursement,
   users = [],
   selectedUserId,
@@ -121,6 +126,7 @@ export function OwnerMobileView({
   onCategoryChange,
   onSearchChange,
   onStatusChange,
+  onPayMethodChange,
   onReimbursementChange,
   onUserChange,
   onResetFilters,
@@ -750,7 +756,27 @@ export function OwnerMobileView({
                 </div>
               )}
 
-              {(category || search || status || isReimbursement || selectedUserId) && (
+              {onPayMethodChange && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Metode Pembayaran</label>
+                  <select
+                    value={payMethod || ""}
+                    onChange={(e) => onPayMethodChange(e.target.value)}
+                    className="w-full min-h-[44px] mt-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 text-xs font-medium text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="">Semua Metode Pembayaran</option>
+                    {(payMethods && payMethods.length > 0 ? payMethods : [
+                      "Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"
+                    ]).map((pm) => (
+                      <option key={pm} value={pm}>
+                        {pm}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(category || search || status || isReimbursement || selectedUserId || payMethod) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -899,28 +925,35 @@ export function OwnerMobileView({
 
                     {/* Baris Tombol Aksi Utama (Semua Memenuhi Standar Tap Target >= 44x44px) */}
                     <div className="flex items-center justify-between gap-2 pt-1">
-                      {/* Toggle Status Lunas / Hutang */}
-                      <button
-                        type="button"
-                        onClick={() => onToggleStatus(e)}
-                        className={`min-h-[44px] px-4 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all active:scale-95 ${
-                          isLunas
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                            : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
-                        }`}
-                      >
-                        {isLunas ? (
-                          <>
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                            <span>Lunas</span>
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 animate-pulse" />
-                            <span>Hutang</span>
-                          </>
+                      {/* Toggle Status Lunas / Hutang & Metode Bayar */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => onToggleStatus(e)}
+                          className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all active:scale-95 ${
+                            isLunas
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                              : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
+                          }`}
+                        >
+                          {isLunas ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>Lunas</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 animate-pulse" />
+                              <span>Hutang</span>
+                            </>
+                          )}
+                        </button>
+                        {e.pay_method && (
+                          <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg shrink-0">
+                            {e.pay_method}
+                          </span>
                         )}
-                      </button>
+                      </div>
 
                       {/* Tombol Aksi Tambahan: Telegram, Detail, Beli Lagi, Edit, Delete */}
                       <div className="flex items-center gap-1.5">

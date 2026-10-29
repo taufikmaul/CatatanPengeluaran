@@ -497,11 +497,13 @@ export async function getReimbursementSummary(params?: {
   month?: number | null;
   year?: number | null;
   userId?: number | null;
+  includeOngkir?: boolean;
 }): Promise<ReimbursementSummaryResponse> {
   const q = new URLSearchParams();
   if (params?.month) q.append("month", String(params.month));
   if (params?.year) q.append("year", String(params.year));
   if (params?.userId) q.append("user_id", String(params.userId));
+  if (params?.includeOngkir) q.append("include_ongkir", "true");
   const res = await api.get(`/expenses/reimbursements/summary?${q.toString()}`);
   return res.data;
 }

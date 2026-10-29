@@ -127,10 +127,12 @@ async def get_system_config(
         if active_cats:
             settings.valid_categories = active_cats
         pay_methods = await get_active_names(db, "metode_bayar")
+        if pay_methods:
+            settings.valid_payment_methods = pay_methods
         units = await get_active_names(db, "satuan")
     except Exception:
         active_cats = settings.valid_categories
-        pay_methods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"]
+        pay_methods = getattr(settings, "valid_payment_methods", ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"])
         units = [
             "Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak",
             "Bal", "Botol", "Tray", "Liter", "Gram", "Roll", "Lembar", "Meter"
@@ -168,7 +170,7 @@ async def get_system_config(
         "sheets_creds_exists": creds_exist,
         "service_account_email": sa_email,
         "valid_categories": active_cats or settings.valid_categories,
-        "payment_methods": pay_methods or ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
+        "payment_methods": pay_methods or ["Tunai", "Transfer", "QRIS", "Debit", "Kredit", "COD"],
         "units": units or ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram", "Roll", "Lembar", "Meter"],
         "monthly_budget_limit": settings.monthly_budget_limit,
         "category_budgets": settings.category_budgets,

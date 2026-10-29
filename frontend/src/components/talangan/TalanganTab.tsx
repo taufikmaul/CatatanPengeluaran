@@ -72,6 +72,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [includeOngkir, setIncludeOngkir] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   const perPage = 25;
@@ -92,12 +93,14 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       isAllPeriods ? null : selectedMonth,
       isAllPeriods ? null : selectedYear,
       selectedUserId,
+      includeOngkir,
     ],
     queryFn: () =>
       getReimbursementSummary({
         month: isAllPeriods ? null : selectedMonth,
         year: isAllPeriods ? null : selectedYear,
         userId: selectedUserId,
+        includeOngkir,
       }),
   });
 
@@ -116,6 +119,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       statusFilter,
       selectedUserId,
       search,
+      includeOngkir,
     ],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -124,6 +128,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         is_reimbursement: "true",
         special_type: "talangan",
       });
+
+      if (includeOngkir) {
+        params.append("include_ongkir", "true");
+      }
 
       if (!isAllPeriods) {
         params.append("month", String(selectedMonth));
@@ -707,12 +715,30 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             </select>
 
             <Button
+              variant={includeOngkir ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setIncludeOngkir((prev) => !prev);
+                setPage(1);
+              }}
+              className={`h-9.5 px-3 rounded-xl text-xs font-medium gap-1.5 shrink-0 transition-all ${
+                includeOngkir
+                  ? "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800"
+                  : "text-slate-600 dark:text-slate-400 border-slate-200"
+              }`}
+              title="Secara default, data ongkir tidak ditampilkan di Daftar Talangan"
+            >
+              <span>{includeOngkir ? "🚚 Termasuk Ongkir" : "🚚 Tanpa Ongkir"}</span>
+            </Button>
+
+            <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 setStatusFilter("pending");
                 setIsAllPeriods(true);
                 setSelectedUserId(null);
+                setIncludeOngkir(false);
                 setSearch("");
                 setPage(1);
                 setSelectedIds([]);

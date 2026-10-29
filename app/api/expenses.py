@@ -92,6 +92,7 @@ async def list_expenses(
     year: int | None = Query(None),
     search: str | None = Query(None),
     status: str | None = Query(None),
+    pay_method: str | None = Query(None),
     is_reimbursement: bool | None = Query(None),
     user_id: int | None = Query(None),
     supplier_id: int | None = Query(None),
@@ -99,6 +100,7 @@ async def list_expenses(
     special_type: str | None = Query(None),
     reimbursed_status: str | None = Query(None),
     sort_by: str | None = Query(None),
+    include_ongkir: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -110,6 +112,7 @@ async def list_expenses(
         year=year,
         search=search,
         status=status,
+        pay_method=pay_method,
         is_reimbursement=is_reimbursement,
         user_id=user_id,
         supplier_id=supplier_id,
@@ -117,6 +120,7 @@ async def list_expenses(
         special_type=special_type,
         reimbursed_status=reimbursed_status,
         sort_by=sort_by,
+        include_ongkir=include_ongkir,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -371,10 +375,11 @@ async def get_reimbursements_summary_endpoint(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2020),
     user_id: int | None = Query(None),
+    include_ongkir: bool = Query(False),
     db: AsyncSession = Depends(get_db),
 ):
     """Ambil ringkasan statistik reimbursement/talangan dan rincian per user."""
-    data = await get_reimbursement_summary(db, month=month, year=year, user_id=user_id)
+    data = await get_reimbursement_summary(db, month=month, year=year, user_id=user_id, include_ongkir=include_ongkir)
     return ReimbursementSummaryResponse(**data)
 
 

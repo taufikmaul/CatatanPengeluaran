@@ -124,6 +124,12 @@ async def save_expenses(
             item_cat = "Ongkir"
             master_item_id = None
             pay_method = item.get("metode_bayar") or item.get("pay_method") or "Tunai"
+            # Ongkir by default BUKAN talangan, kecuali ada kata kunci eksplisit
+            has_reimb_keyword = any(
+                w in ket.lower() or w in brg.lower() for w in ("reimburse", "rembes", "ditalangi", "talangan")
+            )
+            if not has_reimb_keyword:
+                is_reimb = False
         else:
             item_cat = item_cat or "Operasional"
             pay_method = item.get("metode_bayar") or item.get("pay_method") or "Tunai"
@@ -141,6 +147,20 @@ async def save_expenses(
                 if s_obj:
                     sup_name = s_obj.name
 
+        from app.services.master_data_service import normalize_payment_method_name
+        pay_method = normalize_payment_method_name(pay_method)
+
+        if pay_method == "COD":
+            notes_clean = str(item.get("keterangan") or item.get("notes") or "").lower()
+            is_explicit_paid = any(k in notes_clean for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
+            raw_stat = str(item.get("status_pembayaran") or item.get("pay_status") or "").strip().lower()
+            if is_explicit_paid or raw_stat == "lunas":
+                resolved_pay_status = "Lunas"
+            else:
+                resolved_pay_status = "Belum Lunas"
+        else:
+            resolved_pay_status = "Lunas"
+
         expense = Expense(
             expense_date=expense_date,
             supplier=sup_name,
@@ -156,7 +176,7 @@ async def save_expenses(
             discount=discount,
             total_price=total_price,
             pay_method=pay_method,
-            pay_status=item.get("status_pembayaran") or item.get("pay_status") or "Lunas",
+            pay_status=resolved_pay_status,
             due_date=item.get("jatuh_tempo") or item.get("due_date") or "-",
             notes=item.get("keterangan") or item.get("notes") or "-",
             is_reimbursement=is_reimb,
@@ -829,6 +849,7 @@ async def get_all_expenses_paginated(
     year: int | None = None,
     search: str | None = None,
     status: str | None = None,
+    pay_method: str | None = None,
     is_reimbursement: bool | None = None,
     user_id: int | None = None,
     supplier_id: int | None = None,
@@ -836,6 +857,7 @@ async def get_all_expenses_paginated(
     special_type: str | None = None,
     reimbursed_status: str | None = None,
     sort_by: str | None = None,
+    include_ongkir: bool = False,
 ) -> tuple[list[Expense], int]:
     """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
     if sort_by == "due_date":
@@ -888,7 +910,16 @@ async def get_all_expenses_paginated(
                 Expense.supplier.ilike("%sicepat%"),
             )
         )
-    elif special_type in ("all", "talangan", "unpaid") or is_reimbursement is True or (status and ("belum" in status.lower() or "hutang" in status.lower())):
+    elif special_type == "talangan":
+        # Daftar Talangan: by default EXCLUDE Ongkir (kecuali category == 'Ongkir' atau include_ongkir=True)
+        if not include_ongkir and category != "Ongkir":
+            query = query.where(
+                and_(
+                    or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                    ~Expense.item_name.ilike("ongkir%"),
+                )
+            )
+    elif special_type in ("all", "unpaid") or is_reimbursement is True or (status and ("belum" in status.lower() or "hutang" in status.lower())):
         # Tampilkan semua kategori tanpa filter exclude Ongkir/Tukar Cash
         pass
     else:
@@ -914,6 +945,14 @@ async def get_all_expenses_paginated(
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     if status:
         query = query.where(Expense.pay_status.ilike(f"%{status}%"))
+    if pay_method and pay_method.strip():
+        pm_clean = pay_method.strip()
+        query = query.where(
+            or_(
+                func.lower(Expense.pay_method) == func.lower(pm_clean),
+                Expense.pay_method.ilike(f"%{pm_clean}%"),
+            )
+        )
     if is_reimbursement is not None:
         query = query.where(Expense.is_reimbursement == is_reimbursement)
     if reimbursed_status == "pending":
@@ -1595,6 +1634,7 @@ async def batch_insert_expenses(
 async def get_outstanding_reimbursements(
     db: AsyncSession,
     user_id: int | None = None,
+    include_ongkir: bool = False,
 ) -> list[Expense]:
     """Ambil talangan (reimbursement) yang belum diganti.
 
@@ -1608,6 +1648,13 @@ async def get_outstanding_reimbursements(
     )
     if user_id is not None:
         query = query.where(Expense.user_id == user_id)
+    if not include_ongkir:
+        query = query.where(
+            and_(
+                or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                ~Expense.item_name.ilike("ongkir%"),
+            )
+        )
     result = await db.execute(query)
     return list(result.scalars().all())
 
@@ -1751,9 +1798,17 @@ async def get_reimbursement_summary(
     month: int | None = None,
     year: int | None = None,
     user_id: int | None = None,
+    include_ongkir: bool = False,
 ) -> dict:
     """Ringkasan statistik data talangan (reimbursement) & rincian per user."""
     query = select(Expense).where(Expense.is_reimbursement == True)  # noqa: E712
+    if not include_ongkir:
+        query = query.where(
+            and_(
+                or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                ~Expense.item_name.ilike("ongkir%"),
+            )
+        )
     if month and year:
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
