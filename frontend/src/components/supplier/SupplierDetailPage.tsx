@@ -1370,255 +1370,302 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Modal Tambah Catatan Belanja di Toko Ini */}
+      {/* Modal Tambah Catatan Belanja di Toko Ini (Wide Desktop & Adaptive Mobile) */}
       <Dialog open={isAddExpenseOpen} onOpenChange={setIsAddExpenseOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold">
-              Tambah Belanja di {supplier.name}
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Catatan belanja baru akan langsung otomatis terhubung ke supplier ini.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreateExpense} className="space-y-3.5 text-xs">
-            <div className="grid grid-cols-2 gap-2">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl lg:max-w-4xl max-h-[94dvh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl">
+          <DialogHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 shrink-0 space-y-2.5 text-left">
+            <div className="flex items-center justify-between gap-2 pr-7 flex-wrap">
               <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Tanggal Belanja *
-                </label>
-                <Input
-                  type="date"
-                  value={newExpenseDate}
-                  onChange={(e) => setNewExpenseDate(e.target.value)}
-                  required
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Kategori *
-                </label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Banner Adaptif Profil Kategori */}
-            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                    Tambah Belanja di {supplier.name}
+                  </DialogTitle>
+                  <span className="text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 px-2 py-0.5 rounded-lg">
                     {newCatProfile.badgeLabel}
                   </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
                     {newCatProfile.coaLabel}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                <DialogDescription className="text-[11px] sm:text-xs mt-0.5">
                   {newCatProfile.description}
-                </p>
+                </DialogDescription>
               </div>
             </div>
 
-            <div>
-              <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                {newCatProfile.itemLabel}
-              </label>
-              <Input
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-                placeholder={newCatProfile.itemPlaceholder}
-                required
-                className="h-9 text-xs"
-              />
-              {newCatProfile.quickItemChips && newCatProfile.quickItemChips.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {newCatProfile.quickItemChips.map((chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() => setNewItemName(chip)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
-                        newItemName === chip
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-blue-400"
-                      }`}
-                    >
-                      + {chip}
-                    </button>
-                  ))}
+            {/* Category Quick Bar */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
+              <span className="text-[11px] font-semibold text-slate-500 shrink-0 mr-1">
+                Kategori:
+              </span>
+              {categories.map((c) => {
+                const active = newCategory === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => handleCategoryChange(c)}
+                    className={`shrink-0 px-2.5 py-1.5 min-h-[34px] sm:min-h-[30px] rounded-xl text-xs font-semibold transition-all border ${
+                      active
+                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                        : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-blue-400"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateExpense} className="flex-1 flex flex-col min-h-0 overflow-hidden text-xs">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* Left Column: Tanggal, Kategori, Nama Barang, No Invoice, Catatan */}
+                <div className="lg:col-span-7 space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Tanggal Belanja *
+                      </label>
+                      <Input
+                        type="date"
+                        value={newExpenseDate}
+                        onChange={(e) => setNewExpenseDate(e.target.value)}
+                        required
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Kategori *
+                      </label>
+                      <select
+                        value={newCategory}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                      >
+                        {categories.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      {newCatProfile.itemLabel}
+                    </label>
+                    <Input
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      placeholder={newCatProfile.itemPlaceholder}
+                      required
+                      className="h-11 sm:h-10 text-xs rounded-xl font-medium"
+                    />
+                    {newCatProfile.quickItemChips && newCatProfile.quickItemChips.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {newCatProfile.quickItemChips.map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => setNewItemName(chip)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                              newItemName === chip
+                                ? "bg-blue-600 text-white border-blue-600"
+                                : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-blue-400"
+                            }`}
+                          >
+                            + {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        No. Invoice / Nota
+                      </label>
+                      <Input
+                        value={newInvoiceNumber}
+                        onChange={(e) => setNewInvoiceNumber(e.target.value)}
+                        placeholder="Contoh: INV/2026/001"
+                        className="h-11 sm:h-10 text-xs font-mono rounded-xl"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        {newCatProfile.notesLabel || "Keterangan / Catatan"}
+                      </label>
+                      <Input
+                        value={newNotes}
+                        onChange={(e) => setNewNotes(e.target.value)}
+                        placeholder={newCatProfile.notesPlaceholder || "Catatan belanja tambahan..."}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <div className={`grid ${newCatProfile.hideQty ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
-              {!newCatProfile.hideQty && (
-                <div>
-                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Qty
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    min="0.01"
-                    value={newQty}
-                    onChange={(e) => handleQtyChange(parseFloat(e.target.value) || 0)}
-                    required
-                    className="h-9 text-xs"
-                  />
+                {/* Right Column: Ledger Qty, Satuan, Harga, Total, Metode & Status Bayar */}
+                <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-4 space-y-3.5">
+                  <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                      Rincian Biaya & Pembayaran
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {supplier.name}
+                    </span>
+                  </div>
+
+                  <div className={`grid ${newCatProfile.hideQty ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 sm:grid-cols-3"} gap-2.5`}>
+                    {!newCatProfile.hideQty && (
+                      <div className="col-span-1">
+                        <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Qty
+                        </label>
+                        <Input
+                          type="number"
+                          step="any"
+                          min="0.01"
+                          value={newQty}
+                          onChange={(e) => handleQtyChange(parseFloat(e.target.value) || 0)}
+                          required
+                          className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900 text-center font-bold tabular-nums"
+                        />
+                      </div>
+                    )}
+
+                    <div className="col-span-1">
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Satuan
+                      </label>
+                      <select
+                        value={newUnit}
+                        onChange={(e) => setNewUnit(e.target.value)}
+                        disabled={newCatProfile.lockUnit}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white dark:bg-slate-900 px-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
+                      >
+                        {(newCatProfile.allowedUnits || units).map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className={newCatProfile.hideQty ? "col-span-1" : "col-span-2 sm:col-span-1"}>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1 truncate">
+                        {newCatProfile.priceLabel || "Harga Satuan"}
+                      </label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={newUnitPrice}
+                        onChange={(e) => handleUnitPriceChange(parseFloat(e.target.value) || 0)}
+                        className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900 font-bold tabular-nums"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      {newCatProfile.totalLabel || "Total Biaya (Rp)"} *
+                    </label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={newTotalPrice}
+                      onChange={(e) => setNewTotalPrice(parseFloat(e.target.value) || 0)}
+                      required
+                      className="h-11 sm:h-10 text-sm font-extrabold text-blue-700 dark:text-blue-400 rounded-xl bg-white dark:bg-slate-900 tabular-nums"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Metode Bayar
+                      </label>
+                      <select
+                        value={newPayMethod}
+                        onChange={(e) => setNewPayMethod(e.target.value)}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
+                      >
+                        {paymentMethods.map((pm) => (
+                          <option key={pm} value={pm}>
+                            {pm}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Status Pembayaran *
+                      </label>
+                      <select
+                        value={newPayStatus}
+                        onChange={(e) => setNewPayStatus(e.target.value)}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200"
+                      >
+                        <option value="Lunas">Lunas</option>
+                        <option value="Belum Lunas">Belum Lunas (Tempo)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {newPayStatus !== "Lunas" && (
+                    <div className="p-3 rounded-xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900">
+                      <label className="font-semibold block mb-1 text-rose-700 dark:text-rose-300">
+                        Tanggal Jatuh Tempo *
+                      </label>
+                      <Input
+                        type="date"
+                        value={newDueDate}
+                        onChange={(e) => setNewDueDate(e.target.value)}
+                        required={newPayStatus !== "Lunas"}
+                        className="h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-800"
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Satuan
-                </label>
-                <select
-                  value={newUnit}
-                  onChange={(e) => setNewUnit(e.target.value)}
-                  disabled={newCatProfile.lockUnit}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
+            <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/80 shrink-0 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[10px] font-semibold text-slate-500 block truncate">
+                  {newCatProfile.totalLabel}
+                </span>
+                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
+                  {formatRupiah(newTotalPrice > 0 ? newTotalPrice : newUnitPrice * newQty)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddExpenseOpen(false)}
+                  className="rounded-xl text-xs h-11 sm:h-10 px-4 font-semibold"
                 >
-                  {(newCatProfile.allowedUnits || units).map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  {newCatProfile.priceLabel || "Harga Satuan"}
-                </label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={newUnitPrice}
-                  onChange={(e) => handleUnitPriceChange(parseFloat(e.target.value) || 0)}
-                  className="h-9 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Total Biaya (Rp) *
-                </label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={newTotalPrice}
-                  onChange={(e) => setNewTotalPrice(parseFloat(e.target.value) || 0)}
-                  required
-                  className="h-9 text-xs font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Metode Bayar
-                </label>
-                <select
-                  value={newPayMethod}
-                  onChange={(e) => setNewPayMethod(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={addExpenseMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold"
                 >
-                  {paymentMethods.map((pm) => (
-                    <option key={pm} value={pm}>
-                      {pm}
-                    </option>
-                  ))}
-                </select>
+                  Simpan Belanja
+                </Button>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Status Pembayaran *
-                </label>
-                <select
-                  value={newPayStatus}
-                  onChange={(e) => setNewPayStatus(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200"
-                >
-                  <option value="Lunas">Lunas</option>
-                  <option value="Belum Lunas">Belum Lunas (Tempo)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  No. Invoice / Nota
-                </label>
-                <Input
-                  value={newInvoiceNumber}
-                  onChange={(e) => setNewInvoiceNumber(e.target.value)}
-                  placeholder="Contoh: INV/2026/001"
-                  className="h-9 text-xs font-mono"
-                />
-              </div>
-            </div>
-
-            {newPayStatus !== "Lunas" && (
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1 text-rose-600 dark:text-rose-400">
-                  Tanggal Jatuh Tempo *
-                </label>
-                <Input
-                  type="date"
-                  value={newDueDate}
-                  onChange={(e) => setNewDueDate(e.target.value)}
-                  required={newPayStatus !== "Lunas"}
-                  className="h-9 text-xs border-rose-300 dark:border-rose-900"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                {newCatProfile.notesLabel || "Keterangan / Catatan"}
-              </label>
-              <Input
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                placeholder={newCatProfile.notesPlaceholder || "Catatan belanja tambahan..."}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAddExpenseOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={addExpenseMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Simpan Belanja
-              </Button>
-            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

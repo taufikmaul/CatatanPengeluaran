@@ -518,1099 +518,1189 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   };
 
   const calculatedTotal = watch("total_price");
+  const baseSubtotal = Math.max(0, Number(qty || 0) * Number(unitPrice || 0));
+  const extraFeesTotal = Number(shippingFee || 0) + Number(tax || 0) + Number(otherFee || 0);
   const isUnpaid = payStatus.toLowerCase().includes("belum") || payStatus.toLowerCase().includes("hutang");
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl p-6">
-        <DialogHeader className="mb-2">
-          <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Receipt className="w-5 h-5 text-slate-700" />
-            <span>
-              {initialData
-                ? "Edit Catatan Pengeluaran"
-                : repeatData
-                ? `Beli Lagi: ${repeatData.item_name}`
-                : "Tambah Catatan Pengeluaran"}
-            </span>
-          </DialogTitle>
-        </DialogHeader>
-
-        {/* Mode Switcher (Manual Form vs OCR Scan) - Only when adding fresh new expense */}
-        {!initialData && !repeatData && (
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl mb-3">
-            <button
-              type="button"
-              onClick={() => setActiveTab("form")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-xl transition-all ${
-                activeTab === "form"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Input Form Manual</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("ocr")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-xl transition-all ${
-                activeTab === "ocr"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              <ScanLine className="w-3.5 h-3.5" />
-              <span>Scan Nota / Struk (OCR)</span>
-              <span className="bg-amber-400 text-slate-900 text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                AI
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* OCR SCAN VIEW */}
-        {activeTab === "ocr" && !initialData && !repeatData ? (
-          <div className="space-y-4 py-2">
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  handleFileSelect(e.dataTransfer.files[0]);
-                }
-              }}
-              className="border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/70 hover:bg-blue-50/30 rounded-2xl p-6 text-center cursor-pointer transition-all"
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleFileSelect(e.target.files[0]);
-                  }
-                }}
-              />
-
-              {ocrPreview ? (
-                <div className="space-y-3">
-                  <div className="relative mx-auto max-w-[200px] max-h-48 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
-                    <img
-                      src={ocrPreview}
-                      alt="Pratinjau Nota"
-                      className="w-full h-auto object-contain"
-                    />
-                  </div>
-                  <p className="text-xs font-medium text-slate-700">
-                    {ocrFile?.name} ({(Number(ocrFile?.size) / 1024).toFixed(1)} KB)
-                  </p>
-                  <span className="text-[11px] text-blue-600 hover:underline">
-                    Klik untuk ganti foto
+      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl border-slate-200 shadow-2xl bg-white">
+        {/* Sticky Top Header + Mode Switcher + Category Quick Rail */}
+        <DialogHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-slate-200/80 bg-slate-50/80 shrink-0 space-y-3 text-left">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pr-7">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-blue-600 shrink-0" />
+                  <span className="truncate">
+                    {initialData
+                      ? "Edit Catatan Pengeluaran"
+                      : repeatData
+                      ? `Beli Lagi: ${repeatData.item_name}`
+                      : "Tambah Catatan Pengeluaran"}
                   </span>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
-                    <Camera className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-sm font-semibold text-slate-800">
-                    Foto Struk atau Unggah Gambar Nota
-                  </h4>
-                  <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                    Ambil foto langsung dari ponsel atau pilih file gambar (JPG, PNG, WEBP). AI akan mengekstrak barang, harga, toko, tanggal, & invoice otomatis.
-                  </p>
-                </div>
-              )}
+                </DialogTitle>
+                <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-lg">
+                  {catProfile.badgeLabel}
+                </span>
+                <span className="text-[11px] font-mono font-semibold bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg">
+                  {catProfile.coaLabel}
+                </span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1">
+                {catProfile.description}
+              </p>
             </div>
 
-            {ocrError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
-                {ocrError}
+            {/* Mode Switcher (Manual Form vs OCR Scan) - Only when adding fresh new expense */}
+            {!initialData && !repeatData && (
+              <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl shrink-0 self-start sm:self-auto w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("form")}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === "form"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Input Manual</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ocr")}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                    activeTab === "ocr"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <ScanLine className="w-3.5 h-3.5" />
+                  <span>Scan Struk (OCR)</span>
+                </button>
               </div>
             )}
+          </div>
 
-            <div className="flex items-center justify-between gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setActiveTab("form")}
-                className="rounded-xl text-xs h-10 px-4"
+          {/* Interactive Category Pill Bar (Horizontal scroll on mobile, wrapped/scrollable rail on desktop) */}
+          {activeTab === "form" && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
+              <span className="text-[11px] font-semibold text-slate-500 shrink-0 mr-1">
+                Kategori:
+              </span>
+              {categories.map((c) => {
+                const isSelected = categoryVal === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setValue("category", c, { shouldValidate: true })}
+                    className={`shrink-0 px-2.5 py-1.5 min-h-[34px] sm:min-h-[30px] rounded-xl text-xs font-semibold transition-all border ${
+                      isSelected
+                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                        : "bg-white text-slate-600 border-slate-200/90 hover:border-blue-300 hover:text-blue-700"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </DialogHeader>
+
+        {/* OCR SCAN VIEW (Split Desktop Layout & Adaptive Mobile) */}
+        {activeTab === "ocr" && !initialData && !repeatData ? (
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleFileSelect(e.dataTransfer.files[0]);
+                  }
+                }}
+                className="lg:col-span-7 border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/70 hover:bg-blue-50/30 rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all"
               >
-                Kembali ke Form
-              </Button>
-              <Button
-                type="button"
-                disabled={!ocrFile || isScanningOcr}
-                onClick={handleScanOcr}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-10 px-5 font-semibold gap-1.5"
-              >
-                {isScanningOcr ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Menganalisis Struk...</span>
-                  </>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleFileSelect(e.target.files[0]);
+                    }
+                  }}
+                />
+
+                {ocrPreview ? (
+                  <div className="space-y-3">
+                    <div className="relative mx-auto max-w-[260px] max-h-64 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
+                      <img
+                        src={ocrPreview}
+                        alt="Pratinjau Nota"
+                        className="w-full h-auto object-contain"
+                      />
+                    </div>
+                    <p className="text-xs font-medium text-slate-700">
+                      {ocrFile?.name} ({(Number(ocrFile?.size) / 1024).toFixed(1)} KB)
+                    </p>
+                    <span className="text-xs text-blue-600 hover:underline font-medium inline-block py-1">
+                      Klik untuk ganti foto nota
+                    </span>
+                  </div>
                 ) : (
-                  <>
-                    <ScanLine className="w-4 h-4" />
-                    <span>Pindai Struk (OCR)</span>
-                  </>
+                  <div className="space-y-2.5 py-4">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                      <Camera className="w-7 h-7" />
+                    </div>
+                    <h4 className="text-sm sm:text-base font-bold text-slate-800">
+                      Foto Struk atau Unggah Gambar Nota
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                      Ambil foto langsung dari kamera ponsel atau tarik file gambar (JPG, PNG, WEBP) ke area ini.
+                    </p>
+                  </div>
                 )}
-              </Button>
+              </div>
+
+              <div className="lg:col-span-5 space-y-4 bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
+                <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Ekstraksi Nota Otomatis
+                </h5>
+                <ul className="space-y-2 text-xs text-slate-600 leading-relaxed">
+                  <li>1. Sistem membaca nama barang, kuantitas, harga satuan, nama toko, dan nomor nota.</li>
+                  <li>2. Kategori pengeluaran otomatis disesuaikan dan tetap dapat dikoreksi sebelum disimpan.</li>
+                  <li>3. Jika nota memiliki banyak baris barang, Anda dapat memilih per item atau simpan sekaligus.</li>
+                </ul>
+
+                {ocrError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+                    {ocrError}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setActiveTab("form")}
+                    className="rounded-xl text-xs h-11 sm:h-10 px-4"
+                  >
+                    Kembali ke Form
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!ocrFile || isScanningOcr}
+                    onClick={handleScanOcr}
+                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold gap-1.5"
+                  >
+                    {isScanningOcr ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Menganalisis Struk...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ScanLine className="w-4 h-4" />
+                        <span>Pindai Struk (OCR)</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
-          /* MANUAL / REVIEW FORM VIEW */
-          <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-            {/* Banner saat berhasil OCR */}
-            {ocrSuccessBanner && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <div className="flex-1 text-xs text-emerald-800">
-                  <p className="font-semibold">{ocrSuccessBanner}</p>
-                  {ocrExtractedItems.length > 1 && (
-                    <div className="mt-2 space-y-1">
-                      <span className="text-[11px] text-emerald-700 block font-medium">
-                        Pilih item dari struk untuk dimuat ke form:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {ocrExtractedItems.map((it, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              setSelectedOcrIndex(idx);
-                              applyExtractedItemToForm(it);
-                            }}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                              selectedOcrIndex === idx
-                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100"
-                            }`}
-                          >
-                            {it.barang || `Item #${idx + 1}`} ({formatRupiah(Number(it.total_harga || 0))})
-                          </button>
-                        ))}
-                      </div>
-
-                      {onBatchSubmit && (
-                        <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-emerald-700">
-                            Total {ocrExtractedItems.length} item terbaca di nota ini.
-                          </span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={isSubmitting}
-                            onClick={handleBatchSaveAll}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-8 px-3 shadow-sm font-semibold flex items-center gap-1.5"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Telegram Cross-Check Banner for existing expense */}
-            {initialData && initialTgMeta.isUrl && (
-              <div className="p-3.5 bg-gradient-to-r from-sky-50 via-blue-50/70 to-indigo-50/50 border border-sky-200/90 rounded-2xl flex items-center justify-between gap-3 shadow-sm">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-[#229ED9] text-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-500/20">
-                    <TelegramIcon className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-bold text-sky-950">Chat Telegram Asli</span>
-                      <span className="text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.2 rounded-md">
-                        {initialTgMeta.badgeLabel}
-                      </span>
-                    </div>
-                    <span className="text-[11px] font-mono text-sky-700 truncate block mt-0.5 max-w-[220px] sm:max-w-[280px]">
-                      {initialData.msg_link}
-                    </span>
-                  </div>
-                </div>
-                <a
-                  href={initialData.msg_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#229ED9] hover:bg-[#1d8ec4] text-white text-xs font-semibold shrink-0 shadow-sm transition-all active:scale-95"
-                  title="Buka pesan Telegram di tab baru"
-                >
-                  <span>Cross Check</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Tanggal Nota
-                </label>
-                <Input
-                  type="date"
-                  {...register("expense_date", { required: true })}
-                  className="h-10 text-xs rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Kategori Pengeluaran
-                </label>
-                <select
-                  {...register("category")}
-                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium focus:ring-2 focus:ring-blue-500"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Banner Konteks Form Berdasarkan Kategori */}
-            <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold text-slate-800">
-                    Form {catProfile.badgeLabel}
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
-                    {catProfile.coaLabel}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                  {catProfile.description}
-                </p>
-              </div>
-            </div>
-
-            {/* Nama Barang / Judul Transaksi / Jenis Keperluan */}
-            <div className="relative">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-600">
-                  {catProfile.itemLabel}
-                </label>
-                {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setValue("unit_price", selectedSuggestionHint.last_unit_price)}
-                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
-                  >
-                    <Clock className="w-3 h-3" />
-                    Harga terakhir: {formatRupiah(selectedSuggestionHint.last_unit_price)}
-                  </button>
-                )}
-              </div>
-              <Input
-                placeholder={catProfile.itemPlaceholder}
-                autoComplete="off"
-                {...register("item_name", { required: "Kolom ini wajib diisi" })}
-                onFocus={() => {
-                  if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
-                }}
-                onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
-                className="h-10 text-xs rounded-xl"
-              />
-              {errors.item_name && (
-                <span className="text-[11px] text-red-500">{errors.item_name.message}</span>
-              )}
-
-              {/* Quick Item Chips sesuai Kategori */}
-              {catProfile.quickItemChips && catProfile.quickItemChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <span className="text-[10px] text-slate-400">Pilihan cepat:</span>
-                  {catProfile.quickItemChips.map((chip) => {
-                    const isSelected = itemNameVal.trim().toLowerCase() === chip.toLowerCase();
-                    return (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => setValue("item_name", chip, { shouldValidate: true })}
-                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                          isSelected
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
-                        }`}
-                      >
-                        {chip}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Dropdown Autocomplete hanya untuk kategori yang terhubung ke Master Item */}
-              {catProfile.showMasterItemAutocomplete && showItemDropdown && filteredItemSuggestions.length > 0 && (
-                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100">
-                  {filteredItemSuggestions.map((s) => (
-                    <button
-                      key={`${s.item_name}-${s.is_master}`}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        handleSelectSuggestion(s);
-                      }}
-                      className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between group"
-                    >
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">
-                            {s.item_name}
-                          </span>
-                          {s.is_master && (
-                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[10px] px-1.5 py-0 h-4">
-                              Master
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-slate-500">
-                          {s.category} {s.last_supplier !== "-" ? `• ${s.last_supplier}` : ""}
-                          {s.isi_paket ? ` • ${s.satuan_beli}: ${s.isi_paket}` : (s.satuan_beli && s.satuan_beli !== "Pcs" ? ` • ${s.satuan_beli}` : "")}
+          /* MANUAL / REVIEW FORM VIEW (Wide 2-Column Desktop + Adaptive Mobile Sheet) */
+          <form onSubmit={handleSubmit(handleFormSubmit)} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+              {/* Banner saat berhasil OCR */}
+              {ocrSuccessBanner && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 text-xs text-emerald-800">
+                    <p className="font-semibold">{ocrSuccessBanner}</p>
+                    {ocrExtractedItems.length > 1 && (
+                      <div className="mt-2 space-y-1.5">
+                        <span className="text-[11px] text-emerald-700 block font-medium">
+                          Pilih item dari struk untuk dimuat ke form:
                         </span>
-                      </div>
-                      {s.last_unit_price > 0 && (
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-slate-700 block">
-                            {formatRupiah(s.last_unit_price)}
-                          </span>
-                          <span className="text-[10px] text-slate-500">harga satuan</span>
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Toko / Supplier / Kurir / Penerima Gaji / Vendor */}
-            {isTukarCash ? (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex items-center gap-2.5">
-                <Store className="w-4 h-4 text-slate-400 shrink-0" />
-                <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di bawah.</span>
-                <input type="hidden" {...register("supplier")} value="-" />
-              </div>
-            ) : isOngkir ? (
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  {catProfile.supplierLabel}
-                </label>
-                <Input
-                  placeholder={catProfile.supplierPlaceholder}
-                  list="ongkir-courier-list"
-                  {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
-                  className="h-10 text-xs rounded-xl"
-                />
-                <datalist id="ongkir-courier-list">
-                  <option value="GoSend Car" />
-                  <option value="GoSend Bike" />
-                  <option value="GrabExpress Instant" />
-                  <option value="GrabExpress SameDay" />
-                  <option value="Lalamove" />
-                  <option value="Maxim" />
-                  <option value="J&T Express" />
-                  <option value="SiCepat" />
-                  <option value="Anteraja" />
-                </datalist>
-                {catProfile.quickSupplierChips && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[10px] text-slate-400">Pilih kurir:</span>
-                    {catProfile.quickSupplierChips.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setValue("supplier", c)}
-                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                          supplierVal === c
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
-                        }`}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-600">
-                    {catProfile.supplierLabel}
-                  </label>
-                  {supplierVal && supplierVal !== "-" && (
-                    <button
-                      type="button"
-                      onClick={() => setValue("supplier", "-")}
-                      className="text-[10px] text-slate-400 hover:text-slate-600"
-                    >
-                      Reset (-)
-                    </button>
-                  )}
-                </div>
-                <Input
-                  placeholder={catProfile.supplierPlaceholder}
-                  autoComplete="off"
-                  {...register("supplier")}
-                  onFocus={() => {
-                    if (!isPayroll) setShowSupplierDropdown(true);
-                  }}
-                  onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 180)}
-                  className="h-10 text-xs rounded-xl"
-                />
-
-                {/* Untuk Gaji: Tampilkan daftar karyawan terdaftar dari usersList agar 1-klik */}
-                {isPayroll && usersList.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[10px] text-slate-400">Staf terdaftar:</span>
-                    {usersList.slice(0, 6).map((u) => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => setValue("supplier", u.name)}
-                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                          supplierVal === u.name
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
-                        }`}
-                      >
-                        {u.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Untuk Kategori dengan Quick Supplier Chips (Operasional, Software, Marketing) */}
-                {!isPayroll && catProfile.quickSupplierChips && catProfile.quickSupplierChips.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[10px] text-slate-400">Saran penyedia:</span>
-                    {catProfile.quickSupplierChips.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setValue("supplier", s)}
-                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                          supplierVal === s
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Dropdown Autocomplete Toko/Supplier */}
-                {!isPayroll && showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100">
-                    <div className="px-3 py-1.5 bg-slate-50/80 text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Store className="w-3 h-3 text-slate-400" />
-                      <span>Riwayat {catProfile.supplierLabel}</span>
-                    </div>
-                    {filteredSupplierSuggestions.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setValue("supplier", s);
-                          setShowSupplierDropdown(false);
-                        }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-blue-50/60 transition-colors flex items-center justify-between group"
-                      >
-                        <span className="text-xs font-medium text-slate-800 group-hover:text-blue-600">
-                          {s}
-                        </span>
-                        <Check className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Quick suggestions chips untuk kategori belanja reguler */}
-                {!isPayroll && !catProfile.quickSupplierChips && (!supplierVal || supplierVal === "-") && supplierSuggestions.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                    <span className="text-[10px] text-slate-400">Paling sering:</span>
-                    {supplierSuggestions.slice(0, 4).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setValue("supplier", s)}
-                        className="text-[10px] px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 transition-colors font-medium border border-slate-200/60"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Field Kontekstual Spesifik Kategori (Periode Gaji, Durasi Sewa, Siklus Software, Kondisi Aset, Area Servis, dll.) */}
-            {(catProfile.metaField1Label || catProfile.metaField2Label) && (
-              <div className="p-3 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
-                {catProfile.metaField1Label && catProfile.metaField1TagPrefix && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 block mb-1">
-                      {catProfile.metaField1Label}
-                    </label>
-                    <Input
-                      value={extractNoteTag(catProfile.metaField1TagPrefix, notesVal)}
-                      onChange={(e) => upsertNoteTag(catProfile.metaField1TagPrefix!, e.target.value)}
-                      placeholder={catProfile.metaField1Placeholder}
-                      className="h-9 text-xs rounded-xl bg-white"
-                    />
-                    {catProfile.metaField1Chips && (
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        {catProfile.metaField1Chips.map((chip) => {
-                          const curVal = extractNoteTag(catProfile.metaField1TagPrefix, notesVal);
-                          const active = curVal.toLowerCase() === chip.toLowerCase();
-                          return (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => upsertNoteTag(catProfile.metaField1TagPrefix!, active ? "" : chip)}
-                              className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                                active
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
-                              }`}
-                            >
-                              {chip}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {catProfile.metaField2Label && catProfile.metaField2TagPrefix && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 block mb-1">
-                      {catProfile.metaField2Label}
-                    </label>
-                    <Input
-                      value={extractNoteTag(catProfile.metaField2TagPrefix, notesVal)}
-                      onChange={(e) => upsertNoteTag(catProfile.metaField2TagPrefix!, e.target.value)}
-                      placeholder={catProfile.metaField2Placeholder}
-                      className="h-9 text-xs rounded-xl bg-white"
-                    />
-                    {catProfile.metaField2Chips && (
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        {catProfile.metaField2Chips.map((chip) => {
-                          const curVal = extractNoteTag(catProfile.metaField2TagPrefix, notesVal);
-                          const active = curVal.toLowerCase() === chip.toLowerCase();
-                          return (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => upsertNoteTag(catProfile.metaField2TagPrefix!, active ? "" : chip)}
-                              className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
-                                active
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
-                              }`}
-                            >
-                              {chip}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* No. Invoice / Nota & Checkbox Reimbursement (Disembunyikan pada Tukar Cash agar ringkas) */}
-            {!isTukarCash && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    {isPayroll ? "No. Slip Gaji / Referensi" : "No. Invoice / Nota"}
-                  </label>
-                  <Input
-                    placeholder="mis: INV-2026/10/012 atau -"
-                    {...register("invoice_number")}
-                    onBlur={(e) => handleCheckInvoice(e.target.value)}
-                    className="h-10 text-xs rounded-xl"
-                  />
-                  {invoiceWarning && (
-                    <div className="mt-1.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 text-[10px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5 leading-snug">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                      <span>{invoiceWarning}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Tipe Transaksi
-                  </label>
-                  <label className="flex items-center gap-2.5 h-10 px-3 rounded-xl border border-input bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors">
-                    <input
-                      type="checkbox"
-                      {...register("is_reimbursement")}
-                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
-                    />
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                      <Briefcase className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      <span>Reimbursement (Ditalangi)</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {/* Penginput Invoice (User) */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">
-                Penginput Transaksi (User)
-              </label>
-              <select
-                {...register("user_id", {
-                  setValueAs: (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
-                })}
-                className="w-full h-10 px-3 text-xs rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Tanpa Atribusi / Otomatis (Web Dashboard)</option>
-                {usersList.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} {u.telegram_id ? `(@${u.telegram_id})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Qty, Satuan, & Harga Satuan (Adaptif sesuai Kategori) */}
-            {catProfile.hideQty ? (
-              <div>
-                <input type="hidden" {...register("qty", { valueAsNumber: true })} value={1} />
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  {catProfile.priceLabel}
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("unit_price", { required: true, valueAsNumber: true })}
-                  className="h-10 text-xs rounded-xl font-semibold"
-                  placeholder="0"
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-3">
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    {isOngkir ? "Jml Trip" : "Qty"}
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("qty", { required: true, valueAsNumber: true })}
-                    className="h-10 text-xs rounded-xl"
-                  />
-                </div>
-
-                <div className="col-span-3">
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Satuan
-                  </label>
-                  {catProfile.lockUnit ? (
-                    <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
-                      {catProfile.defaultUnit}
-                    </div>
-                  ) : (
-                    <select
-                      {...register("unit", { required: true })}
-                      className="h-10 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    >
-                      {(catProfile.allowedUnits
-                        ? units.filter((u) => catProfile.allowedUnits!.includes(u)).concat(
-                            units.filter((u) => !catProfile.allowedUnits!.includes(u))
-                          )
-                        : units
-                      ).map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
-                <div className="col-span-6">
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    {catProfile.priceLabel}
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("unit_price", { required: true, valueAsNumber: true })}
-                    className="h-10 text-xs rounded-xl"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Hint & Selector Satuan & Turunan dari Master Item */}
-            {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
-              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
-                  <span className="flex items-center gap-1">
-                    <Package className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Kemasan & Turunan Master Item:</span>
-                  </span>
-                  {selectedSuggestionHint.isi_paket && (
-                    <span className="font-medium text-blue-700">
-                      1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
-                    </span>
-                  )}
-                </div>
-
-                {/* Tombol Pemilihan Satuan Beli Paket / Ecer */}
-                {selectedSuggestionHint.tipe_satuan === "keduanya" && (
-                  <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-                    <span className="text-[11px] text-slate-600 font-medium">Satuan Master:</span>
-                    <button
-                      type="button"
-                      onClick={() => setValue("unit", selectedSuggestionHint.satuan_beli || "Box")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                        watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_beli || "Box").toLowerCase()
-                          ? "bg-blue-600 text-white shadow-xs"
-                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                      }`}
-                    >
-                      <Package className="w-3 h-3" />
-                      <span>Paket ({selectedSuggestionHint.satuan_beli || "Box"})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setValue("unit", selectedSuggestionHint.satuan_ecer || "Pouch")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                        watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_ecer || "Pouch").toLowerCase()
-                          ? "bg-blue-600 text-white shadow-xs"
-                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                      }`}
-                    >
-                      <ShoppingBag className="w-3 h-3" />
-                      <span>Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Varian Turunan Satuan */}
-                {(() => {
-                  const rawVariants = selectedSuggestionHint.isi_paket
-                    ? selectedSuggestionHint.isi_paket.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
-                    : [];
-                  return (
-                    <div className="pt-1 border-t border-blue-200/50 space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-blue-900 font-medium">
-                          Pilih Varian Isi / Turunan:
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowNewTurunan((prev) => !prev)}
-                          className="text-[10px] text-blue-700 hover:underline font-medium"
-                        >
-                          {showNewTurunan ? "Tutup input turunan" : "+ Turunan Baru"}
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {rawVariants.map((variant, idx) => {
-                          const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
-                          const curNotes = watch("notes") || "";
-                          const isPicked = curNotes.toLowerCase().includes(cleanVar.toLowerCase());
-                          return (
+                        <div className="flex flex-wrap gap-1.5">
+                          {ocrExtractedItems.map((it, idx) => (
                             <button
                               key={idx}
                               type="button"
                               onClick={() => {
-                                setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                                upsertNoteTag("Isi", cleanVar);
+                                setSelectedOcrIndex(idx);
+                                applyExtractedItemToForm(it);
                               }}
-                              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                                isPicked
-                                  ? "bg-emerald-600 text-white shadow-xs"
-                                  : "bg-white text-slate-700 border border-blue-200 hover:bg-blue-100/50"
+                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
+                                selectedOcrIndex === idx
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                  : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100"
                               }`}
                             >
-                              <span>{selectedSuggestionHint.satuan_beli || "Bungkus"} (isi {cleanVar})</span>
+                              {it.barang || `Item #${idx + 1}`} ({formatRupiah(Number(it.total_harga || 0))})
                             </button>
-                          );
-                        })}
-                      </div>
-
-                      {showNewTurunan && (
-                        <div className="flex items-center gap-1.5 pt-1">
-                          <Input
-                            placeholder="Contoh: 500g, 1Kg, 250ml"
-                            value={customTurunan}
-                            onChange={(e) => setCustomTurunan(e.target.value)}
-                            className="h-7 text-xs bg-white rounded-lg flex-1"
-                          />
-                          <button
-                            type="button"
-                            disabled={!customTurunan.trim()}
-                            onClick={() => {
-                              const cleanVar = customTurunan.trim();
-                              setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                              upsertNoteTag("Isi", cleanVar);
-                              setCustomTurunan("");
-                              setShowNewTurunan(false);
-                            }}
-                            className="h-7 px-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            Terapkan
-                          </button>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
 
-            {/* Komponen Biaya Tambahan / Potongan (Hanya tampilkan yang relevan untuk kategori ini) */}
-            {(catProfile.shippingFeeLabel || catProfile.taxLabel || catProfile.otherFeeLabel || catProfile.discountLabel) && (
-              <div className="grid grid-cols-2 gap-3">
-                {catProfile.shippingFeeLabel && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 block mb-1">
-                      {catProfile.shippingFeeLabel}
-                    </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      {...register("shipping_fee", { valueAsNumber: true })}
-                      className="h-9 text-xs rounded-xl"
-                      placeholder="0"
-                    />
+                        {onBatchSubmit && (
+                          <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] text-emerald-700">
+                              Total {ocrExtractedItems.length} item terbaca di nota ini.
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={isSubmitting}
+                              onClick={handleBatchSaveAll}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 px-3.5 shadow-sm font-semibold flex items-center gap-1.5"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
+              )}
 
-                {catProfile.taxLabel && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-slate-600">
-                        {catProfile.taxLabel}
+              {/* Telegram Cross-Check Banner for existing expense */}
+              {initialData && initialTgMeta.isUrl && (
+                <div className="p-3.5 bg-sky-50/80 border border-sky-200/90 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-[#229ED9] text-white flex items-center justify-center shrink-0">
+                      <TelegramIcon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-sky-950">Chat Telegram Asli</span>
+                        <span className="text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded-md">
+                          {initialTgMeta.badgeLabel}
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-sky-700 truncate block mt-0.5 max-w-[220px] sm:max-w-[380px]">
+                        {initialData.msg_link}
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href={initialData.msg_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#229ED9] hover:bg-[#1d8ec4] text-white text-xs font-semibold shrink-0 transition-all"
+                    title="Buka pesan Telegram di tab baru"
+                  >
+                    <span>Cross Check</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* MAIN 2-COLUMN DESKTOP GRID (Reflows to 1 column on mobile/tablet) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+                {/* LEFT COLUMN (7 cols on Desktop): Identitas Item, Supplier/Penerima, Metadata Kategori, & Referensi */}
+                <div className="lg:col-span-7 space-y-4">
+                  {/* Baris Tanggal & Dropdown Kategori */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        Tanggal Nota
                       </label>
-                      {Number(unitPrice) > 0 && (
+                      <Input
+                        type="date"
+                        {...register("expense_date", { required: true })}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        Kategori Pengeluaran
+                      </label>
+                      <select
+                        {...register("category")}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-semibold focus:ring-2 focus:ring-blue-500"
+                      >
+                        {categories.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Nama Barang / Judul Transaksi / Jenis Keperluan */}
+                  <div className="relative">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-slate-700">
+                        {catProfile.itemLabel}
+                      </label>
+                      {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
                         <button
                           type="button"
-                          onClick={() => setValue("tax", Math.round(Number(qty) * Number(unitPrice) * 0.11))}
-                          className="text-[10px] text-blue-600 hover:underline font-medium"
+                          onClick={() => setValue("unit_price", selectedSuggestionHint.last_unit_price)}
+                          className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-semibold"
                         >
-                          +11% PPN
+                          <Clock className="w-3 h-3" />
+                          Harga terakhir: {formatRupiah(selectedSuggestionHint.last_unit_price)}
                         </button>
                       )}
                     </div>
                     <Input
-                      type="number"
-                      step="any"
-                      {...register("tax", { valueAsNumber: true })}
-                      className="h-9 text-xs rounded-xl"
-                      placeholder="0"
+                      placeholder={catProfile.itemPlaceholder}
+                      autoComplete="off"
+                      {...register("item_name", { required: "Kolom ini wajib diisi" })}
+                      onFocus={() => {
+                        if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
+                      }}
+                      onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
+                      className="h-11 sm:h-10 text-xs rounded-xl font-medium"
                     />
-                  </div>
-                )}
+                    {errors.item_name && (
+                      <span className="text-[11px] text-red-500 mt-0.5 block">{errors.item_name.message}</span>
+                    )}
 
-                {catProfile.otherFeeLabel && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 block mb-1">
-                      {catProfile.otherFeeLabel}
-                    </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      {...register("other_fee", { valueAsNumber: true })}
-                      className="h-9 text-xs rounded-xl"
-                      placeholder="0"
-                    />
-                  </div>
-                )}
+                    {/* Quick Item Chips sesuai Kategori */}
+                    {catProfile.quickItemChips && catProfile.quickItemChips.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        <span className="text-[10px] font-medium text-slate-400">Pilihan cepat:</span>
+                        {catProfile.quickItemChips.map((chip) => {
+                          const isSelected = itemNameVal.trim().toLowerCase() === chip.toLowerCase();
+                          return (
+                            <button
+                              key={chip}
+                              type="button"
+                              onClick={() => setValue("item_name", chip, { shouldValidate: true })}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
+                                isSelected
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
+                              }`}
+                            >
+                              {chip}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                {catProfile.discountLabel && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-600 block mb-1">
-                      {catProfile.discountLabel}
-                    </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      {...register("discount", { valueAsNumber: true })}
-                      className="h-9 text-xs rounded-xl"
-                      placeholder="0"
-                    />
+                    {/* Dropdown Autocomplete hanya untuk kategori yang terhubung ke Master Item */}
+                    {catProfile.showMasterItemAutocomplete && showItemDropdown && filteredItemSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100">
+                        {filteredItemSuggestions.map((s) => (
+                          <button
+                            key={`${s.item_name}-${s.is_master}`}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              handleSelectSuggestion(s);
+                            }}
+                            className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between group"
+                          >
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">
+                                  {s.item_name}
+                                </span>
+                                {s.is_master && (
+                                  <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[10px] px-1.5 py-0 h-4">
+                                    Master
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-500">
+                                {s.category} {s.last_supplier !== "-" ? `• ${s.last_supplier}` : ""}
+                                {s.isi_paket ? ` • ${s.satuan_beli}: ${s.isi_paket}` : (s.satuan_beli && s.satuan_beli !== "Pcs" ? ` • ${s.satuan_beli}` : "")}
+                              </span>
+                            </div>
+                            {s.last_unit_price > 0 && (
+                              <div className="text-right">
+                                <span className="text-xs font-bold text-slate-700 block tabular-nums">
+                                  {formatRupiah(s.last_unit_price)}
+                                </span>
+                                <span className="text-[10px] text-slate-500">harga satuan</span>
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  {/* Toko / Supplier / Kurir / Penerima Gaji / Vendor */}
+                  {isTukarCash ? (
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex items-center gap-2.5">
+                      <Store className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di kolom keterangan.</span>
+                      <input type="hidden" {...register("supplier")} value="-" />
+                    </div>
+                  ) : isOngkir ? (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        {catProfile.supplierLabel}
+                      </label>
+                      <Input
+                        placeholder={catProfile.supplierPlaceholder}
+                        list="ongkir-courier-list"
+                        {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                      <datalist id="ongkir-courier-list">
+                        <option value="GoSend Car" />
+                        <option value="GoSend Bike" />
+                        <option value="GrabExpress Instant" />
+                        <option value="GrabExpress SameDay" />
+                        <option value="Lalamove" />
+                        <option value="Maxim" />
+                        <option value="J&T Express" />
+                        <option value="SiCepat" />
+                        <option value="Anteraja" />
+                      </datalist>
+                      {catProfile.quickSupplierChips && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span className="text-[10px] text-slate-400">Pilih kurir:</span>
+                          {catProfile.quickSupplierChips.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => setValue("supplier", c)}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
+                                supplierVal === c
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
+                              }`}
+                            >
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">
+                          {catProfile.supplierLabel}
+                        </label>
+                        {supplierVal && supplierVal !== "-" && (
+                          <button
+                            type="button"
+                            onClick={() => setValue("supplier", "-")}
+                            className="text-[11px] text-slate-400 hover:text-slate-600"
+                          >
+                            Reset (-)
+                          </button>
+                        )}
+                      </div>
+                      <Input
+                        placeholder={catProfile.supplierPlaceholder}
+                        autoComplete="off"
+                        {...register("supplier")}
+                        onFocus={() => {
+                          if (!isPayroll) setShowSupplierDropdown(true);
+                        }}
+                        onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 180)}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+
+                      {/* Untuk Gaji: Tampilkan daftar karyawan terdaftar dari usersList agar 1-klik */}
+                      {isPayroll && usersList.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span className="text-[10px] text-slate-400">Staf terdaftar:</span>
+                          {usersList.slice(0, 6).map((u) => (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => setValue("supplier", u.name)}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
+                                supplierVal === u.name
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
+                              }`}
+                            >
+                              {u.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Untuk Kategori dengan Quick Supplier Chips (Operasional, Software, Marketing) */}
+                      {!isPayroll && catProfile.quickSupplierChips && catProfile.quickSupplierChips.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span className="text-[10px] text-slate-400">Saran penyedia:</span>
+                          {catProfile.quickSupplierChips.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => setValue("supplier", s)}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
+                                supplierVal === s
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Dropdown Autocomplete Toko/Supplier */}
+                      {!isPayroll && showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+                          <div className="px-3 py-1.5 bg-slate-50/80 text-[10px] font-semibold text-slate-500 flex items-center gap-1">
+                            <Store className="w-3 h-3 text-slate-400" />
+                            <span>Riwayat {catProfile.supplierLabel}</span>
+                          </div>
+                          {filteredSupplierSuggestions.map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setValue("supplier", s);
+                                setShowSupplierDropdown(false);
+                              }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-blue-50/60 transition-colors flex items-center justify-between group"
+                            >
+                              <span className="text-xs font-medium text-slate-800 group-hover:text-blue-600">
+                                {s}
+                              </span>
+                              <Check className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Quick suggestions chips untuk kategori belanja reguler */}
+                      {!isPayroll && !catProfile.quickSupplierChips && (!supplierVal || supplierVal === "-") && supplierSuggestions.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                          <span className="text-[10px] text-slate-400">Paling sering:</span>
+                          {supplierSuggestions.slice(0, 5).map((s) => (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => setValue("supplier", s)}
+                              className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 transition-colors font-medium border border-slate-200/70"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Field Kontekstual Spesifik Kategori (Periode Gaji, Durasi Sewa, Siklus Software, Kondisi Aset, Area Servis, dll.) */}
+                  {(catProfile.metaField1Label || catProfile.metaField2Label) && (
+                    <div className="p-3.5 bg-blue-50/40 border border-blue-200/70 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      {catProfile.metaField1Label && catProfile.metaField1TagPrefix && (
+                        <div className={catProfile.metaField2Label ? "" : "sm:col-span-2"}>
+                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                            {catProfile.metaField1Label}
+                          </label>
+                          <Input
+                            value={extractNoteTag(catProfile.metaField1TagPrefix, notesVal)}
+                            onChange={(e) => upsertNoteTag(catProfile.metaField1TagPrefix!, e.target.value)}
+                            placeholder={catProfile.metaField1Placeholder}
+                            className="h-10 text-xs rounded-xl bg-white"
+                          />
+                          {catProfile.metaField1Chips && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {catProfile.metaField1Chips.map((chip) => {
+                                const curVal = extractNoteTag(catProfile.metaField1TagPrefix, notesVal);
+                                const active = curVal.toLowerCase() === chip.toLowerCase();
+                                return (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => upsertNoteTag(catProfile.metaField1TagPrefix!, active ? "" : chip)}
+                                    className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium border ${
+                                      active
+                                        ? "bg-blue-600 text-white border-blue-600"
+                                        : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
+                                    }`}
+                                  >
+                                    {chip}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {catProfile.metaField2Label && catProfile.metaField2TagPrefix && (
+                        <div className={catProfile.metaField1Label ? "" : "sm:col-span-2"}>
+                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                            {catProfile.metaField2Label}
+                          </label>
+                          <Input
+                            value={extractNoteTag(catProfile.metaField2TagPrefix, notesVal)}
+                            onChange={(e) => upsertNoteTag(catProfile.metaField2TagPrefix!, e.target.value)}
+                            placeholder={catProfile.metaField2Placeholder}
+                            className="h-10 text-xs rounded-xl bg-white"
+                          />
+                          {catProfile.metaField2Chips && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              {catProfile.metaField2Chips.map((chip) => {
+                                const curVal = extractNoteTag(catProfile.metaField2TagPrefix, notesVal);
+                                const active = curVal.toLowerCase() === chip.toLowerCase();
+                                return (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => upsertNoteTag(catProfile.metaField2TagPrefix!, active ? "" : chip)}
+                                    className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium border ${
+                                      active
+                                        ? "bg-blue-600 text-white border-blue-600"
+                                        : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
+                                    }`}
+                                  >
+                                    {chip}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Baris Referensi: No. Invoice, Reimbursement, & Penginput Transaksi */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1">
+                    {!isTukarCash && (
+                      <>
+                        <div className="sm:col-span-4">
+                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                            {isPayroll ? "No. Slip / Ref" : "No. Invoice / Nota"}
+                          </label>
+                          <Input
+                            placeholder="INV-2026/.. atau -"
+                            {...register("invoice_number")}
+                            onBlur={(e) => handleCheckInvoice(e.target.value)}
+                            className="h-11 sm:h-10 text-xs rounded-xl font-mono"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-4">
+                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                            Tipe Dana
+                          </label>
+                          <label className="flex items-center gap-2 h-11 sm:h-10 px-3 rounded-xl border border-input bg-slate-50/60 hover:bg-slate-100/70 cursor-pointer transition-colors">
+                            <input
+                              type="checkbox"
+                              {...register("is_reimbursement")}
+                              className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 truncate">
+                              <Briefcase className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span className="truncate">Talangan / Reimburse</span>
+                            </div>
+                          </label>
+                        </div>
+                      </>
+                    )}
+
+                    <div className={isTukarCash ? "sm:col-span-12" : "sm:col-span-4"}>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        Penginput (User)
+                      </label>
+                      <select
+                        {...register("user_id", {
+                          setValueAs: (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
+                        })}
+                        className="w-full h-11 sm:h-10 px-3 text-xs rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Otomatis (Web Dashboard)</option>
+                        {usersList.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} {u.telegram_id ? `(@${u.telegram_id})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {invoiceWarning && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2 leading-snug">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span>{invoiceWarning}</span>
+                    </div>
+                  )}
+
+                  {/* Keterangan / Catatan & Link Sumber Telegram */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        {catProfile.notesLabel}
+                      </label>
+                      <Input
+                        placeholder={catProfile.notesPlaceholder}
+                        {...register("notes")}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                          <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+                          <span>Link Bukti / Sumber</span>
+                        </label>
+                        {msgLinkVal && parseTelegramLink(msgLinkVal).isUrl && (
+                          <a
+                            href={msgLinkVal}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
+                          >
+                            <span>Buka Link</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                      </div>
+                      <Input
+                        placeholder="https://t.me/c/... atau Web Dashboard"
+                        {...register("msg_link")}
+                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN (5 cols on Desktop): Panel Ledger Kalkulasi & Pembayaran */}
+                <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 sm:p-5 space-y-4 lg:sticky lg:top-0">
+                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                    <span className="text-xs font-bold text-slate-800">
+                      Rincian Nominal & Pembayaran
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-500">
+                      Kalkulasi Otomatis
+                    </span>
+                  </div>
+
+                  {/* Qty, Satuan, & Harga Satuan (Adaptif sesuai Kategori) */}
+                  {catProfile.hideQty ? (
+                    <div>
+                      <input type="hidden" {...register("qty", { valueAsNumber: true })} value={1} />
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        {catProfile.priceLabel}
+                      </label>
+                      <Input
+                        type="number"
+                        step="any"
+                        {...register("unit_price", { required: true, valueAsNumber: true })}
+                        className="h-11 sm:h-10 text-sm rounded-xl bg-white font-bold tabular-nums"
+                        placeholder="0"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-12 gap-2.5">
+                      <div className="col-span-1 sm:col-span-3">
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          {isOngkir ? "Jml Trip" : "Qty"}
+                        </label>
+                        <Input
+                          type="number"
+                          step="any"
+                          {...register("qty", { required: true, valueAsNumber: true })}
+                          className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold text-center tabular-nums"
+                        />
+                      </div>
+
+                      <div className="col-span-1 sm:col-span-4">
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          Satuan
+                        </label>
+                        {catProfile.lockUnit ? (
+                          <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center text-slate-700">
+                            {catProfile.defaultUnit}
+                          </div>
+                        ) : (
+                          <select
+                            {...register("unit", { required: true })}
+                            className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                          >
+                            {(catProfile.allowedUnits
+                              ? units.filter((u) => catProfile.allowedUnits!.includes(u)).concat(
+                                  units.filter((u) => !catProfile.allowedUnits!.includes(u))
+                                )
+                              : units
+                            ).map((u) => (
+                              <option key={u} value={u}>
+                                {u}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      <div className="col-span-2 sm:col-span-5">
+                        <label className="text-xs font-semibold text-slate-700 block mb-1">
+                          {catProfile.priceLabel}
+                        </label>
+                        <Input
+                          type="number"
+                          step="any"
+                          {...register("unit_price", { required: true, valueAsNumber: true })}
+                          className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold tabular-nums"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hint & Selector Satuan & Turunan dari Master Item */}
+                  {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
+                    <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
+                        <span className="flex items-center gap-1">
+                          <Package className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Kemasan Master Item:</span>
+                        </span>
+                        {selectedSuggestionHint.isi_paket && (
+                          <span className="font-medium text-blue-700">
+                            1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
+                          </span>
+                        )}
+                      </div>
+
+                      {selectedSuggestionHint.tipe_satuan === "keduanya" && (
+                        <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setValue("unit", selectedSuggestionHint.satuan_beli || "Box")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                              watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_beli || "Box").toLowerCase()
+                                ? "bg-blue-600 text-white shadow-xs"
+                                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            <Package className="w-3 h-3" />
+                            <span>Paket ({selectedSuggestionHint.satuan_beli || "Box"})</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setValue("unit", selectedSuggestionHint.satuan_ecer || "Pouch")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                              watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_ecer || "Pouch").toLowerCase()
+                                ? "bg-blue-600 text-white shadow-xs"
+                                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            <ShoppingBag className="w-3 h-3" />
+                            <span>Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {(() => {
+                        const rawVariants = selectedSuggestionHint.isi_paket
+                          ? selectedSuggestionHint.isi_paket.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
+                          : [];
+                        return (
+                          <div className="pt-1 border-t border-blue-200/50 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-blue-900 font-medium">
+                                Varian Isi / Turunan:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowNewTurunan((prev) => !prev)}
+                                className="text-[10px] text-blue-700 hover:underline font-medium"
+                              >
+                                {showNewTurunan ? "Tutup" : "+ Turunan Baru"}
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {rawVariants.map((variant, idx) => {
+                                const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
+                                const curNotes = watch("notes") || "";
+                                const isPicked = curNotes.toLowerCase().includes(cleanVar.toLowerCase());
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                      setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
+                                      upsertNoteTag("Isi", cleanVar);
+                                    }}
+                                    className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
+                                      isPicked
+                                        ? "bg-emerald-600 text-white shadow-xs"
+                                        : "bg-white text-slate-700 border border-blue-200 hover:bg-blue-100/50"
+                                    }`}
+                                  >
+                                    <span>{selectedSuggestionHint.satuan_beli || "Bungkus"} (isi {cleanVar})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {showNewTurunan && (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <Input
+                                  placeholder="Contoh: 500g, 1Kg, 250ml"
+                                  value={customTurunan}
+                                  onChange={(e) => setCustomTurunan(e.target.value)}
+                                  className="h-8 text-xs bg-white rounded-lg flex-1"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!customTurunan.trim()}
+                                  onClick={() => {
+                                    const cleanVar = customTurunan.trim();
+                                    setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
+                                    upsertNoteTag("Isi", cleanVar);
+                                    setCustomTurunan("");
+                                    setShowNewTurunan(false);
+                                  }}
+                                  className="h-8 px-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  Terapkan
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Komponen Biaya Tambahan / Potongan (Hanya tampilkan yang relevan untuk kategori ini) */}
+                  {(catProfile.shippingFeeLabel || catProfile.taxLabel || catProfile.otherFeeLabel || catProfile.discountLabel) && (
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      {catProfile.shippingFeeLabel && (
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                            {catProfile.shippingFeeLabel}
+                          </label>
+                          <Input
+                            type="number"
+                            step="any"
+                            {...register("shipping_fee", { valueAsNumber: true })}
+                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+
+                      {catProfile.taxLabel && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-semibold text-slate-600">
+                              {catProfile.taxLabel}
+                            </label>
+                            {Number(unitPrice) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setValue("tax", Math.round(Number(qty) * Number(unitPrice) * 0.11))}
+                                className="text-[10px] text-blue-600 hover:underline font-semibold"
+                              >
+                                +11% PPN
+                              </button>
+                            )}
+                          </div>
+                          <Input
+                            type="number"
+                            step="any"
+                            {...register("tax", { valueAsNumber: true })}
+                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+
+                      {catProfile.otherFeeLabel && (
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                            {catProfile.otherFeeLabel}
+                          </label>
+                          <Input
+                            type="number"
+                            step="any"
+                            {...register("other_fee", { valueAsNumber: true })}
+                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+
+                      {catProfile.discountLabel && (
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                            {catProfile.discountLabel}
+                          </label>
+                          <Input
+                            type="number"
+                            step="any"
+                            {...register("discount", { valueAsNumber: true })}
+                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
+                            placeholder="0"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Calculated Total Highlight Box with Breakdown */}
+                  <div className="p-3.5 bg-white border border-blue-200/90 rounded-2xl space-y-2 shadow-2xs">
+                    {(extraFeesTotal > 0 || Number(discount) > 0) && (
+                      <div className="space-y-1 text-[11px] text-slate-500 border-b border-slate-100 pb-2">
+                        <div className="flex justify-between">
+                          <span>Subtotal ({qty} {watch("unit")})</span>
+                          <span className="font-mono tabular-nums">{formatRupiah(baseSubtotal)}</span>
+                        </div>
+                        {extraFeesTotal > 0 && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>Biaya Tambahan / Pajak</span>
+                            <span className="font-mono tabular-nums">+{formatRupiah(extraFeesTotal)}</span>
+                          </div>
+                        )}
+                        {Number(discount) > 0 && (
+                          <div className="flex justify-between text-emerald-700">
+                            <span>Potongan / Diskon</span>
+                            <span className="font-mono tabular-nums">-{formatRupiah(Number(discount))}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-slate-800">
+                        {catProfile.totalLabel}
+                      </span>
+                      <span className="text-lg font-extrabold text-blue-700 tabular-nums">
+                        {formatRupiah(calculatedTotal)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Metode Bayar & Status Pembayaran */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        Metode Bayar
+                      </label>
+                      {isTukarCash ? (
+                        <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center justify-between text-slate-800">
+                          <span>Tunai (Otomatis)</span>
+                          <Badge variant="outline" className="text-[10px] bg-white text-emerald-700 border-emerald-200">
+                            Kas Fisik
+                          </Badge>
+                        </div>
+                      ) : isOngkir ? (
+                        <>
+                          <Input
+                            list="ongkir-pay-methods"
+                            placeholder="Gopay, Ovo, Tunai, QRIS..."
+                            {...register("pay_method")}
+                            className="h-11 sm:h-10 text-xs rounded-xl bg-white"
+                          />
+                          <datalist id="ongkir-pay-methods">
+                            <option value="Gopay - Kasir" />
+                            <option value="Gopay - Owner" />
+                            <option value="Gopay - Maya" />
+                            <option value="Ovo - Akun" />
+                            <option value="Tunai" />
+                            <option value="QRIS" />
+                            <option value="Transfer" />
+                            <option value="COD" />
+                          </datalist>
+                        </>
+                      ) : (
+                        <select
+                          {...register("pay_method", {
+                            onChange: (e) => {
+                              const val = e.target.value;
+                              if (val === "COD") {
+                                setValue("pay_status", "Belum Lunas");
+                              } else {
+                                setValue("pay_status", "Lunas");
+                              }
+                            },
+                          })}
+                          className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
+                        >
+                          {paymentMethods.map((pm) => (
+                            <option key={pm} value={pm}>
+                              {pm}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        Status Pembayaran
+                      </label>
+                      <select
+                        {...register("pay_status")}
+                        className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
+                      >
+                        <option value="Lunas">Lunas</option>
+                        <option value="Belum Lunas">Belum Lunas (Hutang)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas) */}
+                  {isUnpaid && (
+                    <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl">
+                      <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5 mb-1.5">
+                        <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
+                        Tanggal Jatuh Tempo Tagihan
+                      </label>
+                      <Input
+                        type="date"
+                        {...register("due_date")}
+                        className="h-10 text-xs rounded-xl bg-white border-rose-200"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-
-            {/* Calculated Total Highlight Box */}
-            <div className="p-3.5 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between">
-              <span className="text-xs font-medium text-blue-900">
-                {catProfile.totalLabel}
-              </span>
-              <span className="text-base font-bold text-blue-700 tabular-nums">
-                {formatRupiah(calculatedTotal)}
-              </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Metode Bayar
-                </label>
-                {isTukarCash ? (
-                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center justify-between text-slate-800">
-                    <span>Tunai / Cash (Otomatis)</span>
-                    <Badge variant="outline" className="text-[10px] bg-white text-emerald-700 border-emerald-200">
-                      Kas Fisik
-                    </Badge>
-                  </div>
-                ) : isOngkir ? (
-                  <>
-                    <Input
-                      list="ongkir-pay-methods"
-                      placeholder="mis: Gopay - [akun], Ovo, Tunai, Qris..."
-                      {...register("pay_method")}
-                      className="h-10 text-xs rounded-xl"
-                    />
-                    <datalist id="ongkir-pay-methods">
-                      <option value="Gopay - Kasir" />
-                      <option value="Gopay - Owner" />
-                      <option value="Gopay - Maya" />
-                      <option value="Ovo - Akun" />
-                      <option value="Tunai" />
-                      <option value="QRIS" />
-                      <option value="Transfer" />
-                      <option value="COD" />
-                    </datalist>
-                  </>
-                ) : (
-                  <select
-                    {...register("pay_method", {
-                      onChange: (e) => {
-                        const val = e.target.value;
-                        if (val === "COD") {
-                          setValue("pay_status", "Belum Lunas");
-                        } else {
-                          setValue("pay_status", "Lunas");
-                        }
-                      },
-                    })}
-                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium"
-                  >
-                    {paymentMethods.map((pm) => (
-                      <option key={pm} value={pm}>
-                        {pm}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            {/* Sticky Bottom Action Bar (Comfortable on Mobile & Desktop) */}
+            <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[10px] font-semibold text-slate-500 block truncate">
+                  {catProfile.totalLabel}
+                </span>
+                <span className="text-sm sm:text-base font-extrabold text-slate-900 tabular-nums">
+                  {formatRupiah(calculatedTotal)}
+                </span>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Status Pembayaran
-                </label>
-                <select
-                  {...register("pay_status")}
-                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium"
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onClose}
+                  className="rounded-xl text-xs h-11 sm:h-10 px-4 font-semibold"
                 >
-                  <option value="Lunas">Lunas</option>
-                  <option value="Belum Lunas">Belum Lunas (Hutang)</option>
-                </select>
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold shadow-xs"
+                >
+                  {isSubmitting ? "Menyimpan..." : initialData ? "Simpan Perubahan" : "Tambah Catatan"}
+                </Button>
               </div>
-            </div>
-
-            {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas) */}
-            {isUnpaid && (
-              <div className="p-3 bg-rose-50/60 border border-rose-200/80 rounded-2xl">
-                <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5 mb-1.5">
-                  <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
-                  Tanggal Jatuh Tempo Tagihan (untuk Reminder Otomatis)
-                </label>
-                <Input
-                  type="date"
-                  {...register("due_date")}
-                  className="h-9 text-xs rounded-xl bg-white border-rose-200"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">
-                {catProfile.notesLabel}
-              </label>
-              <Input
-                placeholder={catProfile.notesPlaceholder}
-                {...register("notes")}
-                className="h-10 text-xs rounded-xl"
-              />
-            </div>
-
-            {/* Link Chat Telegram / Sumber Transaksi */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                  <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
-                  <span>Link Chat Telegram / Sumber</span>
-                </label>
-                {msgLinkVal && parseTelegramLink(msgLinkVal).isUrl && (
-                  <a
-                    href={msgLinkVal}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
-                    title="Uji buka link pesan Telegram di tab baru"
-                  >
-                    <span>Uji Buka Link</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                )}
-              </div>
-              <Input
-                placeholder="mis: https://t.me/c/... atau Web Dashboard"
-                {...register("msg_link")}
-                className="h-10 text-xs rounded-xl"
-              />
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                Tautan pesan Telegram untuk mempermudah cross check bukti dan foto struk asli.
-              </span>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                className="rounded-xl text-xs h-10 px-4"
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-10 px-5 font-semibold"
-              >
-                {isSubmitting ? "Menyimpan..." : initialData ? "Simpan Perubahan" : "Tambah Catatan"}
-              </Button>
             </div>
           </form>
         )}
