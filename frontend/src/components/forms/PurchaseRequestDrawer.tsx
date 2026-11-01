@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
+import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 import {
   ShoppingBag,
   Plus,
@@ -276,6 +277,8 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
 
             <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/80 bg-white dark:bg-zinc-900">
               {items.map((item, idx) => {
+                const rowProfile = getCategoryFormProfile(item.category || "Bahan Kue");
+                const rowUnits = rowProfile.allowedUnits || COMMON_UNITS;
                 const searchQ = item.item_name.toLowerCase().trim();
                 const matchedSuggestions = searchQ.length >= 2
                   ? itemSuggestions
@@ -285,13 +288,35 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
 
                 return (
                   <div key={idx} className="p-3 space-y-2 relative group hover:bg-zinc-50/50 dark:hover:bg-zinc-900/60 transition-colors">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                       <span className="w-5 text-center text-xs font-mono font-bold text-zinc-400">
                         {idx + 1}.
                       </span>
 
+                      {/* Pilih Kategori per Item */}
+                      <div className="w-36 shrink-0">
+                        <select
+                          value={item.category || "Bahan Kue"}
+                          onChange={(e) => {
+                            const nextCat = e.target.value;
+                            const nextProf = getCategoryFormProfile(nextCat);
+                            handleUpdateItem(idx, "category", nextCat);
+                            if (nextProf.defaultUnit) {
+                              handleUpdateItem(idx, "unit", nextProf.defaultUnit);
+                            }
+                          }}
+                          className="w-full h-9 px-2 text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg outline-none font-semibold text-zinc-700 dark:text-zinc-200"
+                        >
+                          {categories.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       {/* Input Nama Barang with Autocomplete */}
-                      <div className="flex-1 relative">
+                      <div className="flex-1 min-w-[180px] relative">
                         <Input
                           value={item.item_name}
                           onChange={(e) => {
@@ -299,7 +324,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                             setActiveItemIndex(idx);
                           }}
                           onFocus={() => setActiveItemIndex(idx)}
-                          placeholder="Ketik nama barang (misal: Tepung Cakra)..."
+                          placeholder={rowProfile.itemPlaceholder}
                           className="h-9 text-xs bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 font-semibold"
                         />
 
@@ -350,7 +375,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                           onChange={(e) => handleUpdateItem(idx, "unit", e.target.value)}
                           className="w-full h-9 px-2 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg outline-none font-medium"
                         >
-                          {COMMON_UNITS.map((u) => (
+                          {rowUnits.map((u) => (
                             <option key={u} value={u}>
                               {u}
                             </option>
@@ -370,12 +395,29 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                       </Button>
                     </div>
 
+                    {/* Quick Chips dari Profil Kategori */}
+                    {rowProfile.quickItemChips && rowProfile.quickItemChips.length > 0 && !item.item_name && (
+                      <div className="flex flex-wrap items-center gap-1 pl-7">
+                        <span className="text-[10px] text-zinc-400 mr-1">{rowProfile.badgeLabel}:</span>
+                        {rowProfile.quickItemChips.slice(0, 6).map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => handleUpdateItem(idx, "item_name", chip)}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-amber-100 dark:hover:bg-amber-950/40 transition-colors"
+                          >
+                            + {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Catatan / Keterangan per Item */}
                     <div className="flex items-center gap-2 pl-7">
                       <Input
                         value={item.notes}
                         onChange={(e) => handleUpdateItem(idx, "notes", e.target.value)}
-                        placeholder="Catatan tambahan (mis: merek tertentu, ukuran pack, dsb)..."
+                        placeholder={rowProfile.notesPlaceholder || "Catatan tambahan (mis: merek tertentu, ukuran pack, dsb)..."}
                         className="h-7 text-[11px] bg-zinc-50/70 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 text-zinc-600"
                       />
                       {item.supplier_name && item.supplier_name !== "-" && (

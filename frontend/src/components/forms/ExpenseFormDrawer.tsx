@@ -41,6 +41,7 @@ interface ExpenseFormDrawerProps {
   onSubmit: (data: ExpenseFormData, expenseId?: number) => void;
   onBatchSubmit?: (items: ExpenseFormData[]) => void;
   categories: string[];
+  defaultCategory?: string;
   paymentMethods?: string[];
   units?: string[];
   initialData?: Expense | null;
@@ -56,6 +57,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   onSubmit,
   onBatchSubmit,
   categories,
+  defaultCategory,
   paymentMethods = ["Tunai", "Transfer", "QRIS", "Debit", "Kredit"],
   units = [
     "Pcs", "Box", "Bungkus", "Pack", "Pouch", "Kg", "Gram", "Dus",
@@ -254,8 +256,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     setValue("total_price", Math.max(0, calc));
   }, [qty, unitPrice, shippingFee, tax, otherFee, discount, setValue]);
 
-  // Set form values when editing or repeating an order
+  // Set form values when opening, editing, or repeating an order
   useEffect(() => {
+    if (!isOpen) return;
+
     setSelectedSuggestionHint(null);
     setActiveTab("form");
     setOcrFile(null);
@@ -265,6 +269,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     setOcrExtractedItems([]);
     setSelectedOcrIndex(0);
 
+    const fallbackCat =
+      (defaultCategory && categories.includes(defaultCategory) ? defaultCategory : "") ||
+      categories[0] ||
+      "Bahan Kue";
+    const defaultProfile = getCategoryFormProfile(fallbackCat);
+
     if (initialData) {
       reset({
         expense_date: initialData.expense_date,
@@ -272,7 +282,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         item_name: initialData.item_name || "",
         qty: initialData.qty || 1,
         unit: initialData.unit || "Pcs",
-        category: initialData.category || categories[0] || "Bahan Kue",
+        category: initialData.category || fallbackCat,
         unit_price: initialData.unit_price || 0,
         shipping_fee: initialData.shipping_fee || 0,
         tax: initialData.tax || 0,
@@ -297,7 +307,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         item_name: repeatData.item_name || "",
         qty: repeatData.qty || 1,
         unit: repeatData.unit || "Pcs",
-        category: repeatData.category || categories[0] || "Bahan Kue",
+        category: repeatData.category || fallbackCat,
         unit_price: repeatData.unit_price || 0,
         shipping_fee: repeatData.shipping_fee || 0,
         tax: repeatData.tax || 0,
@@ -305,10 +315,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         discount: repeatData.discount || 0,
         total_price: repeatData.total_price || 0,
         pay_method: repeatData.pay_method || "Transfer",
-        pay_status: "Lunas",
-        due_date: "-",
-        notes: "-",
-        invoice_number: "-",
+        pay_status: repeatData.pay_status || "Lunas",
+        due_date: repeatData.due_date || "-",
+        notes: repeatData.notes || "-",
+        invoice_number: repeatData.invoice_number || "-",
         is_reimbursement: Boolean(repeatData.is_reimbursement),
         msg_link: "Web Dashboard",
         user_id: repeatData.user_id ?? null,
@@ -321,8 +331,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         supplier: "-",
         item_name: "",
         qty: 1,
-        unit: "Pcs",
-        category: categories[0] || "Bahan Kue",
+        unit: defaultProfile.defaultUnit || "Pcs",
+        category: fallbackCat,
         unit_price: 0,
         shipping_fee: 0,
         tax: 0,
@@ -342,7 +352,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       });
     }
     setInvoiceWarning(null);
-  }, [initialData, repeatData, reset, categories, isOpen]);
+    // Deliberately exclude `categories` array ref so background refetches don't wipe user's category choice
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, repeatData, reset, isOpen, defaultCategory]);
 
   const handleSelectSuggestion = (s: ItemSuggestion) => {
     setValue("item_name", s.item_name, { shouldValidate: true });

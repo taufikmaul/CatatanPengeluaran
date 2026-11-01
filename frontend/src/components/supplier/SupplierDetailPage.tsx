@@ -82,6 +82,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SupplierItemAuditDialog } from "./SupplierItemAuditDialog";
+import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 
 interface SupplierDetailPageProps {
   supplierId: number;
@@ -141,6 +142,19 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
     new Date().toISOString().split("T")[0]
   );
   const [newNotes, setNewNotes] = useState("");
+  const newCatProfile = useMemo(() => getCategoryFormProfile(newCategory), [newCategory]);
+
+  const handleCategoryChange = (cat: string) => {
+    setNewCategory(cat);
+    const prof = getCategoryFormProfile(cat);
+    if (prof.defaultUnit) {
+      setNewUnit(prof.defaultUnit);
+    }
+    if (prof.hideQty) {
+      setNewQty(1);
+      setNewTotalPrice(newUnitPrice * 1);
+    }
+  };
 
   // Query Detail Supplier
   const {
@@ -1389,8 +1403,8 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 </label>
                 <select
                   value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                  onChange={(e) => handleCategoryChange(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs font-semibold"
                 >
                   {categories.map((c) => (
                     <option key={c} value={c}>
@@ -1401,34 +1415,71 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
               </div>
             </div>
 
+            {/* Banner Adaptif Profil Kategori */}
+            <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                    {newCatProfile.badgeLabel}
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    {newCatProfile.coaLabel}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  {newCatProfile.description}
+                </p>
+              </div>
+            </div>
+
             <div>
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Nama Barang *
+                {newCatProfile.itemLabel}
               </label>
               <Input
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
-                placeholder="Contoh: Tepung Cakra 1kg"
+                placeholder={newCatProfile.itemPlaceholder}
                 required
                 className="h-9 text-xs"
               />
+              {newCatProfile.quickItemChips && newCatProfile.quickItemChips.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {newCatProfile.quickItemChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setNewItemName(chip)}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
+                        newItemName === chip
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-blue-400"
+                      }`}
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Qty
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  min="0.01"
-                  value={newQty}
-                  onChange={(e) => handleQtyChange(parseFloat(e.target.value) || 0)}
-                  required
-                  className="h-9 text-xs"
-                />
-              </div>
+            <div className={`grid ${newCatProfile.hideQty ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
+              {!newCatProfile.hideQty && (
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Qty
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    value={newQty}
+                    onChange={(e) => handleQtyChange(parseFloat(e.target.value) || 0)}
+                    required
+                    className="h-9 text-xs"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
@@ -1437,9 +1488,10 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 <select
                   value={newUnit}
                   onChange={(e) => setNewUnit(e.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  disabled={newCatProfile.lockUnit}
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
                 >
-                  {units.map((u) => (
+                  {(newCatProfile.allowedUnits || units).map((u) => (
                     <option key={u} value={u}>
                       {u}
                     </option>
@@ -1449,7 +1501,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
 
               <div>
                 <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Harga Satuan
+                  {newCatProfile.priceLabel || "Harga Satuan"}
                 </label>
                 <Input
                   type="number"
@@ -1539,12 +1591,12 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
 
             <div>
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Keterangan / Catatan
+                {newCatProfile.notesLabel || "Keterangan / Catatan"}
               </label>
               <Input
                 value={newNotes}
                 onChange={(e) => setNewNotes(e.target.value)}
-                placeholder="Catatan belanja tambahan..."
+                placeholder={newCatProfile.notesPlaceholder || "Catatan belanja tambahan..."}
                 className="h-9 text-xs"
               />
             </div>

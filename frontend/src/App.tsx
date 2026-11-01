@@ -1542,7 +1542,7 @@ export function App() {
                       id: 0,
                       created_at: new Date().toISOString(),
                       expense_date: new Date().toISOString().split("T")[0],
-                      category: "Bahan Baku",
+                      category: category || categories[0] || "Bahan Kue",
                       item_name: "",
                       supplier: "",
                       qty: 1,
@@ -1613,6 +1613,7 @@ export function App() {
           onSubmit={handleFormSubmit}
           onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
           categories={categories}
+          defaultCategory={category || undefined}
           paymentMethods={activePayMethods}
           units={activeUnits}
           initialData={editingExpense}
