@@ -413,7 +413,13 @@ async def settle_reimbursements_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Daftar ID talangan tidak boleh kosong.",
         )
-    actor = f"dashboard:{get_current_role(request)}"
+    role = get_current_role(request)
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.",
+        )
+    actor = f"dashboard:{role}"
     updated = await settle_reimbursements(
         db,
         expense_ids=payload.expense_ids,
@@ -736,7 +742,14 @@ async def update_expense_endpoint(
             )
         updates["unit"] = norm_u
 
-    actor = f"dashboard:{get_current_role(request)}"
+    role = get_current_role(request)
+    if "reimbursed_at" in updates and role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak: Admin Input tidak memiliki izin untuk mengubah status pelunasan talangan.",
+        )
+
+    actor = f"dashboard:{role}"
     expense = await update_expense(db, expense_id, updates, actor=actor)
     if not expense:
         raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")

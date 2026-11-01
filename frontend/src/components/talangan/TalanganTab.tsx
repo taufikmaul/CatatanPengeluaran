@@ -47,6 +47,8 @@ interface TalanganTabProps {
   onDeleteExpense: (id: number) => void;
   onAddNewTalangan?: () => void;
   canDelete?: boolean;
+  canSettle?: boolean;
+  userRole?: string;
 }
 
 const MONTH_NAMES = [
@@ -63,8 +65,11 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   onDeleteExpense,
   onAddNewTalangan,
   canDelete = false,
+  canSettle = true,
+  userRole,
 }) => {
   const queryClient = useQueryClient();
+  const isSettleAllowed = canSettle && userRole !== "admin_input";
 
   // Filter states
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reimbursed">("pending");
@@ -190,6 +195,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
   // Handle single item settlement toggle
   const handleToggleReimbursed = (expense: Expense) => {
+    if (!isSettleAllowed) {
+      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      return;
+    }
     const isCurrentlyReimbursed = !!expense.reimbursed_at;
     const action = isCurrentlyReimbursed ? "unmark" : "mark_reimbursed";
     settleMutation.mutate({
@@ -200,6 +209,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
   // Handle settle all for a specific user
   const handleSettleUserPending = (userGroup: ReimbursementUserSummary) => {
+    if (!isSettleAllowed) {
+      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      return;
+    }
     if (userGroup.pending_count === 0) return;
     const confirmMsg = `Ganti semua ${userGroup.pending_count} talangan milik ${userGroup.user_name} senilai ${formatRupiah(userGroup.pending_total)}?`;
     if (!window.confirm(confirmMsg)) return;
@@ -239,6 +252,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   };
 
   const handleBatchSettle = (action: "mark_reimbursed" | "unmark") => {
+    if (!isSettleAllowed) {
+      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      return;
+    }
     if (selectedIds.length === 0) return;
     settleMutation.mutate({
       expense_ids: selectedIds,
@@ -311,6 +328,15 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           )}
         </div>
       </div>
+
+      {!isSettleAllowed && (
+        <div className="flex items-center gap-2.5 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl text-amber-900 dark:text-amber-200 text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            <strong>Mode Lihat Talangan:</strong> Role Admin Input hanya memiliki akses untuk mencatat dan melihat data talangan. Persetujuan dan pelunasan penggantian talangan ("Ganti Semua") hanya dapat dilakukan oleh Owner / Super Admin.
+          </span>
+        </div>
+      )}
 
       {/* 2. KPI Cards: Ringkasan Status Talangan */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -551,7 +577,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                       </div>
                     </div>
 
-                    {hasPending && (
+                    {hasPending && isSettleAllowed && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -766,26 +792,34 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => handleBatchSettle("mark_reimbursed")}
-              disabled={settleMutation.isPending}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 shadow-xs"
-            >
-              <CheckCheck className="w-3.5 h-3.5" />
-              <span>Tandai Sudah Diganti</span>
-            </Button>
+            {!isSettleAllowed ? (
+              <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium px-2.5 py-1 bg-amber-50 dark:bg-amber-950/50 rounded-lg border border-amber-200 dark:border-amber-900">
+                Persetujuan pelunasan hanya oleh Owner
+              </span>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => handleBatchSettle("mark_reimbursed")}
+                  disabled={settleMutation.isPending}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 shadow-xs"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  <span>Tandai Sudah Diganti</span>
+                </Button>
 
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleBatchSettle("unmark")}
-              disabled={settleMutation.isPending}
-              className="rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 text-slate-700 dark:text-slate-300"
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-              <span>Batal Ganti</span>
-            </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBatchSettle("unmark")}
+                  disabled={settleMutation.isPending}
+                  className="rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 text-slate-700 dark:text-slate-300"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span>Batal Ganti</span>
+                </Button>
+              </>
+            )}
 
             <Button
               size="sm"
@@ -973,14 +1007,16 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                               <Clock className="w-3 h-3" />
                               <span>Belum Diganti</span>
                             </Badge>
-                            <button
-                              type="button"
-                              onClick={() => handleToggleReimbursed(e)}
-                              disabled={settleMutation.isPending}
-                              className="text-[10px] font-semibold text-purple-700 hover:text-purple-800 dark:text-purple-300 underline block"
-                            >
-                              Tandai Diganti
-                            </button>
+                            {isSettleAllowed && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleReimbursed(e)}
+                                disabled={settleMutation.isPending}
+                                className="text-[10px] font-semibold text-purple-700 hover:text-purple-800 dark:text-purple-300 underline block"
+                              >
+                                Tandai Diganti
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>

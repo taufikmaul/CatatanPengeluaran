@@ -497,6 +497,8 @@ export interface AuthPermissions {
   can_approve_requests?: boolean;
   can_order_purchasing?: boolean;
   can_receive_warehouse?: boolean;
+  can_settle_talangan?: boolean;
+  can_access_warehouse?: boolean;
 }
 
 export interface AuthStatusResponse {

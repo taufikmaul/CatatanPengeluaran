@@ -602,3 +602,142 @@ class TestRoleBasedAuth:
         req3 = Request({"type": "http", "headers": [(b"x-forwarded-for", b"3.3.3.3, 4.4.4.4")]})
         assert get_client_ip(req3) == "3.3.3.3"
 
+
+@pytest.mark.asyncio
+class TestAdminInputRoleRestrictions:
+    """Verifikasi batasan akses role Admin Input: tidak bisa settle talangan & tidak bisa akses gudang."""
+
+    async def test_auth_status_permissions_flags(self, client: AsyncClient):
+        # 1. Admin Input
+        token_input = create_session_token(role="admin_input")
+        res_input = await client.get("/api/v1/auth/status", cookies={SESSION_COOKIE_NAME: token_input})
+        assert res_input.status_code == 200
+        perms_input = res_input.json()["permissions"]
+        assert perms_input["can_settle_talangan"] is False
+        assert perms_input["can_access_warehouse"] is False
+        assert perms_input["can_receive_warehouse"] is False
+
+        # 2. Owner / Admin
+        token_admin = create_session_token(role="admin")
+        res_admin = await client.get("/api/v1/auth/status", cookies={SESSION_COOKIE_NAME: token_admin})
+        assert res_admin.status_code == 200
+        perms_admin = res_admin.json()["permissions"]
+        assert perms_admin["can_settle_talangan"] is True
+        assert perms_admin["can_access_warehouse"] is True
+        assert perms_admin["can_receive_warehouse"] is True
+
+        # 3. Warehouse
+        token_wh = create_session_token(role="warehouse")
+        res_wh = await client.get("/api/v1/auth/status", cookies={SESSION_COOKIE_NAME: token_wh})
+        assert res_wh.status_code == 200
+        perms_wh = res_wh.json()["permissions"]
+        assert perms_wh["can_settle_talangan"] is False
+        assert perms_wh["can_access_warehouse"] is True
+        assert perms_wh["can_receive_warehouse"] is True
+
+    async def test_admin_input_cannot_settle_talangan(self, client: AsyncClient, db: AsyncSession):
+        from app.models.expense import Expense
+        from datetime import date
+
+        # Setup expense talangan
+        exp = Expense(
+            expense_date=date.today(),
+            item_name="Talangan Tepung Terigu",
+            qty=1,
+            unit="Sak",
+            total_price=250000,
+            is_reimbursement=True,
+            pay_method="Tunai",
+            pay_status="Lunas",
+        )
+        db.add(exp)
+        await db.commit()
+        await db.refresh(exp)
+
+        # Coba settle talangan menggunakan role admin_input -> Harus 403 Forbidden
+        token_input = create_session_token(role="admin_input")
+        res = await client.post(
+            "/api/v1/expenses/reimbursements/settle",
+            json={"expense_ids": [exp.id], "action": "mark_reimbursed"},
+            cookies={SESSION_COOKIE_NAME: token_input},
+        )
+        assert res.status_code == 403
+        assert "Akses ditolak" in res.json()["detail"]
+        assert "talangan" in res.json()["detail"].lower()
+
+        # Update expense langsung dengan parameter reimbursed_at oleh admin_input -> Harus 403
+        res_put = await client.put(
+            f"/api/v1/expenses/{exp.id}",
+            json={"reimbursed_at": "2026-11-01T10:00:00"},
+            cookies={SESSION_COOKIE_NAME: token_input},
+        )
+        assert res_put.status_code == 403
+        assert "Akses ditolak" in res_put.json()["detail"]
+
+    async def test_admin_can_settle_talangan(self, client: AsyncClient, db: AsyncSession):
+        from app.models.expense import Expense
+        from datetime import date
+
+        exp = Expense(
+            expense_date=date.today(),
+            item_name="Talangan Mentega Wisman",
+            qty=2,
+            unit="Kaleng",
+            total_price=500000,
+            is_reimbursement=True,
+            pay_method="Tunai",
+            pay_status="Lunas",
+        )
+        db.add(exp)
+        await db.commit()
+        await db.refresh(exp)
+
+        # Settle talangan menggunakan role admin -> Harus 200 OK
+        token_admin = create_session_token(role="admin")
+        res = await client.post(
+            "/api/v1/expenses/reimbursements/settle",
+            json={"expense_ids": [exp.id], "action": "mark_reimbursed"},
+            cookies={SESSION_COOKIE_NAME: token_admin},
+        )
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+        assert res.json()["updated_count"] == 1
+
+    async def test_admin_input_cannot_access_warehouse_endpoints(self, client: AsyncClient):
+        token_input = create_session_token(role="admin_input")
+
+        # 1. Incoming warehouse list -> 403 Forbidden
+        res_incoming = await client.get(
+            "/api/v1/requests/warehouse/incoming",
+            cookies={SESSION_COOKIE_NAME: token_input},
+        )
+        assert res_incoming.status_code == 403
+        assert "Akses ditolak" in res_incoming.json()["detail"]
+
+        # 2. Receive item -> 403 Forbidden
+        res_receive = await client.post(
+            "/api/v1/requests/warehouse/items/999/receive",
+            json={"qty_received": 5, "received_by": "Staff"},
+            cookies={SESSION_COOKIE_NAME: token_input},
+        )
+        assert res_receive.status_code == 403
+        assert "Akses ditolak" in res_receive.json()["detail"]
+
+    async def test_warehouse_and_admin_can_access_warehouse_endpoints(self, client: AsyncClient):
+        # 1. Role warehouse -> 200 OK
+        token_wh = create_session_token(role="warehouse")
+        res_wh = await client.get(
+            "/api/v1/requests/warehouse/incoming",
+            cookies={SESSION_COOKIE_NAME: token_wh},
+        )
+        assert res_wh.status_code == 200
+
+        # 2. Role admin -> 200 OK
+        token_admin = create_session_token(role="admin")
+        res_admin = await client.get(
+            "/api/v1/requests/warehouse/incoming",
+            cookies={SESSION_COOKIE_NAME: token_admin},
+        )
+        assert res_admin.status_code == 200
+
+

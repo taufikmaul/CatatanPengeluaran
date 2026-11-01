@@ -222,6 +222,7 @@ export function App() {
   const canDelete = authData?.permissions?.can_delete ?? isOwner;
   const canViewCharts = authData?.permissions?.can_view_charts ?? isOwner;
   const canManageConfig = authData?.permissions?.can_manage_config ?? isOwner;
+  const canSettleTalangan = (authData?.permissions?.can_settle_talangan ?? isOwner) && !isAdminInput;
 
   // Proteksi navigasi & pembatasan menu sesuai role
   useEffect(() => {
@@ -1505,6 +1506,8 @@ export function App() {
                   setIsFormOpen(true);
                 }}
                 canDelete={canDelete}
+                canSettle={canSettleTalangan}
+                userRole={userRole}
               />
             )}
 

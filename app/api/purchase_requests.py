@@ -7,7 +7,7 @@ Mendukung 3 peran:
 """
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
@@ -238,10 +238,17 @@ async def mark_ordered_endpoint(
 
 @router.get("/warehouse/incoming")
 async def get_warehouse_incoming_endpoint(
+    request: Request,
     search: str | None = Query(None, description="Cari nama barang atau supplier"),
     db: AsyncSession = Depends(get_db),
 ):
     """Daftar item belanjaan yang sedang dalam status ORDERED (menunggu barang datang di gudang)."""
+    role = get_current_role(request)
+    if role not in ("admin", "warehouse"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak: Admin Input tidak memiliki akses ke bagian gudang.",
+        )
     items = await purchase_request_service.get_warehouse_incoming_items(db, search=search)
     return [_item_to_dict(i) for i in items]
 
@@ -250,12 +257,19 @@ async def get_warehouse_incoming_endpoint(
 async def receive_item_endpoint(
     item_id: int,
     payload: WarehouseReceiveItemInput,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
     Pemeriksaan fisik oleh Bagian Gudang:
     Input qty datang, cek kesesuaian (sesuai/kurang/lebih), dan catat tanggal expired.
     """
+    role = get_current_role(request)
+    if role not in ("admin", "warehouse"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akses ditolak: Admin Input tidak memiliki izin untuk melakukan penerimaan barang gudang.",
+        )
     exp_date = None
     if payload.expired_date:
         try:

@@ -456,6 +456,8 @@ class AuthPermissions(BaseModel):
     can_approve_requests: bool = False
     can_order_purchasing: bool = False
     can_receive_warehouse: bool = False
+    can_settle_talangan: bool = False
+    can_access_warehouse: bool = False
 
 
 class AuthStatusResponse(BaseModel):

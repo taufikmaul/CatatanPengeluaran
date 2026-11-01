@@ -47,6 +47,8 @@ def get_role_permissions(role: str) -> AuthPermissions:
             can_approve_requests=True,
             can_order_purchasing=True,
             can_receive_warehouse=True,
+            can_settle_talangan=True,
+            can_access_warehouse=True,
         )
     elif role == "purchasing":
         return AuthPermissions(
@@ -58,6 +60,8 @@ def get_role_permissions(role: str) -> AuthPermissions:
             can_approve_requests=False,
             can_order_purchasing=True,
             can_receive_warehouse=False,
+            can_settle_talangan=False,
+            can_access_warehouse=False,
         )
     elif role == "warehouse":
         return AuthPermissions(
@@ -69,6 +73,8 @@ def get_role_permissions(role: str) -> AuthPermissions:
             can_approve_requests=False,
             can_order_purchasing=False,
             can_receive_warehouse=True,
+            can_settle_talangan=False,
+            can_access_warehouse=True,
         )
     elif role == "staff":
         return AuthPermissions(
@@ -80,6 +86,8 @@ def get_role_permissions(role: str) -> AuthPermissions:
             can_approve_requests=False,
             can_order_purchasing=False,
             can_receive_warehouse=False,
+            can_settle_talangan=False,
+            can_access_warehouse=False,
         )
     else:  # admin_input
         return AuthPermissions(
@@ -91,6 +99,8 @@ def get_role_permissions(role: str) -> AuthPermissions:
             can_approve_requests=False,
             can_order_purchasing=False,
             can_receive_warehouse=False,
+            can_settle_talangan=False,
+            can_access_warehouse=False,
         )
 
 

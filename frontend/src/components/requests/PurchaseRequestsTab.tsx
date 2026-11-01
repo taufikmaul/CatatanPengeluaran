@@ -94,6 +94,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   const isPurchasingRole = userRole === "purchasing";
   const isWarehouseRole = userRole === "warehouse";
   const isOwnerAdmin = !userRole || userRole === "admin";
+  const isAdminInput = userRole === "admin_input";
 
   // Main 3 Workflow Tabs: Staf (Pengajuan), Purchasing (Pemesanan), Gudang (Penerimaan)
   const getDefaultTab = (role?: string): MainTab => {
@@ -107,8 +108,14 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   React.useEffect(() => {
     if (userRole === "purchasing") setActiveMainTab("purchasing");
     else if (userRole === "warehouse") setActiveMainTab("gudang");
-    else if (userRole === "staff") setActiveMainTab("staf");
+    else if (userRole === "staff" || userRole === "admin_input") setActiveMainTab("staf");
   }, [userRole]);
+
+  React.useEffect(() => {
+    if (isAdminInput && activeMainTab === "gudang") {
+      setActiveMainTab("staf");
+    }
+  }, [isAdminInput, activeMainTab]);
 
   // Sub-filter for Staf Tab
   const [activeStatusTab, setActiveStatusTab] = useState<string>("ALL");
@@ -179,7 +186,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   const { data: warehouseItems, isLoading: isLoadingWarehouse } = useQuery({
     queryKey: ["warehouse-incoming", warehouseSearch],
     queryFn: () => getWarehouseIncoming(warehouseSearch),
-    enabled: activeMainTab === "gudang",
+    enabled: activeMainTab === "gudang" && !isAdminInput,
   });
 
   // 4. Suppliers lookup query for quick assign
@@ -541,41 +548,43 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
         </button>
 
         {/* Tab 3: Gudang */}
-        <button
-          onClick={() => {
-            if (isStaffRole || isPurchasingRole) {
-              toast.info("Menu Gudang khusus untuk petugas Gudang atau Owner.");
-              return;
-            }
-            setActiveMainTab("gudang");
-          }}
-          className={`flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all ${
-            activeMainTab === "gudang"
-              ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-800 font-bold"
-              : "text-zinc-600 dark:text-zinc-400 hover:bg-white/50 dark:hover:bg-zinc-900/50 font-medium"
-          } ${isStaffRole || isPurchasingRole ? "opacity-60 cursor-not-allowed" : ""}`}
-        >
-          <div className="flex items-center gap-2.5">
-            <div
-              className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                activeMainTab === "gudang"
-                  ? "bg-blue-600 text-white"
-                  : "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
-              }`}
-            >
-              <PackageCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-xs font-bold leading-tight">3. Bagian Gudang</div>
-              <div className="text-[10px] text-zinc-400">
-                {isStaffRole || isPurchasingRole ? "Khusus Gudang" : "Pemeriksaan & Exp Date"}
+        {!isAdminInput && (
+          <button
+            onClick={() => {
+              if (isStaffRole || isPurchasingRole) {
+                toast.info("Menu Gudang khusus untuk petugas Gudang atau Owner.");
+                return;
+              }
+              setActiveMainTab("gudang");
+            }}
+            className={`flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all ${
+              activeMainTab === "gudang"
+                ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-800 font-bold"
+                : "text-zinc-600 dark:text-zinc-400 hover:bg-white/50 dark:hover:bg-zinc-900/50 font-medium"
+            } ${isStaffRole || isPurchasingRole ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                  activeMainTab === "gudang"
+                    ? "bg-blue-600 text-white"
+                    : "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                }`}
+              >
+                <PackageCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold leading-tight">3. Bagian Gudang</div>
+                <div className="text-[10px] text-zinc-400">
+                  {isStaffRole || isPurchasingRole ? "Khusus Gudang" : "Pemeriksaan & Exp Date"}
+                </div>
               </div>
             </div>
-          </div>
-          <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-zinc-300 dark:border-zinc-700">
-            Penerimaan Fisik
-          </Badge>
-        </button>
+            <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-zinc-300 dark:border-zinc-700">
+              Penerimaan Fisik
+            </Badge>
+          </button>
+        )}
       </div>
 
       {/* ======================================================== */}
@@ -1270,7 +1279,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
       {/* ======================================================== */}
       {/* 5. WORKFLOW TAB 3: GUDANG (PENERIMAAN & EXP DATE)         */}
       {/* ======================================================== */}
-      {activeMainTab === "gudang" && (
+      {activeMainTab === "gudang" && !isAdminInput && (
         <div className="space-y-5">
           {/* Warehouse Header Banner */}
           <div className="p-4 rounded-xl bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-transparent border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
