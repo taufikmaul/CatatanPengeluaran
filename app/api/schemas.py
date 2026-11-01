@@ -4,7 +4,7 @@ app/api/schemas.py — Pydantic Schemas for CatatanPengeluaran REST API
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ExpenseBase(BaseModel):
@@ -95,8 +95,7 @@ class ExpenseResponse(BaseModel):
     supplier_id: int | None = None
     sheets_synced: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExpenseDuplicatePair(BaseModel):
@@ -209,8 +208,7 @@ class ExpenseLogResponse(BaseModel):
     details: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MonthlyReportResponse(BaseModel):
@@ -404,8 +402,7 @@ class MasterItemResponse(BaseModel):
     tx_count: int = 0
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MasterItemDuplicatePair(BaseModel):
@@ -617,8 +614,7 @@ class SupplierResponse(SupplierBase):
     unpaid_bills_total: float = 0.0
     last_expense_date: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SupplierUnpaidBillItem(BaseModel):
@@ -729,8 +725,7 @@ class PurchaseRequestItemResponse(PurchaseRequestItemBase):
     receiving_notes: str | None = None
     expense_id: int | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PurchaseRequestBase(BaseModel):
@@ -805,8 +800,7 @@ class PurchaseRequestResponse(PurchaseRequestBase):
     updated_at: datetime | None = None
     items: list[PurchaseRequestItemResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PurchaseRequestStatsResponse(BaseModel):

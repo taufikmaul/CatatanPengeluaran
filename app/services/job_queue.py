@@ -8,11 +8,15 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import logging
 from typing import Any, Callable, Coroutine
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import AsyncSessionLocal
+
+logger = logging.getLogger(__name__)
 
 
 class JobStatus(str, Enum):
@@ -72,6 +76,35 @@ class BackgroundJob:
             "actor": self.actor,
         }
 
+    @classmethod
+    def from_record(cls, record: Any) -> BackgroundJob:
+        b_type = record.type
+        for t in JobType:
+            if t.value == record.type:
+                b_type = t
+                break
+        b_status = record.status
+        for s in JobStatus:
+            if s.value == record.status:
+                b_status = s
+                break
+        return cls(
+            id=record.id,
+            type=b_type,
+            title=record.title,
+            status=b_status,
+            progress=record.progress,
+            progress_message=record.progress_message,
+            created_at=record.created_at.isoformat() if record.created_at else datetime.now(timezone.utc).isoformat(),
+            started_at=record.started_at.isoformat() if record.started_at else None,
+            completed_at=record.completed_at.isoformat() if record.completed_at else None,
+            duration_seconds=record.duration_seconds,
+            payload=record.payload or {},
+            result=record.result,
+            error=record.error,
+            actor=record.actor,
+        )
+
 
 class JobQueueManager:
     """Manajer antrean latar belakang in-process dengan worker pool."""
@@ -94,6 +127,13 @@ class JobQueueManager:
         if self._is_running:
             return
         self._is_running = True
+        # Jalankan recovery job yang terputus saat startup
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.recover_orphaned_jobs())
+        except RuntimeError:
+            pass
+
         for i in range(num_workers):
             task = asyncio.create_task(self._worker_loop(worker_idx=i))
             self._workers.append(task)
@@ -106,6 +146,107 @@ class JobQueueManager:
         if self._workers:
             await asyncio.gather(*self._workers, return_exceptions=True)
         self._workers.clear()
+
+    async def _persist_job_status(self, job: BackgroundJob) -> None:
+        """Simpan atau perbarui status job ke tabel background_jobs di database."""
+        try:
+            from app.models.background_job import BackgroundJobRecord
+            async with self._session_factory() as session:
+                stmt = select(BackgroundJobRecord).where(BackgroundJobRecord.id == job.id)
+                res = await session.execute(stmt)
+                record = res.scalar_one_or_none()
+
+                created_dt = None
+                if job.created_at:
+                    try:
+                        created_dt = datetime.fromisoformat(job.created_at)
+                    except Exception:
+                        pass
+                started_dt = None
+                if job.started_at:
+                    try:
+                        started_dt = datetime.fromisoformat(job.started_at)
+                    except Exception:
+                        pass
+                completed_dt = None
+                if job.completed_at:
+                    try:
+                        completed_dt = datetime.fromisoformat(job.completed_at)
+                    except Exception:
+                        pass
+
+                if not record:
+                    record = BackgroundJobRecord(
+                        id=job.id,
+                        type=job.type.value if isinstance(job.type, JobType) else str(job.type),
+                        title=job.title,
+                        status=job.status.value if isinstance(job.status, JobStatus) else str(job.status),
+                        progress=job.progress,
+                        progress_message=job.progress_message,
+                        created_at=created_dt or datetime.now(timezone.utc),
+                        started_at=started_dt,
+                        completed_at=completed_dt,
+                        duration_seconds=job.duration_seconds,
+                        payload=job.payload,
+                        result=job.result,
+                        error=job.error,
+                        actor=job.actor,
+                    )
+                    session.add(record)
+                else:
+                    record.status = job.status.value if isinstance(job.status, JobStatus) else str(job.status)
+                    record.progress = job.progress
+                    record.progress_message = job.progress_message
+                    if started_dt:
+                        record.started_at = started_dt
+                    if completed_dt:
+                        record.completed_at = completed_dt
+                    if job.duration_seconds is not None:
+                        record.duration_seconds = job.duration_seconds
+                    if job.result is not None:
+                        record.result = job.result
+                    if job.error is not None:
+                        record.error = job.error
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Gagal persistensi job record {job.id} ke database: {e}")
+
+    async def recover_orphaned_jobs(self) -> None:
+        """
+        Pulihkan tugas yang tertinggal dari restart server sebelumnya:
+        1. Job berstatus 'running' saat server mati -> tandai 'failed' dengan catatan jelas.
+        2. Job berstatus 'queued' -> masukkan kembali ke self._queue untuk diproses.
+        """
+        try:
+            from app.models.background_job import BackgroundJobRecord
+            async with self._session_factory() as session:
+                # 1. Running -> Failed (karena proses server terhenti di tengah jalan)
+                stmt = select(BackgroundJobRecord).where(BackgroundJobRecord.status == "running")
+                res = await session.execute(stmt)
+                running_jobs = res.scalars().all()
+                for r in running_jobs:
+                    r.status = "failed"
+                    r.error = "Tugas terhenti karena proses/server direstart"
+                    r.completed_at = datetime.now(timezone.utc)
+                    self._jobs[r.id] = BackgroundJob.from_record(r)
+
+                # 2. Queued -> masukkan kembali ke antrean memori
+                stmt_q = (
+                    select(BackgroundJobRecord)
+                    .where(BackgroundJobRecord.status == "queued")
+                    .order_by(BackgroundJobRecord.created_at.asc())
+                )
+                res_q = await session.execute(stmt_q)
+                queued_jobs = res_q.scalars().all()
+                for q in queued_jobs:
+                    if q.id not in self._jobs:
+                        job_obj = BackgroundJob.from_record(q)
+                        self._jobs[q.id] = job_obj
+                        self._queue.put_nowait(q.id)
+
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Gagal memulihkan orphaned background jobs: {e}")
 
     def enqueue(
         self,
@@ -126,10 +267,51 @@ class JobQueueManager:
         self._jobs[job_id] = job
         self._trim_history()
         self._queue.put_nowait(job_id)
+
+        # Jadwalkan persistensi status QUEUED ke database
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._persist_job_status(job))
+        except RuntimeError:
+            pass
+
         return job
 
     def get_job(self, job_id: str) -> BackgroundJob | None:
         return self._jobs.get(job_id)
+
+    async def get_job_async(self, job_id: str, db: AsyncSession | None = None) -> BackgroundJob | None:
+        """Ambil job dengan memeriksa in-memory cache dan fallback ke database."""
+        job = self._jobs.get(job_id)
+        if job and job.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+            return job
+
+        from app.models.background_job import BackgroundJobRecord
+        if db is not None:
+            try:
+                stmt = select(BackgroundJobRecord).where(BackgroundJobRecord.id == job_id)
+                res = await db.execute(stmt)
+                rec = res.scalar_one_or_none()
+                if rec:
+                    db_job = BackgroundJob.from_record(rec)
+                    self._jobs[job_id] = db_job
+                    return db_job
+            except Exception as e:
+                logger.warning(f"Gagal mengambil job {job_id} dari DB: {e}")
+        else:
+            try:
+                async with self._session_factory() as session:
+                    stmt = select(BackgroundJobRecord).where(BackgroundJobRecord.id == job_id)
+                    res = await session.execute(stmt)
+                    rec = res.scalar_one_or_none()
+                    if rec:
+                        db_job = BackgroundJob.from_record(rec)
+                        self._jobs[job_id] = db_job
+                        return db_job
+            except Exception as e:
+                logger.warning(f"Gagal mengambil job {job_id} dari DB: {e}")
+
+        return job
 
     def list_jobs(
         self,
@@ -155,6 +337,70 @@ class JobQueueManager:
                 break
         return filtered
 
+    async def list_jobs_async(
+        self,
+        db: AsyncSession | None = None,
+        limit: int = 50,
+        status: JobStatus | str | None = None,
+        job_type: JobType | str | None = None,
+    ) -> list[BackgroundJob]:
+        """Ambil daftar tugas dari database (dengan overlay progress real-time dari memori)."""
+        from app.models.background_job import BackgroundJobRecord
+
+        async def _query(session: AsyncSession) -> list[BackgroundJob]:
+            stmt = select(BackgroundJobRecord)
+            if status:
+                s_val = status.value if isinstance(status, JobStatus) else str(status)
+                stmt = stmt.where(BackgroundJobRecord.status == s_val)
+            if job_type:
+                t_val = job_type.value if isinstance(job_type, JobType) else str(job_type)
+                stmt = stmt.where(BackgroundJobRecord.type == t_val)
+            stmt = stmt.order_by(BackgroundJobRecord.created_at.desc()).limit(limit)
+            res = await session.execute(stmt)
+            records = res.scalars().all()
+
+            jobs = []
+            seen_ids = set()
+            for r in records:
+                seen_ids.add(r.id)
+                # Jika job sedang aktif di memori, pakai in-memory untuk progress real-time
+                if r.id in self._jobs and self._jobs[r.id].status in (JobStatus.QUEUED, JobStatus.RUNNING):
+                    jobs.append(self._jobs[r.id])
+                else:
+                    jobs.append(BackgroundJob.from_record(r))
+
+            # Sertakan job memori yang baru di-enqueue dan belum ter-flush ke DB
+            for job_id, mem_job in self._jobs.items():
+                if job_id not in seen_ids:
+                    if status:
+                        s_val = status.value if isinstance(status, JobStatus) else str(status)
+                        if mem_job.status.value != s_val:
+                            continue
+                    if job_type:
+                        t_val = job_type.value if isinstance(job_type, JobType) else str(job_type)
+                        if mem_job.type.value != t_val:
+                            continue
+                    jobs.append(mem_job)
+                    seen_ids.add(job_id)
+
+            jobs.sort(key=lambda j: j.created_at, reverse=True)
+            return jobs[:limit]
+
+        if db is not None:
+            try:
+                return await _query(db)
+            except Exception as e:
+                logger.warning(f"Gagal query list_jobs dari DB: {e}")
+        else:
+            try:
+                async with self._session_factory() as session:
+                    return await _query(session)
+            except Exception as e:
+                logger.warning(f"Gagal query list_jobs dari DB: {e}")
+
+        # Fallback in-memory
+        return self.list_jobs(limit=limit, status=status, job_type=job_type)
+
     def cancel_job(self, job_id: str) -> bool:
         """Batalkan tugas yang sedang antre atau sedang berjalan."""
         job = self._jobs.get(job_id)
@@ -165,6 +411,11 @@ class JobQueueManager:
             job.status = JobStatus.CANCELLED
             job.progress_message = "Tugas dibatalkan saat masih dalam antrean"
             job.completed_at = datetime.now(timezone.utc).isoformat()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._persist_job_status(job))
+            except RuntimeError:
+                pass
             return True
 
         if job.status == JobStatus.RUNNING and job_id in self._running_tasks:
@@ -173,6 +424,11 @@ class JobQueueManager:
             job.status = JobStatus.CANCELLED
             job.progress_message = "Tugas dibatalkan oleh pengguna"
             job.completed_at = datetime.now(timezone.utc).isoformat()
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._persist_job_status(job))
+            except RuntimeError:
+                pass
             return True
 
         return False
@@ -209,6 +465,7 @@ class JobQueueManager:
             job.status = JobStatus.RUNNING
             job.started_at = start_t.isoformat()
             job.set_progress(5, "Memulai pemrosesan tugas...")
+            await self._persist_job_status(job)
 
             try:
                 async with self._session_factory() as session:
@@ -228,6 +485,7 @@ class JobQueueManager:
                 end_t = datetime.now(timezone.utc)
                 job.completed_at = end_t.isoformat()
                 job.duration_seconds = round((end_t - start_t).total_seconds(), 2)
+                await self._persist_job_status(job)
                 self._running_tasks.pop(job_id, None)
                 self._queue.task_done()
 

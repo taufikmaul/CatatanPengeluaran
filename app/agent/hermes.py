@@ -4,7 +4,7 @@ Otak utama: menerima context, memilih tools, menjalankan chain, dan membalas
 """
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.intent import Intent, classify_intent
@@ -240,7 +240,7 @@ class HermesAgent:
         # Update last intent di memory
         await update_user_context(self.db, self.user_id, {
             "last_intent": intent,
-            "last_action_at": datetime.utcnow().isoformat(),
+            "last_action_at": datetime.now(timezone.utc).isoformat(),
         })
 
     # ──────────────────────────────────────────────

@@ -2,7 +2,7 @@
 app/agent/memory.py — Per-user conversation memory untuk Hermes
 Disimpan di Postgres (tabel sessions) agar persist antar restart
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from copy import deepcopy
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -55,7 +55,7 @@ async def update_user_context(db: AsyncSession, user_id: int, updates: dict) -> 
         if "conversation_history" in current:
             current["conversation_history"] = current["conversation_history"][-5:]
         session.context = current
-        session.updated_at = datetime.utcnow()
+        session.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
 
@@ -72,7 +72,7 @@ async def add_conversation_turn(
     history.append({
         "role": role,
         "content": content[:500],  # limit panjang
-        "at": datetime.utcnow().isoformat(),
+        "at": datetime.now(timezone.utc).isoformat(),
     })
     await update_user_context(db, user_id, {"conversation_history": history[-5:]})
 

@@ -6,7 +6,7 @@ dan tidak hilang saat deploy container Docker baru.
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +68,7 @@ async def get_all_system_settings(db: AsyncSession) -> dict[str, str]:
 
 async def save_bulk_system_settings(db: AsyncSession, settings_map: dict[str, Any]) -> None:
     """Simpan atau perbarui banyak konfigurasi ke tabel system_settings."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for key, val in settings_map.items():
         if val is None:
             continue

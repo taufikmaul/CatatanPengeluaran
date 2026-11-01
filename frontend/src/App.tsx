@@ -18,17 +18,29 @@ import { ExpenseActivityLogModal } from "@/components/dashboard/ExpenseActivityL
 import { AuditDuplicatesModal } from "@/components/dashboard/AuditDuplicatesModal";
 import { DataHygieneModal } from "@/components/dashboard/DataHygieneModal";
 import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
-import { CsvImportModal } from "@/components/import/CsvImportModal";
-import { ConfigTab } from "@/components/config/ConfigTab";
-import { MasterItemsTab } from "@/components/master/MasterItemsTab";
-import { AccountingTab } from "@/components/accounting/AccountingTab";
-import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
-import { TalanganTab } from "@/components/talangan/TalanganTab";
-import { UnpaidTab } from "@/components/unpaid/UnpaidTab";
-import { SuppliersTab } from "@/components/supplier/SuppliersTab";
-import { SupplierDetailPage } from "@/components/supplier/SupplierDetailPage";
-import { PurchaseRequestsTab } from "@/components/requests/PurchaseRequestsTab";
 import { LoginModal } from "@/components/auth/LoginModal";
+import { Spinner } from "@/components/ui/spinner";
+
+// Lazy-loaded tabs & heavy modals untuk optimasi bundle size dan fast initial paint
+const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(m => ({ default: m.ConfigTab })));
+const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsTab").then(m => ({ default: m.MasterItemsTab })));
+const AccountingTab = React.lazy(() => import("@/components/accounting/AccountingTab").then(m => ({ default: m.AccountingTab })));
+const TukarCashOngkirTab = React.lazy(() => import("@/components/cash-delivery/TukarCashOngkirTab").then(m => ({ default: m.TukarCashOngkirTab })));
+const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab").then(m => ({ default: m.TalanganTab })));
+const UnpaidTab = React.lazy(() => import("@/components/unpaid/UnpaidTab").then(m => ({ default: m.UnpaidTab })));
+const SuppliersTab = React.lazy(() => import("@/components/supplier/SuppliersTab").then(m => ({ default: m.SuppliersTab })));
+const SupplierDetailPage = React.lazy(() => import("@/components/supplier/SupplierDetailPage").then(m => ({ default: m.SupplierDetailPage })));
+const PurchaseRequestsTab = React.lazy(() => import("@/components/requests/PurchaseRequestsTab").then(m => ({ default: m.PurchaseRequestsTab })));
+const CsvImportModal = React.lazy(() => import("@/components/import/CsvImportModal").then(m => ({ default: m.CsvImportModal })));
+
+function TabLoadingFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[350px] p-8 space-y-3">
+      <Spinner className="w-7 h-7 text-primary" />
+      <span className="text-xs text-muted-foreground animate-pulse font-medium">Memuat modul...</span>
+    </div>
+  );
+}
 import { useLocation, useNavigate } from "react-router-dom";
 import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -1385,194 +1397,196 @@ export function App() {
               </>
             )}
 
-            {activeTab === "accounting" && (
-              <AccountingTab
-                currentMonth={month}
-                currentYear={year}
-                onMonthChange={setMonth}
-                onYearChange={setYear}
-                onViewExpense={(item) => setViewingExpense(item)}
-              />
-            )}
+            <React.Suspense fallback={<TabLoadingFallback />}>
+              {activeTab === "accounting" && (
+                <AccountingTab
+                  currentMonth={month}
+                  currentYear={year}
+                  onMonthChange={setMonth}
+                  onYearChange={setYear}
+                  onViewExpense={(item) => setViewingExpense(item)}
+                />
+              )}
 
-            {activeTab === "master" && (
-              <MasterItemsTab
-                categories={categories}
-                units={activeUnits}
-                onInspectItemPrice={handleInspectItemPrice}
-              />
-            )}
+              {activeTab === "master" && (
+                <MasterItemsTab
+                  categories={categories}
+                  units={activeUnits}
+                  onInspectItemPrice={handleInspectItemPrice}
+                />
+              )}
 
-            {activeTab === "suppliers" && (
-              <SuppliersTab
-                onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
-                canDelete={canDelete}
-              />
-            )}
+              {activeTab === "suppliers" && (
+                <SuppliersTab
+                  onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
+                  canDelete={canDelete}
+                />
+              )}
 
-            {activeTab === "supplier-detail" && selectedSupplierId && (
-              <SupplierDetailPage
-                supplierId={selectedSupplierId}
-                onBack={() => navigate("/suppliers")}
-                canDelete={canDelete}
-                categories={categories}
-                paymentMethods={configData?.payment_methods}
-                units={activeUnits}
-              />
-            )}
+              {activeTab === "supplier-detail" && selectedSupplierId && (
+                <SupplierDetailPage
+                  supplierId={selectedSupplierId}
+                  onBack={() => navigate("/suppliers")}
+                  canDelete={canDelete}
+                  categories={categories}
+                  paymentMethods={configData?.payment_methods}
+                  units={activeUnits}
+                />
+              )}
 
-            {activeTab === "tukar-cash-ongkir" && (
-              <TukarCashOngkirTab
-                currentMonth={month}
-                currentYear={year}
-                reportData={reportData}
-                initialType={cashDeliverySubtype}
-                onEditExpense={(item) => {
-                  setRepeatingExpense(null);
-                  setEditingExpense(item);
-                  setIsFormOpen(true);
-                }}
-                onViewExpense={(item) => setViewingExpense(item)}
-                onToggleStatus={handleToggleStatus}
-                onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                onAddNewExpense={(type) => {
-                  setEditingExpense(null);
-                  setRepeatingExpense({
-                    id: 0,
-                    created_at: new Date().toISOString(),
-                    expense_date: new Date().toISOString().split("T")[0],
-                    category: type === "tukar_cash" ? "Tukar Cash" : "Ongkir",
-                    item_name: type === "tukar_cash" ? "Tukar Cash - " : "ongkir delivery cake",
-                    supplier: "-",
-                    qty: 1,
-                    unit: type === "tukar_cash" ? "Trans" : "Trip",
-                    unit_price: 0,
-                    shipping_fee: 0,
-                    tax: 0,
-                    other_fee: 0,
-                    discount: 0,
-                    total_price: 0,
-                    pay_method: type === "tukar_cash" ? "Tunai" : "Gopay - Kasir",
-                    pay_status: "Lunas",
-                    due_date: "-",
-                    notes: "-",
-                    msg_link: "Web Dashboard",
-                    is_reimbursement: false,
-                    invoice_number: "-",
-                  } as Expense);
-                  setIsFormOpen(true);
-                }}
-                canDelete={canDelete}
-              />
-            )}
+              {activeTab === "tukar-cash-ongkir" && (
+                <TukarCashOngkirTab
+                  currentMonth={month}
+                  currentYear={year}
+                  reportData={reportData}
+                  initialType={cashDeliverySubtype}
+                  onEditExpense={(item) => {
+                    setRepeatingExpense(null);
+                    setEditingExpense(item);
+                    setIsFormOpen(true);
+                  }}
+                  onViewExpense={(item) => setViewingExpense(item)}
+                  onToggleStatus={handleToggleStatus}
+                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                  onAddNewExpense={(type) => {
+                    setEditingExpense(null);
+                    setRepeatingExpense({
+                      id: 0,
+                      created_at: new Date().toISOString(),
+                      expense_date: new Date().toISOString().split("T")[0],
+                      category: type === "tukar_cash" ? "Tukar Cash" : "Ongkir",
+                      item_name: type === "tukar_cash" ? "Tukar Cash - " : "ongkir delivery cake",
+                      supplier: "-",
+                      qty: 1,
+                      unit: type === "tukar_cash" ? "Trans" : "Trip",
+                      unit_price: 0,
+                      shipping_fee: 0,
+                      tax: 0,
+                      other_fee: 0,
+                      discount: 0,
+                      total_price: 0,
+                      pay_method: type === "tukar_cash" ? "Tunai" : "Gopay - Kasir",
+                      pay_status: "Lunas",
+                      due_date: "-",
+                      notes: "-",
+                      msg_link: "Web Dashboard",
+                      is_reimbursement: false,
+                      invoice_number: "-",
+                    } as Expense);
+                    setIsFormOpen(true);
+                  }}
+                  canDelete={canDelete}
+                />
+              )}
 
-            {activeTab === "talangan" && (
-              <TalanganTab
-                currentMonth={month}
-                currentYear={year}
-                users={usersData}
-                onEditExpense={(item) => {
-                  setRepeatingExpense(null);
-                  setEditingExpense(item);
-                  setIsFormOpen(true);
-                }}
-                onViewExpense={(item) => setViewingExpense(item)}
-                onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                onAddNewTalangan={() => {
-                  setEditingExpense(null);
-                  setRepeatingExpense({
-                    id: 0,
-                    created_at: new Date().toISOString(),
-                    expense_date: new Date().toISOString().split("T")[0],
-                    category: "Operasional",
-                    item_name: "",
-                    supplier: "-",
-                    qty: 1,
-                    unit: "Pcs",
-                    unit_price: 0,
-                    shipping_fee: 0,
-                    tax: 0,
-                    other_fee: 0,
-                    discount: 0,
-                    total_price: 0,
-                    pay_method: "Tunai",
-                    pay_status: "Lunas",
-                    due_date: "-",
-                    notes: "Ditalangi karyawan",
-                    msg_link: "Web Dashboard",
-                    is_reimbursement: true,
-                    invoice_number: "-",
-                  } as Expense);
-                  setIsFormOpen(true);
-                }}
-                canDelete={canDelete}
-                canSettle={canSettleTalangan}
-                userRole={userRole}
-              />
-            )}
+              {activeTab === "talangan" && (
+                <TalanganTab
+                  currentMonth={month}
+                  currentYear={year}
+                  users={usersData}
+                  onEditExpense={(item) => {
+                    setRepeatingExpense(null);
+                    setEditingExpense(item);
+                    setIsFormOpen(true);
+                  }}
+                  onViewExpense={(item) => setViewingExpense(item)}
+                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                  onAddNewTalangan={() => {
+                    setEditingExpense(null);
+                    setRepeatingExpense({
+                      id: 0,
+                      created_at: new Date().toISOString(),
+                      expense_date: new Date().toISOString().split("T")[0],
+                      category: "Operasional",
+                      item_name: "",
+                      supplier: "-",
+                      qty: 1,
+                      unit: "Pcs",
+                      unit_price: 0,
+                      shipping_fee: 0,
+                      tax: 0,
+                      other_fee: 0,
+                      discount: 0,
+                      total_price: 0,
+                      pay_method: "Tunai",
+                      pay_status: "Lunas",
+                      due_date: "-",
+                      notes: "Ditalangi karyawan",
+                      msg_link: "Web Dashboard",
+                      is_reimbursement: true,
+                      invoice_number: "-",
+                    } as Expense);
+                    setIsFormOpen(true);
+                  }}
+                  canDelete={canDelete}
+                  canSettle={canSettleTalangan}
+                  userRole={userRole}
+                />
+              )}
 
-            {activeTab === "unpaid" && (
-              <UnpaidTab
-                currentMonth={month}
-                currentYear={year}
-                onEditExpense={(item) => {
-                  setRepeatingExpense(null);
-                  setEditingExpense(item);
-                  setIsFormOpen(true);
-                }}
-                onViewExpense={(item) => setViewingExpense(item)}
-                onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                onAddNewUnpaid={() => {
-                  setEditingExpense(null);
-                  const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-                  setRepeatingExpense({
-                    id: 0,
-                    created_at: new Date().toISOString(),
-                    expense_date: new Date().toISOString().split("T")[0],
-                    category: "Bahan Baku",
-                    item_name: "",
-                    supplier: "",
-                    qty: 1,
-                    unit: "Pcs",
-                    unit_price: 0,
-                    shipping_fee: 0,
-                    tax: 0,
-                    other_fee: 0,
-                    discount: 0,
-                    total_price: 0,
-                    pay_method: "Tempo / Tagihan",
-                    pay_status: "Belum Lunas",
-                    due_date: in7Days,
-                    notes: "-",
-                    msg_link: "Web Dashboard",
-                    is_reimbursement: false,
-                    invoice_number: "-",
-                  } as Expense);
-                  setIsFormOpen(true);
-                }}
-                canDelete={canDelete}
-              />
-            )}
+              {activeTab === "unpaid" && (
+                <UnpaidTab
+                  currentMonth={month}
+                  currentYear={year}
+                  onEditExpense={(item) => {
+                    setRepeatingExpense(null);
+                    setEditingExpense(item);
+                    setIsFormOpen(true);
+                  }}
+                  onViewExpense={(item) => setViewingExpense(item)}
+                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                  onAddNewUnpaid={() => {
+                    setEditingExpense(null);
+                    const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                    setRepeatingExpense({
+                      id: 0,
+                      created_at: new Date().toISOString(),
+                      expense_date: new Date().toISOString().split("T")[0],
+                      category: "Bahan Baku",
+                      item_name: "",
+                      supplier: "",
+                      qty: 1,
+                      unit: "Pcs",
+                      unit_price: 0,
+                      shipping_fee: 0,
+                      tax: 0,
+                      other_fee: 0,
+                      discount: 0,
+                      total_price: 0,
+                      pay_method: "Tempo / Tagihan",
+                      pay_status: "Belum Lunas",
+                      due_date: in7Days,
+                      notes: "-",
+                      msg_link: "Web Dashboard",
+                      is_reimbursement: false,
+                      invoice_number: "-",
+                    } as Expense);
+                    setIsFormOpen(true);
+                  }}
+                  canDelete={canDelete}
+                />
+              )}
 
-            {activeTab === "requests" && (
-              <PurchaseRequestsTab
-                categories={categories}
-                itemSuggestions={suggestionsData?.items || []}
-                isAdmin={userRole === "admin"}
-                currentUser={authData?.user || authData?.username || ""}
-                userRole={userRole}
-              />
-            )}
+              {activeTab === "requests" && (
+                <PurchaseRequestsTab
+                  categories={categories}
+                  itemSuggestions={suggestionsData?.items || []}
+                  isAdmin={userRole === "admin"}
+                  currentUser={authData?.user || authData?.username || ""}
+                  userRole={userRole}
+                />
+              )}
 
-            {activeTab === "config" && canManageConfig && (
-              <ConfigTab
-                config={configData || null}
-                onRefreshConfig={() => {
-                  refetchConfig();
-                  refetchReport();
-                }}
-              />
-            )}
+              {activeTab === "config" && canManageConfig && (
+                <ConfigTab
+                  config={configData || null}
+                  onRefreshConfig={() => {
+                    refetchConfig();
+                    refetchReport();
+                  }}
+                />
+              )}
+            </React.Suspense>
           </main>
         </SidebarInset>
 
@@ -1676,14 +1690,18 @@ export function App() {
         />
 
         {/* CSV Import Modal */}
-        <CsvImportModal
-          isOpen={isImportOpen}
-          onClose={() => setIsImportOpen(false)}
-          onImportSuccess={() => {
-            refetchExpenses();
-            refetchReport();
-          }}
-        />
+        {isImportOpen && (
+          <React.Suspense fallback={null}>
+            <CsvImportModal
+              isOpen={isImportOpen}
+              onClose={() => setIsImportOpen(false)}
+              onImportSuccess={() => {
+                refetchExpenses();
+                refetchReport();
+              }}
+            />
+          </React.Suspense>
+        )}
 
         {/* Expense Activity Log Modal (Log Aksi Perubahan Belanja) */}
         <ExpenseActivityLogModal

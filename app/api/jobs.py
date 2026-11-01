@@ -4,9 +4,11 @@ app/api/jobs.py — Router API untuk Manajemen Antrean & Aksi Latar Belakang
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.job_queue import background_queue, JobStatus, JobType
 from app.api.deps import require_admin_role
+from app.database.connection import get_db
 
 router = APIRouter(prefix="/jobs", tags=["Background Jobs & Queue"])
 
@@ -86,16 +88,20 @@ async def list_background_jobs(
     limit: int = Query(default=50, ge=1, le=200),
     status: str | None = Query(default=None),
     job_type: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
 ):
     """Ambil daftar riwayat dan status antrean tugas latar belakang."""
-    jobs = background_queue.list_jobs(limit=limit, status=status, job_type=job_type)
+    jobs = await background_queue.list_jobs_async(db=db, limit=limit, status=status, job_type=job_type)
     return [j.to_dict() for j in jobs]
 
 
 @router.get("/{job_id}", response_model=JobItemResponse)
-async def get_background_job_detail(job_id: str):
+async def get_background_job_detail(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+):
     """Ambil status detail dan hasil eksekusi dari tugas tertentu."""
-    job = background_queue.get_job(job_id)
+    job = await background_queue.get_job_async(job_id=job_id, db=db)
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

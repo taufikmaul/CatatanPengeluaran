@@ -10,6 +10,7 @@ from app.models.expense_log import ExpenseLog
 from app.models.master_data import MasterDataOption
 from app.models.system_setting import SystemSetting
 from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
+from app.models.background_job import BackgroundJobRecord
 
 __all__ = [
     "User",
@@ -25,5 +26,6 @@ __all__ = [
     "SystemSetting",
     "PurchaseRequest",
     "PurchaseRequestItem",
+    "BackgroundJobRecord",
 ]
 

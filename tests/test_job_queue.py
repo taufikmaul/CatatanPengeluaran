@@ -256,3 +256,117 @@ async def test_job_queue_processes_batch_merge(engine):
     finally:
         await queue.stop_workers()
 
+
+@pytest.mark.asyncio
+async def test_job_queue_database_persistence(engine):
+    """Test bahwa job otomatis disimpan ke database dan bisa dibaca ulang meski cache memori dihapus."""
+    from app.models.background_job import BackgroundJobRecord
+    from sqlalchemy import select
+
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    queue = JobQueueManager()
+    queue.set_session_factory(session_factory)
+    queue.start_workers(num_workers=1)
+
+    try:
+        job = queue.enqueue(
+            job_type=JobType.AUDIT_MASTER_ITEMS,
+            title="Persistence Test Job",
+            payload={"min_score": 0.80, "limit": 5},
+        )
+
+        for _ in range(50):
+            if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                break
+            await asyncio.sleep(0.1)
+
+        assert job.status == JobStatus.COMPLETED
+
+        # Verifikasi record tersimpan di tabel background_jobs
+        async with session_factory() as db:
+            stmt = select(BackgroundJobRecord).where(BackgroundJobRecord.id == job.id)
+            res = await db.execute(stmt)
+            record = res.scalar_one_or_none()
+            assert record is not None
+            assert record.id == job.id
+            assert record.status == "completed"
+            assert record.progress == 100
+            assert record.title == "Persistence Test Job"
+            assert record.payload == {"min_score": 0.80, "limit": 5}
+            assert record.result is not None
+
+        # Simulasikan server restart dengan membersihkan in-memory cache
+        queue._jobs.clear()
+        assert queue.get_job(job.id) is None
+
+        # Ambil kembali via get_job_async (database fallback)
+        recovered_job = await queue.get_job_async(job.id)
+        assert recovered_job is not None
+        assert recovered_job.id == job.id
+        assert recovered_job.status == JobStatus.COMPLETED
+        assert recovered_job.progress == 100
+
+        # Ambil kembali via list_jobs_async
+        recovered_list = await queue.list_jobs_async(limit=10)
+        assert any(j.id == job.id for j in recovered_list)
+    finally:
+        await queue.stop_workers()
+
+
+@pytest.mark.asyncio
+async def test_job_queue_recovery_on_startup(engine):
+    """Test pemulihan tugas orphaned (running -> failed, queued -> re-enqueue) saat server startup."""
+    from app.models.background_job import BackgroundJobRecord
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Siapkan 1 job running (orphaned saat server mati mendadak) dan 1 job queued di DB
+    async with session_factory() as db:
+        orphan_running = BackgroundJobRecord(
+            id="job_orphaned_run",
+            type="audit_suppliers",
+            title="Interrupted Job",
+            status="running",
+            progress=40,
+            progress_message="Sedang berjalan...",
+            created_at=datetime.now(timezone.utc),
+            started_at=datetime.now(timezone.utc),
+            payload={},
+            actor="test",
+        )
+        orphan_queued = BackgroundJobRecord(
+            id="job_orphaned_que",
+            type="audit_suppliers",
+            title="Queued Job to Recover",
+            status="queued",
+            progress=0,
+            progress_message="Menunggu...",
+            created_at=datetime.now(timezone.utc),
+            payload={"threshold": 0.80},
+            actor="test",
+        )
+        db.add_all([orphan_running, orphan_queued])
+        await db.commit()
+
+    queue = JobQueueManager()
+    queue.set_session_factory(session_factory)
+
+    # Jalankan proses pemulihan
+    await queue.recover_orphaned_jobs()
+
+    # 1. Job running harus ditandai 'failed'
+    async with session_factory() as db:
+        res = await db.execute(select(BackgroundJobRecord).where(BackgroundJobRecord.id == "job_orphaned_run"))
+        rec_run = res.scalar_one_or_none()
+        assert rec_run is not None
+        assert rec_run.status == "failed"
+        assert "direstart" in (rec_run.error or "")
+
+    # 2. Job queued harus dimasukkan ke antrean memori
+    assert "job_orphaned_que" in queue._jobs
+    assert queue._jobs["job_orphaned_que"].status == JobStatus.QUEUED
+    assert queue._queue.qsize() == 1
+
+
