@@ -598,13 +598,10 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Sync Status Info */}
+          {/* Timestamp Info */}
           <div className="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1">
             <span>
               Waktu dicatat: {expense.created_at ? formatDateId(expense.created_at, true) : "-"}
-            </span>
-            <span>
-              Google Sheets: {expense.sheets_synced ? "✓ Tersinkron" : "Belum sync"}
             </span>
           </div>
         </div>

@@ -277,15 +277,7 @@ def setup_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Job 2: Sync ke Sheets — setiap 5 menit
-    scheduler.add_job(
-        job_sync_sheets,
-        trigger=CronTrigger(minute="*/5"),
-        id="sheets_sync",
-        replace_existing=True,
-    )
-
-    # Job 3: Pengingat harian tagihan belum lunas — setiap hari jam 09:00 WIB
+    # Job 2: Pengingat harian tagihan belum lunas — setiap hari jam 09:00 WIB
     scheduler.add_job(
         job_send_unpaid_reminder,
         trigger=CronTrigger(

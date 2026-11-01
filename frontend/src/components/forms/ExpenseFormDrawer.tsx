@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { parseTelegramLink } from "@/lib/telegram";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
+import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 
 interface ExpenseFormDrawerProps {
   isOpen: boolean;
@@ -148,8 +149,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const itemNameVal = watch("item_name") || "";
   const supplierVal = watch("supplier") || "";
   const categoryVal = watch("category") || "";
-  const isOngkir = categoryVal.toLowerCase() === "ongkir";
-  const isTukarCash = categoryVal.toLowerCase() === "tukar cash";
+  const catProfile = useMemo(() => getCategoryFormProfile(categoryVal), [categoryVal]);
+  const isOngkir = catProfile.archetype === "ongkir";
+  const isTukarCash = catProfile.archetype === "tukar_cash";
+  const isPayroll = catProfile.archetype === "payroll";
   const qty = watch("qty") || 0;
   const unitPrice = watch("unit_price") || 0;
   const shippingFee = watch("shipping_fee") || 0;
@@ -158,36 +161,83 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const discount = watch("discount") || 0;
   const payStatus = watch("pay_status") || "Lunas";
   const msgLinkVal = watch("msg_link") || "";
+  const notesVal = watch("notes") || "";
   const initialTgMeta = parseTelegramLink(initialData?.msg_link);
 
-  // Auto-set defaults saat kategori berubah ke Tukar Cash atau Ongkir
+  // Helper untuk membaca/menyimpan tag metadata kontekstual di dalam kolom notes
+  const upsertNoteTag = (tagPrefix: string, val: string) => {
+    const curNotes = getValues("notes") || "";
+    const regex = new RegExp(`(?:\\|\\s*)?${tagPrefix}:\\s*[^|]+`, "gi");
+    const stripped = curNotes.replace(regex, "").replace(/^\s*\|\s*|\s*\|\s*$/g, "").trim();
+    if (!val.trim()) {
+      setValue("notes", stripped || "-");
+      return;
+    }
+    const newTag = `${tagPrefix}: ${val.trim()}`;
+    const updated = !stripped || stripped === "-" ? newTag : `${stripped} | ${newTag}`;
+    setValue("notes", updated);
+  };
+
+  const extractNoteTag = (tagPrefix: string | undefined, rawNotes: string): string => {
+    if (!tagPrefix || !rawNotes || rawNotes === "-") return "";
+    const regex = new RegExp(`${tagPrefix}:\\s*([^|]+)`, "i");
+    const match = rawNotes.match(regex);
+    return match ? match[1].trim() : "";
+  };
+
+  // Auto-set defaults saat kategori berubah
   useEffect(() => {
     if (isTukarCash) {
       setValue("supplier", "-");
       setValue("pay_method", "Tunai");
       setValue("unit", "Trans");
+      setValue("qty", 1);
+      setValue("shipping_fee", 0);
+      setValue("tax", 0);
+      setValue("other_fee", 0);
+      setValue("discount", 0);
       setValue("master_item_id", null);
     } else if (isOngkir) {
-      const curUnit = watch("unit");
-      if (!curUnit || curUnit === "Pcs") {
-        setValue("unit", "Trip");
-      }
+      setValue("unit", "Trip");
+      setValue("shipping_fee", 0);
+      setValue("tax", 0);
       setValue("master_item_id", null);
+    } else {
+      if (catProfile.hideQty) {
+        setValue("qty", 1);
+      }
+      if (!catProfile.showMasterItemAutocomplete) {
+        setValue("master_item_id", null);
+        setSelectedSuggestionHint(null);
+      }
+      if (catProfile.shippingFeeLabel === null) setValue("shipping_fee", 0);
+      if (catProfile.taxLabel === null) setValue("tax", 0);
+      if (catProfile.otherFeeLabel === null) setValue("other_fee", 0);
+      if (catProfile.discountLabel === null) setValue("discount", 0);
+      if (catProfile.defaultUnit && (!initialData || initialData.category !== categoryVal)) {
+        setValue("unit", catProfile.defaultUnit);
+      }
     }
-  }, [isTukarCash, isOngkir, setValue]);
+  }, [categoryVal, isTukarCash, isOngkir, catProfile, initialData, setValue]);
 
-  // Filter suggestions based on input
+  // Filter suggestions based on input and prioritize active category
   const filteredItemSuggestions = useMemo(() => {
     const q = itemNameVal.trim().toLowerCase();
-    if (!q) return itemSuggestions.slice(0, 8);
-    return itemSuggestions
+    const activeCatLower = categoryVal.trim().toLowerCase();
+    const sorted = [...itemSuggestions].sort((a, b) => {
+      const aMatch = (a.category || "").toLowerCase() === activeCatLower ? 1 : 0;
+      const bMatch = (b.category || "").toLowerCase() === activeCatLower ? 1 : 0;
+      return bMatch - aMatch;
+    });
+    if (!q) return sorted.slice(0, 8);
+    return sorted
       .filter(
         (s) =>
           s.item_name.toLowerCase().includes(q) ||
           (s.aliases && s.aliases.toLowerCase().includes(q))
       )
       .slice(0, 8);
-  }, [itemNameVal, itemSuggestions]);
+  }, [itemNameVal, itemSuggestions, categoryVal]);
 
   // Filter supplier suggestions based on input
   const filteredSupplierSuggestions = useMemo(() => {
@@ -702,7 +752,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Kategori
+                  Kategori Pengeluaran
                 </label>
                 <select
                   {...register("category")}
@@ -717,17 +767,30 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Nama Barang / Judul Transaksi */}
+            {/* Banner Konteks Form Berdasarkan Kategori */}
+            <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold text-slate-800">
+                    Form {catProfile.badgeLabel}
+                  </span>
+                  <span className="text-[10px] font-mono font-semibold bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
+                    {catProfile.coaLabel}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                  {catProfile.description}
+                </p>
+              </div>
+            </div>
+
+            {/* Nama Barang / Judul Transaksi / Jenis Keperluan */}
             <div className="relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-600">
-                  {isTukarCash
-                    ? "Judul Transaksi Tukar Cash *"
-                    : isOngkir
-                    ? "Judul Ongkir / Pengiriman *"
-                    : "Nama Barang / Keperluan *"}
+                  {catProfile.itemLabel}
                 </label>
-                {!isTukarCash && !isOngkir && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
+                {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
                   <button
                     type="button"
                     onClick={() => setValue("unit_price", selectedSuggestionHint.last_unit_price)}
@@ -739,17 +802,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 )}
               </div>
               <Input
-                placeholder={
-                  isTukarCash
-                    ? "mis: Tukar Cash - Budi"
-                    : isOngkir
-                    ? "mis: ongkir delivery cake, kue bu maya, dll"
-                    : "Ketik atau pilih dari Master Item (mis: Tepung Terigu Cakra)"
-                }
+                placeholder={catProfile.itemPlaceholder}
                 autoComplete="off"
-                {...register("item_name", { required: "Nama barang / judul transaksi wajib diisi" })}
+                {...register("item_name", { required: "Kolom ini wajib diisi" })}
                 onFocus={() => {
-                  if (!isTukarCash && !isOngkir) setShowItemDropdown(true);
+                  if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
                 }}
                 onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
                 className="h-10 text-xs rounded-xl"
@@ -758,8 +815,32 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 <span className="text-[11px] text-red-500">{errors.item_name.message}</span>
               )}
 
-              {/* Dropdown Autocomplete hanya untuk belanja reguler */}
-              {!isTukarCash && !isOngkir && showItemDropdown && filteredItemSuggestions.length > 0 && (
+              {/* Quick Item Chips sesuai Kategori */}
+              {catProfile.quickItemChips && catProfile.quickItemChips.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-[10px] text-slate-400">Pilihan cepat:</span>
+                  {catProfile.quickItemChips.map((chip) => {
+                    const isSelected = itemNameVal.trim().toLowerCase() === chip.toLowerCase();
+                    return (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setValue("item_name", chip, { shouldValidate: true })}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                          isSelected
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
+                        }`}
+                      >
+                        {chip}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Dropdown Autocomplete hanya untuk kategori yang terhubung ke Master Item */}
+              {catProfile.showMasterItemAutocomplete && showItemDropdown && filteredItemSuggestions.length > 0 && (
                 <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-56 overflow-y-auto divide-y divide-slate-100">
                   {filteredItemSuggestions.map((s) => (
                     <button
@@ -801,20 +882,20 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               )}
             </div>
 
-            {/* Toko / Supplier / Kurir */}
+            {/* Toko / Supplier / Kurir / Penerima Gaji / Vendor */}
             {isTukarCash ? (
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex items-center gap-2.5">
                 <Store className="w-4 h-4 text-slate-400 shrink-0" />
-                <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di kolom Catatan.</span>
+                <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di bawah.</span>
                 <input type="hidden" {...register("supplier")} value="-" />
               </div>
             ) : isOngkir ? (
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Nama Kurir / Armada Pengiriman *
+                  {catProfile.supplierLabel}
                 </label>
                 <Input
-                  placeholder="mis: GoSend Car, GoSend Bike, GrabExpress, Lalamove, Maxim..."
+                  placeholder={catProfile.supplierPlaceholder}
                   list="ongkir-courier-list"
                   {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
                   className="h-10 text-xs rounded-xl"
@@ -830,12 +911,31 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   <option value="SiCepat" />
                   <option value="Anteraja" />
                 </datalist>
+                {catProfile.quickSupplierChips && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400">Pilih kurir:</span>
+                    {catProfile.quickSupplierChips.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setValue("supplier", c)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                          supplierVal === c
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="relative">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-600">
-                    Toko / Supplier
+                    {catProfile.supplierLabel}
                   </label>
                   {supplierVal && supplierVal !== "-" && (
                     <button
@@ -848,20 +948,64 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   )}
                 </div>
                 <Input
-                  placeholder="Ketik atau pilih toko/supplier (mis: Toko Roti Makmur, Super Indo)"
+                  placeholder={catProfile.supplierPlaceholder}
                   autoComplete="off"
                   {...register("supplier")}
-                  onFocus={() => setShowSupplierDropdown(true)}
+                  onFocus={() => {
+                    if (!isPayroll) setShowSupplierDropdown(true);
+                  }}
                   onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 180)}
                   className="h-10 text-xs rounded-xl"
                 />
 
+                {/* Untuk Gaji: Tampilkan daftar karyawan terdaftar dari usersList agar 1-klik */}
+                {isPayroll && usersList.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400">Staf terdaftar:</span>
+                    {usersList.slice(0, 6).map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => setValue("supplier", u.name)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                          supplierVal === u.name
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
+                        }`}
+                      >
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Untuk Kategori dengan Quick Supplier Chips (Operasional, Software, Marketing) */}
+                {!isPayroll && catProfile.quickSupplierChips && catProfile.quickSupplierChips.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] text-slate-400">Saran penyedia:</span>
+                    {catProfile.quickSupplierChips.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setValue("supplier", s)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                          supplierVal === s
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/60"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Dropdown Autocomplete Toko/Supplier */}
-                {showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
+                {!isPayroll && showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
                   <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100">
                     <div className="px-3 py-1.5 bg-slate-50/80 text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                       <Store className="w-3 h-3 text-slate-400" />
-                      <span>Saran Toko / Supplier</span>
+                      <span>Riwayat {catProfile.supplierLabel}</span>
                     </div>
                     {filteredSupplierSuggestions.map((s) => (
                       <button
@@ -883,8 +1027,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   </div>
                 )}
 
-                {/* Quick suggestions chips */}
-                {(!supplierVal || supplierVal === "-") && supplierSuggestions.length > 0 && (
+                {/* Quick suggestions chips untuk kategori belanja reguler */}
+                {!isPayroll && !catProfile.quickSupplierChips && (!supplierVal || supplierVal === "-") && supplierSuggestions.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                     <span className="text-[10px] text-slate-400">Paling sering:</span>
                     {supplierSuggestions.slice(0, 4).map((s) => (
@@ -902,48 +1046,127 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             )}
 
-            {/* No. Invoice / Nota & Checkbox Reimbursement */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  No. Invoice / Nota
-                </label>
-                <Input
-                  placeholder="mis: INV-2026/10/012 atau -"
-                  {...register("invoice_number")}
-                  onBlur={(e) => handleCheckInvoice(e.target.value)}
-                  className="h-10 text-xs rounded-xl"
-                />
-                {invoiceWarning && (
-                  <div className="mt-1.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 text-[10px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5 leading-snug">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                    <span>{invoiceWarning}</span>
+            {/* Field Kontekstual Spesifik Kategori (Periode Gaji, Durasi Sewa, Siklus Software, Kondisi Aset, Area Servis, dll.) */}
+            {(catProfile.metaField1Label || catProfile.metaField2Label) && (
+              <div className="p-3 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
+                {catProfile.metaField1Label && catProfile.metaField1TagPrefix && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      {catProfile.metaField1Label}
+                    </label>
+                    <Input
+                      value={extractNoteTag(catProfile.metaField1TagPrefix, notesVal)}
+                      onChange={(e) => upsertNoteTag(catProfile.metaField1TagPrefix!, e.target.value)}
+                      placeholder={catProfile.metaField1Placeholder}
+                      className="h-9 text-xs rounded-xl bg-white"
+                    />
+                    {catProfile.metaField1Chips && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {catProfile.metaField1Chips.map((chip) => {
+                          const curVal = extractNoteTag(catProfile.metaField1TagPrefix, notesVal);
+                          const active = curVal.toLowerCase() === chip.toLowerCase();
+                          return (
+                            <button
+                              key={chip}
+                              type="button"
+                              onClick={() => upsertNoteTag(catProfile.metaField1TagPrefix!, active ? "" : chip)}
+                              className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                                active
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              {chip}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {catProfile.metaField2Label && catProfile.metaField2TagPrefix && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 block mb-1">
+                      {catProfile.metaField2Label}
+                    </label>
+                    <Input
+                      value={extractNoteTag(catProfile.metaField2TagPrefix, notesVal)}
+                      onChange={(e) => upsertNoteTag(catProfile.metaField2TagPrefix!, e.target.value)}
+                      placeholder={catProfile.metaField2Placeholder}
+                      className="h-9 text-xs rounded-xl bg-white"
+                    />
+                    {catProfile.metaField2Chips && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {catProfile.metaField2Chips.map((chip) => {
+                          const curVal = extractNoteTag(catProfile.metaField2TagPrefix, notesVal);
+                          const active = curVal.toLowerCase() === chip.toLowerCase();
+                          return (
+                            <button
+                              key={chip}
+                              type="button"
+                              onClick={() => upsertNoteTag(catProfile.metaField2TagPrefix!, active ? "" : chip)}
+                              className={`text-[10px] px-2 py-0.5 rounded-lg transition-colors font-medium border ${
+                                active
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              {chip}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+            )}
 
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Tipe Transaksi
-                </label>
-                <label className="flex items-center gap-2.5 h-10 px-3 rounded-xl border border-input bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors">
-                  <input
-                    type="checkbox"
-                    {...register("is_reimbursement")}
-                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+            {/* No. Invoice / Nota & Checkbox Reimbursement (Disembunyikan pada Tukar Cash agar ringkas) */}
+            {!isTukarCash && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    {isPayroll ? "No. Slip Gaji / Referensi" : "No. Invoice / Nota"}
+                  </label>
+                  <Input
+                    placeholder="mis: INV-2026/10/012 atau -"
+                    {...register("invoice_number")}
+                    onBlur={(e) => handleCheckInvoice(e.target.value)}
+                    className="h-10 text-xs rounded-xl"
                   />
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                    <Briefcase className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                    <span>Reimbursement (Ditalangi)</span>
-                  </div>
-                </label>
+                  {invoiceWarning && (
+                    <div className="mt-1.5 p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 text-[10px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5 leading-snug">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                      <span>{invoiceWarning}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Tipe Transaksi
+                  </label>
+                  <label className="flex items-center gap-2.5 h-10 px-3 rounded-xl border border-input bg-slate-50/50 hover:bg-slate-50 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      {...register("is_reimbursement")}
+                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                      <Briefcase className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span>Reimbursement (Ditalangi)</span>
+                    </div>
+                  </label>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Penginput Invoice (User) */}
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">
-                Penginput Invoice (User)
+                Penginput Transaksi (User)
               </label>
               <select
                 {...register("user_id", {
@@ -958,66 +1181,80 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   </option>
                 ))}
               </select>
-              <span className="text-[11px] text-slate-500 mt-0.5 block">
-                Pilih user pemilik nota atau yang menginputkan transaksi ini.
-              </span>
             </div>
 
-            {/* Qty, Satuan, & Harga Satuan */}
-            <div className="grid grid-cols-12 gap-3">
-              <div className="col-span-4">
+            {/* Qty, Satuan, & Harga Satuan (Adaptif sesuai Kategori) */}
+            {catProfile.hideQty ? (
+              <div>
+                <input type="hidden" {...register("qty", { valueAsNumber: true })} value={1} />
                 <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Qty / Jumlah
-                </label>
-                <Input
-                  type="number"
-                  step="any"
-                  {...register("qty", { required: true, valueAsNumber: true })}
-                  className="h-10 text-xs rounded-xl"
-                />
-              </div>
-
-              <div className="col-span-3">
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Satuan Beli
-                </label>
-                {isTukarCash ? (
-                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
-                    Trans
-                  </div>
-                ) : isOngkir ? (
-                  <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
-                    Trip
-                  </div>
-                ) : (
-                  <select
-                    {...register("unit", { required: true })}
-                    className="h-10 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    {units.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div className="col-span-5">
-                <label className="text-xs font-semibold text-slate-600 block mb-1">
-                  Harga Satuan (Rp)
+                  {catProfile.priceLabel}
                 </label>
                 <Input
                   type="number"
                   step="any"
                   {...register("unit_price", { required: true, valueAsNumber: true })}
-                  className="h-10 text-xs rounded-xl"
+                  className="h-10 text-xs rounded-xl font-semibold"
+                  placeholder="0"
                 />
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-12 gap-3">
+                <div className="col-span-3">
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    {isOngkir ? "Jml Trip" : "Qty"}
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("qty", { required: true, valueAsNumber: true })}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
+
+                <div className="col-span-3">
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    Satuan
+                  </label>
+                  {catProfile.lockUnit ? (
+                    <div className="h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-medium flex items-center text-slate-700">
+                      {catProfile.defaultUnit}
+                    </div>
+                  ) : (
+                    <select
+                      {...register("unit", { required: true })}
+                      className="h-10 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    >
+                      {(catProfile.allowedUnits
+                        ? units.filter((u) => catProfile.allowedUnits!.includes(u)).concat(
+                            units.filter((u) => !catProfile.allowedUnits!.includes(u))
+                          )
+                        : units
+                      ).map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="col-span-6">
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">
+                    {catProfile.priceLabel}
+                  </label>
+                  <Input
+                    type="number"
+                    step="any"
+                    {...register("unit_price", { required: true, valueAsNumber: true })}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Hint & Selector Satuan & Turunan dari Master Item */}
-            {selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
+            {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
               <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs space-y-2">
                 <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
                   <span className="flex items-center gap-1">
@@ -1062,7 +1299,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   </div>
                 )}
 
-                {/* Varian Turunan Satuan (Misal: 1 Bungkus isi 1Kg vs 1 Bungkus isi 500g) */}
+                {/* Varian Turunan Satuan */}
                 {(() => {
                   const rawVariants = selectedSuggestionHint.isi_paket
                     ? selectedSuggestionHint.isi_paket.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
@@ -1093,10 +1330,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                               type="button"
                               onClick={() => {
                                 setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                                const stripped = curNotes.replace(/\|\s*Isi:[^|]+/gi, "").trim();
-                                const newTag = `Isi: ${cleanVar}`;
-                                const updatedNotes = !stripped || stripped === "-" ? newTag : `${stripped} | ${newTag}`;
-                                setValue("notes", updatedNotes);
+                                upsertNoteTag("Isi", cleanVar);
                               }}
                               className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
                                 isPicked
@@ -1124,11 +1358,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                             onClick={() => {
                               const cleanVar = customTurunan.trim();
                               setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                              const curNotes = getValues("notes") || "";
-                              const stripped = curNotes.replace(/\|\s*Isi:[^|]+/gi, "").trim();
-                              const newTag = `Isi: ${cleanVar}`;
-                              const updatedNotes = !stripped || stripped === "-" ? newTag : `${stripped} | ${newTag}`;
-                              setValue("notes", updatedNotes);
+                              upsertNoteTag("Isi", cleanVar);
                               setCustomTurunan("");
                               setShowNewTurunan(false);
                             }}
@@ -1144,64 +1374,86 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             )}
 
-            {/* Ongkir, Pajak, Biaya Lainnya, Diskon (hanya untuk non-Tukar Cash) */}
-            {!isTukarCash && (
+            {/* Komponen Biaya Tambahan / Potongan (Hanya tampilkan yang relevan untuk kategori ini) */}
+            {(catProfile.shippingFeeLabel || catProfile.taxLabel || catProfile.otherFeeLabel || catProfile.discountLabel) && (
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Ongkir / Pengiriman (Rp)
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("shipping_fee", { valueAsNumber: true })}
-                    className="h-9 text-xs rounded-xl"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Pajak (PPN/PB1) (Rp)
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("tax", { valueAsNumber: true })}
-                    className="h-9 text-xs rounded-xl"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Biaya Lainnya (Admin/App) (Rp)
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("other_fee", { valueAsNumber: true })}
-                    className="h-9 text-xs rounded-xl"
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-600 block mb-1">
-                    Diskon / Potongan (Rp)
-                  </label>
-                  <Input
-                    type="number"
-                    step="any"
-                    {...register("discount", { valueAsNumber: true })}
-                    className="h-9 text-xs rounded-xl"
-                    placeholder="0"
-                  />
-                </div>
+                {catProfile.shippingFeeLabel && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">
+                      {catProfile.shippingFeeLabel}
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      {...register("shipping_fee", { valueAsNumber: true })}
+                      className="h-9 text-xs rounded-xl"
+                      placeholder="0"
+                    />
+                  </div>
+                )}
+
+                {catProfile.taxLabel && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-slate-600">
+                        {catProfile.taxLabel}
+                      </label>
+                      {Number(unitPrice) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setValue("tax", Math.round(Number(qty) * Number(unitPrice) * 0.11))}
+                          className="text-[10px] text-blue-600 hover:underline font-medium"
+                        >
+                          +11% PPN
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      step="any"
+                      {...register("tax", { valueAsNumber: true })}
+                      className="h-9 text-xs rounded-xl"
+                      placeholder="0"
+                    />
+                  </div>
+                )}
+
+                {catProfile.otherFeeLabel && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">
+                      {catProfile.otherFeeLabel}
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      {...register("other_fee", { valueAsNumber: true })}
+                      className="h-9 text-xs rounded-xl"
+                      placeholder="0"
+                    />
+                  </div>
+                )}
+
+                {catProfile.discountLabel && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">
+                      {catProfile.discountLabel}
+                    </label>
+                    <Input
+                      type="number"
+                      step="any"
+                      {...register("discount", { valueAsNumber: true })}
+                      className="h-9 text-xs rounded-xl"
+                      placeholder="0"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
             {/* Calculated Total Highlight Box */}
             <div className="p-3.5 bg-blue-50/60 border border-blue-100 rounded-2xl flex items-center justify-between">
               <span className="text-xs font-medium text-blue-900">
-                {isTukarCash ? "Nominal Tukar Cash" : isOngkir ? "Total Biaya Ongkir" : "Total Pengeluaran"}
+                {catProfile.totalLabel}
               </span>
               <span className="text-base font-bold text-blue-700 tabular-nums">
                 {formatRupiah(calculatedTotal)}
@@ -1292,20 +1544,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">
-                {isTukarCash
-                  ? "Bukti Transfer Bank & Catatan *"
-                  : isOngkir
-                  ? "Catatan Pengiriman / Penerima"
-                  : "Catatan Tambahan"}
+                {catProfile.notesLabel}
               </label>
               <Input
-                placeholder={
-                  isTukarCash
-                    ? "mis: Transfer BCA dari Budi (Ref: 123456)"
-                    : isOngkir
-                    ? "mis: Penerima Bu Rita (Kemang), No Pesanan GK-123"
-                    : "Keterangan pengeluaran..."
-                }
+                placeholder={catProfile.notesPlaceholder}
                 {...register("notes")}
                 className="h-10 text-xs rounded-xl"
               />

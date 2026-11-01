@@ -260,7 +260,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               Status Basis Data & Sinkronisasi
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Total {config.total_expenses} transaksi • {config.unsynced_count} data belum disinkronkan ke Google Sheets
+              Total {config.total_expenses} transaksi tersimpan di PostgreSQL
             </p>
           </div>
         </div>
@@ -276,17 +276,6 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
           >
             <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
             {isSyncingTelegram ? "Menyinkronkan User..." : "Sync User dari Link Telegram"}
-          </Button>
-
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleSyncSheets}
-            disabled={isSyncing}
-            className="rounded-xl text-xs bg-slate-900 hover:bg-slate-800 text-white gap-2 font-medium h-9 w-full md:w-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Menyinkronkan..." : "Sync ke Google Sheets Sekarang"}
           </Button>
         </div>
       </div>
@@ -730,109 +719,6 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="https://ai.sumopod.com/v1/chat/completions"
                   className="h-10 text-xs rounded-xl"
                 />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 3. Google Sheets Integration */}
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
-            <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              Integrasi Google Sheets
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                Spreadsheet ID
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  type="text"
-                  value={spreadsheetId}
-                  onChange={(e) => setSpreadsheetId(e.target.value)}
-                  placeholder="Contoh: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
-                  className="h-10 text-xs rounded-xl font-mono flex-1"
-                />
-                {spreadsheetId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}`, "_blank")}
-                    className="h-10 rounded-xl text-xs gap-1"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Buka Sheet
-                  </Button>
-                )}
-              </div>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                ID spreadsheet diambil dari URL: <code>docs.google.com/spreadsheets/d/[SPREADSHEET_ID]/edit</code>
-              </span>
-            </div>
-
-            {/* Service Account File Upload */}
-            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800">
-                    File Kredensial Google Service Account (credentials.json)
-                  </h4>
-                  <p className="text-[11px] text-slate-500">
-                    File JSON key dari Google Cloud Console IAM & Admin
-                  </p>
-                </div>
-                {config.sheets_creds_exists ? (
-                  <Badge variant="success" className="text-[11px] gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    File Terpasang
-                  </Badge>
-                ) : (
-                  <Badge variant="warning" className="text-[11px]">
-                    Belum Terpasang
-                  </Badge>
-                )}
-              </div>
-
-              {/* Display Service Account Email to share with */}
-              {config.service_account_email && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
-                  <div className="font-semibold flex items-center justify-between">
-                    <span>Email Service Account:</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(config.service_account_email!, "Email Service Account")}
-                      className="text-emerald-700 hover:text-emerald-950 font-bold flex items-center gap-1 text-[11px]"
-                    >
-                      <Copy className="w-3 h-3" /> Salin Email
-                    </button>
-                  </div>
-                  <code className="block bg-white/70 px-2 py-1 rounded font-mono text-[11px] text-emerald-800 break-all select-all">
-                    {config.service_account_email}
-                  </code>
-                  <p className="text-[11px] text-emerald-700 mt-1">
-                    <strong>Penting:</strong> Bagikan (*Share*) spreadsheet Google Anda ke email di atas dengan akses <strong>Editor</strong> agar sync berjalan sukses.
-                  </p>
-                </div>
-              )}
-
-              {/* Upload input button */}
-              <div className="flex items-center gap-2 pt-1">
-                <label className="cursor-pointer">
-                  <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 shadow-xs transition-all">
-                    <Upload className="w-3.5 h-3.5 text-blue-600" />
-                    {isUploadingCreds ? "Mengunggah..." : "Unggah File credentials.json"}
-                  </span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleUploadCredentials}
-                    className="hidden"
-                    disabled={isUploadingCreds}
-                  />
-                </label>
               </div>
             </div>
           </CardContent>

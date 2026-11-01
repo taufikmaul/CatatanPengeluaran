@@ -881,8 +881,7 @@ class HermesAgent:
             f"⚙️ *Konfigurasi Aktif:*\n"
             f"- AI Ekstraksi Struk: *Sumopod AI* (`{settings.sumopod_model}`)\n"
             f"- AI Analisis Keuangan: *ClassAI / DeepSeek* (`{settings.ai_analysis_model}`)\n"
-            f"- Database: *PostgreSQL / SQLite*\n"
-            f"- Sheets Sync: *{'Aktif' if settings.spreadsheet_id else 'Nonaktif'}*"
+            f"- Database: *PostgreSQL / SQLite*"
         )
         await tg.send_message(self.chat_id, msg, self.thread_id)
 

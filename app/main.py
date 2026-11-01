@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     # Start scheduler
     scheduler = setup_scheduler()
     scheduler.start()
-    print("✅ Scheduler started (weekly report + sheets sync)")
+    print("✅ Scheduler started (weekly report + reminders)")
 
     # Start background job queue workers
     from app.services.job_queue import background_queue
