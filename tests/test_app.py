@@ -97,4 +97,5 @@ class TestSchemaConsistency:
             "master_data_options",
             "system_settings",
             "purchase_requests",
+            "purchase_request_items",
         }

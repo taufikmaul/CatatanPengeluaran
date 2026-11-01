@@ -681,13 +681,47 @@ class SupplierMergeRequest(BaseModel):
 
 
 # ──────────────────────────────────────────────
-# Purchase Request Schemas (Sprint 1: Quick Win)
+# Purchase Request Schemas (Multi-Item & 3 Roles)
 # ──────────────────────────────────────────────
 
-class PurchaseRequestBase(BaseModel):
+class PurchaseRequestItemBase(BaseModel):
     item_name: str
     qty: float = 1.0
     unit: str = "Pcs"
+    category: str | None = "Bahan Kue"
+    notes: str = "-"
+    estimated_price: float | None = None
+    supplier_id: int | None = None
+    supplier_name: str = "-"
+
+
+class PurchaseRequestItemCreate(PurchaseRequestItemBase):
+    pass
+
+
+class PurchaseRequestItemResponse(PurchaseRequestItemBase):
+    id: int
+    request_id: int
+    master_item_id: int | None = None
+    order_status: str = "PENDING"
+    ordered_at: datetime | None = None
+    qty_received: float | None = None
+    receiving_status: str = "PENDING"
+    expired_date: str | None = None
+    received_by: str | None = None
+    received_at: datetime | None = None
+    receiving_notes: str | None = None
+    expense_id: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class PurchaseRequestBase(BaseModel):
+    title: str = "Request Belanja"
+    item_name: str | None = None
+    qty: float | None = 1.0
+    unit: str | None = "Pcs"
     category: str | None = None
     estimated_price: float | None = None
     urgency: str = "NORMAL"
@@ -698,9 +732,11 @@ class PurchaseRequestBase(BaseModel):
 
 class PurchaseRequestCreate(PurchaseRequestBase):
     user_id: int | None = None
+    items: list[PurchaseRequestItemCreate] = []
 
 
 class PurchaseRequestUpdate(BaseModel):
+    title: str | None = None
     item_name: str | None = None
     qty: float | None = None
     unit: str | None = None
@@ -715,8 +751,32 @@ class PurchaseRequestRejectInput(BaseModel):
     reason: str = "Ditolak oleh admin"
 
 
+class PurchasingAssignSupplierInput(BaseModel):
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+    estimated_price: float | None = None
+
+
+class PurchasingMarkOrderedInput(BaseModel):
+    item_ids: list[int]
+
+
+class PurchasingWhatsAppTemplateInput(BaseModel):
+    supplier_name: str
+    item_ids: list[int]
+    custom_notes: str = ""
+
+
+class WarehouseReceiveItemInput(BaseModel):
+    qty_received: float
+    expired_date: str | None = None
+    received_by: str = "Gudang"
+    receiving_notes: str = "-"
+
+
 class PurchaseRequestResponse(PurchaseRequestBase):
     id: int
+    request_number: str = ""
     status: str
     user_id: int | None = None
     reviewed_by_id: int | None = None
@@ -727,6 +787,7 @@ class PurchaseRequestResponse(PurchaseRequestBase):
     fulfilled_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    items: list[PurchaseRequestItemResponse] = []
 
     class Config:
         from_attributes = True
@@ -736,6 +797,8 @@ class PurchaseRequestStatsResponse(BaseModel):
     total: int = 0
     pending: int = 0
     approved: int = 0
+    ordered: int = 0
+    received: int = 0
     fulfilled: int = 0
     rejected: int = 0
     urgent_pending: int = 0
@@ -745,6 +808,7 @@ class PurchaseRequestListResponse(BaseModel):
     items: list[PurchaseRequestResponse]
     total: int
     stats: PurchaseRequestStatsResponse | None = None
+
 
 
 

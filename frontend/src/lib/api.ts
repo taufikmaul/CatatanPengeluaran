@@ -657,6 +657,50 @@ export async function deletePurchaseRequest(id: number): Promise<void> {
   await api.delete(`/requests/${id}`);
 }
 
+export async function getPurchasingOrders(): Promise<import("@/types").PurchasingSupplierGroup[]> {
+  const res = await api.get("/requests/purchasing/orders");
+  return res.data;
+}
+
+export async function assignPurchasingSupplier(
+  itemId: number,
+  data: { supplier_id?: number | null; supplier_name?: string; estimated_price?: number }
+): Promise<import("@/types").PurchaseRequestItem> {
+  const res = await api.post(`/requests/purchasing/items/${itemId}/assign-supplier`, data);
+  return res.data;
+}
+
+export async function generatePurchasingWhatsApp(data: {
+  supplier_name: string;
+  item_ids: number[];
+  custom_notes?: string;
+}): Promise<{ ok: boolean; text: string }> {
+  const res = await api.post("/requests/purchasing/generate-whatsapp", data);
+  return res.data;
+}
+
+export async function markPurchasingOrdered(
+  itemIds: number[]
+): Promise<{ ok: boolean; updated_count: number }> {
+  const res = await api.post("/requests/purchasing/mark-ordered", { item_ids: itemIds });
+  return res.data;
+}
+
+export async function getWarehouseIncoming(search?: string): Promise<import("@/types").PurchaseRequestItem[]> {
+  const q = search ? `?search=${encodeURIComponent(search)}` : "";
+  const res = await api.get(`/requests/warehouse/incoming${q}`);
+  return res.data;
+}
+
+export async function receiveWarehouseItem(
+  itemId: number,
+  data: import("@/types").WarehouseReceiveItemInput
+): Promise<import("@/types").PurchaseRequestItem> {
+  const res = await api.post(`/requests/warehouse/items/${itemId}/receive`, data);
+  return res.data;
+}
+
+
 
 
 

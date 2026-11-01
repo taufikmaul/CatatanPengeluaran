@@ -829,19 +829,44 @@ export interface SupplierFormData {
   is_active?: boolean;
 }
 
+export interface PurchaseRequestItem {
+  id: number;
+  request_id: number;
+  item_name: string;
+  master_item_id?: number | null;
+  qty: number;
+  unit: string;
+  category?: string | null;
+  notes?: string;
+  estimated_price?: number | null;
+  supplier_id?: number | null;
+  supplier_name?: string;
+  order_status: "PENDING" | "ORDERED" | "CANCELLED";
+  ordered_at?: string | null;
+  qty_received?: number | null;
+  receiving_status: "PENDING" | "SESUAI" | "KURANG" | "LEBIH" | "RUSAK";
+  expired_date?: string | null;
+  received_by?: string | null;
+  received_at?: string | null;
+  receiving_notes?: string | null;
+  expense_id?: number | null;
+}
+
 export interface PurchaseRequest {
   id: number;
+  request_number: string;
+  title: string;
   request_date: string;
   user_id?: number | null;
   requester_name: string;
-  item_name: string;
-  qty: number;
-  unit: string;
+  item_name?: string | null;
+  qty?: number | null;
+  unit?: string | null;
   category?: string | null;
   estimated_price?: number | null;
   urgency: "NORMAL" | "URGENT";
   notes: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "FULFILLED" | "CANCELLED";
+  status: "PENDING" | "APPROVED" | "PARTIAL_ORDERED" | "ORDERED" | "RECEIVED" | "REJECTED" | "FULFILLED" | "CANCELLED";
   reviewed_by_id?: number | null;
   reviewer_name?: string | null;
   reviewed_at?: string | null;
@@ -850,24 +875,56 @@ export interface PurchaseRequest {
   fulfilled_at?: string | null;
   created_at?: string;
   updated_at?: string;
+  items: PurchaseRequestItem[];
 }
 
-export interface PurchaseRequestFormData {
+export interface PurchaseRequestItemFormData {
+  id?: number;
   item_name: string;
   qty: number;
   unit: string;
+  category?: string;
+  estimated_price?: number;
+  supplier_name?: string;
+  notes?: string;
+}
+
+export interface PurchaseRequestFormData {
+  title?: string;
+  item_name?: string;
+  qty?: number;
+  unit?: string;
   category?: string;
   estimated_price?: number;
   urgency: "NORMAL" | "URGENT";
   notes?: string;
   requester_name?: string;
   request_date?: string;
+  items?: PurchaseRequestItemFormData[];
+}
+
+export interface PurchasingSupplierGroup {
+  supplier_name: string;
+  supplier_id?: number | null;
+  supplier_phone?: string;
+  supplier_address?: string;
+  total_items: number;
+  items: PurchaseRequestItem[];
+}
+
+export interface WarehouseReceiveItemInput {
+  qty_received: number;
+  expired_date?: string;
+  received_by?: string;
+  receiving_notes?: string;
 }
 
 export interface PurchaseRequestStats {
   total: number;
   pending: number;
   approved: number;
+  ordered: number;
+  received: number;
   fulfilled: number;
   rejected: number;
   urgent_pending: number;
@@ -878,6 +935,7 @@ export interface PurchaseRequestListResponse {
   total: number;
   stats?: PurchaseRequestStats;
 }
+
 
 
 

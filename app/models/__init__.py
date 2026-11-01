@@ -9,7 +9,7 @@ from app.models.budget import MonthlyBudget
 from app.models.expense_log import ExpenseLog
 from app.models.master_data import MasterDataOption
 from app.models.system_setting import SystemSetting
-from app.models.purchase_request import PurchaseRequest
+from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
 
 __all__ = [
     "User",
@@ -24,5 +24,6 @@ __all__ = [
     "MasterDataOption",
     "SystemSetting",
     "PurchaseRequest",
+    "PurchaseRequestItem",
 ]
 

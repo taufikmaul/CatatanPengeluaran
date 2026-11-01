@@ -161,3 +161,106 @@ async def test_purchase_request_api_endpoints(client, auth_cookies):
     assert ful_res.status_code == 200
     assert ful_res.json()["status"] == "FULFILLED"
 
+
+@pytest.mark.asyncio
+async def test_multi_item_request_purchasing_and_warehouse_flow(db):
+    # 1. Staf Dapur membuat request multi-item
+    multi_items = [
+        {"item_name": "Tepung Cakra", "qty": 5, "unit": "Sak", "notes": "Untuk roti"},
+        {"item_name": "Ragi Instant", "qty": 2, "unit": "Box", "notes": "Habis"},
+        {"item_name": "Mentega Anchor", "qty": 10, "unit": "Pcs", "notes": "Urgent"},
+    ]
+    req = await purchase_request_service.create_purchase_request(
+        db,
+        title="Kebutuhan Mingguan Dapur",
+        urgency="URGENT",
+        requester_name="Karyawan Dapur",
+        items=multi_items,
+    )
+    assert req.id is not None
+    assert len(req.items) == 3
+    assert req.request_number.startswith("REQ-")
+
+    # 2. Admin menyetujui request
+    approved = await purchase_request_service.approve_purchase_request(db, req.id, reviewer_name="Owner")
+    assert approved.status == "APPROVED"
+
+    # 3. Purchasing mapping supplier
+    item1 = req.items[0]
+    item2 = req.items[1]
+    item3 = req.items[2]
+
+    await purchase_request_service.update_item_supplier(
+        db, item1.id, supplier_name="Toko Makmur", estimated_price=120000
+    )
+    await purchase_request_service.update_item_supplier(
+        db, item2.id, supplier_name="Toko Makmur", estimated_price=35000
+    )
+    await purchase_request_service.update_item_supplier(
+        db, item3.id, supplier_name="CV Sumber Pangan", estimated_price=45000
+    )
+
+    # 4. Purchasing cek pengelompokan per supplier
+    grouped = await purchase_request_service.get_purchasing_grouped_orders(db)
+    sup_names = [g["supplier_name"] for g in grouped]
+    assert "Toko Makmur" in sup_names
+    assert "CV Sumber Pangan" in sup_names
+
+    # 5. Purchasing generate format WA Toko Makmur
+    wa_text = purchase_request_service.generate_whatsapp_order_text(
+        supplier_name="Toko Makmur",
+        items=[item1, item2],
+        custom_notes="Kirim sebelum jam 13.00",
+    )
+    assert "Toko Makmur" in wa_text
+    assert "Tepung Cakra" in wa_text
+    assert "5 Sak" in wa_text
+    assert "Kirim sebelum jam 13.00" in wa_text
+
+    # 6. Purchasing menandai sudah dipesan (ORDERED)
+    ordered_items = await purchase_request_service.mark_items_as_ordered(
+        db, [item1.id, item2.id, item3.id]
+    )
+    assert len(ordered_items) == 3
+    assert all(it.order_status == "ORDERED" for it in ordered_items)
+
+    # 7. Gudang memeriksa barang datang:
+    # Item 1: Datang 5 Sak (SESUAI) + Exp date
+    received1 = await purchase_request_service.receive_warehouse_item(
+        db,
+        item_id=item1.id,
+        qty_received=5,
+        expired_date=date(2027, 5, 20),
+        received_by="Budi Gudang",
+        receiving_notes="Kondisi karung utuh dan bersih",
+    )
+    assert received1.receiving_status == "SESUAI"
+    assert received1.expired_date == date(2027, 5, 20)
+
+    # Item 2: Datang 1 Box (KURANG, harusnya 2)
+    received2 = await purchase_request_service.receive_warehouse_item(
+        db,
+        item_id=item2.id,
+        qty_received=1,
+        expired_date=date(2026, 12, 10),
+        received_by="Budi Gudang",
+        receiving_notes="Supplier kehabisan 1 box, akan disusulkan",
+    )
+    assert received2.receiving_status == "KURANG"
+
+    # Item 3: Datang 11 Pcs (LEBIH, pesan 10 dapat bonus 1)
+    received3 = await purchase_request_service.receive_warehouse_item(
+        db,
+        item_id=item3.id,
+        qty_received=11,
+        expired_date=date(2026, 8, 15),
+        received_by="Budi Gudang",
+        receiving_notes="Dapat bonus 1 pcs dari promo toko",
+    )
+    assert received3.receiving_status == "LEBIH"
+
+    # Seluruh item sudah diperiksa gudang -> Header status = RECEIVED
+    updated_req = await purchase_request_service.get_purchase_request_by_id(db, req.id)
+    assert updated_req.status == "RECEIVED"
+
+

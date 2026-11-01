@@ -1,6 +1,9 @@
 """
-app/api/purchase_requests.py — REST API untuk Pengajuan / Request Belanja
-Endpoints untuk daftar kebutuhan belanja, persetujuan admin, dan checklist belanja pasar.
+app/api/purchase_requests.py — REST API untuk Pengajuan / Request Belanja Multi-Item
+Mendukung 3 peran:
+1. Karyawan: Mengajukan list kebutuhan belanja (multi-item)
+2. Purchasing: Mengelompokkan per supplier, template teks WA/email, dan order
+3. Gudang: Cek kesesuaian fisik (sesuai/kurang/lebih), input expired date & kondisi barang
 """
 from datetime import date
 from decimal import Decimal
@@ -16,15 +19,48 @@ from app.api.schemas import (
     PurchaseRequestResponse,
     PurchaseRequestListResponse,
     PurchaseRequestStatsResponse,
+    PurchasingAssignSupplierInput,
+    PurchasingMarkOrderedInput,
+    PurchasingWhatsAppTemplateInput,
+    WarehouseReceiveItemInput,
+    PurchaseRequestItemResponse,
 )
 from app.services import purchase_request_service
 
 router = APIRouter(prefix="/requests", tags=["purchase_requests"], dependencies=[Depends(require_auth)])
 
 
+def _item_to_dict(it) -> dict:
+    return {
+        "id": it.id,
+        "request_id": it.request_id,
+        "item_name": it.item_name,
+        "master_item_id": it.master_item_id,
+        "qty": float(it.qty) if it.qty is not None else 1.0,
+        "unit": it.unit or "Pcs",
+        "category": it.category or "Bahan Kue",
+        "notes": it.notes or "-",
+        "estimated_price": float(it.estimated_price) if it.estimated_price is not None else None,
+        "supplier_id": it.supplier_id,
+        "supplier_name": it.supplier_name or "-",
+        "order_status": it.order_status or "PENDING",
+        "ordered_at": it.ordered_at,
+        "qty_received": float(it.qty_received) if it.qty_received is not None else None,
+        "receiving_status": it.receiving_status or "PENDING",
+        "expired_date": it.expired_date.isoformat() if it.expired_date else None,
+        "received_by": it.received_by,
+        "received_at": it.received_at,
+        "receiving_notes": it.receiving_notes,
+        "expense_id": it.expense_id,
+    }
+
+
 def _to_response_dict(req) -> dict:
+    items_list = [_item_to_dict(it) for it in (req.items or [])]
     return {
         "id": req.id,
+        "request_number": req.request_number or f"REQ-{req.id}",
+        "title": req.title or "Request Belanja",
         "request_date": req.request_date.isoformat() if req.request_date else None,
         "user_id": req.user_id,
         "requester_name": req.requester_name or "-",
@@ -44,14 +80,15 @@ def _to_response_dict(req) -> dict:
         "fulfilled_at": req.fulfilled_at,
         "created_at": req.created_at,
         "updated_at": req.updated_at,
+        "items": items_list,
     }
 
 
 @router.get("", response_model=PurchaseRequestListResponse)
 async def list_purchase_requests(
-    status: str | None = Query(None, description="Filter status: ALL, PENDING, APPROVED, REJECTED, FULFILLED"),
+    status: str | None = Query(None, description="Filter status: ALL, PENDING, APPROVED, ORDERED, RECEIVED, REJECTED, FULFILLED"),
     urgency: str | None = Query(None, description="Filter urgency: ALL, NORMAL, URGENT"),
-    search: str | None = Query(None, description="Pencarian nama item, catatan, atau pemohon"),
+    search: str | None = Query(None, description="Pencarian nama item, judul, catatan, atau pemohon"),
     start_date: date | None = Query(None, description="Mulai tanggal"),
     end_date: date | None = Query(None, description="Sampai tanggal"),
     page: int = Query(1, ge=1),
@@ -92,7 +129,7 @@ async def create_purchase_request(
     db: AsyncSession = Depends(get_db),
     role: str = Depends(get_current_role),
 ):
-    """Buat pengajuan belanja baru (dari Web Dashboard atau Staf)."""
+    """Buat pengajuan belanja baru (bisa multi-item sekaligus)."""
     parsed_date = None
     if payload.request_date:
         try:
@@ -100,11 +137,14 @@ async def create_purchase_request(
         except ValueError:
             parsed_date = date.today()
 
+    items_dict = [it.dict() for it in payload.items] if payload.items else None
+
     req = await purchase_request_service.create_purchase_request(
         db,
+        title=payload.title or "Request Belanja",
         item_name=payload.item_name,
-        qty=Decimal(str(payload.qty)),
-        unit=payload.unit,
+        qty=Decimal(str(payload.qty)) if payload.qty is not None else Decimal("1"),
+        unit=payload.unit or "Pcs",
         category=payload.category,
         estimated_price=Decimal(str(payload.estimated_price)) if payload.estimated_price is not None else None,
         urgency=payload.urgency,
@@ -112,9 +152,133 @@ async def create_purchase_request(
         user_id=payload.user_id,
         requester_name=payload.requester_name or ("Admin" if role == "admin" else "Staf"),
         request_date=parsed_date,
+        items=items_dict,
     )
     return PurchaseRequestResponse(**_to_response_dict(req))
 
+
+# ──────────────────────────────────────────────
+# Endpoints Purchasing (Pemesanan & Supplier)
+# ──────────────────────────────────────────────
+
+@router.get("/purchasing/orders")
+async def get_purchasing_orders(db: AsyncSession = Depends(get_db)):
+    """Ambil daftar belanjaan yang sudah di-approve dan dikelompokkan per Supplier."""
+    grouped = await purchase_request_service.get_purchasing_grouped_orders(db)
+    # Serialize items
+    res = []
+    for g in grouped:
+        res.append({
+            "supplier_name": g["supplier_name"],
+            "supplier_id": g["supplier_id"],
+            "supplier_phone": g["supplier_phone"],
+            "supplier_address": g["supplier_address"],
+            "total_items": g["total_items"],
+            "items": [_item_to_dict(i) for i in g["items"]],
+        })
+    return res
+
+
+@router.post("/purchasing/items/{item_id}/assign-supplier", response_model=PurchaseRequestItemResponse)
+async def assign_supplier_endpoint(
+    item_id: int,
+    payload: PurchasingAssignSupplierInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """Purchasing mengaitkan item belanjaan dengan supplier tertentu."""
+    updated = await purchase_request_service.update_item_supplier(
+        db,
+        item_id=item_id,
+        supplier_id=payload.supplier_id,
+        supplier_name=payload.supplier_name,
+        estimated_price=payload.estimated_price,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
+    return PurchaseRequestItemResponse(**_item_to_dict(updated))
+
+
+@router.post("/purchasing/generate-whatsapp")
+async def generate_whatsapp_endpoint(
+    payload: PurchasingWhatsAppTemplateInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate teks pesanan rapi untuk WhatsApp/Email supplier."""
+    from sqlalchemy import select
+    from app.models.purchase_request import PurchaseRequestItem
+
+    stmt = select(PurchaseRequestItem).where(PurchaseRequestItem.id.in_(payload.item_ids))
+    res = await db.execute(stmt)
+    items = res.scalars().all()
+
+    text = purchase_request_service.generate_whatsapp_order_text(
+        supplier_name=payload.supplier_name,
+        items=items,
+        custom_notes=payload.custom_notes,
+    )
+    return {"ok": True, "text": text}
+
+
+@router.post("/purchasing/mark-ordered")
+async def mark_ordered_endpoint(
+    payload: PurchasingMarkOrderedInput,
+    db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
+):
+    """Tandai item-item belanjaan telah dipesan ke supplier (ORDERED)."""
+    items = await purchase_request_service.mark_items_as_ordered(
+        db, payload.item_ids, actor=f"Purchasing ({role})"
+    )
+    return {"ok": True, "updated_count": len(items)}
+
+
+# ──────────────────────────────────────────────
+# Endpoints Gudang (Penerimaan Barang & Exp Date)
+# ──────────────────────────────────────────────
+
+@router.get("/warehouse/incoming")
+async def get_warehouse_incoming_endpoint(
+    search: str | None = Query(None, description="Cari nama barang atau supplier"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daftar item belanjaan yang sedang dalam status ORDERED (menunggu barang datang di gudang)."""
+    items = await purchase_request_service.get_warehouse_incoming_items(db, search=search)
+    return [_item_to_dict(i) for i in items]
+
+
+@router.post("/warehouse/items/{item_id}/receive", response_model=PurchaseRequestItemResponse)
+async def receive_item_endpoint(
+    item_id: int,
+    payload: WarehouseReceiveItemInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Pemeriksaan fisik oleh Bagian Gudang:
+    Input qty datang, cek kesesuaian (sesuai/kurang/lebih), dan catat tanggal expired.
+    """
+    exp_date = None
+    if payload.expired_date:
+        try:
+            exp_date = date.fromisoformat(payload.expired_date)
+        except ValueError:
+            pass
+
+    updated = await purchase_request_service.receive_warehouse_item(
+        db,
+        item_id=item_id,
+        qty_received=payload.qty_received,
+        expired_date=exp_date,
+        received_by=payload.received_by,
+        receiving_notes=payload.receiving_notes,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
+    return PurchaseRequestItemResponse(**_item_to_dict(updated))
+
+
+# ──────────────────────────────────────────────
+# Detail & Admin Approval Endpoints
+# ──────────────────────────────────────────────
 
 @router.get("/{request_id}", response_model=PurchaseRequestResponse)
 async def get_purchase_request_detail(
@@ -139,6 +303,8 @@ async def update_purchase_request(
     if not req:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
 
+    if payload.title is not None:
+        req.title = payload.title.strip()
     if payload.item_name is not None:
         req.item_name = payload.item_name.strip()
     if payload.qty is not None:
@@ -186,7 +352,7 @@ async def reject_request(
 ):
     """Tolak pengajuan belanja dengan alasan."""
     reviewer_name = "Admin Dashboard" if role == "admin" else "Reviewer"
-    req = await purchase_request_service.reject_request(
+    req = await purchase_request_service.reject_purchase_request(
         db, request_id, reviewer_name=reviewer_name, reason=payload.reason
     )
     if not req:
@@ -195,17 +361,21 @@ async def reject_request(
 
 
 @router.post("/{request_id}/fulfill", response_model=PurchaseRequestResponse)
-async def fulfill_request(
+async def fulfill_request_endpoint(
     request_id: int,
     expense_id: int | None = Query(None, description="ID expense yang merealisasikan"),
     db: AsyncSession = Depends(get_db),
 ):
     """Tandai pengajuan belanja sudah dibeli/terpenuhi."""
-    req = await purchase_request_service.fulfill_purchase_request(
-        db, request_id, expense_id=expense_id
-    )
+    from datetime import datetime
+    req = await purchase_request_service.get_purchase_request_by_id(db, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
+    req.status = "FULFILLED"
+    req.expense_id = expense_id
+    req.fulfilled_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(req)
     return PurchaseRequestResponse(**_to_response_dict(req))
 
 
