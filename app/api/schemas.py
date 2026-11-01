@@ -241,6 +241,9 @@ class MonthlyReportResponse(BaseModel):
     per_kategori: dict[str, float]
     per_metode_bayar: dict[str, float] = {}
     per_account_group: dict[str, float] = {}
+    prev_per_account_group: dict[str, float] = {}
+    mom_account_group_change_pct: dict[str, float | None] = {}
+    accounting_inflation: dict[str, Any] = {}
     accounting_breakdown: list[dict[str, Any]] = []
     list_hutang: list[dict[str, Any]]
     daily_chart: list[dict[str, Any]]

@@ -3,6 +3,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
+import { AccountingBreakdownItem, AccountingInflation } from "@/types";
 import {
   Wallet,
   Receipt,
@@ -41,15 +42,10 @@ interface StatCardsProps {
   isCustomBudget?: boolean;
   perKategori?: Record<string, number>;
   perAccountGroup?: Record<string, number>;
-  accountingBreakdown?: Array<{
-    account_code: string;
-    account_name: string;
-    account_group: string;
-    report_type: string;
-    category: string;
-    total: number;
-    percentage: number;
-  }>;
+  prevPerAccountGroup?: Record<string, number>;
+  momAccountGroupChangePct?: Record<string, number | null>;
+  accountingInflation?: AccountingInflation;
+  accountingBreakdown?: AccountingBreakdownItem[];
   reimbursePendingCount?: number;
   reimbursePendingTotal?: number;
   totalTukarCash?: number;
@@ -85,6 +81,9 @@ export const StatCards: React.FC<StatCardsProps> = ({
   isCustomBudget = false,
   perKategori = {},
   perAccountGroup = {},
+  prevPerAccountGroup = {},
+  momAccountGroupChangePct = {},
+  accountingInflation,
   accountingBreakdown = [],
   reimbursePendingCount = 0,
   reimbursePendingTotal = 0,
@@ -117,6 +116,50 @@ export const StatCards: React.FC<StatCardsProps> = ({
       >
         {!isZero && <IconTrend className="w-2.5 h-2.5" />}
         {isUp ? `+${pct}%` : `${pct}%`} vs {prevMonthName ? prevMonthName.slice(0, 3) : "bln lalu"}
+      </span>
+    );
+  };
+
+  const renderAccountingInflationBadge = (
+    pct?: number | null,
+    prevVal?: number,
+    label?: string
+  ) => {
+    if (pct === undefined || pct === null) {
+      if (prevVal === 0 || prevVal === undefined) {
+        return (
+          <span className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/15">
+            Bln lalu: Rp 0
+          </span>
+        );
+      }
+      return null;
+    }
+
+    const isUp = pct > 0;
+    const isZero = pct === 0;
+    const IconTrend = isUp ? TrendingUp : TrendingDown;
+
+    const badgeClasses = isZero
+      ? "bg-white/10 text-slate-300 border-white/20"
+      : isUp
+      ? "bg-rose-500/25 text-rose-300 border-rose-500/40"
+      : "bg-emerald-500/25 text-emerald-300 border-emerald-500/40";
+
+    const prefix = label ? `${label} ` : "";
+    const changeText = isUp ? `+${pct}%` : `${pct}%`;
+    const titleText = prevVal !== undefined
+      ? `Bulan ${prevMonthName || "lalu"}: ${formatRupiah(prevVal)} (${changeText})`
+      : undefined;
+
+    return (
+      <span
+        title={titleText}
+        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md border tracking-tight ${badgeClasses}`}
+      >
+        {!isZero && <IconTrend className="w-2.5 h-2.5 shrink-0" />}
+        <span>{prefix}{changeText}</span>
+        <span className="text-[9px] opacity-75 font-normal">vs {prevMonthName ? prevMonthName.slice(0, 3) : "bln lalu"}</span>
       </span>
     );
   };
@@ -272,93 +315,211 @@ export const StatCards: React.FC<StatCardsProps> = ({
       </div>
 
       {/* Ringkasan Akuntansi Standar (HPP vs OPEX vs Capex Aset) */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl text-amber-300">
-              <BookOpen className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs md:text-sm font-bold text-white">Klasifikasi Akuntansi (SAK EMKM)</span>
-                <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/30 text-[10px] font-semibold">
-                  Bagan Akun (COA)
-                </Badge>
-              </div>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                Pemisahan Harga Pokok Penjualan (HPP), Beban Operasional (OPEX), dan Belanja Modal (Aset)
-              </p>
-            </div>
-          </div>
-          <div className="text-left sm:text-right">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Beban Laba Rugi Riil</span>
-            <span className="text-sm md:text-base font-bold text-amber-300 tabular-nums">
-              {formatRupiah((perAccountGroup["HPP"] || 0) + (perAccountGroup["OPEX"] || 0))}
-            </span>
-          </div>
-        </div>
+      {(() => {
+        const curHpp = perAccountGroup["HPP"] || 0;
+        const curOpex = perAccountGroup["OPEX"] || 0;
+        const curAsset = perAccountGroup["ASSET"] || 0;
+        const curRealExpense = curHpp + curOpex;
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* HPP Card */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-amber-300 text-xs font-semibold">
-                <Package className="w-3.5 h-3.5" />
-                <span>HPP / Biaya Pokok</span>
-              </div>
-              <Badge className="bg-amber-500/20 text-amber-200 border-amber-500/30 text-[9px] py-0 px-1.5 h-4">
-                Laba Rugi (HPP)
-              </Badge>
-            </div>
-            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
-              {formatRupiah(perAccountGroup["HPP"] || 0)}
-            </div>
-            <p className="text-[10px] text-slate-300 leading-tight">
-              Bahan baku kue, minuman, kemasan, topper & ongkir kirim.
-            </p>
-          </div>
+        const prevHpp = prevPerAccountGroup["HPP"] || 0;
+        const prevOpex = prevPerAccountGroup["OPEX"] || 0;
+        const prevAsset = prevPerAccountGroup["ASSET"] || 0;
+        const prevRealExpense =
+          accountingInflation?.prev_laba_rugi_total ?? (prevHpp + prevOpex);
 
-          {/* OPEX Card */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-sky-300 text-xs font-semibold">
-                <Building2 className="w-3.5 h-3.5" />
-                <span>Beban Operasional</span>
-              </div>
-              <Badge className="bg-sky-500/20 text-sky-200 border-sky-500/30 text-[9px] py-0 px-1.5 h-4">
-                Laba Rugi (OPEX)
-              </Badge>
-            </div>
-            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
-              {formatRupiah(perAccountGroup["OPEX"] || 0)}
-            </div>
-            <p className="text-[10px] text-slate-300 leading-tight">
-              Listrik, gas, galon, kebersihan, ATK & pemeliharaan toko.
-            </p>
-          </div>
+        const momHppPct =
+          accountingInflation?.hpp_inflation_pct ??
+          momAccountGroupChangePct["HPP"] ??
+          (prevHpp > 0 ? Math.round(((curHpp - prevHpp) / prevHpp) * 1000) / 10 : null);
 
-          {/* Aset Tetap / Capex Card */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-1.5 hover:bg-white/10 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-purple-300 text-xs font-semibold">
-                <Landmark className="w-3.5 h-3.5" />
-                <span>Aset Tetap (Capex)</span>
+        const momOpexPct =
+          accountingInflation?.opex_inflation_pct ??
+          momAccountGroupChangePct["OPEX"] ??
+          (prevOpex > 0 ? Math.round(((curOpex - prevOpex) / prevOpex) * 1000) / 10 : null);
+
+        const momAssetPct =
+          accountingInflation?.asset_change_pct ??
+          momAccountGroupChangePct["ASSET"] ??
+          (prevAsset > 0 ? Math.round(((curAsset - prevAsset) / prevAsset) * 1000) / 10 : null);
+
+        const momRealPct =
+          accountingInflation?.laba_rugi_inflation_pct ??
+          momAccountGroupChangePct["LABA_RUGI"] ??
+          (prevRealExpense > 0
+            ? Math.round(((curRealExpense - prevRealExpense) / prevRealExpense) * 1000) / 10
+            : null);
+
+        return (
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl text-amber-300">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs md:text-sm font-bold text-white">Klasifikasi Akuntansi (SAK EMKM)</span>
+                    <Badge className="bg-amber-400/20 text-amber-300 border-amber-400/30 text-[10px] font-semibold">
+                      Bagan Akun (COA)
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Pemisahan Harga Pokok Penjualan (HPP), Beban Operasional (OPEX), dan Belanja Modal (Aset)
+                  </p>
+                </div>
               </div>
-              <Badge className="bg-purple-500/20 text-purple-200 border-purple-500/30 text-[9px] py-0 px-1.5 h-4">
-                Neraca (Aset)
-              </Badge>
+              <div className="text-left sm:text-right space-y-1">
+                <div className="flex items-center sm:justify-end gap-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Beban Laba Rugi Riil</span>
+                  {renderAccountingInflationBadge(
+                    momRealPct,
+                    prevRealExpense,
+                    "Inflasi"
+                  )}
+                </div>
+                <div className="flex items-baseline sm:justify-end gap-2 flex-wrap">
+                  <span className="text-sm md:text-base font-bold text-amber-300 tabular-nums">
+                    {formatRupiah(curRealExpense)}
+                  </span>
+                  {prevRealExpense > 0 && (
+                    <span className="text-[10px] text-slate-400">
+                      (Bln lalu: {formatRupiah(prevRealExpense)})
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
-              {formatRupiah(perAccountGroup["ASSET"] || 0)}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* HPP Card */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-2 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-amber-300 text-xs font-semibold">
+                    <Package className="w-3.5 h-3.5" />
+                    <span>HPP / Biaya Pokok</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderAccountingInflationBadge(momHppPct, prevHpp, "Inflasi")}
+                    <Badge className="bg-amber-500/20 text-amber-200 border-amber-500/30 text-[9px] py-0 px-1.5 h-4">
+                      HPP
+                    </Badge>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {formatRupiah(curHpp)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Bulan lalu: {formatRupiah(prevHpp)}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-tight">
+                  Bahan baku kue, minuman, kemasan, topper & ongkir kirim.
+                </p>
+                {accountingInflation?.price_inflation_pct !== undefined && accountingInflation?.price_inflation_pct !== null && (
+                  <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] text-amber-200/90 font-medium">
+                    <span>🛒 Inflasi Harga Satuan Barang:</span>
+                    <span className="font-bold">
+                      {accountingInflation.price_inflation_pct > 0
+                        ? `+${accountingInflation.price_inflation_pct}%`
+                        : `${accountingInflation.price_inflation_pct}%`}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* OPEX Card */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-2 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-sky-300 text-xs font-semibold">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Beban Operasional</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderAccountingInflationBadge(momOpexPct, prevOpex, "MoM")}
+                    <Badge className="bg-sky-500/20 text-sky-200 border-sky-500/30 text-[9px] py-0 px-1.5 h-4">
+                      OPEX
+                    </Badge>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {formatRupiah(curOpex)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Bulan lalu: {formatRupiah(prevOpex)}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-300 leading-tight">
+                  Listrik, gas, galon, kebersihan, ATK & pemeliharaan toko.
+                </p>
+              </div>
+
+              {/* Aset Tetap / Capex Card */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-2 hover:bg-white/10 transition-colors">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <div className="flex items-center gap-1.5 text-purple-300 text-xs font-semibold">
+                    <Landmark className="w-3.5 h-3.5" />
+                    <span>Aset Tetap (Capex)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {renderAccountingInflationBadge(momAssetPct, prevAsset, "MoM")}
+                    <Badge className="bg-purple-500/20 text-purple-200 border-purple-500/30 text-[9px] py-0 px-1.5 h-4">
+                      Aset
+                    </Badge>
+                  </div>
+                </div>
+                <div className="space-y-0.5">
+                  <div className="text-lg md:text-xl font-bold tracking-tight text-white tabular-nums">
+                    {formatRupiah(curAsset)}
+                  </div>
+                  <div className="text-[10px] text-purple-300/80">
+                    Bulan lalu: {formatRupiah(prevAsset)}
+                  </div>
+                </div>
+                <p className="text-[10px] text-purple-200/90 leading-tight">
+                  {curAsset > 0
+                    ? "Peralatan tahan lama (mixer, oven, showcase). Tidak memotong laba langsung."
+                    : "Tidak ada belanja aset baru bulan ini."}
+                </p>
+              </div>
             </div>
-            <p className="text-[10px] text-purple-200/90 leading-tight">
-              {(perAccountGroup["ASSET"] || 0) > 0
-                ? "Peralatan tahan lama (mixer, oven, showcase). Tidak memotong laba langsung."
-                : "Tidak ada belanja aset baru bulan ini."}
-            </p>
+
+            {/* Banner Rincian Inflasi Barang HPP jika ada item yang dibandingkan */}
+            {accountingInflation?.items_compared_count && accountingInflation.items_compared_count > 0 ? (
+              <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-slate-300">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded-md bg-amber-400/20 text-amber-300 shrink-0">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                  </div>
+                  <span>
+                    <strong>Indikator Inflasi Bahan Baku:</strong> Rata-rata perubahan harga beli satuan item HPP{" "}
+                    <span
+                      className={
+                        accountingInflation.price_inflation_pct && accountingInflation.price_inflation_pct > 0
+                          ? "text-rose-300 font-bold"
+                          : "text-emerald-300 font-bold"
+                      }
+                    >
+                      {accountingInflation.price_inflation_pct && accountingInflation.price_inflation_pct > 0
+                        ? `+${accountingInflation.price_inflation_pct}%`
+                        : `${accountingInflation.price_inflation_pct || 0}%`}
+                    </span>{" "}
+                    dibanding bulan {prevMonthName || "lalu"}.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-300 font-mono shrink-0">
+                  <span className="text-rose-300 font-semibold">{accountingInflation.items_inflated_count || 0} naik</span>
+                  <span>•</span>
+                  <span className="text-emerald-300 font-semibold">{accountingInflation.items_deflated_count || 0} turun</span>
+                  <span>•</span>
+                  <span className="text-slate-300">{accountingInflation.items_stable_count || 0} stabil</span>
+                </div>
+              </div>
+            ) : null}
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* 2 Card Terpisah: Tukar Cash & Ongkir Kurir */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">

@@ -108,6 +108,11 @@ async def test_api_expenses_crud(client, auth_cookies):
     assert "top_price_spikes" in report_data
     assert "top_suppliers" in report_data
     assert "summary_metrics" in report_data
+    assert "per_account_group" in report_data
+    assert "prev_per_account_group" in report_data
+    assert "mom_account_group_change_pct" in report_data
+    assert "accounting_inflation" in report_data
+    assert "accounting_breakdown" in report_data
     assert len(report_data["top_frequent_items"]) >= 1
     assert report_data["top_frequent_items"][0]["item_name"] == "Butter Anchor 1kg"
 

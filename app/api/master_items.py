@@ -2,9 +2,12 @@
 app/api/master_items.py — REST API untuk Katalog Nama Item Baku (Master Item)
 & Saran Autocomplete Form Pengeluaran.
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 from app.database.connection import get_db
 from app.api.deps import require_auth
 from app.models.master_item import MasterItem
@@ -167,23 +170,39 @@ async def bulk_add_master_items(
 @router.post("/sync-existing")
 async def sync_existing_expenses(db: AsyncSession = Depends(get_db)):
     """Cocokkan dan rapikan data pengeluaran yang sudah ada di DB ke Master Item baku."""
-    result = await sync_existing_expenses_to_master(db)
-    await db.commit()
-    return {
-        "ok": True,
-        **result,
-    }
+    try:
+        result = await sync_existing_expenses_to_master(db)
+        await db.commit()
+        return {
+            "ok": True,
+            **result,
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Gagal mencocokkan data pengeluaran lama ke master item: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal mencocokkan transaksi lama: {str(e)}",
+        )
 
 
 @router.post("/import-from-history")
 async def seed_master_items_from_history(db: AsyncSession = Depends(get_db)):
     """Tarik otomatis nama item unik dari histori transaksi pengeluaran menjadi Master Item."""
-    result = await import_master_items_from_history(db)
-    await db.commit()
-    return {
-        "ok": True,
-        **result,
-    }
+    try:
+        result = await import_master_items_from_history(db)
+        await db.commit()
+        return {
+            "ok": True,
+            **result,
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Gagal menarik data master item dari riwayat transaksi: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Gagal menarik data dari histori transaksi: {str(e)}",
+        )
 
 
 @router.get("/audit-duplicates", response_model=MasterItemAuditResponse)

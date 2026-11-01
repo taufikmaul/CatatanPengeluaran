@@ -279,6 +279,48 @@ class TestGetMonthlyReport:
         assert report["expense_count"] == 0
 
 
+class TestPriceInflationSummary:
+    async def test_calculates_price_inflation_between_months(self, db):
+        from app.services.expense_service import get_price_inflation_summary
+
+        # Bulan lalu (September 2026): Tepung 10.000, Mentega 20.000
+        await _add_expense(
+            db,
+            item_name="Tepung Terigu",
+            unit_price=Decimal("10000"),
+            expense_date=date(2026, 9, 15),
+        )
+        await _add_expense(
+            db,
+            item_name="Mentega Wisman",
+            unit_price=Decimal("20000"),
+            expense_date=date(2026, 9, 20),
+        )
+
+        # Bulan ini (Oktober 2026): Tepung naik jadi 12.000 (+20%), Mentega turun jadi 18.000 (-10%)
+        await _add_expense(
+            db,
+            item_name="Tepung Terigu",
+            unit_price=Decimal("12000"),
+            expense_date=date(2026, 10, 5),
+        )
+        await _add_expense(
+            db,
+            item_name="Mentega Wisman",
+            unit_price=Decimal("18000"),
+            expense_date=date(2026, 10, 10),
+        )
+
+        summary = await get_price_inflation_summary(db, 2026, 10, 2026, 9)
+        assert summary["items_compared_count"] == 2
+        assert summary["items_inflated_count"] == 1
+        assert summary["items_deflated_count"] == 1
+        assert summary["price_inflation_pct"] == 5.0
+        assert len(summary["top_inflated_items"]) == 2
+        assert summary["top_inflated_items"][0]["item_name"] == "Tepung Terigu"
+        assert summary["top_inflated_items"][0]["percent_change"] == 20.0
+
+
 class TestSearchLastPrice:
     async def test_finds_latest_matching_item(self, db):
         await _add_expense(

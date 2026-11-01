@@ -691,6 +691,9 @@ export function App() {
                         isCustomBudget={reportData?.is_custom_budget}
                         perKategori={reportData?.per_kategori}
                         perAccountGroup={reportData?.per_account_group}
+                        prevPerAccountGroup={reportData?.prev_per_account_group}
+                        momAccountGroupChangePct={reportData?.mom_account_group_change_pct}
+                        accountingInflation={reportData?.accounting_inflation}
                         accountingBreakdown={reportData?.accounting_breakdown}
                         reimbursePendingCount={reportData?.reimburse_pending_count || 0}
                         reimbursePendingTotal={reportData?.reimburse_pending_total || 0}

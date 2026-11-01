@@ -487,39 +487,112 @@ export function OwnerMobileView({
           </div>
 
           {/* Klasifikasi Akuntansi SAK EMKM */}
-          {reportData?.per_account_group && (
-            <div className="p-3.5 rounded-2xl bg-slate-900 text-white shadow-xs space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold flex items-center gap-1.5 text-amber-300">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Akuntansi (SAK EMKM)</span>
+          {reportData?.per_account_group && (() => {
+            const curHpp = reportData.per_account_group["HPP"] || 0;
+            const curOpex = reportData.per_account_group["OPEX"] || 0;
+            const curAsset = reportData.per_account_group["ASSET"] || 0;
+            const curReal = curHpp + curOpex;
+
+            const prevHpp = reportData.prev_per_account_group?.["HPP"] || 0;
+            const prevOpex = reportData.prev_per_account_group?.["OPEX"] || 0;
+            const prevAsset = reportData.prev_per_account_group?.["ASSET"] || 0;
+            const prevReal =
+              reportData.accounting_inflation?.prev_laba_rugi_total ?? (prevHpp + prevOpex);
+
+            const momHpp =
+              reportData.accounting_inflation?.hpp_inflation_pct ??
+              reportData.mom_account_group_change_pct?.["HPP"] ??
+              (prevHpp > 0 ? Math.round(((curHpp - prevHpp) / prevHpp) * 1000) / 10 : null);
+
+            const momOpex =
+              reportData.accounting_inflation?.opex_inflation_pct ??
+              reportData.mom_account_group_change_pct?.["OPEX"] ??
+              (prevOpex > 0 ? Math.round(((curOpex - prevOpex) / prevOpex) * 1000) / 10 : null);
+
+            const momAsset =
+              reportData.accounting_inflation?.asset_change_pct ??
+              reportData.mom_account_group_change_pct?.["ASSET"] ??
+              (prevAsset > 0 ? Math.round(((curAsset - prevAsset) / prevAsset) * 1000) / 10 : null);
+
+            const momReal =
+              reportData.accounting_inflation?.laba_rugi_inflation_pct ??
+              reportData.mom_account_group_change_pct?.["LABA_RUGI"] ??
+              (prevReal > 0 ? Math.round(((curReal - prevReal) / prevReal) * 1000) / 10 : null);
+
+            const renderMiniInflation = (pct?: number | null) => {
+              if (pct === undefined || pct === null) return null;
+              const isUp = pct > 0;
+              const isZero = pct === 0;
+              const Icon = isUp ? TrendingUp : TrendingDown;
+              const colorClass = isZero
+                ? "text-slate-400 bg-white/10"
+                : isUp
+                ? "text-rose-300 bg-rose-500/20"
+                : "text-emerald-300 bg-emerald-500/20";
+              return (
+                <span className={`inline-flex items-center gap-0.5 text-[9px] font-semibold px-1 py-0.2 rounded ${colorClass}`}>
+                  {!isZero && <Icon className="w-2 h-2" />}
+                  {isUp ? `+${pct}%` : `${pct}%`}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  Beban Riil: {formatRupiah((reportData.per_account_group["HPP"] || 0) + (reportData.per_account_group["OPEX"] || 0))}
-                </span>
+              );
+            };
+
+            return (
+              <div className="p-3.5 rounded-2xl bg-slate-900 text-white shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between gap-1 flex-wrap">
+                  <span className="text-xs font-bold flex items-center gap-1.5 text-amber-300">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Akuntansi (SAK EMKM)</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className="text-slate-400">Beban Riil:</span>
+                    <span className="font-bold text-amber-300 font-mono">{formatRupiah(curReal)}</span>
+                    {renderMiniInflation(momReal)}
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                    <span className="text-[10px] text-amber-300 block font-semibold">HPP (Pokok)</span>
+                    <span className="text-xs font-bold text-white tabular-nums block">
+                      {formatRupiah(curHpp)}
+                    </span>
+                    <div className="flex items-center justify-center">
+                      {renderMiniInflation(momHpp)}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                    <span className="text-[10px] text-sky-300 block font-semibold">OPEX (Beban)</span>
+                    <span className="text-xs font-bold text-white tabular-nums block">
+                      {formatRupiah(curOpex)}
+                    </span>
+                    <div className="flex items-center justify-center">
+                      {renderMiniInflation(momOpex)}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/5 border border-white/10 space-y-1">
+                    <span className="text-[10px] text-purple-300 block font-semibold">Aset (Neraca)</span>
+                    <span className="text-xs font-bold text-white tabular-nums block">
+                      {formatRupiah(curAsset)}
+                    </span>
+                    <div className="flex items-center justify-center">
+                      {renderMiniInflation(momAsset)}
+                    </div>
+                  </div>
+                </div>
+                {reportData.accounting_inflation?.price_inflation_pct !== undefined &&
+                  reportData.accounting_inflation?.price_inflation_pct !== null && (
+                    <div className="text-[10px] text-slate-300 bg-white/5 px-2 py-1 rounded-lg flex items-center justify-between">
+                      <span>Inflasi harga barang:</span>
+                      <span className="font-semibold text-amber-200">
+                        {reportData.accounting_inflation.price_inflation_pct > 0
+                          ? `+${reportData.accounting_inflation.price_inflation_pct}%`
+                          : `${reportData.accounting_inflation.price_inflation_pct}%`}
+                      </span>
+                    </div>
+                  )}
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-[10px] text-amber-300 block font-semibold">HPP (Pokok)</span>
-                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
-                    {formatRupiah(reportData.per_account_group["HPP"] || 0)}
-                  </span>
-                </div>
-                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-[10px] text-sky-300 block font-semibold">OPEX (Beban)</span>
-                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
-                    {formatRupiah(reportData.per_account_group["OPEX"] || 0)}
-                  </span>
-                </div>
-                <div className="p-2 rounded-xl bg-white/5 border border-white/10">
-                  <span className="text-[10px] text-purple-300 block font-semibold">Aset (Neraca)</span>
-                  <span className="text-xs font-bold text-white tabular-nums block mt-0.5">
-                    {formatRupiah(reportData.per_account_group["ASSET"] || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Progress Anggaran Bulanan (Jika Aktif) */}
           {monthlyBudgetLimit > 0 ? (

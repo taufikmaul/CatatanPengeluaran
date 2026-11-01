@@ -3,21 +3,14 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import { formatRupiah } from "@/lib/formatters";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PieChart as PieIcon, BookOpen, Layers } from "lucide-react";
+import { AccountingBreakdownItem } from "@/types";
+import { PieChart as PieIcon, BookOpen, Layers, TrendingUp, TrendingDown } from "lucide-react";
 
 interface CategoryDonutChartProps {
   categoryData: Record<string, number>;
   totalAmount: number;
   perAccountGroup?: Record<string, number>;
-  accountingBreakdown?: Array<{
-    account_code: string;
-    account_name: string;
-    account_group: string;
-    report_type: string;
-    category: string;
-    total: number;
-    percentage: number;
-  }>;
+  accountingBreakdown?: AccountingBreakdownItem[];
 }
 
 interface ChartCategoryItem {
@@ -240,14 +233,19 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
         {/* Legend List with on-hover Rupiah value */}
         {viewMode === "coa" && accountingBreakdown.length > 0 ? (
           <div className="space-y-1.5 mt-2 pt-2 border-t border-slate-100 max-h-44 overflow-y-auto">
-            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
-              Rincian Akun Buku Besar (COA):
+            <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+              <span>Rincian Akun Buku Besar (COA):</span>
+              <span className="text-[9px] font-normal lowercase tracking-normal">MoM vs bln lalu</span>
             </div>
             {accountingBreakdown.map((item) => (
               <div
                 key={item.category}
                 className="flex items-center justify-between gap-2 text-xs py-1 px-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-                title={`${item.account_code} - ${item.account_name}: ${formatRupiah(item.total)}`}
+                title={`${item.account_code} - ${item.account_name}: ${formatRupiah(item.total)}${
+                  item.prev_total !== undefined
+                    ? ` (Bulan lalu: ${formatRupiah(item.prev_total)})`
+                    : ""
+                }`}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Badge variant="outline" className="font-mono text-[9px] px-1 py-0 h-4 border-slate-200 bg-slate-50 text-slate-700">
@@ -261,6 +259,29 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
                   <span className="font-semibold text-slate-800 tabular-nums text-[11px]">
                     {formatRupiah(item.total)}
                   </span>
+                  {item.mom_change_pct !== undefined && item.mom_change_pct !== null && (
+                    <span
+                      title={
+                        item.prev_total !== undefined
+                          ? `Bulan lalu: ${formatRupiah(item.prev_total)} (${item.mom_change_pct > 0 ? `+${item.mom_change_pct}%` : `${item.mom_change_pct}%`})`
+                          : undefined
+                      }
+                      className={`inline-flex items-center gap-0.5 text-[9px] font-semibold px-1 py-0.2 rounded border ${
+                        item.mom_change_pct > 0
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : item.mom_change_pct < 0
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-slate-50 text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      {item.mom_change_pct > 0 ? (
+                        <TrendingUp className="w-2.5 h-2.5 text-rose-600" />
+                      ) : item.mom_change_pct < 0 ? (
+                        <TrendingDown className="w-2.5 h-2.5 text-emerald-600" />
+                      ) : null}
+                      <span>{item.mom_change_pct > 0 ? `+${item.mom_change_pct}%` : `${item.mom_change_pct}%`}</span>
+                    </span>
+                  )}
                   <Badge
                     className={`text-[8px] py-0 px-1 h-3.5 ${
                       item.account_group === "HPP"

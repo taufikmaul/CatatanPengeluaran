@@ -19,6 +19,6 @@ class MasterItem(Base):
     # Satuan beli dan konfigurasi paket/ecer
     satuan_beli: Mapped[str] = mapped_column(String(50), default="Pcs", server_default=text("'Pcs'"), nullable=False)
     tipe_satuan: Mapped[str] = mapped_column(String(20), default="keduanya", server_default=text("'keduanya'"), nullable=False)
-    isi_paket: Mapped[str | None] = mapped_column(String(255), nullable=True, default="", server_default=text("''"))
+    isi_paket: Mapped[str | None] = mapped_column(Text, nullable=True, default="", server_default=text("''"))
     satuan_ecer: Mapped[str | None] = mapped_column(String(50), nullable=True, default="Pcs", server_default=text("'Pcs'"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

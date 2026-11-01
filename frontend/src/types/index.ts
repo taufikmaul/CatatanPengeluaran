@@ -198,6 +198,33 @@ export interface AccountingBreakdownItem {
   category: string;
   total: number;
   percentage: number;
+  prev_total?: number;
+  mom_change_pct?: number | null;
+}
+
+export interface AccountingInflation {
+  laba_rugi_inflation_pct?: number | null;
+  hpp_inflation_pct?: number | null;
+  opex_inflation_pct?: number | null;
+  asset_change_pct?: number | null;
+  prev_laba_rugi_total?: number;
+  prev_hpp_total?: number;
+  prev_opex_total?: number;
+  prev_asset_total?: number;
+  price_inflation_pct?: number | null;
+  items_compared_count?: number;
+  items_inflated_count?: number;
+  items_deflated_count?: number;
+  items_stable_count?: number;
+  top_inflated_items?: Array<{
+    item_name: string;
+    category: string;
+    unit: string;
+    previous_price: number;
+    current_price: number;
+    diff_price: number;
+    percent_change: number;
+  }>;
 }
 
 export interface MonthlyReport {
@@ -228,6 +255,9 @@ export interface MonthlyReport {
   per_kategori: Record<string, number>;
   per_metode_bayar?: Record<string, number>;
   per_account_group?: Record<string, number>;
+  prev_per_account_group?: Record<string, number>;
+  mom_account_group_change_pct?: Record<string, number | null>;
+  accounting_inflation?: AccountingInflation;
   accounting_breakdown?: AccountingBreakdownItem[];
   list_hutang: UnpaidExpenseItem[];
   daily_chart: Array<{

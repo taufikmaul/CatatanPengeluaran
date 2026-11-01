@@ -8,6 +8,7 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 import json
 import re
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
@@ -733,6 +734,140 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "expense_count": regular_count,
         "month": month,
         "year": year,
+    }
+
+
+async def get_price_inflation_summary(
+    db: AsyncSession,
+    cur_year: int,
+    cur_month: int,
+    prev_year: int,
+    prev_month: int,
+) -> dict[str, Any]:
+    """
+    Hitung ringkasan inflasi harga beli satuan (unit price) barang antara bulan berjalan dan bulan sebelumnya.
+    Membandingkan item-item yang dibeli pada kedua bulan tersebut.
+    """
+    cur_start = date(cur_year, cur_month, 1)
+    cur_end = date(cur_year + 1, 1, 1) if cur_month == 12 else date(cur_year, cur_month + 1, 1)
+
+    prev_start = date(prev_year, prev_month, 1)
+    prev_end = date(prev_year + 1, 1, 1) if prev_month == 12 else date(prev_year, prev_month + 1, 1)
+
+    # Ambil pengeluaran bulan berjalan yang memiliki unit_price > 0
+    cur_res = await db.execute(
+        select(Expense).where(
+            and_(
+                Expense.expense_date >= cur_start,
+                Expense.expense_date < cur_end,
+                Expense.unit_price > 0,
+            )
+        ).order_by(Expense.expense_date.desc(), Expense.id.desc())
+    )
+    cur_expenses = cur_res.scalars().all()
+
+    if not cur_expenses:
+        return {
+            "price_inflation_pct": None,
+            "items_compared_count": 0,
+            "items_inflated_count": 0,
+            "items_deflated_count": 0,
+            "items_stable_count": 0,
+            "top_inflated_items": [],
+        }
+
+    # Kelompokkan harga terakhir per item di bulan berjalan (ambil yang terbaru)
+    cur_items: dict[str, dict[str, Any]] = {}
+    for exp in cur_expenses:
+        name_key = (exp.item_name or "").strip().lower()
+        if not name_key or name_key in cur_items:
+            continue
+        cur_items[name_key] = {
+            "item_name": exp.item_name,
+            "category": exp.category or "Lainnya",
+            "unit_price": float(exp.unit_price or 0),
+            "unit": exp.unit or "Pcs",
+        }
+
+    item_keys = list(cur_items.keys())
+    if not item_keys:
+        return {
+            "price_inflation_pct": None,
+            "items_compared_count": 0,
+            "items_inflated_count": 0,
+            "items_deflated_count": 0,
+            "items_stable_count": 0,
+            "top_inflated_items": [],
+        }
+
+    # Ambil pengeluaran bulan sebelumnya untuk item-item tersebut (ambil yang terbaru)
+    prev_res = await db.execute(
+        select(Expense).where(
+            and_(
+                Expense.expense_date >= prev_start,
+                Expense.expense_date < prev_end,
+                Expense.unit_price > 0,
+                func.lower(Expense.item_name).in_(item_keys),
+            )
+        ).order_by(Expense.expense_date.desc(), Expense.id.desc())
+    )
+    prev_expenses = prev_res.scalars().all()
+
+    prev_items: dict[str, float] = {}
+    for exp in prev_expenses:
+        name_key = (exp.item_name or "").strip().lower()
+        if not name_key or name_key in prev_items:
+            continue
+        prev_items[name_key] = float(exp.unit_price or 0)
+
+    compared_items: list[dict[str, Any]] = []
+    inflated_count = 0
+    deflated_count = 0
+    stable_count = 0
+
+    for name_key, cur_data in cur_items.items():
+        if name_key not in prev_items:
+            continue
+        prev_price = prev_items[name_key]
+        cur_price = cur_data["unit_price"]
+        if prev_price <= 0:
+            continue
+
+        diff = cur_price - prev_price
+        pct = (diff / prev_price) * 100.0
+
+        if pct > 0.05:
+            inflated_count += 1
+        elif pct < -0.05:
+            deflated_count += 1
+        else:
+            stable_count += 1
+
+        compared_items.append({
+            "item_name": cur_data["item_name"],
+            "category": cur_data["category"],
+            "unit": cur_data["unit"],
+            "previous_price": prev_price,
+            "current_price": cur_price,
+            "diff_price": round(diff, 2),
+            "percent_change": round(pct, 1),
+        })
+
+    compared_count = len(compared_items)
+    avg_inflation = None
+    if compared_count > 0:
+        total_pct = sum(item["percent_change"] for item in compared_items)
+        avg_inflation = round(total_pct / compared_count, 1)
+
+    compared_items.sort(key=lambda x: x["percent_change"], reverse=True)
+
+    return {
+        "price_inflation_pct": avg_inflation,
+        "items_compared_count": compared_count,
+        "items_inflated_count": inflated_count,
+        "items_deflated_count": deflated_count,
+        "items_stable_count": stable_count,
+        "top_inflated_items": compared_items[:5],
     }
 
 

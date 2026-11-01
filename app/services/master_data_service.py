@@ -212,16 +212,21 @@ async def get_valid_units(db: AsyncSession) -> list[str]:
     return await get_active_names(db, "satuan")
 
 
-async def normalize_unit_to_master(db: AsyncSession, unit_str: str | None) -> str | None:
+async def normalize_unit_to_master(
+    db: AsyncSession,
+    unit_str: str | None,
+    valid_units: list[str] | None = None,
+) -> str | None:
     """
     Cek apakah satuan yang diinput sesuai dengan data master satuan yang aktif (case-insensitive).
     Mengembalikan nama satuan resmi dari master data jika cocok, atau None jika tidak terdaftar.
+    Jika `valid_units` disediakan, fungsi tidak akan melakukan query ulang ke DB.
     """
     if not unit_str or not unit_str.strip():
         return None
-    valid_units = await get_valid_units(db)
+    units = valid_units if valid_units is not None else await get_valid_units(db)
     cleaned = unit_str.strip().lower()
-    for u in valid_units:
+    for u in units:
         if u.strip().lower() == cleaned:
             return u
     return None

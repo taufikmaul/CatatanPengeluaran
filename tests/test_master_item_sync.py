@@ -238,3 +238,95 @@ async def test_deleting_master_item_unlinks_without_deleting_expenses(client, au
     exp = await db.scalar(select(Expense).where(Expense.id == exp_id))
     assert exp is not None
     assert exp.master_item_id is None
+
+
+@pytest.mark.asyncio
+async def test_sync_existing_api_endpoint_with_special_notes_and_many_derivatives(client, auth_cookies, db):
+    """
+    Uji endpoint /master-items/sync-existing ketika ada catatan berisi kata 'isi'
+    (misal: isi bensin, isi kasir, isi ulang) agar tidak salah deteksi dan tidak
+    melebihi batas panjang karakter DB (menghindari error 500).
+    """
+    client.cookies.update(auth_cookies)
+    today = pytest.importorskip("datetime").date.today()
+
+    # 1. Buat master item
+    m_terigu = await create_master_item(
+        db,
+        item_name="Tepung Terigu Cakra Kembar",
+        category="Bahan Kue",
+        aliases="terigu cakra, cakra kembar",
+        satuan_beli="Sak",
+    )
+    m_galon = await create_master_item(
+        db,
+        item_name="Air Galon Aqua",
+        category="Operasional",
+        satuan_beli="Galon",
+    )
+    await db.commit()
+
+    # 2. Buat berbagai expense dengan catatan operasional
+    expenses = [
+        Expense(
+            item_name="Terigu Cakra 1kg",
+            notes="nota no 123 | isi kasir shift pagi",
+            expense_date=today,
+            qty=2,
+            unit="Pcs",
+            unit_price=15000,
+            total_price=30000,
+        ),
+        Expense(
+            item_name="Terigu Cakra 500g",
+            notes="isi bensin motor beat 20.000 untuk kurir",
+            expense_date=today,
+            qty=1,
+            unit="Bungkus",
+            unit_price=8000,
+            total_price=8000,
+        ),
+        Expense(
+            item_name="Air Galon Aqua",
+            notes="isi ulang galon aqua dapur toko 2 galon",
+            expense_date=today,
+            qty=2,
+            unit="Galon",
+            unit_price=20000,
+            total_price=40000,
+        ),
+        Expense(
+            item_name="Tepung Terigu Cakra Kembar",
+            notes="titip saldo isi pulsa kasir",
+            expense_date=today,
+            qty=5,
+            unit="Sak",
+            unit_price=200000,
+            total_price=1000000,
+        ),
+    ]
+    for e in expenses:
+        db.add(e)
+    await db.commit()
+
+    # 3. Panggil API POST /api/v1/master-items/sync-existing
+    res = await client.post("/api/v1/master-items/sync-existing")
+    assert res.status_code == 200, f"Sync endpoint failed: {res.text}"
+    data = res.json()
+    assert data["ok"] is True
+    assert data["matched_count"] >= 3
+
+    # 4. Verifikasi master item isi_paket tidak mengandung kata operasional sembarangan
+    await db.refresh(m_terigu)
+    await db.refresh(m_galon)
+
+    assert "kasir" not in (m_terigu.isi_paket or "").lower()
+    assert "bensin" not in (m_terigu.isi_paket or "").lower()
+    assert "pulsa" not in (m_terigu.isi_paket or "").lower()
+    assert len(m_terigu.isi_paket or "") <= 255
+
+    # 5. Panggilan kedua harus idempotent (aman dan tetap 200)
+    res2 = await client.post("/api/v1/master-items/sync-existing")
+    assert res2.status_code == 200
+    assert res2.json()["ok"] is True
+

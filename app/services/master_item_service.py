@@ -160,11 +160,15 @@ def extract_derivative(raw_text: str | None) -> str | None:
         return None
     s = raw_text.strip()
 
-    # 1. 'isi ...' misal '1 bks isi 500g', 'isi 6 pouch @ 2kg', 'isi: 1kg'
+    # 1. 'isi ...' misal '1 bks isi 500g', 'isi 6 pouch @ 2kg', 'isi: 1kg', 'isi 100 pcs'
     m_isi = re.search(r'\bisi[:\s]+([^,;|]+)', s, re.IGNORECASE)
     if m_isi:
         val = m_isi.group(1).strip()
-        if val:
+        # Jangan anggap kata umum operasional seperti 'ulang', 'bensin', 'kasir', 'saldo', 'token' sebagai ukuran kemasan
+        is_invalid = re.match(r'^(?:ulang|bensin|kasir|saldo|token|dompet|pulsa|toko)\b', val, re.IGNORECASE)
+        # Wajib mengandung angka dan satuan atau kata hitung kemasan
+        has_unit = re.search(r'(?:^|\W|\d)(?:kg|kilo|gram|gr|g|liter|lt|l|ml|oz|lb|pcs|lembar|butir|biji|sachet|pouch|kantong|roll|bks|bungkus|kaleng|pack|box)\b', val, re.IGNORECASE)
+        if not is_invalid and has_unit and len(val) <= 60:
             return val
 
     # 2. Pola perkalian ecer: '6 pouch @ 2kg', '6 x 2kg', '10 x 500g'
@@ -215,7 +219,7 @@ def sync_derivative_to_isi_paket(current_isi: str | None, new_derivative: str | 
 
     clean_new = new_derivative.strip()
     if not current_isi or not current_isi.strip():
-        return clean_new, True
+        return clean_new[:255], True
 
     parts = [p.strip() for p in re.split(r"[,;]\s*", current_isi) if p.strip()]
     norm_new = _norm_variant(clean_new)
@@ -224,6 +228,10 @@ def sync_derivative_to_isi_paket(current_isi: str | None, new_derivative: str | 
             return current_isi, False
 
     updated = f"{current_isi}, {clean_new}"
+    # Batasi kapasitas maksimal agar aman dari overflow/truncation di DB
+    if len(updated) > 255:
+        return current_isi, False
+
     return updated, True
 
 
@@ -558,10 +566,35 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
     - Menyesuaikan kategori ke MasterItem
     - Menormalisasi satuan agar sesuai data master yang terdaftar
     - Menemukan turunan satuan (isi kemasan) dan menyinkronkannya ke MasterItem.isi_paket
+    Optimasi:
+    - Pre-fetch master data satuan (O(1) in-memory lookup vs ribuan DB queries)
+    - Pre-index master items by id, exact name, dan alias
+    - Caching pencocokan nama item per nama raw untuk menghindari sequence matching berulang
+    - Parsing turunan dari notes hanya pada tag Struk/Isi terstruktur
     """
     master_items = await list_master_items(db)
     if not master_items:
         return {"matched_count": 0, "updated_items": []}
+
+    # 1. Pre-fetch valid units untuk normalisasi satuan in-memory O(1)
+    valid_units = await get_valid_units(db)
+    valid_units_map = {u.strip().lower(): u for u in valid_units}
+
+    # 2. Pre-index master items
+    master_by_id: dict[int, MasterItem] = {m.id: m for m in master_items}
+    exact_by_name: dict[str, MasterItem] = {}
+    exact_by_alias: dict[str, MasterItem] = {}
+    for m in master_items:
+        norm_name = _normalize_str(m.item_name)
+        if norm_name and norm_name not in exact_by_name:
+            exact_by_name[norm_name] = m
+        for alias in _parse_aliases(m.aliases):
+            norm_alias = _normalize_str(alias)
+            if norm_alias and norm_alias not in exact_by_alias:
+                exact_by_alias[norm_alias] = m
+
+    # 3. Cache pencocokan raw_name -> MasterItem
+    match_cache: dict[str, MasterItem | None] = {}
 
     result = await db.execute(select(Expense).order_by(Expense.id.desc()))
     all_expenses = result.scalars().all()
@@ -572,7 +605,21 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
         if not raw_name:
             continue
 
-        matched = find_best_master_match(raw_name, master_items)
+        # Cek apakah sudah terhubung ke master_item_id yang valid
+        matched: MasterItem | None = None
+        if exp.master_item_id and exp.master_item_id in master_by_id:
+            matched = master_by_id[exp.master_item_id]
+        else:
+            norm_raw = _normalize_str(raw_name)
+            if norm_raw in match_cache:
+                matched = match_cache[norm_raw]
+            else:
+                # Cek exact name atau alias terlebih dahulu O(1)
+                matched = exact_by_name.get(norm_raw) or exact_by_alias.get(norm_raw)
+                if not matched:
+                    matched = find_best_master_match(raw_name, master_items)
+                match_cache[norm_raw] = matched
+
         if not matched:
             continue
 
@@ -592,16 +639,26 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
             exp.sheets_synced = False
             changed = True
 
-        # Normalisasi satuan transaksi ke data master
+        # Normalisasi satuan transaksi ke data master secara in-memory
         if exp.unit:
-            norm_u = await normalize_unit_to_master(db, exp.unit)
+            cleaned_unit = exp.unit.strip().lower()
+            norm_u = valid_units_map.get(cleaned_unit)
             if norm_u and exp.unit != norm_u:
                 exp.unit = norm_u
                 exp.sheets_synced = False
                 changed = True
 
-        # Sinkronkan turunan kemasan dari raw_name / notes ke MasterItem.isi_paket
-        deriv = extract_derivative(raw_name) or extract_derivative(exp.notes)
+        # Sinkronkan turunan kemasan dari raw_name / notes terstruktur ke MasterItem.isi_paket
+        deriv = extract_derivative(raw_name)
+        if not deriv and exp.notes:
+            m_struk = re.search(r'Struk:\s*([^|]+)', exp.notes, re.IGNORECASE)
+            if m_struk:
+                deriv = extract_derivative(m_struk.group(1))
+            if not deriv:
+                m_isi_tag = re.search(r'Isi:\s*([^|]+)', exp.notes, re.IGNORECASE)
+                if m_isi_tag:
+                    deriv = extract_derivative(m_isi_tag.group(1))
+
         if deriv:
             updated_isi, isi_changed = sync_derivative_to_isi_paket(matched.isi_paket, deriv)
             if isi_changed:
@@ -621,6 +678,8 @@ async def sync_existing_expenses_to_master(db: AsyncSession) -> dict:
                 "category": exp.category,
                 "master_item_id": matched.id,
             })
+            if len(updated_items) % 250 == 0:
+                await db.flush()
 
     await db.flush()
     return {
