@@ -69,6 +69,18 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
   // UI helpers
   const [showTokens, setShowTokens] = useState(false);
+  const [showRolePasswords, setShowRolePasswords] = useState<Record<string, boolean>>({
+    staff: false,
+    purchasing: false,
+    warehouse: false,
+    admin_input: false,
+    bot: false,
+  });
+
+  const toggleRolePassword = (key: string) => {
+    setShowRolePasswords((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUploadingCreds, setIsUploadingCreds] = useState(false);
@@ -514,13 +526,23 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     Ajukan Belanja
                   </Badge>
                 </label>
-                <Input
-                  type={showTokens ? "text" : "password"}
-                  value={staffPassword}
-                  onChange={(e) => setStaffPassword(e.target.value)}
-                  placeholder="Default: staf123"
-                  className="h-10 text-xs rounded-xl"
-                />
+                <div className="relative">
+                  <Input
+                    type={showRolePasswords.staff || showTokens ? "text" : "password"}
+                    value={staffPassword}
+                    onChange={(e) => setStaffPassword(e.target.value)}
+                    placeholder="Default: staf123"
+                    className="h-10 text-xs rounded-xl pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleRolePassword("staff")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 focus:outline-none p-0.5"
+                    aria-label={showRolePasswords.staff ? "Sembunyikan password staf" : "Tampilkan password staf"}
+                  >
+                    {showRolePasswords.staff ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Akses untuk membuat dan melihat daftar request belanja harian toko.
                 </span>
@@ -533,13 +555,23 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     Mapping & Order
                   </Badge>
                 </label>
-                <Input
-                  type={showTokens ? "text" : "password"}
-                  value={purchasingPassword}
-                  onChange={(e) => setPurchasingPassword(e.target.value)}
-                  placeholder="Default: purchasing123"
-                  className="h-10 text-xs rounded-xl border-blue-200 focus-visible:ring-blue-400"
-                />
+                <div className="relative">
+                  <Input
+                    type={showRolePasswords.purchasing || showTokens ? "text" : "password"}
+                    value={purchasingPassword}
+                    onChange={(e) => setPurchasingPassword(e.target.value)}
+                    placeholder="Default: purchasing123"
+                    className="h-10 text-xs rounded-xl border-blue-200 focus-visible:ring-blue-400 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleRolePassword("purchasing")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 focus:outline-none p-0.5"
+                    aria-label={showRolePasswords.purchasing ? "Sembunyikan password purchasing" : "Tampilkan password purchasing"}
+                  >
+                    {showRolePasswords.purchasing ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Akses untuk mapping supplier, copy format WA/Email, dan eksekusi order.
                 </span>
@@ -552,13 +584,23 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     Pemeriksaan Fisik & Exp
                   </Badge>
                 </label>
-                <Input
-                  type={showTokens ? "text" : "password"}
-                  value={warehousePassword}
-                  onChange={(e) => setWarehousePassword(e.target.value)}
-                  placeholder="Default: gudang123"
-                  className="h-10 text-xs rounded-xl border-emerald-200 focus-visible:ring-emerald-400"
-                />
+                <div className="relative">
+                  <Input
+                    type={showRolePasswords.warehouse || showTokens ? "text" : "password"}
+                    value={warehousePassword}
+                    onChange={(e) => setWarehousePassword(e.target.value)}
+                    placeholder="Default: gudang123"
+                    className="h-10 text-xs rounded-xl border-emerald-200 focus-visible:ring-emerald-400 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleRolePassword("warehouse")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 focus:outline-none p-0.5"
+                    aria-label={showRolePasswords.warehouse ? "Sembunyikan password gudang" : "Tampilkan password gudang"}
+                  >
+                    {showRolePasswords.warehouse ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Akses untuk cek barang tiba, input kesesuaian qty, expired date, dan kondisi fisik.
                 </span>
@@ -571,13 +613,23 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     Pencatatan Nota
                   </Badge>
                 </label>
-                <Input
-                  type={showTokens ? "text" : "password"}
-                  value={adminInputPassword}
-                  onChange={(e) => setAdminInputPassword(e.target.value)}
-                  placeholder="Default: input123"
-                  className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400"
-                />
+                <div className="relative">
+                  <Input
+                    type={showRolePasswords.admin_input || showTokens ? "text" : "password"}
+                    value={adminInputPassword}
+                    onChange={(e) => setAdminInputPassword(e.target.value)}
+                    placeholder="Default: input123"
+                    className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleRolePassword("admin_input")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 focus:outline-none p-0.5"
+                    aria-label={showRolePasswords.admin_input ? "Sembunyikan password admin input" : "Tampilkan password admin input"}
+                  >
+                    {showRolePasswords.admin_input ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Akses untuk mencatat & koreksi transaksi pengeluaran/nota kasir.
                 </span>
@@ -590,13 +642,23 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     Grup Telegram
                   </Badge>
                 </label>
-                <Input
-                  type={showTokens ? "text" : "password"}
-                  value={botPassword}
-                  onChange={(e) => setBotPassword(e.target.value)}
-                  placeholder="Default: 12345"
-                  className="h-10 text-xs rounded-xl"
-                />
+                <div className="relative">
+                  <Input
+                    type={showRolePasswords.bot || showTokens ? "text" : "password"}
+                    value={botPassword}
+                    onChange={(e) => setBotPassword(e.target.value)}
+                    placeholder="Default: 12345"
+                    className="h-10 text-xs rounded-xl pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => toggleRolePassword("bot")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 focus:outline-none p-0.5"
+                    aria-label={showRolePasswords.bot ? "Sembunyikan password bot telegram" : "Tampilkan password bot telegram"}
+                  >
+                    {showRolePasswords.bot ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Password yang diketikkan staf di Telegram untuk mendaftarkan akunnya ke bot toko.
                 </span>
