@@ -30,10 +30,13 @@ import {
   Package,
   ShoppingBag,
   AlertTriangle,
+  Layers,
 } from "lucide-react";
 import { parseTelegramLink } from "@/lib/telegram";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
+import { LedgerSummaryPanel, IsolatedStickyFooter } from "./expense/LedgerSummaryPanel";
+import { ExpenseMultiItemForm } from "./expense/ExpenseMultiItemForm";
 
 interface ExpenseFormDrawerProps {
   isOpen: boolean;
@@ -71,6 +74,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   supplierSuggestions = [],
 }) => {
   const {
+    control,
     register,
     handleSubmit,
     reset,
@@ -114,7 +118,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     }
   }, [isOpen]);
 
-  const [activeTab, setActiveTab] = useState<"form" | "ocr">("form");
+  const [activeTab, setActiveTab] = useState<"form" | "multi" | "ocr">("form");
   const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [ocrPreview, setOcrPreview] = useState<string | null>(null);
   const [isScanningOcr, setIsScanningOcr] = useState(false);
@@ -127,8 +131,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [selectedSuggestionHint, setSelectedSuggestionHint] = useState<ItemSuggestion | null>(null);
-  const [showNewTurunan, setShowNewTurunan] = useState(false);
-  const [customTurunan, setCustomTurunan] = useState("");
   const [invoiceWarning, setInvoiceWarning] = useState<string | null>(null);
 
   const handleCheckInvoice = async (inv: string) => {
@@ -155,13 +157,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const isOngkir = catProfile.archetype === "ongkir";
   const isTukarCash = catProfile.archetype === "tukar_cash";
   const isPayroll = catProfile.archetype === "payroll";
-  const qty = watch("qty") || 0;
-  const unitPrice = watch("unit_price") || 0;
-  const shippingFee = watch("shipping_fee") || 0;
-  const tax = watch("tax") || 0;
-  const otherFee = watch("other_fee") || 0;
-  const discount = watch("discount") || 0;
-  const payStatus = watch("pay_status") || "Lunas";
   const msgLinkVal = watch("msg_link") || "";
   const notesVal = watch("notes") || "";
   const initialTgMeta = parseTelegramLink(initialData?.msg_link);
@@ -249,12 +244,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       .filter((s) => s.toLowerCase().includes(q))
       .slice(0, 10);
   }, [supplierVal, supplierSuggestions]);
-
-  // Auto-calculate total price when components change
-  useEffect(() => {
-    const calc = Number(qty) * Number(unitPrice) + Number(shippingFee) + Number(tax) + Number(otherFee) - Number(discount);
-    setValue("total_price", Math.max(0, calc));
-  }, [qty, unitPrice, shippingFee, tax, otherFee, discount, setValue]);
 
   // Set form values when opening, editing, or repeating an order
   useEffect(() => {
@@ -367,7 +356,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     if (s.last_supplier && s.last_supplier !== "-" && (!supplierVal || supplierVal === "-")) {
       setValue("supplier", s.last_supplier);
     }
-    if (s.last_unit_price > 0 && (!unitPrice || Number(unitPrice) === 0)) {
+    const curUnitPrice = getValues("unit_price");
+    if (s.last_unit_price > 0 && (!curUnitPrice || Number(curUnitPrice) === 0)) {
       setValue("unit_price", s.last_unit_price);
     }
     if (s.satuan_beli) {
@@ -517,11 +507,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     onClose();
   };
 
-  const calculatedTotal = watch("total_price");
-  const baseSubtotal = Math.max(0, Number(qty || 0) * Number(unitPrice || 0));
-  const extraFeesTotal = Number(shippingFee || 0) + Number(tax || 0) + Number(otherFee || 0);
-  const isUnpaid = payStatus.toLowerCase().includes("belum") || payStatus.toLowerCase().includes("hutang");
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl border-slate-200 shadow-2xl bg-white">
@@ -537,22 +522,30 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                       ? "Edit Catatan Pengeluaran"
                       : repeatData
                       ? `Beli Lagi: ${repeatData.item_name}`
+                      : activeTab === "multi"
+                      ? "Input 1 Nota (Multi-Item & Multi-Kategori)"
                       : "Tambah Catatan Pengeluaran"}
                   </span>
                 </DialogTitle>
-                <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-lg">
-                  {catProfile.badgeLabel}
-                </span>
-                <span className="text-[11px] font-mono font-semibold bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg">
-                  {catProfile.coaLabel}
-                </span>
+                {activeTab === "form" && (
+                  <>
+                    <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-lg">
+                      {catProfile.badgeLabel}
+                    </span>
+                    <span className="text-[11px] font-mono font-semibold bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg">
+                      {catProfile.coaLabel}
+                    </span>
+                  </>
+                )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1">
-                {catProfile.description}
+                {activeTab === "multi"
+                  ? "Catat beberapa barang dari kategori berbeda dalam 1 nota/struk belanja sekaligus."
+                  : catProfile.description}
               </p>
             </div>
 
-            {/* Mode Switcher (Manual Form vs OCR Scan) - Only when adding fresh new expense */}
+            {/* Mode Switcher (1 Item vs Multi-Item 1 Nota vs OCR Scan) - Only when adding fresh new expense */}
             {!initialData && !repeatData && (
               <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl shrink-0 self-start sm:self-auto w-full sm:w-auto">
                 <button
@@ -565,8 +558,22 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>Input Manual</span>
+                  <span>1 Item</span>
                 </button>
+                {onBatchSubmit && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("multi")}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                      activeTab === "multi"
+                        ? "bg-white text-blue-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Multi-Item (1 Nota)</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveTab("ocr")}
@@ -577,7 +584,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   }`}
                 >
                   <ScanLine className="w-3.5 h-3.5" />
-                  <span>Scan Struk (OCR)</span>
+                  <span>Scan Struk</span>
                 </button>
               </div>
             )}
@@ -610,8 +617,22 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
           )}
         </DialogHeader>
 
-        {/* OCR SCAN VIEW (Split Desktop Layout & Adaptive Mobile) */}
-        {activeTab === "ocr" && !initialData && !repeatData ? (
+        {/* MULTI-ITEM & MULTI-CATEGORY 1 NOTA VIEW */}
+        {activeTab === "multi" && !initialData && !repeatData && onBatchSubmit ? (
+          <ExpenseMultiItemForm
+            categories={categories}
+            defaultCategory={categoryVal || defaultCategory}
+            units={units}
+            paymentMethods={paymentMethods}
+            itemSuggestions={itemSuggestions}
+            supplierSuggestions={supplierSuggestions}
+            usersList={usersList}
+            isSubmitting={isSubmitting}
+            ocrSeedItems={ocrExtractedItems.length > 0 ? ocrExtractedItems : undefined}
+            onBatchSubmit={onBatchSubmit}
+            onClose={onClose}
+          />
+        ) : activeTab === "ocr" && !initialData && !repeatData ? (
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
               <div
@@ -756,16 +777,28 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                             <span className="text-[11px] text-emerald-700">
                               Total {ocrExtractedItems.length} item terbaca di nota ini.
                             </span>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={isSubmitting}
-                              onClick={handleBatchSaveAll}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 px-3.5 shadow-sm font-semibold flex items-center gap-1.5"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
-                            </Button>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setActiveTab("multi")}
+                                className="bg-white hover:bg-emerald-100 text-emerald-900 border-emerald-300 rounded-xl text-xs h-9 px-3 font-semibold flex items-center gap-1.5"
+                              >
+                                <Layers className="w-3.5 h-3.5" />
+                                <span>Edit Semua di Tabel Multi-Item</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={isSubmitting}
+                                onClick={handleBatchSaveAll}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 px-3.5 shadow-sm font-semibold flex items-center gap-1.5"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1280,428 +1313,29 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN (5 cols on Desktop): Panel Ledger Kalkulasi & Pembayaran */}
-                <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 sm:p-5 space-y-4 lg:sticky lg:top-0">
-                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
-                    <span className="text-xs font-bold text-slate-800">
-                      Rincian Nominal & Pembayaran
-                    </span>
-                    <span className="text-[11px] font-medium text-slate-500">
-                      Kalkulasi Otomatis
-                    </span>
-                  </div>
-
-                  {/* Qty, Satuan, & Harga Satuan (Adaptif sesuai Kategori) */}
-                  {catProfile.hideQty ? (
-                    <div>
-                      <input type="hidden" {...register("qty", { valueAsNumber: true })} value={1} />
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        {catProfile.priceLabel}
-                      </label>
-                      <Input
-                        type="number"
-                        step="any"
-                        {...register("unit_price", { required: true, valueAsNumber: true })}
-                        className="h-11 sm:h-10 text-sm rounded-xl bg-white font-bold tabular-nums"
-                        placeholder="0"
-                      />
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-12 gap-2.5">
-                      <div className="col-span-1 sm:col-span-3">
-                        <label className="text-xs font-semibold text-slate-700 block mb-1">
-                          {isOngkir ? "Jml Trip" : "Qty"}
-                        </label>
-                        <Input
-                          type="number"
-                          step="any"
-                          {...register("qty", { required: true, valueAsNumber: true })}
-                          className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold text-center tabular-nums"
-                        />
-                      </div>
-
-                      <div className="col-span-1 sm:col-span-4">
-                        <label className="text-xs font-semibold text-slate-700 block mb-1">
-                          Satuan
-                        </label>
-                        {catProfile.lockUnit ? (
-                          <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center text-slate-700">
-                            {catProfile.defaultUnit}
-                          </div>
-                        ) : (
-                          <select
-                            {...register("unit", { required: true })}
-                            className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                          >
-                            {(catProfile.allowedUnits
-                              ? units.filter((u) => catProfile.allowedUnits!.includes(u)).concat(
-                                  units.filter((u) => !catProfile.allowedUnits!.includes(u))
-                                )
-                              : units
-                            ).map((u) => (
-                              <option key={u} value={u}>
-                                {u}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-
-                      <div className="col-span-2 sm:col-span-5">
-                        <label className="text-xs font-semibold text-slate-700 block mb-1">
-                          {catProfile.priceLabel}
-                        </label>
-                        <Input
-                          type="number"
-                          step="any"
-                          {...register("unit_price", { required: true, valueAsNumber: true })}
-                          className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold tabular-nums"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hint & Selector Satuan & Turunan dari Master Item */}
-                  {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && (selectedSuggestionHint.isi_paket || selectedSuggestionHint.tipe_satuan === "keduanya") && (
-                    <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs space-y-2">
-                      <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
-                        <span className="flex items-center gap-1">
-                          <Package className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Kemasan Master Item:</span>
-                        </span>
-                        {selectedSuggestionHint.isi_paket && (
-                          <span className="font-medium text-blue-700">
-                            1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
-                          </span>
-                        )}
-                      </div>
-
-                      {selectedSuggestionHint.tipe_satuan === "keduanya" && (
-                        <div className="flex items-center gap-2 pt-0.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => setValue("unit", selectedSuggestionHint.satuan_beli || "Box")}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                              watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_beli || "Box").toLowerCase()
-                                ? "bg-blue-600 text-white shadow-xs"
-                                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            <Package className="w-3 h-3" />
-                            <span>Paket ({selectedSuggestionHint.satuan_beli || "Box"})</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setValue("unit", selectedSuggestionHint.satuan_ecer || "Pouch")}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                              watch("unit")?.toLowerCase() === (selectedSuggestionHint.satuan_ecer || "Pouch").toLowerCase()
-                                ? "bg-blue-600 text-white shadow-xs"
-                                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            <ShoppingBag className="w-3 h-3" />
-                            <span>Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {(() => {
-                        const rawVariants = selectedSuggestionHint.isi_paket
-                          ? selectedSuggestionHint.isi_paket.split(/[,;]\s*/).map((s) => s.trim()).filter(Boolean)
-                          : [];
-                        return (
-                          <div className="pt-1 border-t border-blue-200/50 space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] text-blue-900 font-medium">
-                                Varian Isi / Turunan:
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowNewTurunan((prev) => !prev)}
-                                className="text-[10px] text-blue-700 hover:underline font-medium"
-                              >
-                                {showNewTurunan ? "Tutup" : "+ Turunan Baru"}
-                              </button>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {rawVariants.map((variant, idx) => {
-                                const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
-                                const curNotes = watch("notes") || "";
-                                const isPicked = curNotes.toLowerCase().includes(cleanVar.toLowerCase());
-                                return (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => {
-                                      setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                                      upsertNoteTag("Isi", cleanVar);
-                                    }}
-                                    className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                                      isPicked
-                                        ? "bg-emerald-600 text-white shadow-xs"
-                                        : "bg-white text-slate-700 border border-blue-200 hover:bg-blue-100/50"
-                                    }`}
-                                  >
-                                    <span>{selectedSuggestionHint.satuan_beli || "Bungkus"} (isi {cleanVar})</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {showNewTurunan && (
-                              <div className="flex items-center gap-1.5 pt-1">
-                                <Input
-                                  placeholder="Contoh: 500g, 1Kg, 250ml"
-                                  value={customTurunan}
-                                  onChange={(e) => setCustomTurunan(e.target.value)}
-                                  className="h-8 text-xs bg-white rounded-lg flex-1"
-                                />
-                                <button
-                                  type="button"
-                                  disabled={!customTurunan.trim()}
-                                  onClick={() => {
-                                    const cleanVar = customTurunan.trim();
-                                    setValue("unit", selectedSuggestionHint.satuan_beli || "Bungkus");
-                                    upsertNoteTag("Isi", cleanVar);
-                                    setCustomTurunan("");
-                                    setShowNewTurunan(false);
-                                  }}
-                                  className="h-8 px-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                  Terapkan
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {/* Komponen Biaya Tambahan / Potongan (Hanya tampilkan yang relevan untuk kategori ini) */}
-                  {(catProfile.shippingFeeLabel || catProfile.taxLabel || catProfile.otherFeeLabel || catProfile.discountLabel) && (
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      {catProfile.shippingFeeLabel && (
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                            {catProfile.shippingFeeLabel}
-                          </label>
-                          <Input
-                            type="number"
-                            step="any"
-                            {...register("shipping_fee", { valueAsNumber: true })}
-                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-
-                      {catProfile.taxLabel && (
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-semibold text-slate-600">
-                              {catProfile.taxLabel}
-                            </label>
-                            {Number(unitPrice) > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setValue("tax", Math.round(Number(qty) * Number(unitPrice) * 0.11))}
-                                className="text-[10px] text-blue-600 hover:underline font-semibold"
-                              >
-                                +11% PPN
-                              </button>
-                            )}
-                          </div>
-                          <Input
-                            type="number"
-                            step="any"
-                            {...register("tax", { valueAsNumber: true })}
-                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-
-                      {catProfile.otherFeeLabel && (
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                            {catProfile.otherFeeLabel}
-                          </label>
-                          <Input
-                            type="number"
-                            step="any"
-                            {...register("other_fee", { valueAsNumber: true })}
-                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-
-                      {catProfile.discountLabel && (
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                            {catProfile.discountLabel}
-                          </label>
-                          <Input
-                            type="number"
-                            step="any"
-                            {...register("discount", { valueAsNumber: true })}
-                            className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
-                            placeholder="0"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Calculated Total Highlight Box with Breakdown */}
-                  <div className="p-3.5 bg-white border border-blue-200/90 rounded-2xl space-y-2 shadow-2xs">
-                    {(extraFeesTotal > 0 || Number(discount) > 0) && (
-                      <div className="space-y-1 text-[11px] text-slate-500 border-b border-slate-100 pb-2">
-                        <div className="flex justify-between">
-                          <span>Subtotal ({qty} {watch("unit")})</span>
-                          <span className="font-mono tabular-nums">{formatRupiah(baseSubtotal)}</span>
-                        </div>
-                        {extraFeesTotal > 0 && (
-                          <div className="flex justify-between text-slate-600">
-                            <span>Biaya Tambahan / Pajak</span>
-                            <span className="font-mono tabular-nums">+{formatRupiah(extraFeesTotal)}</span>
-                          </div>
-                        )}
-                        {Number(discount) > 0 && (
-                          <div className="flex justify-between text-emerald-700">
-                            <span>Potongan / Diskon</span>
-                            <span className="font-mono tabular-nums">-{formatRupiah(Number(discount))}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-slate-800">
-                        {catProfile.totalLabel}
-                      </span>
-                      <span className="text-lg font-extrabold text-blue-700 tabular-nums">
-                        {formatRupiah(calculatedTotal)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Metode Bayar & Status Pembayaran */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        Metode Bayar
-                      </label>
-                      {isTukarCash ? (
-                        <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center justify-between text-slate-800">
-                          <span>Tunai (Otomatis)</span>
-                          <Badge variant="outline" className="text-[10px] bg-white text-emerald-700 border-emerald-200">
-                            Kas Fisik
-                          </Badge>
-                        </div>
-                      ) : isOngkir ? (
-                        <>
-                          <Input
-                            list="ongkir-pay-methods"
-                            placeholder="Gopay, Ovo, Tunai, QRIS..."
-                            {...register("pay_method")}
-                            className="h-11 sm:h-10 text-xs rounded-xl bg-white"
-                          />
-                          <datalist id="ongkir-pay-methods">
-                            <option value="Gopay - Kasir" />
-                            <option value="Gopay - Owner" />
-                            <option value="Gopay - Maya" />
-                            <option value="Ovo - Akun" />
-                            <option value="Tunai" />
-                            <option value="QRIS" />
-                            <option value="Transfer" />
-                            <option value="COD" />
-                          </datalist>
-                        </>
-                      ) : (
-                        <select
-                          {...register("pay_method", {
-                            onChange: (e) => {
-                              const val = e.target.value;
-                              if (val === "COD") {
-                                setValue("pay_status", "Belum Lunas");
-                              } else {
-                                setValue("pay_status", "Lunas");
-                              }
-                            },
-                          })}
-                          className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
-                        >
-                          {paymentMethods.map((pm) => (
-                            <option key={pm} value={pm}>
-                              {pm}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        Status Pembayaran
-                      </label>
-                      <select
-                        {...register("pay_status")}
-                        className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
-                      >
-                        <option value="Lunas">Lunas</option>
-                        <option value="Belum Lunas">Belum Lunas (Hutang)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas) */}
-                  {isUnpaid && (
-                    <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl">
-                      <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5 mb-1.5">
-                        <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
-                        Tanggal Jatuh Tempo Tagihan
-                      </label>
-                      <Input
-                        type="date"
-                        {...register("due_date")}
-                        className="h-10 text-xs rounded-xl bg-white border-rose-200"
-                      />
-                    </div>
-                  )}
-                </div>
+                {/* RIGHT COLUMN (5 cols on Desktop): Isolated Watcher Ledger Kalkulasi & Pembayaran */}
+                <LedgerSummaryPanel
+                  control={control}
+                  register={register}
+                  setValue={setValue}
+                  catProfile={catProfile}
+                  units={units}
+                  paymentMethods={paymentMethods}
+                  selectedSuggestionHint={selectedSuggestionHint}
+                  itemSuggestions={itemSuggestions}
+                  upsertNoteTag={upsertNoteTag}
+                />
               </div>
             </div>
 
-            {/* Sticky Bottom Action Bar (Comfortable on Mobile & Desktop) */}
-            <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-[10px] font-semibold text-slate-500 block truncate">
-                  {catProfile.totalLabel}
-                </span>
-                <span className="text-sm sm:text-base font-extrabold text-slate-900 tabular-nums">
-                  {formatRupiah(calculatedTotal)}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  className="rounded-xl text-xs h-11 sm:h-10 px-4 font-semibold"
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold shadow-xs"
-                >
-                  {isSubmitting ? "Menyimpan..." : initialData ? "Simpan Perubahan" : "Tambah Catatan"}
-                </Button>
-              </div>
-            </div>
+            {/* Sticky Bottom Action Bar (Isolated Watcher) */}
+            <IsolatedStickyFooter
+              control={control}
+              catProfile={catProfile}
+              isSubmitting={isSubmitting}
+              isEditing={Boolean(initialData)}
+              onClose={onClose}
+            />
           </form>
         )}
       </DialogContent>
