@@ -202,6 +202,118 @@ export interface AccountingBreakdownItem {
   mom_change_pct?: number | null;
 }
 
+export interface AccountLineItem {
+  account_code: string;
+  account_name: string;
+  category: string;
+  account_group: string;
+  report_type: string;
+  total: number;
+  prev_total: number;
+  diff_nominal: number;
+  mom_change_pct: number | null;
+  percentage_of_group: number;
+  percentage_of_total_expense: number;
+  transaction_count: number;
+  description?: string;
+}
+
+export interface LabaRugiReportData {
+  hpp_items: AccountLineItem[];
+  subtotal_hpp: number;
+  prev_subtotal_hpp: number;
+  mom_hpp_change_pct: number | null;
+  opex_items: AccountLineItem[];
+  subtotal_opex: number;
+  prev_subtotal_opex: number;
+  mom_opex_change_pct: number | null;
+  total_beban: number;
+  prev_total_beban: number;
+  mom_beban_change_pct: number | null;
+}
+
+export interface NeracaItemData {
+  account_code: string;
+  account_name: string;
+  group: string;
+  nominal: number;
+  description: string;
+}
+
+export interface NeracaReportData {
+  aset_lancar: NeracaItemData[];
+  subtotal_aset_lancar: number;
+  aset_tetap: NeracaItemData[];
+  subtotal_aset_tetap: number;
+  total_aset: number;
+  kewajiban_lancar: NeracaItemData[];
+  subtotal_kewajiban: number;
+  detail_hutang: UnpaidExpenseItem[];
+}
+
+export interface ArusKasItemData {
+  activity: string;
+  account_name: string;
+  nominal: number;
+  percentage: number;
+}
+
+export interface ArusKasReportData {
+  aktivitas_operasi: ArusKasItemData[];
+  subtotal_operasi: number;
+  aktivitas_investasi: ArusKasItemData[];
+  subtotal_investasi: number;
+  aktivitas_kliring: ArusKasItemData[];
+  subtotal_kliring: number;
+  total_kas_keluar_riil: number;
+  metode_bayar_distribution: Array<{
+    metode: string;
+    nominal: number;
+    percentage: number;
+  }>;
+}
+
+export interface HealthEvaluationItem {
+  key: string;
+  title: string;
+  value: string;
+  ideal_range: string;
+  status: "healthy" | "warning" | "danger" | "neutral";
+  note: string;
+}
+
+export interface AccountingAnalysisData {
+  cost_structure: {
+    hpp_ratio: number;
+    opex_ratio: number;
+    bahan_ratio: number;
+    gaji_ratio: number;
+    sewa_ratio: number;
+    marketing_ratio: number;
+    maintenance_ratio: number;
+    software_ratio: number;
+    utilitas_ratio: number;
+  };
+  top_variances_mom: {
+    top_increases: AccountLineItem[];
+    top_savings: AccountLineItem[];
+  };
+  health_evaluation: HealthEvaluationItem[];
+}
+
+export interface AccountingReportData {
+  ok: boolean;
+  month: number;
+  year: number;
+  month_name: string;
+  prev_month_name: string;
+  laba_rugi: LabaRugiReportData;
+  neraca: NeracaReportData;
+  arus_kas: ArusKasReportData;
+  analisis: AccountingAnalysisData;
+  all_accounts: AccountLineItem[];
+}
+
 export interface AccountingInflation {
   laba_rugi_inflation_pct?: number | null;
   hpp_inflation_pct?: number | null;
@@ -716,5 +828,56 @@ export interface SupplierFormData {
   notes?: string;
   is_active?: boolean;
 }
+
+export interface PurchaseRequest {
+  id: number;
+  request_date: string;
+  user_id?: number | null;
+  requester_name: string;
+  item_name: string;
+  qty: number;
+  unit: string;
+  category?: string | null;
+  estimated_price?: number | null;
+  urgency: "NORMAL" | "URGENT";
+  notes: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "FULFILLED" | "CANCELLED";
+  reviewed_by_id?: number | null;
+  reviewer_name?: string | null;
+  reviewed_at?: string | null;
+  reject_reason?: string | null;
+  expense_id?: number | null;
+  fulfilled_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PurchaseRequestFormData {
+  item_name: string;
+  qty: number;
+  unit: string;
+  category?: string;
+  estimated_price?: number;
+  urgency: "NORMAL" | "URGENT";
+  notes?: string;
+  requester_name?: string;
+  request_date?: string;
+}
+
+export interface PurchaseRequestStats {
+  total: number;
+  pending: number;
+  approved: number;
+  fulfilled: number;
+  rejected: number;
+  urgent_pending: number;
+}
+
+export interface PurchaseRequestListResponse {
+  items: PurchaseRequest[];
+  total: number;
+  stats?: PurchaseRequestStats;
+}
+
 
 

@@ -29,7 +29,12 @@ Perhatikan Aturan Khusus Klasifikasi Kategori:
 3. Iuran, sumbangan, kerja bakti, dan sejenisnya WAJIB masuk kategori "Iuran".
 4. Jika caption mengandung "/tukercash" atau teks/gambar bukti transfer tukar tunai, WAJIB masukkan kategori "Tukar Cash".
 5. Jika caption mengandung "/ongkir" atau teks/gambar pengiriman kue/kurir, WAJIB masukkan kategori "Ongkir".
-6. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
+6. Gaji karyawan, upah lembur, honor, bonus, tunjangan, kasbon karyawan WAJIB masuk kategori "Gaji".
+7. Sewa tempat usaha, sewa ruko/toko, sewa stan, sewa gedung, sewa freezer/alat WAJIB masuk kategori "Sewa".
+8. Iklan (FB/IG/TikTok Ads), endorsement/influencer, brosur, banner promosi WAJIB masuk kategori "Marketing".
+9. Langganan aplikasi POS kasir (Moka, Majoo, Pawoon), cloud hosting, domain, software WAJIB masuk kategori "Software".
+10. Servis mesin oven, mixer, perbaikan showcase, AC, perawatan peralatan dapur/toko WAJIB masuk kategori "Maintenance" (sedangkan perbaikan fisik bangunan/cat toko masuk "Renovasi").
+11. KATEGORI WAJIB DIPILIH DARI SALAH SATU DAFTAR BERIKUT (Harus sama persis):
 {categories}
 
 Aturan Khusus Metode Pembayaran & Status (PENTING):
@@ -363,6 +368,9 @@ async def call_ai_fix_categories(items_to_fix: list[dict]) -> dict:
         f"Perbaiki kategori dari data belanja berikut. Patuhi aturan ini: "
         f"Bunga/bunga artificial/cake base/tatakan kue/stiker -> \"Kemasan\". "
         f"Light box/poster -> \"Asset\". Iuran/sumbangan/kerja bakti -> \"Iuran\". "
+        f"Gaji/upah/bonus/lembur -> \"Gaji\". Sewa ruko/toko -> \"Sewa\". "
+        f"Iklan/endorse/promosi -> \"Marketing\". Langganan app/POS/software/hosting -> \"Software\". "
+        f"Servis mesin/AC/showcase -> \"Maintenance\". "
         f"Selain itu, cocokkan dengan daftar ini: {categories_str}.\n\n"
         f"Data Salah:\n{json.dumps(items_to_fix, ensure_ascii=False)}\n\n"
         f"WAJIB keluarkan HANYA JSON:\n"

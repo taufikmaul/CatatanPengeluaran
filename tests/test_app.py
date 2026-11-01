@@ -96,4 +96,5 @@ class TestSchemaConsistency:
             "expense_logs",
             "master_data_options",
             "system_settings",
+            "purchase_requests",
         }

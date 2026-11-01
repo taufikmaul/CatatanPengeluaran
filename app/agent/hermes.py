@@ -3,7 +3,9 @@ app/agent/hermes.py — Hermes Agent Orchestrator
 Otak utama: menerima context, memilih tools, menjalankan chain, dan membalas
 """
 import logging
+import re
 from datetime import datetime
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.intent import Intent, classify_intent
 from app.agent.memory import get_user_context, update_user_context, add_conversation_turn
@@ -23,6 +25,77 @@ from app.utils.formatters import (
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_purchase_request_text(text: str) -> dict:
+    """Ekstrak nama barang, qty, unit, urgency, notes dari input teks request belanja."""
+    t = text.strip()
+    # Bersihkan prefix command jika ada
+    t = re.sub(r"^/(request|minta_beli|ajukan|beli|req)\s*", "", t, flags=re.IGNORECASE).strip()
+    t = re.sub(r"^(tolong\s+beli|minta\s+beli|request\s+beli|ajukan\s+belanja|beliin)\s*", "", t, flags=re.IGNORECASE).strip()
+
+    urgency = "NORMAL"
+    if re.search(r"\b(urgent|darurat|mendesak|segera|asap|penting)\b", t, re.IGNORECASE):
+        urgency = "URGENT"
+        t = re.sub(r"\b(urgent|darurat|mendesak|segera|asap|penting)\b", "", t, flags=re.IGNORECASE).strip()
+
+    notes = "-"
+    # Ekstrak notes di dalam kurung siku [...] atau tanda kurung (...)
+    bracket_m = re.search(r"[\[\(](.*?)[\]\)]", t)
+    if bracket_m:
+        notes = bracket_m.group(1).strip()
+        t = (t[:bracket_m.start()] + " " + t[bracket_m.end():]).strip()
+    else:
+        # Cek kata kunci "buat ..." atau "untuk ..." atau "catatan: ..."
+        notes_m = re.search(r"\b(buat|untuk|catatan:?)\s+(.+)$", t, re.IGNORECASE)
+        if notes_m:
+            notes = notes_m.group(2).strip()
+            t = t[:notes_m.start()].strip()
+
+    # Ekstrak kuantitas & satuan
+    qty = 1.0
+    unit = "Pcs"
+    item_name = t
+
+    known_units = {
+        "sak", "kg", "kilo", "gram", "gr", "g", "liter", "ltr", "l",
+        "box", "kotak", "pack", "bungkus", "bks", "pcs", "pc", "butir", "ikat",
+        "dus", "karton", "ctn", "kaleng", "klg", "botol", "btl", "lusin", "roll"
+    }
+
+    match_start = re.search(r"^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s+(.+)$", t)
+    match_end = re.search(r"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?$", t)
+
+    if match_start:
+        q_str = match_start.group(1).replace(",", ".")
+        u_str = (match_start.group(2) or "").lower()
+        if u_str in known_units or not u_str:
+            try:
+                qty = float(q_str)
+                unit = u_str.capitalize() if u_str else "Pcs"
+                item_name = match_start.group(3).strip()
+            except ValueError:
+                pass
+    elif match_end:
+        q_str = match_end.group(1).replace(",", ".")
+        u_str = (match_end.group(2) or "").lower()
+        try:
+            qty = float(q_str)
+            unit = u_str.capitalize() if u_str else "Pcs"
+            item_name = t[:match_end.start()].strip()
+        except ValueError:
+            pass
+
+    if not item_name:
+        item_name = t or "Barang Belanja"
+
+    return {
+        "item_name": item_name,
+        "qty": qty,
+        "unit": unit,
+        "urgency": urgency,
+        "notes": notes,
+    }
 
 
 class HermesAgent:
@@ -150,6 +223,9 @@ class HermesAgent:
 
         elif intent == Intent.CMD_ANALISIS:
             await self._handle_ai_analysis()
+
+        elif intent == Intent.CMD_REQUEST:
+            await self._handle_purchase_request(param or text)
 
         elif intent == Intent.CMD_MENU:
             await self._handle_menu()
@@ -653,6 +729,7 @@ class HermesAgent:
         menu_text = (
             "📋 *MENU UTAMA*\n\n"
             "🤖 /analisis - Analisis keuangan pintar AI\n"
+            "🛒 /request [detail] - Request belanja bahan / barang\n"
             "📊 /rekap - Laporan bulan ini\n"
             "🚚 /ongkir - Panduan & catat ongkir kurir\n"
             "🔄 /tukercash - Panduan & catat tukar cash kasir\n"
@@ -667,18 +744,136 @@ class HermesAgent:
         keyboard = {
             "inline_keyboard": [
                 [
+                    {"text": "🛒 Request Belanja", "callback_data": "req_view:approved"},
                     {"text": "🤖 Analisis AI", "callback_data": "menu_analisis"},
                     {"text": "📊 Rekap", "callback_data": "menu_rekap"},
-                    {"text": "💳 Tagihan", "callback_data": "menu_hutang"},
                 ],
                 [
+                    {"text": "💳 Tagihan", "callback_data": "menu_hutang"},
                     {"text": "🔎 Audit", "callback_data": "menu_audit"},
-                    {"text": "💡 Bantuan", "callback_data": "menu_bantuan"},
                     {"text": "🌐 Dashboard", "url": settings.public_dashboard_url},
                 ],
             ]
         }
         await tg.send_message(self.chat_id, menu_text, self.thread_id, keyboard)
+
+    async def _handle_purchase_request(self, param: str) -> None:
+        """
+        Handler pengajuan request belanja via Telegram.
+        Mendukung pembuatan request, cek pending (checklist belanja), dan approval.
+        """
+        from app.services.purchase_request_service import (
+            create_purchase_request,
+            get_purchase_requests,
+        )
+        from app.models.user import User
+
+        p = param.strip()
+        lower = p.lower()
+
+        # Jika user minta list/pending/checklist
+        if lower in ("pending", "daftar", "list", "siap beli", "siap_beli", "checklist", "status", "cek"):
+            items, total = await get_purchase_requests(self.db, limit=20)
+            if not items:
+                await tg.send_message(
+                    self.chat_id,
+                    "📋 *Daftar Request Belanja:*\nSaat ini belum ada pengajuan belanja aktif.\n\n"
+                    "Ketik `/request <nama barang> <qty>` untuk mengajukan kebutuhan belanja baru.",
+                    self.thread_id,
+                )
+                return
+
+            approved_items = [i for i in items if i.status == "APPROVED"]
+            pending_items = [i for i in items if i.status == "PENDING"]
+
+            lines = ["📋 *DAFTAR REQUEST BELANJA:*\n"]
+            if approved_items:
+                lines.append("🛒 *Siap Dibelanjakan (Disetujui):*")
+                for it in approved_items:
+                    urg_icon = "🔴 [URGENT] " if it.urgency == "URGENT" else "▫️ "
+                    price_info = f" (~Rp {it.estimated_price:,.0f})" if it.estimated_price else ""
+                    lines.append(f"{urg_icon}*{it.item_name}* ({float(it.qty):g} {it.unit}){price_info} — _{it.requester_name}_")
+                lines.append("")
+
+            if pending_items:
+                lines.append("⏳ *Menunggu Persetujuan Admin:*")
+                for it in pending_items:
+                    urg_icon = "🔴 [URGENT] " if it.urgency == "URGENT" else "▫️ "
+                    lines.append(f"{urg_icon}*{it.item_name}* ({float(it.qty):g} {it.unit}) — _{it.requester_name}_")
+                lines.append("")
+
+            lines.append("💡 _Saat belanja sudah dibeli & struk dicatat, status otomatis terpenuhi._")
+            await tg.send_message(self.chat_id, "\n".join(lines), self.thread_id)
+            return
+
+        # Jika kosong atau minta panduan
+        if not p or lower in ("bantuan", "help", "info", "?"):
+            guide = (
+                "🛒 *Form Request Belanja Cepat*\n\n"
+                "Ajukan kebutuhan bahan/barang operasional toko dengan mudah:\n\n"
+                "⚡ *Format Cepat 1 Baris:*\n"
+                "`/request <nama barang> <jumlah> [catatan/urgent]`\n\n"
+                "📌 *Contoh Penggunaan:*\n"
+                "• `/request Tepung Cakra 5 sak urgent buat orderan besok`\n"
+                "• `/request Keju Kraft 3 box [beli di Toko Makmur]`\n"
+                "• Atau ketik biasa: _\"Tolong beliin telur ayam 10 kg segera\"_\n\n"
+                "📋 *Cek Belanjaan Siap Beli:*\n"
+                "Ketik `/request pending` untuk melihat daftar belanjaan yang sudah disetujui."
+            )
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📋 Checklist Siap Beli", "callback_data": "req_view:approved"},
+                        {"text": "⏳ Menunggu Approval", "callback_data": "req_view:pending"},
+                    ],
+                ]
+            }
+            await tg.send_message(self.chat_id, guide, self.thread_id, keyboard)
+            return
+
+        # Parsing input request belanja
+        parsed = _parse_purchase_request_text(p)
+        user_res = await self.db.execute(select(User).where(User.id == self.user_id))
+        user_obj = user_res.scalar_one_or_none()
+        requester_name = user_obj.name if user_obj and user_obj.name else "Staf Toko"
+
+        req = await create_purchase_request(
+            self.db,
+            item_name=parsed["item_name"],
+            qty=parsed["qty"],
+            unit=parsed["unit"],
+            urgency=parsed["urgency"],
+            notes=parsed["notes"],
+            user_id=self.user_id,
+            requester_name=requester_name,
+        )
+
+        urg_label = "🔴 MENDESAK (URGENT)" if req.urgency == "URGENT" else "🟢 Biasa"
+        est_price_str = f"\n💰 *Estimasi Biaya:* ~Rp {req.estimated_price:,.0f}" if req.estimated_price else ""
+        notes_str = f"\n📝 *Catatan:* {req.notes}" if req.notes and req.notes != "-" else ""
+
+        confirm_msg = (
+            f"✅ *Pengajuan Belanja Berhasil Dibuat! (#REQ-{req.id})*\n\n"
+            f"📦 *Barang:* {req.item_name}\n"
+            f"📊 *Jumlah:* {float(req.qty):g} {req.unit}\n"
+            f"⚡ *Urgensi:* {urg_label}\n"
+            f"👤 *Pemohon:* {req.requester_name}"
+            f"{est_price_str}"
+            f"{notes_str}\n\n"
+            f"⏳ _Menunggu persetujuan admin/owner..._"
+        )
+
+        admin_keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "✅ Setujui", "callback_data": f"req_app:{req.id}"},
+                    {"text": "❌ Tolak", "callback_data": f"req_rej:{req.id}"},
+                ]
+            ]
+        }
+
+        # Kirim konfirmasi ke chat/thread saat ini
+        await tg.send_message(self.chat_id, confirm_msg, self.thread_id, admin_keyboard)
 
     async def _handle_config(self) -> None:
         """Tampilkan konfigurasi aktif."""

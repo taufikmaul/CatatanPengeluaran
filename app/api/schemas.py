@@ -276,6 +276,92 @@ class AiAnalysisResponse(BaseModel):
     cached: bool = False
 
 
+class AccountLineItem(BaseModel):
+    account_code: str
+    account_name: str
+    category: str
+    account_group: str
+    report_type: str
+    total: float
+    prev_total: float = 0.0
+    diff_nominal: float = 0.0
+    mom_change_pct: float | None = None
+    percentage_of_group: float = 0.0
+    percentage_of_total_expense: float = 0.0
+    transaction_count: int = 0
+    description: str = ""
+
+
+class LabaRugiReport(BaseModel):
+    hpp_items: list[AccountLineItem]
+    subtotal_hpp: float
+    prev_subtotal_hpp: float
+    mom_hpp_change_pct: float | None = None
+    opex_items: list[AccountLineItem]
+    subtotal_opex: float
+    prev_subtotal_opex: float
+    mom_opex_change_pct: float | None = None
+    total_beban: float
+    prev_total_beban: float
+    mom_beban_change_pct: float | None = None
+
+
+class NeracaItem(BaseModel):
+    account_code: str
+    account_name: str
+    group: str
+    nominal: float
+    description: str = ""
+
+
+class NeracaReport(BaseModel):
+    aset_lancar: list[NeracaItem]
+    subtotal_aset_lancar: float
+    aset_tetap: list[NeracaItem]
+    subtotal_aset_tetap: float
+    total_aset: float
+    kewajiban_lancar: list[NeracaItem]
+    subtotal_kewajiban: float
+    detail_hutang: list[dict[str, Any]] = []
+
+
+class ArusKasItem(BaseModel):
+    activity: str
+    account_name: str
+    nominal: float
+    percentage: float = 0.0
+
+
+class ArusKasReport(BaseModel):
+    aktivitas_operasi: list[ArusKasItem]
+    subtotal_operasi: float
+    aktivitas_investasi: list[ArusKasItem]
+    subtotal_investasi: float
+    aktivitas_kliring: list[ArusKasItem]
+    subtotal_kliring: float
+    total_kas_keluar_riil: float
+    metode_bayar_distribution: list[dict[str, Any]] = []
+
+
+class AccountingAnalysis(BaseModel):
+    cost_structure: dict[str, Any]
+    top_variances_mom: dict[str, Any]
+    health_evaluation: list[dict[str, Any]]
+
+
+class AccountingReportResponse(BaseModel):
+    ok: bool = True
+    month: int
+    year: int
+    month_name: str
+    prev_month_name: str
+    laba_rugi: LabaRugiReport
+    neraca: NeracaReport
+    arus_kas: ArusKasReport
+    analisis: AccountingAnalysis
+    all_accounts: list[AccountLineItem]
+
+
 class MasterItemCreate(BaseModel):
     item_name: str
     category: str = "Bahan Kue"
@@ -592,6 +678,74 @@ class SupplierDuplicateGroup(BaseModel):
 class SupplierMergeRequest(BaseModel):
     target_supplier_id: int
     source_supplier_ids: list[int]
+
+
+# ──────────────────────────────────────────────
+# Purchase Request Schemas (Sprint 1: Quick Win)
+# ──────────────────────────────────────────────
+
+class PurchaseRequestBase(BaseModel):
+    item_name: str
+    qty: float = 1.0
+    unit: str = "Pcs"
+    category: str | None = None
+    estimated_price: float | None = None
+    urgency: str = "NORMAL"
+    notes: str = "-"
+    requester_name: str = "-"
+    request_date: str | None = None
+
+
+class PurchaseRequestCreate(PurchaseRequestBase):
+    user_id: int | None = None
+
+
+class PurchaseRequestUpdate(BaseModel):
+    item_name: str | None = None
+    qty: float | None = None
+    unit: str | None = None
+    category: str | None = None
+    estimated_price: float | None = None
+    urgency: str | None = None
+    notes: str | None = None
+    requester_name: str | None = None
+
+
+class PurchaseRequestRejectInput(BaseModel):
+    reason: str = "Ditolak oleh admin"
+
+
+class PurchaseRequestResponse(PurchaseRequestBase):
+    id: int
+    status: str
+    user_id: int | None = None
+    reviewed_by_id: int | None = None
+    reviewer_name: str | None = None
+    reviewed_at: datetime | None = None
+    reject_reason: str | None = None
+    expense_id: int | None = None
+    fulfilled_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class PurchaseRequestStatsResponse(BaseModel):
+    total: int = 0
+    pending: int = 0
+    approved: int = 0
+    fulfilled: int = 0
+    rejected: int = 0
+    urgent_pending: int = 0
+
+
+class PurchaseRequestListResponse(BaseModel):
+    items: list[PurchaseRequestResponse]
+    total: int
+    stats: PurchaseRequestStatsResponse | None = None
+
 
 
 

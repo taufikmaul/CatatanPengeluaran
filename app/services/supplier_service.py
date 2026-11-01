@@ -120,7 +120,7 @@ async def get_or_create_supplier_by_name(
     all_suppliers_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
     all_suppliers = list(all_suppliers_res.scalars().all())
 
-    matched = find_best_supplier_match(name, all_suppliers)
+    matched = find_best_supplier_match(name, all_suppliers, threshold=0.88)
     if matched:
         return matched
 

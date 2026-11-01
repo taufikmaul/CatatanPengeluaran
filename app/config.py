@@ -141,7 +141,8 @@ class Settings(BaseSettings):
     valid_categories: list[str] = [
         "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
         "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
-        "Asset", "Iuran", "Tukar Cash", "Ongkir"
+        "Asset", "Iuran", "Tukar Cash", "Ongkir",
+        "Gaji", "Sewa", "Marketing", "Software", "Maintenance"
     ]
 
     # Metode pembayaran yang valid (sesuai master data, default)

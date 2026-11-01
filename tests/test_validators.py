@@ -94,7 +94,11 @@ class TestIsValidCategory:
         assert is_valid_category("") is False
 
     def test_category_list_is_not_empty(self):
-        assert len(settings.valid_categories) == 12
+        assert len(settings.valid_categories) == 17
+        for cat in ["Gaji", "Sewa", "Marketing", "Software", "Maintenance"]:
+            assert cat in settings.valid_categories
+            assert is_valid_category(cat) is True
+            assert is_valid_category(cat.lower()) is True
 
 
 class TestValidateNonZeroExpenses:

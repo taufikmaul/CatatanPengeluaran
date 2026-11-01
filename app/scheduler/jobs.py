@@ -233,6 +233,25 @@ async def job_send_weekly_reimburse_reminder() -> None:
 
 
 # ──────────────────────────────────────────────
+# Job 5: Auto-Sync Background Master Item & Supplier (5x Sehari: 06, 10, 14, 18, 22 WIB)
+# ──────────────────────────────────────────────
+
+async def job_auto_sync_delta() -> None:
+    """
+    Auto-sync inkremental (delta) 5x sehari untuk data transaksi yang baru dibuat atau diubah:
+    Menghubungkan transaksi yang belum sinkron ke Master Item dan Master Supplier secara ringan.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            from app.services.expense_service import sync_changed_expenses_delta
+            res = await sync_changed_expenses_delta(db, limit=250, actor="scheduler:auto_sync")
+            if res.get("synced_count", 0) > 0:
+                print(f"[SCHEDULER] Auto-sync delta: {res.get('message')}")
+    except Exception as e:
+        print(f"[SCHEDULER ERROR] job_auto_sync_delta: {e}")
+
+
+# ──────────────────────────────────────────────
 # Setup & Start Scheduler
 # ──────────────────────────────────────────────
 
@@ -288,6 +307,18 @@ def setup_scheduler() -> AsyncIOScheduler:
             timezone="Asia/Jakarta",
         ),
         id="reimburse_reminder",
+        replace_existing=True,
+    )
+
+    # Job 5: Auto-sync background Master Item & Supplier — 5x sehari (06:00, 10:00, 14:00, 18:00, 22:00 WIB)
+    scheduler.add_job(
+        job_auto_sync_delta,
+        trigger=CronTrigger(
+            hour="6,10,14,18,22",
+            minute=0,
+            timezone="Asia/Jakarta",
+        ),
+        id="background_delta_sync",
         replace_existing=True,
     )
 

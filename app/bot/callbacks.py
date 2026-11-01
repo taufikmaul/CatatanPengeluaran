@@ -50,6 +50,15 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         agent = HermesAgent(db, user.id, chat_id, thread_id)
         await agent._handle_reimburse()
 
+    elif data.startswith("req_app:"):
+        await _handle_req_approve(cb, db, chat_id, thread_id, data)
+
+    elif data.startswith("req_rej:"):
+        await _handle_req_reject(cb, db, chat_id, thread_id, data)
+
+    elif data.startswith("req_view:"):
+        await _handle_req_view(cb, db, chat_id, thread_id, data)
+
     elif data.startswith("reimb_user:"):
         await _handle_reimb_user_paid(cb, db, chat_id, thread_id, data)
 
@@ -429,3 +438,100 @@ async def _handle_reimb_user_paid(
         await tg.edit_message(chat_id, msg_id, text, keyboard)
     else:
         await tg.send_message(chat_id, text, thread_id, keyboard)
+
+
+async def _handle_req_approve(
+    cb: dict, db: AsyncSession, chat_id: int, thread_id: int | None, data: str
+) -> None:
+    """Admin menyetujui pengajuan belanja via tombol inline."""
+    from app.services.purchase_request_service import approve_purchase_request
+    from app.utils.auth import get_or_create_user
+
+    reviewer_user = await get_or_create_user(db, cb["from"]["id"])
+    reviewer_name = cb["from"].get("first_name") or "Admin"
+
+    req_id_str = data.split(":", 1)[1].strip()
+    if not req_id_str.isdigit():
+        return
+    req_id = int(req_id_str)
+
+    req = await approve_purchase_request(
+        db, req_id, reviewer_id=reviewer_user.id, reviewer_name=reviewer_name
+    )
+    if not req:
+        return
+
+    msg_id = cb["message"].get("message_id")
+    est_price_str = f"\n💰 *Estimasi Biaya:* ~Rp {req.estimated_price:,.0f}" if req.estimated_price else ""
+    urg_label = "🔴 MENDESAK (URGENT)" if req.urgency == "URGENT" else "🟢 Biasa"
+    updated_text = (
+        f"✅ *Request Belanja Disetujui! (#REQ-{req.id})*\n\n"
+        f"📦 *Barang:* {req.item_name}\n"
+        f"📊 *Jumlah:* {float(req.qty):g} {req.unit}\n"
+        f"⚡ *Urgensi:* {urg_label}\n"
+        f"👤 *Pemohon:* {req.requester_name}\n"
+        f"👑 *Disetujui Oleh:* {reviewer_name}"
+        f"{est_price_str}\n\n"
+        f"🛒 _Status: Siap dibelanjakan. Otomatis terpenuhi saat struk dicatat._"
+    )
+    if msg_id:
+        await tg.edit_message(chat_id, msg_id, updated_text, None)
+    else:
+        await tg.send_message(chat_id, updated_text, thread_id)
+
+
+async def _handle_req_reject(
+    cb: dict, db: AsyncSession, chat_id: int, thread_id: int | None, data: str
+) -> None:
+    """Admin menolak pengajuan belanja via tombol inline."""
+    from app.services.purchase_request_service import reject_purchase_request
+    from app.utils.auth import get_or_create_user
+
+    reviewer_user = await get_or_create_user(db, cb["from"]["id"])
+    reviewer_name = cb["from"].get("first_name") or "Admin"
+
+    req_id_str = data.split(":", 1)[1].strip()
+    if not req_id_str.isdigit():
+        return
+    req_id = int(req_id_str)
+
+    req = await reject_purchase_request(
+        db, req_id, reviewer_id=reviewer_user.id, reviewer_name=reviewer_name, reason="Ditolak admin"
+    )
+    if not req:
+        return
+
+    msg_id = cb["message"].get("message_id")
+    updated_text = (
+        f"❌ *Request Belanja Ditolak (#REQ-{req.id})*\n\n"
+        f"📦 *Barang:* {req.item_name} ({float(req.qty):g} {req.unit})\n"
+        f"👤 *Pemohon:* {req.requester_name}\n"
+        f"👑 *Ditolak Oleh:* {reviewer_name}\n"
+        f"📝 *Alasan:* {req.reject_reason or 'Ditolak admin'}"
+    )
+    if msg_id:
+        await tg.edit_message(chat_id, msg_id, updated_text, None)
+    else:
+        await tg.send_message(chat_id, updated_text, thread_id)
+
+
+async def _handle_req_view(
+    cb: dict, db: AsyncSession, chat_id: int, thread_id: int | None, data: str
+) -> None:
+    """Tampilkan daftar request belanja (approved / pending)."""
+    from app.services.purchase_request_service import get_purchase_requests
+    view_type = data.split(":", 1)[1].strip().upper() if ":" in data else "ALL"
+
+    items, _ = await get_purchase_requests(db, status=view_type if view_type != "ALL" else None, limit=15)
+    if not items:
+        msg = f"📋 Tidak ada pengajuan belanja dengan status *{view_type}*."
+    else:
+        title = "🛒 *Daftar Siap Dibelanjakan:*" if view_type == "APPROVED" else "⏳ *Daftar Menunggu Approval:*"
+        lines = [title]
+        for it in items:
+            urg_icon = "🔴 [URGENT] " if it.urgency == "URGENT" else "▫️ "
+            lines.append(f"{urg_icon}*{it.item_name}* ({float(it.qty):g} {it.unit}) - _{it.requester_name}_")
+        msg = "\n".join(lines)
+
+    await tg.send_message(chat_id, msg, thread_id)
+

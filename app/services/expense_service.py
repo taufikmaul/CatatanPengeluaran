@@ -217,6 +217,15 @@ async def save_expenses(
         )
 
     await db.flush()
+
+    try:
+        from app.services.purchase_request_service import auto_match_and_fulfill
+        for exp in saved:
+            await auto_match_and_fulfill(db, exp)
+    except Exception as e:
+        # Jangan gagalkan penyimpanan expense jika matching request bermasalah
+        pass
+
     return saved
 
 
@@ -1243,42 +1252,107 @@ async def update_expense(
                 }
             setattr(expense, field, val)
 
-    # Auto-match ke master_item_id jika nama barang berubah tanpa eksplisit master_item_id
-    if "item_name" in updates and "master_item_id" not in updates and expense.item_name:
-        from app.services.master_item_service import list_master_items, find_best_master_match
-        master_items = await list_master_items(db)
-        matched = find_best_master_match(expense.item_name, master_items)
-        if matched and matched.id != expense.master_item_id:
+    # Deteksi perubahan field
+    item_name_changed = "item_name" in changes
+    supplier_changed = "supplier" in changes
+    cat_lower = (expense.category or "").strip().lower()
+    item_lower = (expense.item_name or "").strip().lower()
+    is_special = cat_lower in ("tukar cash", "ongkir") or "tukar cash" in item_lower or item_lower.startswith("ongkir") or "tarik tunai" in item_lower
+
+    # 1. Resolusi & Sinkronisasi Master Item
+    if is_special:
+        if expense.master_item_id is not None:
             changes["master_item_id"] = {
                 "old": expense.master_item_id,
-                "new": matched.id,
+                "new": None,
             }
-            expense.master_item_id = matched.id
+            expense.master_item_id = None
+    elif item_name_changed or (expense.master_item_id is None and expense.item_name):
+        from app.services.master_item_service import list_master_items, find_best_master_match, extract_derivative, sync_derivative_to_isi_paket
+        master_items = await list_master_items(db)
 
-    # Auto-match / update supplier_id jika supplier berubah
-    if "supplier" in updates and "supplier_id" not in updates and expense.supplier:
-        if expense.supplier.strip() not in ("-", "None", ""):
-            from app.services.supplier_service import get_or_create_supplier_by_name
-            supplier_obj = await get_or_create_supplier_by_name(db, expense.supplier, auto_create=True)
-            if supplier_obj and supplier_obj.id != expense.supplier_id:
-                changes["supplier_id"] = {
-                    "old": expense.supplier_id,
-                    "new": supplier_obj.id,
-                }
-                expense.supplier_id = supplier_obj.id
-                expense.supplier = supplier_obj.name
-        else:
+        # Cek apakah master_item_id eksplisit yang dikirim masih valid untuk item_name ini
+        req_mid = updates.get("master_item_id")
+        matched = None
+        if req_mid:
+            cand = next((m for m in master_items if m.id == req_mid), None)
+            if cand:
+                c_name = cand.item_name.lower()
+                cur_name = expense.item_name.lower()
+                c_aliases = [a.strip().lower() for a in (cand.aliases or "").split(",") if a.strip()]
+                if c_name == cur_name or c_name in cur_name or cur_name in c_name or any(a == cur_name or a in cur_name for a in c_aliases):
+                    matched = cand
+
+        if not matched:
+            matched = find_best_master_match(expense.item_name, master_items)
+
+        new_mid = matched.id if matched else None
+        if new_mid != expense.master_item_id:
+            changes["master_item_id"] = {
+                "old": expense.master_item_id,
+                "new": new_mid,
+            }
+            expense.master_item_id = new_mid
+
+        if matched:
+            # Jika kategori belum ditentukan spesifik, sesuaikan ke kategori Master Item
+            if matched.category and ("category" not in updates or updates.get("category") in (None, "", "Operasional")):
+                if expense.category != matched.category:
+                    changes["category"] = {"old": expense.category, "new": matched.category}
+                    expense.category = matched.category
+            # Sinkronkan turunan isi kemasan jika ada
+            deriv = extract_derivative(expense.item_name) or extract_derivative(expense.notes or "")
+            if deriv:
+                updated_isi, isi_changed = sync_derivative_to_isi_paket(matched.isi_paket, deriv)
+                if isi_changed:
+                    matched.isi_paket = updated_isi
+            # Jika MasterItem belum memiliki default supplier dan expense memiliki supplier, isi default supplier
+            if (not matched.default_supplier or matched.default_supplier == "-") and expense.supplier and expense.supplier != "-":
+                matched.default_supplier = expense.supplier
+
+    # 2. Resolusi & Sinkronisasi Master Supplier
+    if is_special and cat_lower == "tukar cash":
+        if expense.supplier != "-":
+            expense.supplier = "-"
+        if expense.supplier_id is not None:
+            changes["supplier_id"] = {
+                "old": expense.supplier_id,
+                "new": None,
+            }
+            expense.supplier_id = None
+    else:
+        raw_sup = (expense.supplier or "").strip()
+        if not raw_sup or raw_sup in ("-", "None", "null"):
+            if expense.supplier != "-":
+                expense.supplier = "-"
             if expense.supplier_id is not None:
                 changes["supplier_id"] = {
                     "old": expense.supplier_id,
                     "new": None,
                 }
                 expense.supplier_id = None
-    elif "supplier_id" in updates and updates["supplier_id"]:
-        from app.models.supplier import Supplier
-        s_obj = await db.get(Supplier, updates["supplier_id"])
-        if s_obj and s_obj.name != expense.supplier:
-            expense.supplier = s_obj.name
+        else:
+            from app.services.supplier_service import get_or_create_supplier_by_name
+            if "supplier_id" in updates and updates["supplier_id"] and not supplier_changed:
+                from app.models.supplier import Supplier
+                s_obj = await db.get(Supplier, updates["supplier_id"])
+                if s_obj:
+                    if expense.supplier_id != s_obj.id:
+                        changes["supplier_id"] = {"old": expense.supplier_id, "new": s_obj.id}
+                        expense.supplier_id = s_obj.id
+                    if expense.supplier != s_obj.name:
+                        expense.supplier = s_obj.name
+            else:
+                supplier_obj = await get_or_create_supplier_by_name(db, raw_sup, auto_create=True)
+                if supplier_obj:
+                    if expense.supplier_id != supplier_obj.id:
+                        changes["supplier_id"] = {
+                            "old": expense.supplier_id,
+                            "new": supplier_obj.id,
+                        }
+                        expense.supplier_id = supplier_obj.id
+                    if expense.supplier != supplier_obj.name:
+                        expense.supplier = supplier_obj.name
 
     # Normalisasi satuan ke master data yang terdaftar
     if "unit" in updates and expense.unit:
@@ -1805,13 +1879,32 @@ async def batch_insert_expenses(
         else:
             expense_date = today
 
+        raw_cat = item.get("category") or "Operasional"
+        cat_lower = raw_cat.strip().lower()
+        item_raw_name = item.get("item_name") or "Barang"
+        is_tukar = cat_lower == "tukar cash" or "tukar cash" in item_raw_name.lower() or "tarik tunai" in item_raw_name.lower()
+
+        sup_id = item.get("supplier_id")
+        sup_name = (item.get("supplier") or "-").strip()
+
+        if is_tukar:
+            sup_name = "-"
+            sup_id = None
+        elif not sup_id and sup_name not in ("-", "None", ""):
+            from app.services.supplier_service import get_or_create_supplier_by_name
+            s_obj = await get_or_create_supplier_by_name(db, sup_name, auto_create=True)
+            if s_obj:
+                sup_id = s_obj.id
+                sup_name = s_obj.name
+
         expense = Expense(
             expense_date=expense_date,
-            supplier=item.get("supplier") or "-",
-            item_name=item.get("item_name") or "Barang",
+            supplier=sup_name,
+            supplier_id=sup_id,
+            item_name=item_raw_name,
             qty=Decimal(str(item.get("qty") or 1)),
             unit=(item.get("unit") or item.get("satuan") or "Pcs").strip() or "Pcs",
-            category=item.get("category") or "Operasional",
+            category=raw_cat,
             unit_price=Decimal(str(item.get("unit_price") or 0)),
             shipping_fee=Decimal(str(item.get("shipping_fee") or item.get("ongkir") or 0)),
             tax=Decimal(str(item.get("tax") or item.get("pajak") or 0)),
@@ -1851,6 +1944,15 @@ async def batch_insert_expenses(
         )
 
     await db.flush()
+
+    try:
+        from app.services.purchase_request_service import auto_match_and_fulfill
+        for exp in saved:
+            await auto_match_and_fulfill(db, exp)
+    except Exception as e:
+        # Jangan gagalkan penyimpanan expense jika matching request bermasalah
+        pass
+
     return saved
 
 
@@ -2651,4 +2753,198 @@ async def check_invoice_duplicate(
         "invoice_number": inv_clean,
         "existing_expense": None,
         "message": None,
+    }
+
+
+async def sync_changed_expenses_delta(
+    db: AsyncSession,
+    limit: int = 250,
+    actor: str = "scheduler:auto_sync",
+) -> dict:
+    """
+    Sinkronisasi inkremental (delta) untuk transaksi yang baru dibuat atau diubah:
+    1. Mengidentifikasi transaksi yang baru tercatat di ExpenseLog sejak checkpoint terakhir.
+    2. Mengidentifikasi transaksi reguler yang masih unlinked (master_item_id IS NULL atau supplier_id IS NULL).
+    3. Menyinkronkan dan menghubungkannya ke MasterItem & Master Supplier tanpa membebani server.
+    4. Memperbarui checkpoint last_auto_sync_log_id di system_settings.
+    """
+    from app.models.system_setting import SystemSetting
+    from app.services.master_item_service import (
+        list_master_items,
+        find_best_master_match,
+        extract_derivative,
+        sync_derivative_to_isi_paket,
+    )
+    from app.services.supplier_service import get_or_create_supplier_by_name
+    from app.models.supplier import Supplier
+
+    # 1. Ambil checkpoint log ID terakhir dari database
+    setting_res = await db.execute(
+        select(SystemSetting).where(SystemSetting.key == "last_auto_sync_log_id")
+    )
+    setting_row = setting_res.scalar_one_or_none()
+    last_log_id = int(setting_row.value) if setting_row and setting_row.value and setting_row.value.isdigit() else 0
+
+    # 2. Ambil ID transaksi yang berubah dari ExpenseLog sejak checkpoint
+    log_query = (
+        select(ExpenseLog.id, ExpenseLog.expense_id)
+        .where(
+            ExpenseLog.id > last_log_id,
+            ExpenseLog.expense_id.is_not(None),
+            ExpenseLog.action.in_(["CREATE", "UPDATE", "STATUS_CHANGE"]),
+        )
+        .order_by(ExpenseLog.id.asc())
+        .limit(limit)
+    )
+    log_rows = (await db.execute(log_query)).fetchall()
+
+    changed_expense_ids = {row[1] for row in log_rows if row[1]}
+    max_log_id_seen = max([row[0] for row in log_rows], default=last_log_id)
+
+    # 3. Sertakan juga transaksi reguler yang belum terhubung (unlinked)
+    unlinked_query = (
+        select(Expense.id)
+        .where(
+            or_(
+                and_(
+                    Expense.master_item_id.is_(None),
+                    func.lower(func.coalesce(Expense.category, "")) != "tukar cash",
+                    func.lower(func.coalesce(Expense.category, "")) != "ongkir",
+                    ~func.lower(Expense.item_name).like("%tukar cash%"),
+                    ~func.lower(Expense.item_name).like("ongkir%"),
+                    ~func.lower(Expense.item_name).like("%tarik tunai%"),
+                ),
+                and_(
+                    Expense.supplier_id.is_(None),
+                    Expense.supplier.is_not(None),
+                    func.trim(Expense.supplier) != "",
+                    func.trim(Expense.supplier) != "-",
+                    func.trim(Expense.supplier) != "None",
+                    func.lower(func.coalesce(Expense.category, "")) != "tukar cash",
+                ),
+            )
+        )
+        .order_by(Expense.id.desc())
+        .limit(100)
+    )
+    unlinked_ids = set((await db.execute(unlinked_query)).scalars().all())
+
+    all_target_ids = list(changed_expense_ids | unlinked_ids)
+    if not all_target_ids:
+        # Jika ada log baru tapi tidak ada expense_id yang perlu diproses, tetap perbarui checkpoint
+        if max_log_id_seen > last_log_id:
+            if not setting_row:
+                setting_row = SystemSetting(key="last_auto_sync_log_id", value=str(max_log_id_seen))
+                db.add(setting_row)
+            else:
+                setting_row.value = str(max_log_id_seen)
+            await db.commit()
+
+        return {
+            "ok": True,
+            "synced_count": 0,
+            "target_count": 0,
+            "checkpoint_log_id": max_log_id_seen,
+            "message": "Tidak ada data transaksi yang perlu disinkronkan.",
+        }
+
+    # 4. Muat Master Items & Suppliers untuk pencocokan cepat
+    master_items = await list_master_items(db)
+    master_by_id = {m.id: m for m in master_items}
+
+    expenses_query = select(Expense).where(Expense.id.in_(all_target_ids))
+    expenses = (await db.execute(expenses_query)).scalars().all()
+
+    updated_count = 0
+    supplier_cache: dict[str, Supplier] = {}
+
+    for exp in expenses:
+        changed = False
+        cat_lower = (exp.category or "").strip().lower()
+        item_lower = (exp.item_name or "").strip().lower()
+        is_tukar = cat_lower == "tukar cash" or "tukar cash" in item_lower or "tarik tunai" in item_lower
+        is_ongkir = cat_lower == "ongkir" or item_lower.startswith("ongkir")
+
+        # A. Sync Supplier
+        if is_tukar:
+            if exp.supplier != "-":
+                exp.supplier = "-"
+                changed = True
+            if exp.supplier_id is not None:
+                exp.supplier_id = None
+                changed = True
+        else:
+            raw_sup = (exp.supplier or "").strip()
+            if raw_sup and raw_sup not in ("-", "None", "null"):
+                sup_norm = raw_sup.lower()
+                supplier_obj = supplier_cache.get(sup_norm)
+                if not supplier_obj:
+                    supplier_obj = await get_or_create_supplier_by_name(db, raw_sup, auto_create=True)
+                    if supplier_obj:
+                        supplier_cache[sup_norm] = supplier_obj
+
+                if supplier_obj:
+                    if exp.supplier_id != supplier_obj.id:
+                        exp.supplier_id = supplier_obj.id
+                        changed = True
+                    if exp.supplier != supplier_obj.name:
+                        exp.supplier = supplier_obj.name
+                        changed = True
+
+        # B. Sync Master Item
+        if is_tukar or is_ongkir:
+            if exp.master_item_id is not None:
+                exp.master_item_id = None
+                changed = True
+        else:
+            if exp.item_name and (exp.master_item_id is None or exp.master_item_id not in master_by_id):
+                matched = find_best_master_match(exp.item_name, master_items)
+                if matched:
+                    exp.master_item_id = matched.id
+                    changed = True
+                    if matched.category and exp.category in (None, "", "Operasional"):
+                        exp.category = matched.category
+                        changed = True
+                    # Turunan isi
+                    deriv = extract_derivative(exp.item_name) or extract_derivative(exp.notes or "")
+                    if deriv:
+                        updated_isi, isi_changed = sync_derivative_to_isi_paket(matched.isi_paket, deriv)
+                        if isi_changed:
+                            matched.isi_paket = updated_isi
+                    # Default supplier
+                    if (not matched.default_supplier or matched.default_supplier == "-") and exp.supplier and exp.supplier != "-":
+                        matched.default_supplier = exp.supplier
+
+        if changed:
+            exp.sheets_synced = False
+            updated_count += 1
+
+    # 5. Simpan checkpoint & log audit
+    if not setting_row:
+        setting_row = SystemSetting(key="last_auto_sync_log_id", value=str(max_log_id_seen))
+        db.add(setting_row)
+    else:
+        setting_row.value = str(max_log_id_seen)
+
+    if updated_count > 0:
+        await record_expense_log(
+            db,
+            expense_id=None,
+            action="AUTO_SYNC",
+            actor=actor,
+            details={
+                "synced_count": updated_count,
+                "target_count": len(all_target_ids),
+                "checkpoint_log_id": max_log_id_seen,
+            },
+        )
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "synced_count": updated_count,
+        "target_count": len(all_target_ids),
+        "checkpoint_log_id": max_log_id_seen,
+        "message": f"Berhasil menyinkronkan {updated_count} transaksi dari {len(all_target_ids)} target perubahan.",
     }

@@ -17,6 +17,8 @@ import {
   Store,
   HandCoins,
   CalendarClock,
+  ShoppingBag,
+  Scale,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -47,8 +49,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => void;
+  activeTab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -87,7 +89,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -186,6 +188,22 @@ export function DashboardSidebar({
                 )}
               </SidebarMenuButton>
             </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "accounting"}
+                onClick={() => handleSelectTab("accounting")}
+                tooltip="Laporan & Analisis Akuntansi (SAK EMKM)"
+                className={`h-9 rounded-lg font-medium text-sm ${
+                  activeTab === "accounting"
+                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <Scale className="w-4 h-4 shrink-0" />
+                <span className="truncate">Laporan Akuntansi</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
 
@@ -235,6 +253,22 @@ export function DashboardSidebar({
             Operasional
           </SidebarGroupLabel>
           <SidebarMenu className="gap-0.5">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeTab === "requests"}
+                onClick={() => handleSelectTab("requests")}
+                tooltip="Request Belanja Bahan"
+                className={`h-9 rounded-lg font-medium text-sm ${
+                  activeTab === "requests"
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 font-semibold"
+                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <ShoppingBag className="w-4 h-4 shrink-0 text-amber-500" />
+                <span className="truncate">Request Belanja</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
             <SidebarMenuItem>
               <SidebarMenuButton
                 isActive={activeTab === "tukar-cash-ongkir"}

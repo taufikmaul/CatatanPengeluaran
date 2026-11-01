@@ -37,10 +37,15 @@ async def test_ensure_default_master_data_seeded(db):
     pay_methods = await get_active_names(db, "metode_bayar")
     units = await get_active_names(db, "satuan")
 
-    assert len(cats) >= 11
+    assert len(cats) >= 16
     assert "Bahan Kue" in cats
     assert "Kemasan" in cats
     assert "Tukar Cash" in cats
+    assert "Gaji" in cats
+    assert "Sewa" in cats
+    assert "Marketing" in cats
+    assert "Software" in cats
+    assert "Maintenance" in cats
 
     # Pastikan kode akun terpetakan
     from app.services.master_data_service import get_category_accounting_map
@@ -52,6 +57,17 @@ async def test_ensure_default_master_data_seeded(db):
     assert coa_map["Asset"]["report_type"] == "NERACA"
     assert coa_map["Tukar Cash"]["account_code"] == "1-1199"
     assert coa_map["Tukar Cash"]["account_group"] == "CASH_TRANSFER"
+    assert coa_map["Gaji"]["account_code"] == "6-1600"
+    assert coa_map["Gaji"]["account_group"] == "OPEX"
+    assert coa_map["Gaji"]["report_type"] == "LABA_RUGI"
+    assert coa_map["Sewa"]["account_code"] == "6-1700"
+    assert coa_map["Sewa"]["account_group"] == "OPEX"
+    assert coa_map["Marketing"]["account_code"] == "6-1800"
+    assert coa_map["Marketing"]["account_group"] == "OPEX"
+    assert coa_map["Software"]["account_code"] == "6-1900"
+    assert coa_map["Software"]["account_group"] == "OPEX"
+    assert coa_map["Maintenance"]["account_code"] == "6-2000"
+    assert coa_map["Maintenance"]["account_group"] == "OPEX"
 
     assert len(pay_methods) >= 5
     assert "Tunai" in pay_methods

@@ -75,6 +75,14 @@ export async function getAiAnalysis(month?: number, year?: number, forceRefresh 
   return res.data;
 }
 
+export async function getAccountingReport(month?: number, year?: number) {
+  const params = new URLSearchParams();
+  if (month) params.append("month", String(month));
+  if (year) params.append("year", String(year));
+  const res = await api.get(`/reports/accounting?${params.toString()}`);
+  return res.data;
+}
+
 export async function getExpenseUsers() {
   const res = await api.get("/expenses/users/list");
   return res.data;
@@ -578,6 +586,77 @@ export async function checkInvoiceDuplicate(
   const res = await api.get(`/expenses/check-invoice?${q.toString()}`);
   return res.data;
 }
+
+// ──────────────────────────────────────────────
+// Purchase Requests (Request Belanja) API
+// ──────────────────────────────────────────────
+
+export async function getPurchaseRequests(params?: {
+  status?: string;
+  urgency?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<import("@/types").PurchaseRequestListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status && params.status !== "ALL") query.append("status", params.status);
+  if (params?.urgency && params.urgency !== "ALL") query.append("urgency", params.urgency);
+  if (params?.search) query.append("search", params.search);
+  if (params?.page) query.append("page", String(params.page));
+  if (params?.limit) query.append("limit", String(params.limit));
+
+  const res = await api.get(`/requests?${query.toString()}`);
+  return res.data;
+}
+
+export async function getPurchaseRequestStats(): Promise<import("@/types").PurchaseRequestStats> {
+  const res = await api.get("/requests/stats");
+  return res.data;
+}
+
+export async function createPurchaseRequest(
+  data: import("@/types").PurchaseRequestFormData
+): Promise<import("@/types").PurchaseRequest> {
+  const res = await api.post("/requests", data);
+  return res.data;
+}
+
+export async function updatePurchaseRequest(
+  id: number,
+  data: Partial<import("@/types").PurchaseRequestFormData>
+): Promise<import("@/types").PurchaseRequest> {
+  const res = await api.patch(`/requests/${id}`, data);
+  return res.data;
+}
+
+export async function approvePurchaseRequest(
+  id: number
+): Promise<import("@/types").PurchaseRequest> {
+  const res = await api.post(`/requests/${id}/approve`);
+  return res.data;
+}
+
+export async function rejectPurchaseRequest(
+  id: number,
+  reason: string = "Ditolak oleh admin"
+): Promise<import("@/types").PurchaseRequest> {
+  const res = await api.post(`/requests/${id}/reject`, { reason });
+  return res.data;
+}
+
+export async function fulfillPurchaseRequest(
+  id: number,
+  expenseId?: number
+): Promise<import("@/types").PurchaseRequest> {
+  const query = expenseId ? `?expense_id=${expenseId}` : "";
+  const res = await api.post(`/requests/${id}/fulfill${query}`);
+  return res.data;
+}
+
+export async function deletePurchaseRequest(id: number): Promise<void> {
+  await api.delete(`/requests/${id}`);
+}
+
 
 
 

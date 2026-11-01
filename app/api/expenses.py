@@ -191,9 +191,24 @@ async def create_expense(
             detail="Nominal pengeluaran tidak boleh Rp 0 atau minus.",
         )
 
+    # Resolusi Supplier & supplier_id
+    sup_id = payload.supplier_id
+    sup_name = (norm.get("supplier") or payload.supplier or "-").strip()
+    cat_check = (norm.get("category") or payload.category or "").strip().lower()
+    if cat_check == "tukar cash" or "tukar cash" in norm["item_name"].lower() or "tarik tunai" in norm["item_name"].lower():
+        sup_id = None
+        sup_name = "-"
+    elif not sup_id and sup_name not in ("-", "None", ""):
+        from app.services.supplier_service import get_or_create_supplier_by_name
+        s_obj = await get_or_create_supplier_by_name(db, sup_name, auto_create=True)
+        if s_obj:
+            sup_id = s_obj.id
+            sup_name = s_obj.name
+
     expense = Expense(
         expense_date=payload.expense_date,
-        supplier=norm["supplier"] or "-",
+        supplier=sup_name,
+        supplier_id=sup_id,
         item_name=norm["item_name"],
         qty=qty if qty > 0 else Decimal("1"),
         unit=norm.get("unit") or payload.unit or "Pcs",
@@ -523,6 +538,21 @@ async def bulk_clean_data_endpoint(
     """
     actor = f"dashboard:{get_current_role(request)}"
     return await run_bulk_data_clean(db, actor=actor)
+
+
+@router.post("/sync-delta")
+async def sync_delta_endpoint(
+    request: Request,
+    limit: int = Query(250, ge=10, le=1000),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Sinkronisasi delta (data transaksi yang berubah saja) ke Master Item & Master Supplier.
+    Dijalankan secara background 5x sehari oleh scheduler atau dipanggil sesuai kebutuhan.
+    """
+    from app.services.expense_service import sync_changed_expenses_delta
+    actor = f"dashboard:{get_current_role(request)}"
+    return await sync_changed_expenses_delta(db, limit=limit, actor=actor)
 
 
 @router.get("/check-invoice")

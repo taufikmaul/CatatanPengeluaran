@@ -238,6 +238,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: initialData.msg_link || "Web Dashboard",
         user_id: initialData.user_id ?? null,
         master_item_id: initialData.master_item_id ?? null,
+        supplier_id: initialData.supplier_id ?? null,
       });
     } else if (repeatData) {
       reset({
@@ -262,6 +263,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: "Web Dashboard",
         user_id: repeatData.user_id ?? null,
         master_item_id: repeatData.master_item_id ?? null,
+        supplier_id: repeatData.supplier_id ?? null,
       });
     } else {
       reset({
@@ -286,6 +288,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: "Web Dashboard",
         user_id: null,
         master_item_id: null,
+        supplier_id: null,
       });
     }
     setInvoiceWarning(null);

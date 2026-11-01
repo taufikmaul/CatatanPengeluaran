@@ -21,11 +21,13 @@ import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
 import { CsvImportModal } from "@/components/import/CsvImportModal";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { MasterItemsTab } from "@/components/master/MasterItemsTab";
+import { AccountingTab } from "@/components/accounting/AccountingTab";
 import { TukarCashOngkirTab } from "@/components/cash-delivery/TukarCashOngkirTab";
 import { TalanganTab } from "@/components/talangan/TalanganTab";
 import { UnpaidTab } from "@/components/unpaid/UnpaidTab";
 import { SuppliersTab } from "@/components/supplier/SuppliersTab";
 import { SupplierDetailPage } from "@/components/supplier/SupplierDetailPage";
+import { PurchaseRequestsTab } from "@/components/requests/PurchaseRequestsTab";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { useLocation, useNavigate } from "react-router-dom";
 import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
@@ -64,15 +66,19 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
     activeTab = "suppliers";
+  } else if (pathname === "/accounting" || pathname === "/akuntansi" || pathname === "/laporan-akuntansi") {
+    activeTab = "accounting";
   } else if (pathname === "/master") {
     activeTab = "master";
   } else if (pathname === "/transactions" || pathname === "/transaksi") {
     activeTab = "transactions";
+  } else if (pathname === "/requests" || pathname === "/request" || pathname === "/request-belanja") {
+    activeTab = "requests";
   } else if (pathname === "/tukar-cash-ongkir") {
     activeTab = "tukar-cash-ongkir";
   } else if (pathname === "/talangan" || pathname === "/reimburse") {
@@ -85,7 +91,7 @@ export function App() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -372,6 +378,13 @@ export function App() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-top-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran");
@@ -389,6 +402,13 @@ export function App() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-top-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran batch");
@@ -432,7 +452,12 @@ export function App() {
       } else {
         toast.info(`Transaksi #${updated.id} diubah ke Belum Lunas`);
       }
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
     },
     onError: (_err, _vars, context) => {
       if (context?.previousExpenses) {
@@ -457,6 +482,12 @@ export function App() {
       toast.success("Pengeluaran berhasil dihapus");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || err.message || "Gagal menghapus pengeluaran");
@@ -493,7 +524,8 @@ export function App() {
     : [
         "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
         "Kemasan", "Operasional", "Topper & Mainan", "Renovasi",
-        "Asset", "Iuran", "Tukar Cash", "Ongkir"
+        "Asset", "Iuran", "Tukar Cash", "Ongkir",
+        "Gaji", "Sewa", "Marketing", "Software", "Maintenance"
       ];
 
   const totalUnpaidNominal =
@@ -1334,6 +1366,16 @@ export function App() {
               </>
             )}
 
+            {activeTab === "accounting" && (
+              <AccountingTab
+                currentMonth={month}
+                currentYear={year}
+                onMonthChange={setMonth}
+                onYearChange={setYear}
+                onViewExpense={(item) => setViewingExpense(item)}
+              />
+            )}
+
             {activeTab === "master" && (
               <MasterItemsTab
                 categories={categories}
@@ -1488,6 +1530,15 @@ export function App() {
                   setIsFormOpen(true);
                 }}
                 canDelete={canDelete}
+              />
+            )}
+
+            {activeTab === "requests" && (
+              <PurchaseRequestsTab
+                categories={categories}
+                itemSuggestions={suggestionsData?.items || []}
+                isAdmin={userRole === "admin"}
+                currentUser={authData?.username || ""}
               />
             )}
 

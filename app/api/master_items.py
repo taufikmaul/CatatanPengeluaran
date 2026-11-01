@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 from app.database.connection import get_db
 from app.api.deps import require_auth
 from app.models.master_item import MasterItem
+from app.models.expense import Expense
 from app.api.schemas import (
     MasterItemCreate,
     MasterItemUpdate,
@@ -44,6 +45,15 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
     items = await list_master_items(db)
     suggestions = await get_item_and_supplier_suggestions(db)
 
+    # Ambil agregasi tx_count akurat dari database untuk seluruh master_item_id
+    from sqlalchemy import func
+    tx_count_res = await db.execute(
+        select(Expense.master_item_id, func.count(Expense.id))
+        .where(Expense.master_item_id.is_not(None))
+        .group_by(Expense.master_item_id)
+    )
+    total_tx_by_mid = dict(tx_count_res.all())
+
     # Indeks histori berdasarkan ID MasterItem (produk ID) dan fallback nama
     hist_by_id = {
         s["id"]: s
@@ -71,7 +81,7 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
                 satuan_ecer=m.satuan_ecer or "Pcs",
                 last_unit_price=float(h.get("last_unit_price") or 0.0),
                 last_supplier=h.get("last_supplier") or m.default_supplier or "-",
-                tx_count=int(h.get("tx_count") or 0),
+                tx_count=int(total_tx_by_mid.get(m.id) if m.id in total_tx_by_mid else (h.get("tx_count") or 0)),
                 created_at=m.created_at,
             )
         )

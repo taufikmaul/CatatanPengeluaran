@@ -52,11 +52,20 @@ export function getCategoryColor(category: string): { bg: string; text: string; 
   if (cat.includes("alat") || cat.includes("peralatan")) {
     return { bg: "bg-purple-50 text-purple-700", text: "text-purple-700", border: "border-purple-200" };
   }
-  if (cat.includes("gaji") || cat.includes("sdm")) {
+  if (cat.includes("gaji") || cat.includes("sdm") || cat.includes("upah") || cat.includes("payroll")) {
     return { bg: "bg-rose-50 text-rose-700", text: "text-rose-700", border: "border-rose-200" };
   }
-  if (cat.includes("marketing") || cat.includes("iklan")) {
+  if (cat.includes("marketing") || cat.includes("iklan") || cat.includes("promosi")) {
     return { bg: "bg-pink-50 text-pink-700", text: "text-pink-700", border: "border-pink-200" };
+  }
+  if (cat.includes("sewa")) {
+    return { bg: "bg-violet-50 text-violet-700", text: "text-violet-700", border: "border-violet-200" };
+  }
+  if (cat.includes("software") || cat.includes("aplikasi") || cat.includes("it") || cat.includes("cloud")) {
+    return { bg: "bg-cyan-50 text-cyan-700", text: "text-cyan-700", border: "border-cyan-200" };
+  }
+  if (cat.includes("maintenance") || cat.includes("servis") || cat.includes("service") || cat.includes("perawatan")) {
+    return { bg: "bg-orange-50 text-orange-700", text: "text-orange-700", border: "border-orange-200" };
   }
   return { bg: "bg-slate-100 text-slate-700", text: "text-slate-700", border: "border-slate-200" };
 }

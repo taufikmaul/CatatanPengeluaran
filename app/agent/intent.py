@@ -20,6 +20,7 @@ class Intent(str, Enum):
     CMD_ANALISIS = "cmd_analisis"
     CMD_ONGKIR = "cmd_ongkir"
     CMD_TUKAR_CASH = "cmd_tukar_cash"
+    CMD_REQUEST = "cmd_request"
 
     # Input media
     SCAN_RECEIPT = "scan_receipt"    # foto struk
@@ -48,10 +49,13 @@ _COMMANDS = {
     r"^/(analisis|analisa|ai_analisis|insight|evaluasi)": Intent.CMD_ANALISIS,
     r"^/ongkir": Intent.CMD_ONGKIR,
     r"^/(tukercash|tukarcash|tukar_cash)": Intent.CMD_TUKAR_CASH,
+    r"^/(request|minta_beli|ajukan|request_belanja|req)\b": Intent.CMD_REQUEST,
 }
 
 # Pola untuk natural language (tanpa command)
 _NL_PATTERNS = {
+    r"(tolong\s+beli|minta\s+beli|request\s+beli|ajukan\s+belanja|beliin)\s+": Intent.CMD_REQUEST,
+    r"(daftar\s+request|cek\s+request|list\s+request|belanjaan\s+siap\s+beli)": Intent.CMD_REQUEST,
     r"(analisis|analisa|evaluasi|insight|saran).*(keuangan|pengeluaran|belanja|biaya|toko)": Intent.CMD_ANALISIS,
     r"(cek|lihat|daftar|review)\s+(reimburse|reimbursement|talangan|rembes)": Intent.CMD_REIMBURSE,
     r"(berapa|harga|terakhir|beli)\s+(tepung|gula|mentega|telur|\w+)": Intent.QUERY_PRICE,

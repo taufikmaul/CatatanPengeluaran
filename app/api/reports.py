@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.api.deps import require_auth
-from app.api.schemas import MonthlyReportResponse, AiAnalysisResponse
+from app.api.schemas import MonthlyReportResponse, AiAnalysisResponse, AccountingReportResponse
 from app.services.expense_service import (
     get_monthly_report,
     get_monthly_chart_data,
@@ -15,6 +15,7 @@ from app.services.expense_service import (
     get_price_inflation_summary,
 )
 from app.services.ai_analysis_service import generate_ai_analysis
+from app.services.accounting_service import get_accounting_report
 from app.services.budget_service import get_effective_budget
 from app.services.master_data_service import get_valid_units
 
@@ -259,3 +260,24 @@ async def get_ai_analysis_endpoint(
 
     analysis = await generate_ai_analysis(db, cur_year, cur_month, force_refresh=force_refresh)
     return AiAnalysisResponse(**analysis)
+
+
+@router.get("/accounting", response_model=AccountingReportResponse)
+async def get_accounting_analytics(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint laporan & analisis akuntansi lengkap standar SAK EMKM:
+    - Laba Rugi (HPP & OPEX)
+    - Posisi Keuangan (Neraca Belanja & Aset)
+    - Arus Kas (Operasi, Investasi, Kliring)
+    - Analisis Rasio & Evaluasi Kesehatan Finansial
+    - Bagan Akun (Chart of Accounts)
+    """
+    now = datetime.now()
+    cur_month = month or now.month
+    cur_year = year or now.year
+
+    return await get_accounting_report(db, cur_year, cur_month)
