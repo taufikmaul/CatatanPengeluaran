@@ -486,17 +486,23 @@ export interface ItemSuggestion {
   is_master: boolean;
 }
 
+export type UserRole = "admin" | "admin_input" | "purchasing" | "warehouse" | "staff";
+
 export interface AuthPermissions {
   can_edit: boolean;
   can_delete: boolean;
   can_view_charts: boolean;
   can_manage_config: boolean;
+  can_manage_requests?: boolean;
+  can_approve_requests?: boolean;
+  can_order_purchasing?: boolean;
+  can_receive_warehouse?: boolean;
 }
 
 export interface AuthStatusResponse {
   authenticated: boolean;
   user?: string | null;
-  role?: "admin" | "admin_input" | null;
+  role?: UserRole | null;
   permissions?: AuthPermissions | null;
 }
 

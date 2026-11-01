@@ -453,3 +453,77 @@ class TestSsoAndCandidateAuth:
         res = await client.get("/", headers={"Accept": "application/json"})
         assert res.status_code == 200
         assert res.json()["app"] == "CatatanPengeluaran v2.0"
+
+
+class TestRoleBasedAuth:
+    async def test_staff_login_success_and_permissions(self, client: AsyncClient):
+        res = await client.post(
+            "/api/v1/auth/login-role",
+            json={"role": "staff", "password": settings.staff_password or "staf123"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["role"] == "staff"
+        assert "Staf Dapur" in data["user"]
+        assert "token" in data
+
+        # Check status endpoint with cookie
+        status_res = await client.get("/api/v1/auth/status")
+        assert status_res.status_code == 200
+        st = status_res.json()
+        assert st["authenticated"] is True
+        assert st["role"] == "staff"
+        assert st["permissions"]["can_edit"] is False
+        assert st["permissions"]["can_delete"] is False
+        assert st["permissions"]["can_manage_requests"] is True
+        assert st["permissions"]["can_approve_requests"] is False
+        assert st["permissions"]["can_order_purchasing"] is False
+        assert st["permissions"]["can_receive_warehouse"] is False
+
+    async def test_purchasing_login_success_and_permissions(self, client: AsyncClient):
+        res = await client.post(
+            "/api/v1/auth/login-role",
+            json={"role": "purchasing", "password": settings.purchasing_password or "purchasing123"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["role"] == "purchasing"
+        assert "Purchasing" in data["user"]
+
+        status_res = await client.get("/api/v1/auth/status")
+        assert status_res.status_code == 200
+        st = status_res.json()
+        assert st["role"] == "purchasing"
+        assert st["permissions"]["can_order_purchasing"] is True
+        assert st["permissions"]["can_receive_warehouse"] is False
+
+    async def test_warehouse_login_success_and_permissions(self, client: AsyncClient):
+        res = await client.post(
+            "/api/v1/auth/login-role",
+            json={"role": "warehouse", "password": settings.warehouse_password or "gudang123"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["ok"] is True
+        assert data["role"] == "warehouse"
+        assert "Gudang" in data["user"]
+
+        status_res = await client.get("/api/v1/auth/status")
+        assert status_res.status_code == 200
+        st = status_res.json()
+        assert st["role"] == "warehouse"
+        assert st["permissions"]["can_receive_warehouse"] is True
+        assert st["permissions"]["can_order_purchasing"] is False
+
+    async def test_wrong_role_password_returns_400(self, client: AsyncClient):
+        res = await client.post(
+            "/api/v1/auth/login-role",
+            json={"role": "warehouse", "password": "wrongpassword!"},
+        )
+        assert res.status_code == 400
+        data = res.json()
+        assert data["ok"] is False
+        assert "salah" in data["error"].lower()
+

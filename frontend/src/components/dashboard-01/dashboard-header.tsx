@@ -102,6 +102,17 @@ export function DashboardHeader({
 
   const totalAlerts = unpaidCount + reimburseCount;
 
+  const roleBadgeMap: Record<string, { label: string; color: string }> = {
+    admin: { label: "👑 Owner", color: "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300" },
+    purchasing: { label: "🛒 Purchasing", color: "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300" },
+    warehouse: { label: "📦 Gudang", color: "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/40 dark:text-blue-300" },
+    staff: { label: "👨‍🍳 Staf Dapur", color: "bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300" },
+    admin_input: { label: "📝 Admin Input", color: "bg-slate-100 text-slate-700 border-slate-300 dark:bg-zinc-800 dark:text-zinc-300" },
+  };
+
+  const currentRoleBadge = roleBadgeMap[userRole || "admin"] || roleBadgeMap.admin;
+  const canAddExpense = !userRole || userRole === "admin" || userRole === "admin_input" || userRole === "purchasing";
+
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-4 md:px-6 transition-all">
       {/* Left: Sidebar Trigger & Page Title */}
@@ -112,17 +123,16 @@ export function DashboardHeader({
           <h1 className="font-bold text-sm sm:text-base md:text-lg text-slate-900 dark:text-slate-100 leading-tight truncate">
             {titleMap[activeTab] || "Dashboard"}
           </h1>
-          {userRole === "admin_input" ? (
+          <Badge
+            variant="outline"
+            className={`text-[10px] font-semibold hidden sm:inline-flex shrink-0 ${currentRoleBadge.color}`}
+          >
+            {currentRoleBadge.label}
+          </Badge>
+          {activeTab !== "requests" && (
             <Badge
               variant="outline"
-              className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 hidden sm:inline-flex shrink-0"
-            >
-              Mode Input
-            </Badge>
-          ) : (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden sm:inline-flex shrink-0"
+              className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden md:inline-flex shrink-0"
             >
               {MONTH_NAMES[month - 1]} {year}
             </Badge>
@@ -320,14 +330,16 @@ export function DashboardHeader({
         </Button>
 
         {/* Primary Action Button (Desktop/Tablet only, on mobile FAB is used) */}
-        <Button
-          onClick={onOpenAddExpense}
-          size="sm"
-          className="hidden sm:inline-flex h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs gap-1.5"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Catat Pengeluaran</span>
-        </Button>
+        {canAddExpense && (
+          <Button
+            onClick={onOpenAddExpense}
+            size="sm"
+            className="hidden sm:inline-flex h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Catat Pengeluaran</span>
+          </Button>
+        )}
       </div>
     </header>
   );

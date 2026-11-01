@@ -151,7 +151,11 @@ def get_authenticated_role(request: Request) -> str | None:
         sso_data = verify_sso_jwt(token)
         if sso_data:
             sso_role = sso_data.get("role", "staff")
-            return "admin" if sso_role == "owner" else "admin_input"
+            if sso_role == "owner":
+                return "admin"
+            elif sso_role in ("purchasing", "warehouse"):
+                return sso_role
+            return "admin_input"
 
         # 2. Cek apakah token adalah HMAC session token internal
         payload = get_token_payload(token)
@@ -161,6 +165,12 @@ def get_authenticated_role(request: Request) -> str | None:
                 sub = payload.get("sub", "")
                 if "admin_input" in sub:
                     role = "admin_input"
+                elif "purchasing" in sub:
+                    role = "purchasing"
+                elif "warehouse" in sub:
+                    role = "warehouse"
+                elif "staff" in sub:
+                    role = "staff"
                 else:
                     role = "admin"
             return role
@@ -459,32 +469,75 @@ async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, s
     return False, f"PIN salah. Sisa kesempatan mencoba: {remaining_attempts} kali."
 
 
-async def verify_admin_input_password(db: AsyncSession, ip: str, password: str) -> tuple[bool, str]:
+ROLE_CONFIG = {
+    "admin_input": {
+        "label": "Admin Input",
+        "get_pwd": lambda: settings.admin_input_password or "input123",
+    },
+    "purchasing": {
+        "label": "Bagian Purchasing",
+        "get_pwd": lambda: settings.purchasing_password or "purchasing123",
+    },
+    "warehouse": {
+        "label": "Bagian Gudang",
+        "get_pwd": lambda: settings.warehouse_password or "gudang123",
+    },
+    "staff": {
+        "label": "Staf Dapur",
+        "get_pwd": lambda: settings.staff_password or "staf123",
+    },
+}
+
+
+async def verify_role_password(
+    db: AsyncSession, ip: str, role: str, password: str
+) -> tuple[bool, str, str]:
     """
-    Verifikasi password login khusus Admin Input dengan proteksi brute force (IP lockout & logging).
+    Verifikasi password login role-based (staff, purchasing, warehouse, admin_input)
+    dengan proteksi brute force (IP lockout & logging).
+    Return: (is_valid, message, normalized_role)
     """
     locked, remaining = await is_ip_locked_out(db, ip)
     if locked:
         rem_min = max(1, (remaining + 59) // 60)
         db.add(DashboardAccessLog(ip_address=ip, action="lockout", details="Blocked by lockout", created_at=datetime.utcnow()))
         await db.flush()
-        return False, f"Akses diblokir sementara karena terlalu banyak percobaan salah. Silakan coba {rem_min} menit lagi."
+        return False, f"Akses diblokir sementara karena terlalu banyak percobaan salah. Silakan coba {rem_min} menit lagi.", role
 
     now = datetime.utcnow()
     clean_pwd = (password or "").strip()
-    expected_pwd = (settings.admin_input_password or "input123").strip()
-
     if not clean_pwd:
-        return False, "Password tidak boleh kosong."
+        return False, "Password tidak boleh kosong.", role
 
-    # Perbandingan waktu konstan untuk mencegah timing attacks
+    # Normalisasi nama role
+    norm_role = role.lower().strip()
+    if norm_role in ("staf", "kitchen", "dapur"):
+        norm_role = "staff"
+    elif norm_role in ("gudang",):
+        norm_role = "warehouse"
+    elif norm_role in ("input", "admin-input"):
+        norm_role = "admin_input"
+
+    cfg = ROLE_CONFIG.get(norm_role)
+    if not cfg:
+        return False, f"Role '{role}' tidak valid.", role
+
+    expected_pwd = cfg["get_pwd"]().strip()
     is_correct = hmac.compare_digest(clean_pwd, expected_pwd)
 
     if is_correct:
-        db.add(DashboardAccessLog(ip_address=ip, action="verify_success", details="Admin input login successful", created_at=now))
+        db.add(DashboardAccessLog(ip_address=ip, action="verify_success", details=f"{cfg['label']} login successful", created_at=now))
         await db.flush()
-        return True, "Login Admin Input berhasil."
+        return True, f"Login {cfg['label']} berhasil.", norm_role
 
-    db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details="Admin input wrong password", created_at=now))
+    db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details=f"{cfg['label']} wrong password", created_at=now))
     await db.flush()
-    return False, "Password Admin Input salah. Silakan periksa kembali."
+    return False, f"Password {cfg['label']} salah. Silakan periksa kembali.", norm_role
+
+
+async def verify_admin_input_password(db: AsyncSession, ip: str, password: str) -> tuple[bool, str]:
+    """
+    Verifikasi password login khusus Admin Input dengan proteksi brute force (IP lockout & logging).
+    """
+    success, reason, _ = await verify_role_password(db, ip, "admin_input", password)
+    return success, reason

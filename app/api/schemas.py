@@ -452,6 +452,10 @@ class AuthPermissions(BaseModel):
     can_delete: bool = False
     can_view_charts: bool = False
     can_manage_config: bool = False
+    can_manage_requests: bool = True
+    can_approve_requests: bool = False
+    can_order_purchasing: bool = False
+    can_receive_warehouse: bool = False
 
 
 class AuthStatusResponse(BaseModel):
@@ -466,6 +470,11 @@ class PinVerifyRequest(BaseModel):
 
 
 class AdminInputLoginRequest(BaseModel):
+    password: str
+
+
+class RoleLoginRequest(BaseModel):
+    role: str
     password: str
 
 

@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     dashboard_lockout_attempts: int = Field(5, env="DASHBOARD_LOCKOUT_ATTEMPTS")
     dashboard_lockout_minutes: int = Field(15, env="DASHBOARD_LOCKOUT_MINUTES")
     admin_input_password: str = Field("input123", env="ADMIN_INPUT_PASSWORD")
+    purchasing_password: str = Field("purchasing123", env="PURCHASING_PASSWORD")
+    warehouse_password: str = Field("gudang123", env="WAREHOUSE_PASSWORD")
+    staff_password: str = Field("staf123", env="STAFF_PASSWORD")
 
     # Admin Telegram (boleh menandai reimburse "Sudah Diganti").
     # Daftar Telegram user ID dipisah koma. Jika kosong, fallback ke DASHBOARD_PIN_CHAT_ID.

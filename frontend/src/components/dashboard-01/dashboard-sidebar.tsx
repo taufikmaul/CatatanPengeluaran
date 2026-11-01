@@ -104,8 +104,23 @@ export function DashboardSidebar({
   };
 
   const roleLabel =
-    userRole === "admin_input" ? "Admin Input" : "Owner / Admin Utama";
-  const userInitials = (username || userRole || "HC")
+    userRole === "staff"
+      ? "Staf Dapur"
+      : userRole === "purchasing"
+      ? "Purchasing"
+      : userRole === "warehouse"
+      ? "Gudang"
+      : userRole === "admin_input"
+      ? "Admin Input"
+      : "Owner / Admin Utama";
+
+  const isStaff = userRole === "staff";
+  const isWarehouse = userRole === "warehouse";
+  const isPurchasing = userRole === "purchasing";
+  const isAdminInput = userRole === "admin_input";
+  const isOwner = !userRole || userRole === "admin";
+
+  const userInitials = (username || roleLabel || "HC")
     .slice(0, 2)
     .toUpperCase();
 
@@ -146,108 +161,120 @@ export function DashboardSidebar({
       {/* Main Navigation */}
       <SidebarContent className="px-2 py-3">
 
-        {/* Group 1: Laporan & Analitik */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
-            Laporan
-          </SidebarGroupLabel>
-          <SidebarMenu className="gap-0.5">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "overview"}
-                onClick={() => handleSelectTab("overview")}
-                tooltip="Overview Keuangan"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "overview"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <LayoutDashboard className="w-4 h-4 shrink-0" />
-                <span className="truncate">Overview Keuangan</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+        {/* Group 1: Laporan & Analitik (Owner, Admin Input, Purchasing) */}
+        {(isOwner || isAdminInput || isPurchasing) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
+              Laporan
+            </SidebarGroupLabel>
+            <SidebarMenu className="gap-0.5">
+              {(isOwner || isAdminInput) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "overview"}
+                    onClick={() => handleSelectTab("overview")}
+                    tooltip="Overview Keuangan"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "overview"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <LayoutDashboard className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Overview Keuangan</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "transactions"}
-                onClick={() => handleSelectTab("transactions")}
-                tooltip="Daftar Transaksi & Peringkat Belanja"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "transactions"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <ReceiptText className="w-4 h-4 shrink-0" />
-                <span className="truncate">Daftar Transaksi</span>
-                {expenseCount > 0 && (
-                  <SidebarMenuBadge className="ml-auto text-[10px] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 rounded px-1.5 py-0.5 tabular-nums">
-                    {expenseCount}
-                  </SidebarMenuBadge>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+              {(isOwner || isAdminInput || isPurchasing) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "transactions"}
+                    onClick={() => handleSelectTab("transactions")}
+                    tooltip="Daftar Transaksi & Peringkat Belanja"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "transactions"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <ReceiptText className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Daftar Transaksi</span>
+                    {expenseCount > 0 && (
+                      <SidebarMenuBadge className="ml-auto text-[10px] bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 rounded px-1.5 py-0.5 tabular-nums">
+                        {expenseCount}
+                      </SidebarMenuBadge>
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "accounting"}
-                onClick={() => handleSelectTab("accounting")}
-                tooltip="Laporan & Analisis Akuntansi (SAK EMKM)"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "accounting"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <Scale className="w-4 h-4 shrink-0" />
-                <span className="truncate">Laporan Akuntansi</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+              {isOwner && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "accounting"}
+                    onClick={() => handleSelectTab("accounting")}
+                    tooltip="Laporan & Analisis Akuntansi (SAK EMKM)"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "accounting"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <Scale className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Laporan Akuntansi</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
 
-        {/* Group 2: Data Master */}
-        <SidebarGroup className="mt-3">
-          <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
-            Katalog
-          </SidebarGroupLabel>
-          <SidebarMenu className="gap-0.5">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "master"}
-                onClick={() => handleSelectTab("master")}
-                tooltip="Master Item & Harga"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "master"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <PackageCheck className="w-4 h-4 shrink-0" />
-                <span className="truncate">Master Item</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+        {/* Group 2: Data Master (Owner, Purchasing, Warehouse) */}
+        {(isOwner || isPurchasing || isWarehouse) && (
+          <SidebarGroup className="mt-3">
+            <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
+              Katalog
+            </SidebarGroupLabel>
+            <SidebarMenu className="gap-0.5">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "master"}
+                  onClick={() => handleSelectTab("master")}
+                  tooltip="Master Item & Harga"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "master"
+                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <PackageCheck className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Master Item</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "suppliers" || activeTab === "supplier-detail"}
-                onClick={() => handleSelectTab("suppliers")}
-                tooltip="Master Supplier & Toko"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "suppliers" || activeTab === "supplier-detail"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <Store className="w-4 h-4 shrink-0" />
-                <span className="truncate">Master Supplier</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+              {(isOwner || isPurchasing) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "suppliers" || activeTab === "supplier-detail"}
+                    onClick={() => handleSelectTab("suppliers")}
+                    tooltip="Master Supplier & Toko"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "suppliers" || activeTab === "supplier-detail"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <Store className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Master Supplier</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
 
-        {/* Group 3: Operasional Kas */}
+        {/* Group 3: Operasional */}
         <SidebarGroup className="mt-3">
           <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
             Operasional
@@ -269,68 +296,74 @@ export function DashboardSidebar({
               </SidebarMenuButton>
             </SidebarMenuItem>
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "tukar-cash-ongkir"}
-                onClick={() => handleSelectTab("tukar-cash-ongkir")}
-                tooltip="Tukar Cash & Ongkir Kurir"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "tukar-cash-ongkir"
-                    ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <ArrowLeftRight className="w-4 h-4 shrink-0" />
-                <span className="truncate">Tukar Cash & Ongkir</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {(isOwner || isAdminInput) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "tukar-cash-ongkir"}
+                  onClick={() => handleSelectTab("tukar-cash-ongkir")}
+                  tooltip="Tukar Cash & Ongkir Kurir"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "tukar-cash-ongkir"
+                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <ArrowLeftRight className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Tukar Cash & Ongkir</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "talangan"}
-                onClick={() => handleSelectTab("talangan")}
-                tooltip="Daftar Talangan (Reimburse Karyawan)"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "talangan"
-                    ? "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <HandCoins className="w-4 h-4 shrink-0 text-purple-500 dark:text-purple-400" />
-                <span className="truncate">Talangan Karyawan</span>
-                {reimbursePendingCount > 0 && (
-                  <SidebarMenuBadge className="ml-auto text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
-                    {reimbursePendingCount}
-                  </SidebarMenuBadge>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {(isOwner || isAdminInput) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "talangan"}
+                  onClick={() => handleSelectTab("talangan")}
+                  tooltip="Daftar Talangan (Reimburse Karyawan)"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "talangan"
+                      ? "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <HandCoins className="w-4 h-4 shrink-0 text-purple-500 dark:text-purple-400" />
+                  <span className="truncate">Talangan Karyawan</span>
+                  {reimbursePendingCount > 0 && (
+                    <SidebarMenuBadge className="ml-auto text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
+                      {reimbursePendingCount}
+                    </SidebarMenuBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
 
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "unpaid"}
-                onClick={() => handleSelectTab("unpaid")}
-                tooltip="Tagihan Belum Lunas & Tempo Terdekat"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "unpaid"
-                    ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <CalendarClock className="w-4 h-4 shrink-0 text-rose-500 dark:text-rose-400" />
-                <span className="truncate">Belum Lunas</span>
-                {unpaidCount > 0 && (
-                  <SidebarMenuBadge className="ml-auto text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
-                    {unpaidCount}
-                  </SidebarMenuBadge>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {isOwner && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "unpaid"}
+                  onClick={() => handleSelectTab("unpaid")}
+                  tooltip="Tagihan Belum Lunas & Tempo Terdekat"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "unpaid"
+                      ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <CalendarClock className="w-4 h-4 shrink-0 text-rose-500 dark:text-rose-400" />
+                  <span className="truncate">Belum Lunas</span>
+                  {unpaidCount > 0 && (
+                    <SidebarMenuBadge className="ml-auto text-[10px] bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
+                      {unpaidCount}
+                    </SidebarMenuBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Group 4: Utilitas Data (hanya tampil jika ada handler) */}
-        {(onOpenDataHygiene || onOpenAuditDuplicates) && (
+        {/* Group 4: Utilitas Data (hanya tampil jika owner & ada handler) */}
+        {isOwner && (onOpenDataHygiene || onOpenAuditDuplicates) && (
           <SidebarGroup className="mt-3">
             <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
               Utilitas

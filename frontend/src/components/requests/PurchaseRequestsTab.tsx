@@ -75,6 +75,7 @@ interface PurchaseRequestsTabProps {
   itemSuggestions?: ItemSuggestion[];
   isAdmin?: boolean;
   currentUser?: string;
+  userRole?: string;
 }
 
 type MainTab = "staf" | "purchasing" | "gudang";
@@ -84,11 +85,30 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   itemSuggestions = [],
   isAdmin = true,
   currentUser = "",
+  userRole = "admin",
 }) => {
   const queryClient = useQueryClient();
 
+  // Role booleans
+  const isStaffRole = userRole === "staff";
+  const isPurchasingRole = userRole === "purchasing";
+  const isWarehouseRole = userRole === "warehouse";
+  const isOwnerAdmin = !userRole || userRole === "admin";
+
   // Main 3 Workflow Tabs: Staf (Pengajuan), Purchasing (Pemesanan), Gudang (Penerimaan)
-  const [activeMainTab, setActiveMainTab] = useState<MainTab>("staf");
+  const getDefaultTab = (role?: string): MainTab => {
+    if (role === "purchasing") return "purchasing";
+    if (role === "warehouse") return "gudang";
+    return "staf";
+  };
+
+  const [activeMainTab, setActiveMainTab] = useState<MainTab>(() => getDefaultTab(userRole));
+
+  React.useEffect(() => {
+    if (userRole === "purchasing") setActiveMainTab("purchasing");
+    else if (userRole === "warehouse") setActiveMainTab("gudang");
+    else if (userRole === "staff") setActiveMainTab("staf");
+  }, [userRole]);
 
   // Sub-filter for Staf Tab
   const [activeStatusTab, setActiveStatusTab] = useState<string>("ALL");
@@ -483,12 +503,18 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
         {/* Tab 2: Purchasing */}
         <button
-          onClick={() => setActiveMainTab("purchasing")}
+          onClick={() => {
+            if (isStaffRole || isWarehouseRole) {
+              toast.info("Menu Purchasing khusus untuk bagian Purchasing atau Owner.");
+              return;
+            }
+            setActiveMainTab("purchasing");
+          }}
           className={`flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all ${
             activeMainTab === "purchasing"
               ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-800 font-bold"
               : "text-zinc-600 dark:text-zinc-400 hover:bg-white/50 dark:hover:bg-zinc-900/50 font-medium"
-          }`}
+          } ${isStaffRole || isWarehouseRole ? "opacity-60 cursor-not-allowed" : ""}`}
         >
           <div className="flex items-center gap-2.5">
             <div
@@ -502,7 +528,9 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold leading-tight">2. Bagian Purchasing</div>
-              <div className="text-[10px] text-zinc-400">Pemesanan & Format WA</div>
+              <div className="text-[10px] text-zinc-400">
+                {isStaffRole || isWarehouseRole ? "Khusus Purchasing" : "Pemesanan & Format WA"}
+              </div>
             </div>
           </div>
           {stats.approved > 0 && (
@@ -514,12 +542,18 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
         {/* Tab 3: Gudang */}
         <button
-          onClick={() => setActiveMainTab("gudang")}
+          onClick={() => {
+            if (isStaffRole || isPurchasingRole) {
+              toast.info("Menu Gudang khusus untuk petugas Gudang atau Owner.");
+              return;
+            }
+            setActiveMainTab("gudang");
+          }}
           className={`flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all ${
             activeMainTab === "gudang"
               ? "bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm border border-zinc-200 dark:border-zinc-800 font-bold"
               : "text-zinc-600 dark:text-zinc-400 hover:bg-white/50 dark:hover:bg-zinc-900/50 font-medium"
-          }`}
+          } ${isStaffRole || isPurchasingRole ? "opacity-60 cursor-not-allowed" : ""}`}
         >
           <div className="flex items-center gap-2.5">
             <div
@@ -533,7 +567,9 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold leading-tight">3. Bagian Gudang</div>
-              <div className="text-[10px] text-zinc-400">Pemeriksaan & Exp Date</div>
+              <div className="text-[10px] text-zinc-400">
+                {isStaffRole || isPurchasingRole ? "Khusus Gudang" : "Pemeriksaan & Exp Date"}
+              </div>
             </div>
           </div>
           <Badge variant="outline" className="text-[10px] px-2 py-0.5 border-zinc-300 dark:border-zinc-700">

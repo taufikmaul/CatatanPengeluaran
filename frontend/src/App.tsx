@@ -211,20 +211,38 @@ export function App() {
     }
   }, [authData]);
 
-  // Perizinan & Peran Pengguna (Admin Input vs Owner/Admin Utama)
-  // Default adalah Owner (admin) kecuali jika akun secara spesifik memiliki role 'admin_input'
-  const isExplicitAdminInput = authData?.role === "admin_input";
-  const userRole = isExplicitAdminInput ? "admin_input" : (authData?.role || "admin");
-  const canDelete = authData?.permissions?.can_delete ?? (!isExplicitAdminInput);
-  const canViewCharts = authData?.permissions?.can_view_charts ?? (!isExplicitAdminInput);
-  const canManageConfig = authData?.permissions?.can_manage_config ?? (!isExplicitAdminInput);
+  // Perizinan & Peran Pengguna (Owner, Purchasing, Gudang, Staf Dapur, Admin Input)
+  const userRole = authData?.role || "admin";
+  const isOwner = userRole === "admin";
+  const isStaff = userRole === "staff";
+  const isWarehouse = userRole === "warehouse";
+  const isPurchasing = userRole === "purchasing";
+  const isAdminInput = userRole === "admin_input";
 
-  // Jika admin_input mencoba membuka tab konfigurasi sistem, kembalikan ke overview
+  const canDelete = authData?.permissions?.can_delete ?? isOwner;
+  const canViewCharts = authData?.permissions?.can_view_charts ?? isOwner;
+  const canManageConfig = authData?.permissions?.can_manage_config ?? isOwner;
+
+  // Proteksi navigasi & pembatasan menu sesuai role
   useEffect(() => {
-    if (userRole === "admin_input" && activeTab === "config") {
+    if (!authData?.authenticated) return;
+
+    if (isStaff && activeTab !== "requests") {
+      navigate("/requests");
+    } else if (isWarehouse && activeTab !== "requests" && activeTab !== "master") {
+      navigate("/requests");
+    } else if (
+      isPurchasing &&
+      activeTab !== "requests" &&
+      activeTab !== "transactions" &&
+      activeTab !== "suppliers" &&
+      activeTab !== "master"
+    ) {
+      navigate("/requests");
+    } else if (isAdminInput && (activeTab === "config" || activeTab === "accounting")) {
       navigate("/");
     }
-  }, [userRole, activeTab, navigate]);
+  }, [authData?.authenticated, userRole, activeTab, isStaff, isWarehouse, isPurchasing, isAdminInput, navigate]);
 
   // Listen for 401 unauthorized event
   useEffect(() => {
@@ -1538,7 +1556,8 @@ export function App() {
                 categories={categories}
                 itemSuggestions={suggestionsData?.items || []}
                 isAdmin={userRole === "admin"}
-                currentUser={authData?.username || ""}
+                currentUser={authData?.user || authData?.username || ""}
+                userRole={userRole}
               />
             )}
 
