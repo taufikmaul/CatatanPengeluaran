@@ -35,6 +35,11 @@ ENV_MAP: dict[str, str] = {
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
     "admin_input_password": "ADMIN_INPUT_PASSWORD",
+    "purchasing_password": "PURCHASING_PASSWORD",
+    "warehouse_password": "WAREHOUSE_PASSWORD",
+    "staff_password": "STAFF_PASSWORD",
+    "request_belanja_chat_id": "REQUEST_BELANJA_CHAT_ID",
+    "request_belanja_thread_id": "REQUEST_BELANJA_THREAD_ID",
     "webhook_url": "WEBHOOK_URL",
     "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
     "category_budgets_json": "CATEGORY_BUDGETS_JSON",
@@ -44,6 +49,7 @@ INT_FIELDS = {
     "allowed_thread_id",
     "report_thread_id",
     "dashboard_pin_thread_id",
+    "request_belanja_thread_id",
     "monthly_budget_limit",
 }
 
@@ -119,7 +125,7 @@ def apply_settings_to_runtime(settings_map: dict[str, Any]) -> None:
                     setattr(settings, key, int(str_val))
                 elif not str_val:
                     # Jika dikosongkan
-                    if key == "dashboard_pin_thread_id":
+                    if key in ("dashboard_pin_thread_id", "request_belanja_thread_id"):
                         setattr(settings, key, None)
                     elif key == "allowed_thread_id":
                         setattr(settings, key, 7)

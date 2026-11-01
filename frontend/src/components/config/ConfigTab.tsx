@@ -32,6 +32,7 @@ import {
   AlertCircle,
   RotateCcw,
   Layers,
+  Shield,
 } from "lucide-react";
 
 interface ConfigTabProps {
@@ -49,8 +50,13 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [allowedThreadIds, setAllowedThreadIds] = useState("");
   const [tukarCashThreadIds, setTukarCashThreadIds] = useState("");
   const [ongkirThreadIds, setOngkirThreadIds] = useState("");
+  const [requestBelanjaThreadId, setRequestBelanjaThreadId] = useState<number | "">("");
+  const [requestBelanjaChatId, setRequestBelanjaChatId] = useState("");
   const [botPassword, setBotPassword] = useState("12345");
   const [adminInputPassword, setAdminInputPassword] = useState("input123");
+  const [purchasingPassword, setPurchasingPassword] = useState("purchasing123");
+  const [warehousePassword, setWarehousePassword] = useState("gudang123");
+  const [staffPassword, setStaffPassword] = useState("staf123");
   const [webhookUrl, setWebhookUrl] = useState("");
 
   const [sumopodApiKey, setSumopodApiKey] = useState("");
@@ -81,8 +87,17 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setAllowedThreadIds(config.allowed_thread_ids || "");
       setTukarCashThreadIds(config.tukar_cash_thread_ids || "");
       setOngkirThreadIds(config.ongkir_thread_ids || "");
+      setRequestBelanjaThreadId(
+        config.request_belanja_thread_id !== undefined && config.request_belanja_thread_id !== null
+          ? config.request_belanja_thread_id
+          : ""
+      );
+      setRequestBelanjaChatId(config.request_belanja_chat_id || "");
       setBotPassword(config.bot_password || "12345");
       setAdminInputPassword(config.admin_input_password || "input123");
+      setPurchasingPassword(config.purchasing_password || "purchasing123");
+      setWarehousePassword(config.warehouse_password || "gudang123");
+      setStaffPassword(config.staff_password || "staf123");
       setWebhookUrl(config.webhook_url || "");
 
       setSumopodApiKey(config.sumopod_api_key || "");
@@ -111,6 +126,12 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         spreadsheet_id: spreadsheetId.trim(),
         bot_password: botPassword,
         admin_input_password: adminInputPassword.trim(),
+        purchasing_password: purchasingPassword.trim(),
+        warehouse_password: warehousePassword.trim(),
+        staff_password: staffPassword.trim(),
+        request_belanja_chat_id: requestBelanjaChatId.trim(),
+        request_belanja_thread_id:
+          requestBelanjaThreadId !== "" ? Number(requestBelanjaThreadId) : null,
         webhook_url: webhookUrl.trim(),
         monthly_budget_limit: Number(monthlyBudgetLimit) || 0,
         category_budgets: categoryBudgets,
@@ -420,33 +441,35 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Password Bot Telegram
+                  Topic ID Khusus Request Belanja
                 </label>
                 <Input
-                  type="text"
-                  value={botPassword}
-                  onChange={(e) => setBotPassword(e.target.value)}
-                  placeholder="Password untuk otorisasi user di Telegram"
+                  type="number"
+                  value={requestBelanjaThreadId}
+                  onChange={(e) =>
+                    setRequestBelanjaThreadId(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  placeholder="Contoh: 18 (kosongkan untuk pakai topic default)"
                   className="h-10 text-xs rounded-xl"
                 />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Notifikasi request belanja, pesanan purchasing, & penerimaan gudang dikirim ke topic ini
+                </span>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-amber-800 block mb-1 flex items-center justify-between">
-                  <span>Password Akses Admin Input (Web)</span>
-                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">
-                    Input & Koreksi
-                  </Badge>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Chat ID Grup Request Belanja (Opsional)
                 </label>
                 <Input
-                  type={showTokens ? "text" : "password"}
-                  value={adminInputPassword}
-                  onChange={(e) => setAdminInputPassword(e.target.value)}
-                  placeholder="Password untuk login staf Admin Input di Web"
-                  className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400"
+                  type="text"
+                  value={requestBelanjaChatId}
+                  onChange={(e) => setRequestBelanjaChatId(e.target.value)}
+                  placeholder="Kosongkan jika sama dengan Grup Toko"
+                  className="h-10 text-xs rounded-xl"
                 />
                 <span className="text-[11px] text-slate-500 mt-1 block">
-                  Akses staf: bisa catat & koreksi transaksi, tanpa tombol hapus & tanpa grafik.
+                  Isi jika notifikasi belanja ingin dikirim ke grup Telegram terpisah
                 </span>
               </div>
 
@@ -461,6 +484,122 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="https://domain-anda.com/webhook"
                   className="h-10 text-xs rounded-xl"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 2. Kredensial & Password Akses Role (Divisi) */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="p-4 md:p-5 pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Shield className="w-5 h-5 text-indigo-600" />
+                Kredensial Login Divisi & Role Akses
+              </CardTitle>
+              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+                Otorisasi Terpisah
+              </Badge>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Atur password login untuk masing-masing peran karyawan di web dan bot Telegram.
+            </p>
+          </CardHeader>
+          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-800 block mb-1 flex items-center justify-between">
+                  <span>Password Staf Dapur / Toko</span>
+                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-700 border-slate-300">
+                    Ajukan Belanja
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={staffPassword}
+                  onChange={(e) => setStaffPassword(e.target.value)}
+                  placeholder="Default: staf123"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Akses untuk membuat dan melihat daftar request belanja harian toko.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-blue-900 block mb-1 flex items-center justify-between">
+                  <span>Password Tim Purchasing</span>
+                  <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-300">
+                    Mapping & Order
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={purchasingPassword}
+                  onChange={(e) => setPurchasingPassword(e.target.value)}
+                  placeholder="Default: purchasing123"
+                  className="h-10 text-xs rounded-xl border-blue-200 focus-visible:ring-blue-400"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Akses untuk mapping supplier, copy format WA/Email, dan eksekusi order.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-emerald-900 block mb-1 flex items-center justify-between">
+                  <span>Password Tim Gudang</span>
+                  <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">
+                    Pemeriksaan Fisik & Exp
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={warehousePassword}
+                  onChange={(e) => setWarehousePassword(e.target.value)}
+                  placeholder="Default: gudang123"
+                  className="h-10 text-xs rounded-xl border-emerald-200 focus-visible:ring-emerald-400"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Akses untuk cek barang tiba, input kesesuaian qty, expired date, dan kondisi fisik.
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-amber-900 block mb-1 flex items-center justify-between">
+                  <span>Password Admin Input</span>
+                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">
+                    Pencatatan Nota
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={adminInputPassword}
+                  onChange={(e) => setAdminInputPassword(e.target.value)}
+                  placeholder="Default: input123"
+                  className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Akses untuk mencatat & koreksi transaksi pengeluaran/nota kasir.
+                </span>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-700 block mb-1 flex items-center justify-between">
+                  <span>Password Otorisasi Bot Telegram</span>
+                  <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-300">
+                    Grup Telegram
+                  </Badge>
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={botPassword}
+                  onChange={(e) => setBotPassword(e.target.value)}
+                  placeholder="Default: 12345"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Password yang diketikkan staf di Telegram untuk mendaftarkan akunnya ke bot toko.
+                </span>
               </div>
             </div>
           </CardContent>

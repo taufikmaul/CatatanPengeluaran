@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     warehouse_password: str = Field("gudang123", env="WAREHOUSE_PASSWORD")
     staff_password: str = Field("staf123", env="STAFF_PASSWORD")
 
+    # Notifikasi Request Belanja
+    request_belanja_chat_id: str | None = Field(None, env="REQUEST_BELANJA_CHAT_ID")
+    request_belanja_thread_id: int | None = Field(None, env="REQUEST_BELANJA_THREAD_ID")
+
     # Admin Telegram (boleh menandai reimburse "Sudah Diganti").
     # Daftar Telegram user ID dipisah koma. Jika kosong, fallback ke DASHBOARD_PIN_CHAT_ID.
     admin_telegram_ids: str = Field("", env="ADMIN_TELEGRAM_IDS")

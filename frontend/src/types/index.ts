@@ -545,6 +545,11 @@ export interface SystemConfig {
   report_thread_id: number;
   bot_password?: string;
   admin_input_password?: string;
+  purchasing_password?: string;
+  warehouse_password?: string;
+  staff_password?: string;
+  request_belanja_chat_id?: string;
+  request_belanja_thread_id?: number | null;
   webhook_url?: string;
   ai_provider: string;
   ai_url: string;

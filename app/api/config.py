@@ -51,6 +51,11 @@ ENV_MAP = {
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
     "admin_input_password": "ADMIN_INPUT_PASSWORD",
+    "purchasing_password": "PURCHASING_PASSWORD",
+    "warehouse_password": "WAREHOUSE_PASSWORD",
+    "staff_password": "STAFF_PASSWORD",
+    "request_belanja_chat_id": "REQUEST_BELANJA_CHAT_ID",
+    "request_belanja_thread_id": "REQUEST_BELANJA_THREAD_ID",
     "webhook_url": "WEBHOOK_URL",
     "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
 }
@@ -157,6 +162,11 @@ async def get_system_config(
         "report_thread_id": settings.report_thread_id,
         "bot_password": settings.bot_password,
         "admin_input_password": settings.admin_input_password,
+        "purchasing_password": settings.purchasing_password,
+        "warehouse_password": settings.warehouse_password,
+        "staff_password": settings.staff_password,
+        "request_belanja_chat_id": settings.request_belanja_chat_id or "",
+        "request_belanja_thread_id": settings.request_belanja_thread_id,
         "webhook_url": settings.webhook_url or "",
         # AI
         "ai_provider": "Sumopod AI",

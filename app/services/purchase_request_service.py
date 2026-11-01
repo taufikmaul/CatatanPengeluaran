@@ -154,6 +154,17 @@ async def create_purchase_request(
         db.add(req_item)
 
     await db.commit()
+    
+    # Ambil data lengkap beserta items & relasi untuk notifikasi Telegram
+    fresh_req = await get_purchase_request_by_id(db, req.id)
+    if fresh_req:
+        try:
+            from app.services.purchase_request_alert_service import notify_new_purchase_request
+            await notify_new_purchase_request(fresh_req)
+        except Exception as alert_err:
+            logger.warning("Gagal mengirim notifikasi request belanja baru: %s", alert_err)
+        return fresh_req
+
     await db.refresh(req)
     return req
 
@@ -404,7 +415,14 @@ async def mark_items_as_ordered(
     Tandai item-item belanjaan telah dipesan ke supplier (ORDERED).
     Otomatis mengupdate status PurchaseRequest terkait jika semua itemnya sudah dipesan.
     """
-    stmt = select(PurchaseRequestItem).where(PurchaseRequestItem.id.in_(item_ids))
+    stmt = (
+        select(PurchaseRequestItem)
+        .options(
+            selectinload(PurchaseRequestItem.request),
+            selectinload(PurchaseRequestItem.supplier),
+        )
+        .where(PurchaseRequestItem.id.in_(item_ids))
+    )
     res = await db.execute(stmt)
     items = res.scalars().all()
 
@@ -427,6 +445,16 @@ async def mark_items_as_ordered(
                 req.status = "PARTIAL_ORDERED"
 
     await db.commit()
+
+    # Kirim notifikasi Telegram ke Topic Request Belanja
+    try:
+        from app.services.purchase_request_alert_service import notify_purchasing_ordered
+        sup_names = {it.supplier_name for it in items if it.supplier_name and it.supplier_name != "-"}
+        sup_label = ", ".join(sup_names) if len(sup_names) == 1 else None
+        await notify_purchasing_ordered(list(items), supplier_name=sup_label, actor=actor)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi pembelian belanja: %s", alert_err)
+
     return list(items)
 
 
@@ -487,7 +515,12 @@ async def receive_warehouse_item(
     4. Catatan kondisi barang
     """
     res = await db.execute(
-        select(PurchaseRequestItem).where(PurchaseRequestItem.id == item_id)
+        select(PurchaseRequestItem)
+        .options(
+            selectinload(PurchaseRequestItem.request),
+            selectinload(PurchaseRequestItem.supplier),
+        )
+        .where(PurchaseRequestItem.id == item_id)
     )
     item = res.scalar_one_or_none()
     if not item:
@@ -517,6 +550,14 @@ async def receive_warehouse_item(
 
     await db.commit()
     await db.refresh(item)
+
+    # Kirim notifikasi Telegram ke Topic Request Belanja
+    try:
+        from app.services.purchase_request_alert_service import notify_warehouse_received
+        await notify_warehouse_received(item, actor=received_by)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi penerimaan barang ke Telegram: %s", alert_err)
+
     return item
 
 

@@ -497,6 +497,11 @@ class SystemConfigUpdate(BaseModel):
     spreadsheet_id: str | None = None
     bot_password: str | None = None
     admin_input_password: str | None = None
+    purchasing_password: str | None = None
+    warehouse_password: str | None = None
+    staff_password: str | None = None
+    request_belanja_chat_id: str | None = None
+    request_belanja_thread_id: int | None = None
     webhook_url: str | None = None
     monthly_budget_limit: int | None = None
     category_budgets: dict[str, float] | None = None
