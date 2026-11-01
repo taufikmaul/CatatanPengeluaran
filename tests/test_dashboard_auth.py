@@ -526,4 +526,79 @@ class TestRoleBasedAuth:
         data = res.json()
         assert data["ok"] is False
         assert "salah" in data["error"].lower()
+        assert "sisa kesempatan" in data["error"].lower()
+
+    async def test_role_lockout_after_max_attempts_and_triggers_alert(self, client: AsyncClient, db: AsyncSession):
+        ip = "192.168.10.99"
+        headers = {"X-Real-IP": ip}
+
+        mock_alert = AsyncMock()
+        with patch("app.services.dashboard_auth_service.send_brute_force_security_alert", mock_alert):
+            # Lakukan 4 percobaan salah berturut-turut
+            for i in range(4):
+                res = await client.post(
+                    "/api/v1/auth/login-role",
+                    json={"role": "purchasing", "password": f"wrong_{i}"},
+                    headers=headers,
+                )
+                assert res.status_code == 400
+                data = res.json()
+                assert "sisa kesempatan" in data["error"].lower()
+
+            # Percobaan ke-5 -> Harus terkunci (Lockout 429) & panggil security alert
+            res5 = await client.post(
+                "/api/v1/auth/login-role",
+                json={"role": "purchasing", "password": "wrong_final"},
+                headers=headers,
+            )
+            assert res5.status_code == 429
+            data5 = res5.json()
+            assert "diblokir" in data5["error"].lower() or "batas percobaan" in data5["error"].lower()
+            assert mock_alert.called
+
+            # Percobaan ke-6 -> Langsung 429 tanpa coba password
+            res6 = await client.post(
+                "/api/v1/auth/login-role",
+                json={"role": "purchasing", "password": "anypassword"},
+                headers=headers,
+            )
+            assert res6.status_code == 429
+            assert "diblokir" in res6.json()["error"].lower()
+
+    async def test_fast_in_memory_rate_limiter_stops_burst(self, client: AsyncClient):
+        ip = "192.168.20.88"
+        headers = {"X-Real-IP": ip}
+
+        # Kirim 10 request cepat (batas in-memory limiter)
+        for _ in range(10):
+            await client.post(
+                "/api/v1/auth/login-role",
+                json={"role": "staff", "password": "wrong"},
+                headers=headers,
+            )
+
+        # Request ke-11 harus diblokir oleh fast rate limiter (429)
+        res_burst = await client.post(
+            "/api/v1/auth/login-role",
+            json={"role": "staff", "password": "wrong"},
+            headers=headers,
+        )
+        assert res_burst.status_code == 429
+        assert "terlalu banyak" in res_burst.json()["error"].lower()
+
+    def test_get_client_ip_prioritizes_trusted_proxy_headers(self):
+        from app.services.dashboard_auth_service import get_client_ip
+        from starlette.requests import Request
+
+        # 1. CF-Connecting-IP
+        req1 = Request({"type": "http", "headers": [(b"cf-connecting-ip", b"1.1.1.1"), (b"x-real-ip", b"2.2.2.2")]})
+        assert get_client_ip(req1) == "1.1.1.1"
+
+        # 2. X-Real-IP
+        req2 = Request({"type": "http", "headers": [(b"x-real-ip", b"2.2.2.2"), (b"x-forwarded-for", b"3.3.3.3")]})
+        assert get_client_ip(req2) == "2.2.2.2"
+
+        # 3. X-Forwarded-For fallback
+        req3 = Request({"type": "http", "headers": [(b"x-forwarded-for", b"3.3.3.3, 4.4.4.4")]})
+        assert get_client_ip(req3) == "3.3.3.3"
 

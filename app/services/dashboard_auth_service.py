@@ -21,18 +21,132 @@ SESSION_COOKIE_NAME = "dashboard_session"
 
 
 def get_client_ip(request: Request) -> str:
-    """Ambil IP address pengakses dengan memperhatikan proxy headers."""
+    """Ambil IP address pengakses dengan memprioritaskan proxy headers tepercaya (Cloudflare & Nginx)."""
+    # 1. Cloudflare header
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
+    # 2. X-Real-IP dari reverse proxy tepercaya (Nginx)
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+
+    # 3. X-Forwarded-For (ambil part pertama jika ada)
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         parts = [p.strip() for p in forwarded_for.split(",") if p.strip()]
         if parts:
             return parts[0]
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
+
+    # 4. Fallback ke host client connection
     if request.client and request.client.host:
         return request.client.host
     return "127.0.0.1"
+
+
+class SlidingWindowRateLimiter:
+    """
+    Fast tier in-memory sliding window rate limiter untuk menangkal serangan flooding & brute force.
+    Mencegah penyerang membombardir database dengan ratusan request per detik.
+    """
+    def __init__(self, max_requests: int = 10, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.records: dict[str, list[float]] = {}
+
+    def is_rate_limited(self, key: str) -> tuple[bool, int]:
+        """Cek dan catat request. Return (is_limited, retry_after_seconds)."""
+        now = time.time()
+        window_start = now - self.window_seconds
+        timestamps = [t for t in self.records.get(key, []) if t > window_start]
+
+        if len(timestamps) >= self.max_requests:
+            retry_after = int(self.window_seconds - (now - timestamps[0]))
+            self.records[key] = timestamps
+            return True, max(1, retry_after)
+
+        timestamps.append(now)
+        self.records[key] = timestamps
+
+        if len(self.records) > 2000:
+            self._cleanup(now)
+
+        return False, 0
+
+    def check_limit_only(self, key: str) -> tuple[bool, int]:
+        """Hanya cek apakah key saat ini terkena limit tanpa menambahkan hitungan baru."""
+        now = time.time()
+        window_start = now - self.window_seconds
+        timestamps = [t for t in self.records.get(key, []) if t > window_start]
+        if len(timestamps) >= self.max_requests:
+            retry_after = int(self.window_seconds - (now - timestamps[0]))
+            return True, max(1, retry_after)
+        return False, 0
+
+    def record_event(self, key: str) -> None:
+        """Catat satu kejadian kegagalan ke dalam window."""
+        now = time.time()
+        window_start = now - self.window_seconds
+        timestamps = [t for t in self.records.get(key, []) if t > window_start]
+        timestamps.append(now)
+        self.records[key] = timestamps
+
+    def reset(self, key: str) -> None:
+        """Reset riwayat request untuk key tertentu saat sukses login."""
+        self.records.pop(key, None)
+
+    def _cleanup(self, now: float) -> None:
+        cutoff = now - self.window_seconds
+        stale = [k for k, v in self.records.items() if not v or v[-1] < cutoff]
+        for k in stale:
+            self.records.pop(k, None)
+
+
+# Rate limiter per-IP: maksimal 10 requests dalam 60 detik pada endpoint auth
+auth_ip_limiter = SlidingWindowRateLimiter(max_requests=10, window_seconds=60)
+
+# Distributed brute force tracker per-role: maksimal 15 kegagalan lintas IP dalam 15 menit (900s)
+role_failure_limiter = SlidingWindowRateLimiter(max_requests=15, window_seconds=900)
+
+
+async def send_brute_force_security_alert(
+    ip: str, target: str, attempts: int, lockout_minutes: int
+) -> None:
+    """Kirim notifikasi keamanan ke Telegram saat IP diblokir akibat percobaan brute-force."""
+    target_chat = settings.report_chat_id or settings.dashboard_pin_chat_id
+    if not target_chat:
+        return
+    try:
+        chat_id = int(str(target_chat).split(",")[0].strip())
+    except (ValueError, TypeError):
+        return
+
+    thread_id = settings.report_thread_id or None
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    msg = (
+        "🚨 *SECURITY ALERT: PERCOBAAN BRUTE FORCE DIBLOKIR*\n"
+        f"🌐 *IP Address:* `{ip}`\n"
+        f"🎯 *Target Akses:* *{target}*\n"
+        f"⚠️ *Percobaan Gagal:* {attempts}x berturut-turut\n"
+        f"🔒 *Tindakan Sistem:* IP diblokir sementara (*{lockout_minutes} menit*)\n"
+        f"⏰ *Waktu Kejadian:* `{now_str}`\n\n"
+        "🛡️ _Aplikasi otomatis menolak seluruh percobaan login selanjutnya dari IP ini._"
+    )
+    try:
+        await tg.send_message(chat_id=chat_id, text=msg, thread_id=thread_id)
+    except Exception:
+        pass
+
+
+async def apply_progressive_delay(failed_count: int) -> None:
+    """Terapkan exponential delay untuk melumpuhkan skrip otomatisasi brute-force."""
+    import asyncio
+    delays = {1: 0.3, 2: 0.6, 3: 1.2, 4: 2.0}
+    delay = delays.get(failed_count, 0.3 if failed_count > 0 else 0.0)
+    if delay > 0:
+        await asyncio.sleep(delay)
 
 
 def create_session_token(role: str = "admin", secret_key: str | None = None, expire_hours: int | None = None) -> str:
@@ -183,14 +297,9 @@ def is_authenticated_request(request: Request) -> bool:
     return get_authenticated_role(request) is not None
 
 
-async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
-    """
-    Cek apakah IP sedang di-lockout karena terlalu banyak percobaan salah.
-    Return (is_locked, remaining_seconds).
-    """
+async def get_failed_attempt_count(db: AsyncSession, ip: str) -> tuple[int, datetime | None]:
+    """Hitung jumlah kesalahan verifikasi berturut-turut dari IP dalam lockout window."""
     lockout_window = datetime.utcnow() - timedelta(minutes=settings.dashboard_lockout_minutes)
-    
-    # Hitung jumlah kesalahan verifikasi berturut-turut dalam window
     result = await db.execute(
         select(DashboardAccessLog)
         .where(
@@ -202,8 +311,6 @@ async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
         .limit(settings.dashboard_lockout_attempts)
     )
     logs = result.scalars().all()
-
-    # Jika log terbaru diawali oleh kegagalan sebanyak >= dashboard_lockout_attempts
     failed_count = 0
     latest_fail_time = None
     for log in logs:
@@ -213,7 +320,15 @@ async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
                 latest_fail_time = log.created_at
         else:
             break
+    return failed_count, latest_fail_time
 
+
+async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
+    """
+    Cek apakah IP sedang di-lockout karena terlalu banyak percobaan salah.
+    Return (is_locked, remaining_seconds).
+    """
+    failed_count, latest_fail_time = await get_failed_attempt_count(db, ip)
     if failed_count >= settings.dashboard_lockout_attempts and latest_fail_time:
         lockout_end = latest_fail_time + timedelta(minutes=settings.dashboard_lockout_minutes)
         remaining = int((lockout_end - datetime.utcnow()).total_seconds())
@@ -224,7 +339,12 @@ async def is_ip_locked_out(db: AsyncSession, ip: str) -> tuple[bool, int]:
 
 
 async def can_request_pin(db: AsyncSession, ip: str) -> tuple[bool, str]:
-    """Validasi apakah IP diizinkan meminta PIN baru (cek cooldown & rate limit)."""
+    """Validasi apakah IP diizinkan meminta PIN baru (cek rate limiter, lockout & cooldown)."""
+    # 0. Fast in-memory rate check per IP
+    is_rate_limited, retry_after = auth_ip_limiter.is_rate_limited(ip)
+    if is_rate_limited:
+        return False, f"Terlalu banyak permintaan PIN. Harap tunggu {retry_after} detik."
+
     # 1. Cek lockout IP
     locked, remaining = await is_ip_locked_out(db, ip)
     if locked:
@@ -406,14 +526,17 @@ async def generate_and_send_pin(db: AsyncSession, ip: str) -> tuple[bool, str]:
 
 async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, str]:
     """
-    Verifikasi input PIN dengan proteksi brute force (per-PIN attempts + IP lockout).
+    Verifikasi input PIN dengan proteksi brute force (Fast rate limiter, per-PIN attempts, IP lockout, & progressive delay).
     """
+    # 0. Fast in-memory rate check per IP (max 10 requests / 60s)
+    is_rate_limited, retry_after = auth_ip_limiter.is_rate_limited(ip)
+    if is_rate_limited:
+        return False, f"Terlalu banyak permintaan verifikasi. Harap tunggu {retry_after} detik."
+
     # 1. Cek lockout IP
     locked, remaining = await is_ip_locked_out(db, ip)
     if locked:
         rem_min = max(1, (remaining + 59) // 60)
-        db.add(DashboardAccessLog(ip_address=ip, action="lockout", details="Blocked by lockout", created_at=datetime.utcnow()))
-        await db.flush()
         return False, f"Akses diblokir sementara karena terlalu banyak percobaan salah. Silakan coba {rem_min} menit lagi."
 
     now = datetime.utcnow()
@@ -435,6 +558,8 @@ async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, s
     if not pin_record:
         db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details="No active PIN / expired", created_at=now))
         await db.flush()
+        failed_count, _ = await get_failed_attempt_count(db, ip)
+        await apply_progressive_delay(failed_count)
         return False, "PIN tidak valid atau sudah kedaluwarsa. Silakan minta PIN baru via Telegram."
 
     # 3. Cek batas percobaan pada PIN ini
@@ -442,6 +567,8 @@ async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, s
         pin_record.is_used = True
         db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details="Max PIN attempts exceeded", created_at=now))
         await db.flush()
+        failed_count, _ = await get_failed_attempt_count(db, ip)
+        await apply_progressive_delay(failed_count)
         return False, "Batas percobaan untuk PIN ini telah habis. Silakan minta PIN baru via Telegram."
 
     # 4. Validasi PIN dengan constant-time comparison
@@ -453,19 +580,36 @@ async def verify_pin(db: AsyncSession, ip: str, input_pin: str) -> tuple[bool, s
         pin_record.is_used = True
         db.add(DashboardAccessLog(ip_address=ip, action="verify_success", details="PIN verified", created_at=now))
         await db.flush()
+        auth_ip_limiter.reset(ip)
         return True, "Verifikasi berhasil."
 
     # PIN Salah -> naikkan counter percobaan dan catat log
     pin_record.attempts += 1
     db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details=f"Wrong PIN, attempt {pin_record.attempts}", created_at=now))
-    
+    await db.flush()
+
+    failed_count, _ = await get_failed_attempt_count(db, ip)
+    await apply_progressive_delay(failed_count)
+
+    # Cek apakah akumulasi kesalahan IP mencapai lockout
+    if failed_count >= settings.dashboard_lockout_attempts:
+        import asyncio
+        asyncio.create_task(
+            send_brute_force_security_alert(
+                ip=ip,
+                target="Login Owner (PIN Telegram)",
+                attempts=failed_count,
+                lockout_minutes=settings.dashboard_lockout_minutes,
+            )
+        )
+        return False, f"PIN salah. Batas percobaan habis ({settings.dashboard_lockout_attempts}x). Akses diblokir selama {settings.dashboard_lockout_minutes} menit."
+
     if pin_record.attempts >= pin_record.max_attempts:
         pin_record.is_used = True
         await db.flush()
         return False, "PIN salah. Batas percobaan habis. Silakan minta PIN baru via Telegram."
 
     remaining_attempts = pin_record.max_attempts - pin_record.attempts
-    await db.flush()
     return False, f"PIN salah. Sisa kesempatan mencoba: {remaining_attempts} kali."
 
 
@@ -494,14 +638,18 @@ async def verify_role_password(
 ) -> tuple[bool, str, str]:
     """
     Verifikasi password login role-based (staff, purchasing, warehouse, admin_input)
-    dengan proteksi brute force (IP lockout & logging).
+    dengan proteksi brute force (Fast in-memory rate limit, IP lockout, progressive delay, & distributed attack defense).
     Return: (is_valid, message, normalized_role)
     """
+    # 0. Fast in-memory rate check per IP (max 10 requests / 60 detik)
+    is_rate_limited, retry_after = auth_ip_limiter.is_rate_limited(ip)
+    if is_rate_limited:
+        return False, f"Terlalu banyak permintaan login. Harap tunggu {retry_after} detik.", role
+
+    # 1. Cek lockout IP dari database
     locked, remaining = await is_ip_locked_out(db, ip)
     if locked:
         rem_min = max(1, (remaining + 59) // 60)
-        db.add(DashboardAccessLog(ip_address=ip, action="lockout", details="Blocked by lockout", created_at=datetime.utcnow()))
-        await db.flush()
         return False, f"Akses diblokir sementara karena terlalu banyak percobaan salah. Silakan coba {rem_min} menit lagi.", role
 
     now = datetime.utcnow()
@@ -522,17 +670,47 @@ async def verify_role_password(
     if not cfg:
         return False, f"Role '{role}' tidak valid.", role
 
+    # 2. Cek distributed brute force attack per-role lintas IP (max 15 gagal / 15 menit)
+    is_role_attacked, wait_sec = role_failure_limiter.check_limit_only(norm_role)
+    if is_role_attacked:
+        rem_min = max(1, (wait_sec + 59) // 60)
+        return False, f"Akses login {cfg['label']} ditangguhkan sementara selama {rem_min} menit untuk alasan keamanan.", norm_role
+
     expected_pwd = cfg["get_pwd"]().strip()
     is_correct = hmac.compare_digest(clean_pwd, expected_pwd)
 
     if is_correct:
         db.add(DashboardAccessLog(ip_address=ip, action="verify_success", details=f"{cfg['label']} login successful", created_at=now))
         await db.flush()
+        auth_ip_limiter.reset(ip)
         return True, f"Login {cfg['label']} berhasil.", norm_role
 
+    # Password salah
     db.add(DashboardAccessLog(ip_address=ip, action="verify_failed", details=f"{cfg['label']} wrong password", created_at=now))
     await db.flush()
-    return False, f"Password {cfg['label']} salah. Silakan periksa kembali.", norm_role
+
+    # Catat ke distributed failure limiter
+    role_failure_limiter.record_event(norm_role)
+
+    failed_count, _ = await get_failed_attempt_count(db, ip)
+    attempts_left = max(0, settings.dashboard_lockout_attempts - failed_count)
+
+    # Terapkan progressive backoff delay
+    await apply_progressive_delay(failed_count)
+
+    if failed_count >= settings.dashboard_lockout_attempts:
+        import asyncio
+        asyncio.create_task(
+            send_brute_force_security_alert(
+                ip=ip,
+                target=f"Login {cfg['label']}",
+                attempts=failed_count,
+                lockout_minutes=settings.dashboard_lockout_minutes,
+            )
+        )
+        return False, f"Password {cfg['label']} salah. Batas percobaan habis ({settings.dashboard_lockout_attempts}x). Akses diblokir selama {settings.dashboard_lockout_minutes} menit.", norm_role
+
+    return False, f"Password {cfg['label']} salah. Sisa kesempatan mencoba: {attempts_left} kali.", norm_role
 
 
 async def verify_admin_input_password(db: AsyncSession, ip: str, password: str) -> tuple[bool, str]:

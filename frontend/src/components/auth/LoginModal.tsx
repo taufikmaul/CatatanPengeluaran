@@ -85,6 +85,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
   const [showPassword, setShowPassword] = useState(false);
   const [isRoleLoggingIn, setIsRoleLoggingIn] = useState(false);
 
+  // State Keamanan Brute Force & Error
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isLockedOut, setIsLockedOut] = useState<boolean>(false);
+
   // State untuk Owner (PIN Telegram)
   const [pin, setPin] = useState("");
   const [isRequesting, setIsRequesting] = useState(false);
@@ -183,8 +187,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       toast.error(`Masukkan password ${ROLES_INFO[loginMode].shortLabel}`);
       return;
     }
+    if (isLockedOut) {
+      toast.error("Akses saat ini diblokir sementara karena proteksi brute force.");
+      return;
+    }
 
     setIsRoleLoggingIn(true);
+    setAuthError(null);
     try {
       const res = await api.post("/auth/login-role", {
         role: loginMode,
@@ -196,21 +205,35 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       }
       toast.success(res.data.message || `Login ${ROLES_INFO[loginMode].label} berhasil!`);
       setRolePassword("");
+      setAuthError(null);
+      setIsLockedOut(false);
       onSuccess();
     } catch (err: any) {
-      toast.error(
+      const errorMsg =
         err.response?.data?.error ||
-          `Password ${ROLES_INFO[loginMode].shortLabel} salah atau akses diblokir`
-      );
+        `Password ${ROLES_INFO[loginMode].shortLabel} salah atau akses diblokir`;
+      setAuthError(errorMsg);
+
+      const isLock =
+        err.response?.status === 429 ||
+        errorMsg.toLowerCase().includes("diblokir") ||
+        errorMsg.toLowerCase().includes("batas percobaan habis") ||
+        errorMsg.toLowerCase().includes("ditangguhkan");
+
+      if (isLock) {
+        setIsLockedOut(true);
+      }
+      toast.error(errorMsg);
     } finally {
       setIsRoleLoggingIn(false);
     }
   };
 
   const handleRequestPin = async () => {
-    if (cooldown > 0 || isRequesting) return;
+    if (cooldown > 0 || isRequesting || isLockedOut) return;
 
     setIsRequesting(true);
+    setAuthError(null);
     try {
       const res = await api.post("/auth/request-pin");
       toast.success(res.data.message || "Kode PIN 6-digit telah dikirim ke Telegram!");
@@ -227,7 +250,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       startCooldown(PIN_COOLDOWN_SECONDS);
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || "Gagal meminta kode PIN";
+      setAuthError(errorMsg);
       toast.error(errorMsg);
+
+      if (err.response?.status === 429 || errorMsg.toLowerCase().includes("diblokir")) {
+        setIsLockedOut(true);
+      }
 
       const match = errorMsg.match(/tunggu\s+(\d+)\s+detik/i);
       if (match) {
@@ -246,8 +274,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       toast.error("Masukkan kode PIN yang valid");
       return;
     }
+    if (isLockedOut) {
+      toast.error("Akses saat ini diblokir sementara.");
+      return;
+    }
 
     setIsVerifying(true);
+    setAuthError(null);
     try {
       const res = await api.post("/auth/verify-pin", { pin });
       if (res.data?.token) {
@@ -256,9 +289,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
       }
       toast.success("Login Owner berhasil! Selamat datang kembali.");
       setPin("");
+      setAuthError(null);
+      setIsLockedOut(false);
       onSuccess();
     } catch (err: any) {
-      toast.error(err.response?.data?.error || "Kode PIN salah atau telah kedaluwarsa");
+      const errorMsg = err.response?.data?.error || "Kode PIN salah atau telah kedaluwarsa";
+      setAuthError(errorMsg);
+
+      const isLock =
+        err.response?.status === 429 ||
+        errorMsg.toLowerCase().includes("diblokir") ||
+        errorMsg.toLowerCase().includes("batas percobaan habis");
+
+      if (isLock) {
+        setIsLockedOut(true);
+      }
+      toast.error(errorMsg);
     } finally {
       setIsVerifying(false);
     }
@@ -295,6 +341,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                 onClick={() => {
                   setLoginMode(r);
                   setRolePassword("");
+                  setAuthError(null);
                 }}
                 className={`py-2 px-2 rounded-lg transition-all flex flex-col items-center justify-center gap-1 ${
                   isActive
@@ -320,6 +367,29 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
           </div>
         </div>
 
+        {/* Banner Peringatan Keamanan / Kesalahan / Lockout */}
+        {authError && (
+          <div
+            className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs transition-all ${
+              isLockedOut
+                ? "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-200"
+                : "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-200"
+            }`}
+          >
+            <ShieldAlert
+              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                isLockedOut ? "text-rose-600 dark:text-rose-400" : "text-amber-600 dark:text-amber-400"
+              }`}
+            />
+            <div className="leading-relaxed">
+              <span className="font-bold">
+                {isLockedOut ? "Proteksi Keamanan Aktif:" : "Peringatan Login:"}
+              </span>{" "}
+              {authError}
+            </div>
+          </div>
+        )}
+
         {/* FORM LOGIN SESUAI ROLE */}
         <div className="space-y-4 pt-1">
           {/* Form Role Password (Staff, Purchasing, Warehouse, Admin Input) */}
@@ -333,9 +403,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                   <Input
                     type={showPassword ? "text" : "password"}
                     value={rolePassword}
-                    onChange={(e) => setRolePassword(e.target.value)}
+                    onChange={(e) => {
+                      setRolePassword(e.target.value);
+                      if (!isLockedOut) setAuthError(null);
+                    }}
                     placeholder={`Masukkan password ${ROLES_INFO[loginMode].shortLabel}...`}
-                    className="h-11 rounded-xl border-slate-300 dark:border-zinc-700 pr-10 text-sm focus:border-slate-400"
+                    disabled={isLockedOut}
+                    className="h-11 rounded-xl border-slate-300 dark:border-zinc-700 pr-10 text-sm focus:border-slate-400 disabled:opacity-50"
                     autoFocus
                   />
                   <button
@@ -351,10 +425,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
 
               <Button
                 type="submit"
-                disabled={isRoleLoggingIn || !rolePassword.trim()}
-                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white font-semibold text-sm transition-all"
+                disabled={isRoleLoggingIn || !rolePassword.trim() || isLockedOut}
+                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white font-semibold text-sm transition-all disabled:opacity-50"
               >
-                {isRoleLoggingIn ? "Memverifikasi..." : `Masuk sebagai ${ROLES_INFO[loginMode].shortLabel}`}
+                {isRoleLoggingIn
+                  ? "Memverifikasi..."
+                  : isLockedOut
+                  ? "Akses Diblokir Sementara"
+                  : `Masuk sebagai ${ROLES_INFO[loginMode].shortLabel}`}
               </Button>
             </form>
           ) : (
@@ -368,12 +446,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                   <Button
                     type="button"
                     onClick={handleRequestPin}
-                    disabled={isRequesting || cooldown > 0}
-                    className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                    disabled={isRequesting || cooldown > 0 || isLockedOut}
+                    className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
                     {isRequesting
                       ? "Mengirim..."
+                      : isLockedOut
+                      ? "Akses Diblokir Sementara"
                       : cooldown > 0
                       ? `Tunggu ${cooldown}s`
                       : "Minta PIN via Telegram"}
@@ -389,19 +469,27 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
                       type="text"
                       maxLength={6}
                       value={pin}
-                      onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                      onChange={(e) => {
+                        setPin(e.target.value.replace(/\D/g, ""));
+                        if (!isLockedOut) setAuthError(null);
+                      }}
                       placeholder="Contoh: 123456"
-                      className="h-11 rounded-xl border-slate-300 dark:border-zinc-700 text-center text-lg font-mono tracking-widest"
+                      disabled={isLockedOut}
+                      className="h-11 rounded-xl border-slate-300 dark:border-zinc-700 text-center text-lg font-mono tracking-widest disabled:opacity-50"
                       autoFocus
                     />
                   </div>
 
                   <Button
                     type="submit"
-                    disabled={isVerifying || pin.length < 4}
-                    className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all"
+                    disabled={isVerifying || pin.length < 4 || isLockedOut}
+                    className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50"
                   >
-                    {isVerifying ? "Memverifikasi..." : "Verifikasi & Masuk Owner"}
+                    {isVerifying
+                      ? "Memverifikasi..."
+                      : isLockedOut
+                      ? "Akses Diblokir Sementara"
+                      : "Verifikasi & Masuk Owner"}
                   </Button>
 
                   <div className="text-center pt-1">

@@ -160,7 +160,14 @@ async def api_verify_pin(
             "message": "Autentikasi berhasil",
         }
 
-    status_code = 429 if ("diblokir" in reason.lower() or "terlalu banyak" in reason.lower()) else 400
+    status_code = (
+        429
+        if any(
+            k in reason.lower()
+            for k in ("diblokir", "terlalu banyak", "ditangguhkan", "batas percobaan habis", "tunggu")
+        )
+        else 400
+    )
     return JSONResponse({"ok": False, "error": reason}, status_code=status_code)
 
 
@@ -195,7 +202,14 @@ async def api_login_admin_input(
             "message": "Login Admin Input berhasil",
         }
 
-    status_code = 429 if ("diblokir" in reason.lower() or "terlalu banyak" in reason.lower()) else 400
+    status_code = (
+        429
+        if any(
+            k in reason.lower()
+            for k in ("diblokir", "terlalu banyak", "ditangguhkan", "batas percobaan habis", "tunggu")
+        )
+        else 400
+    )
     return JSONResponse({"ok": False, "error": reason}, status_code=status_code)
 
 
@@ -233,7 +247,14 @@ async def api_login_role(
             "message": reason,
         }
 
-    status_code = 429 if ("diblokir" in reason.lower() or "terlalu banyak" in reason.lower()) else 400
+    status_code = (
+        429
+        if any(
+            k in reason.lower()
+            for k in ("diblokir", "terlalu banyak", "ditangguhkan", "batas percobaan habis", "tunggu")
+        )
+        else 400
+    )
     return JSONResponse({"ok": False, "error": reason}, status_code=status_code)
 
 
