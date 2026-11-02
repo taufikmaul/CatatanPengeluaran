@@ -236,8 +236,12 @@ async def update_system_config(
         try:
             from app.services.system_setting_service import save_bulk_system_settings
             await save_bulk_system_settings(db, db_updates)
-        except Exception:
-            pass
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Gagal menyimpan konfigurasi ke database: {e}",
+            )
 
     if env_updates:
         try:
@@ -307,7 +311,7 @@ async def upload_google_credentials(
         from app.services.system_setting_service import save_bulk_system_settings
         await save_bulk_system_settings(db, {"google_credentials_json": save_path})
     except Exception:
-        pass
+        await db.rollback()
 
     return {
         "ok": True,

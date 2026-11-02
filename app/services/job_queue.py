@@ -159,19 +159,19 @@ class JobQueueManager:
                 created_dt = None
                 if job.created_at:
                     try:
-                        created_dt = datetime.fromisoformat(job.created_at)
+                        created_dt = datetime.fromisoformat(job.created_at).replace(tzinfo=None)
                     except Exception:
                         pass
                 started_dt = None
                 if job.started_at:
                     try:
-                        started_dt = datetime.fromisoformat(job.started_at)
+                        started_dt = datetime.fromisoformat(job.started_at).replace(tzinfo=None)
                     except Exception:
                         pass
                 completed_dt = None
                 if job.completed_at:
                     try:
-                        completed_dt = datetime.fromisoformat(job.completed_at)
+                        completed_dt = datetime.fromisoformat(job.completed_at).replace(tzinfo=None)
                     except Exception:
                         pass
 
@@ -183,7 +183,7 @@ class JobQueueManager:
                         status=job.status.value if isinstance(job.status, JobStatus) else str(job.status),
                         progress=job.progress,
                         progress_message=job.progress_message,
-                        created_at=created_dt or datetime.now(timezone.utc),
+                        created_at=created_dt or datetime.now(timezone.utc).replace(tzinfo=None),
                         started_at=started_dt,
                         completed_at=completed_dt,
                         duration_seconds=job.duration_seconds,
@@ -227,7 +227,7 @@ class JobQueueManager:
                 for r in running_jobs:
                     r.status = "failed"
                     r.error = "Tugas terhenti karena proses/server direstart"
-                    r.completed_at = datetime.now(timezone.utc)
+                    r.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                     self._jobs[r.id] = BackgroundJob.from_record(r)
 
                 # 2. Queued -> masukkan kembali ke antrean memori

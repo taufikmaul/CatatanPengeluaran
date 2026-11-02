@@ -141,3 +141,19 @@ async def test_hermes_send_duplicate_warning_escapes_underscores(db):
         assert "**Tetap Simpan**" not in sent_text
         assert "*Tetap Simpan*" in sent_text
 
+
+@pytest.mark.asyncio
+async def test_dynamic_token_lookup_in_telegram_client(monkeypatch):
+    """Pastikan perubahan settings.telegram_token saat runtime langsung dipakai oleh telegram_client."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "telegram_token", "999999:NEW_RUNTIME_TOKEN")
+    mock_res = MagicMock()
+    mock_res.json.return_value = {"ok": True, "result": True}
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_res
+        await tg.set_webhook("https://yuk-damel.web.id/webhook")
+        called_url = mock_post.call_args[0][0]
+        assert "999999:NEW_RUNTIME_TOKEN" in called_url
+

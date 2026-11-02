@@ -93,12 +93,21 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
         user = await get_or_create_user(db, sender_id, sender_name)
         await db.commit()
 
-        # ── Media: foto ──
+        # ── Media: foto atau dokumen gambar (struk dikirim sebagai file/document) ──
+        photo_file_id: str | None = None
         if message.get("photo"):
             photo = message["photo"]
             # Pilih resolusi optimal (second-to-last untuk hemat bandwidth)
             photo_idx = len(photo) - 2 if len(photo) > 1 else len(photo) - 1
-            file_id = photo[photo_idx]["file_id"]
+            photo_file_id = photo[photo_idx]["file_id"]
+        elif message.get("document"):
+            doc = message["document"]
+            mime_type = (doc.get("mime_type") or "").lower()
+            file_name = (doc.get("file_name") or "").lower()
+            if mime_type.startswith("image/") or file_name.endswith((".jpg", ".jpeg", ".png", ".webp", ".heic")):
+                photo_file_id = doc.get("file_id")
+
+        if photo_file_id:
             caption = (message.get("caption") or "").strip()
 
             # Sisipkan context topic jika postingan berada di topic khusus
@@ -111,7 +120,7 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             # Download async di background untuk tidak block
             asyncio.create_task(
                 _process_photo(
-                    file_id=file_id,
+                    file_id=photo_file_id,
                     caption=caption,
                     chat_id=chat_id,
                     thread_id=thread_id,

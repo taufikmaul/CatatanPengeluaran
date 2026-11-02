@@ -149,3 +149,28 @@ async def test_api_config_put_and_persist_across_restart(client, auth_cookies, d
     assert settings.allowed_thread_ids == "7, 12, 15"
     assert settings.tukar_cash_thread_ids == "12"
     assert settings.ongkir_thread_ids == "15"
+
+    # 6. Pastikan timestamp yang disimpan adalah naive UTC (tzinfo=None)
+    # agar kompatibel dengan kolom TIMESTAMP WITHOUT TIME ZONE di PostgreSQL (asyncpg).
+    assert db_obj_allowed.created_at is not None
+    assert db_obj_allowed.created_at.tzinfo is None
+    assert db_obj_allowed.updated_at is not None
+    assert db_obj_allowed.updated_at.tzinfo is None
+
+
+@pytest.mark.asyncio
+async def test_session_updated_at_is_naive_utc(db):
+    """Pastikan update_user_context menyimpan updated_at tanpa tzinfo untuk kompatibilitas asyncpg."""
+    from app.models.user import User
+    from app.models.session import ConversationSession
+    from app.agent.memory import add_conversation_turn
+
+    user = User(telegram_id=888777, name="Tester Naive", is_auth=True)
+    db.add(user)
+    await db.flush()
+
+    await add_conversation_turn(db, user.id, "user", "[media]")
+    sess = await db.get(ConversationSession, user.id)
+    assert sess is not None
+    assert sess.updated_at is not None
+    assert sess.updated_at.tzinfo is None

@@ -14,6 +14,7 @@ from app.models.expense import Expense
 
 def test_settings_multi_thread_ids_parsing():
     s = Settings(
+        _env_file=None,
         telegram_token="token",
         database_url="sqlite+aiosqlite:///:memory:",
         sumopod_api_key="key",
@@ -21,6 +22,7 @@ def test_settings_multi_thread_ids_parsing():
         allowed_thread_ids="8, 9, 10",
         tukar_cash_thread_ids="12",
         ongkir_thread_ids="15",
+        request_belanja_thread_id=4947,
     )
     allowed = s.get_allowed_thread_ids()
     assert 7 in allowed
@@ -29,6 +31,7 @@ def test_settings_multi_thread_ids_parsing():
     assert 10 in allowed
     assert 12 in allowed
     assert 15 in allowed
+    assert 4947 in allowed
 
     assert s.is_thread_allowed(7) is True
     assert s.is_thread_allowed(12) is True

@@ -94,8 +94,8 @@ async def ensure_default_master_data(db: AsyncSession) -> None:
                     account_name=itm.get("account_name"),
                     account_group=itm.get("account_group"),
                     report_type=itm.get("report_type"),
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
                 db.add(new_opt)
                 existing_map[key] = new_opt
@@ -107,7 +107,7 @@ async def ensure_default_master_data(db: AsyncSession) -> None:
                     existing_item.account_name = itm.get("account_name")
                     existing_item.account_group = itm.get("account_group")
                     existing_item.report_type = itm.get("report_type")
-                    existing_item.updated_at = datetime.now(timezone.utc)
+                    existing_item.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                     changed = True
 
     if changed:
@@ -387,8 +387,8 @@ async def create_master_option(
         account_name=account_name.strip() if account_name and account_name.strip() else None,
         account_group=account_group.strip() if account_group and account_group.strip() else None,
         report_type=report_type.strip() if report_type and report_type.strip() else None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(new_opt)
     await db.commit()
@@ -492,7 +492,7 @@ async def update_master_option(
     if report_type is not None:
         item.report_type = report_type.strip() if report_type.strip() else None
 
-    item.updated_at = datetime.now(timezone.utc)
+    item.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
     await db.refresh(item)
 
@@ -587,8 +587,8 @@ async def reset_master_data_defaults(
                     account_name=itm.get("account_name"),
                     account_group=itm.get("account_group"),
                     report_type=itm.get("report_type"),
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
                 db.add(new_opt)
                 restored_count += 1
@@ -606,7 +606,7 @@ async def reset_master_data_defaults(
                     existing.report_type = itm.get("report_type")
                     updated_fields = True
                 if updated_fields:
-                    existing.updated_at = datetime.now(timezone.utc)
+                    existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
                     restored_count += 1
 
     await db.commit()

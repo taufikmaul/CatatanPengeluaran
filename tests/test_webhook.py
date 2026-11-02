@@ -201,6 +201,37 @@ class TestMediaRouting:
         assert received.get("file_id") == "small"
         assert received.get("caption") == "struk belanja"
 
+    async def test_image_document_is_processed_as_photo(
+        self, client, db, telegram_spy, monkeypatch
+    ):
+        from app.config import settings
+        from app.utils.auth import authenticate_user
+
+        await authenticate_user(db, 777, "Siti")
+        await db.flush()
+
+        received: dict[str, Any] = {}
+
+        async def fake_process_photo(**kwargs):
+            received.update(kwargs)
+
+        monkeypatch.setattr(webhook_module, "_process_photo", fake_process_photo)
+
+        update = _group_message("", settings.allowed_thread_id)
+        update["message"].pop("text")
+        update["message"]["document"] = {
+            "file_id": "doc-img-123",
+            "mime_type": "image/jpeg",
+            "file_name": "struk.jpg",
+        }
+        update["message"]["caption"] = "struk versi dokumen"
+
+        await client.post("/webhook", json=update)
+        await asyncio.sleep(0)
+
+        assert received.get("file_id") == "doc-img-123"
+        assert received.get("caption") == "struk versi dokumen"
+
     async def test_voice_is_processed_in_background(
         self, client, db, telegram_spy, monkeypatch
     ):

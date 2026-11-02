@@ -98,4 +98,5 @@ class TestSchemaConsistency:
             "system_settings",
             "purchase_requests",
             "purchase_request_items",
+            "background_jobs",
         }

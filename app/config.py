@@ -105,11 +105,12 @@ class Settings(BaseSettings):
     def get_allowed_thread_ids(self) -> set[int]:
         """Ambil kumpulan thread/topic ID yang diizinkan di grup toko."""
         ids: set[int] = set()
-        if self.allowed_thread_id is not None:
-            try:
-                ids.add(int(self.allowed_thread_id))
-            except (ValueError, TypeError):
-                pass
+        for single_id in (self.allowed_thread_id, self.request_belanja_thread_id):
+            if single_id is not None:
+                try:
+                    ids.add(int(single_id))
+                except (ValueError, TypeError):
+                    pass
         if self.allowed_thread_ids:
             for part in str(self.allowed_thread_ids).split(","):
                 part = part.strip()

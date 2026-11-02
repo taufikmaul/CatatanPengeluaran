@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BASE = f"https://api.telegram.org/bot{settings.telegram_token}"
 
 
+def _get_base_url() -> str:
+    """Bangun base URL Telegram API secara dinamis dari settings.telegram_token terbaru."""
+    return f"https://api.telegram.org/bot{settings.telegram_token}"
+
+
 async def send_message(
     chat_id: int,
     text: str,
@@ -32,9 +37,10 @@ async def send_message(
     if reply_markup:
         payload["reply_markup"] = reply_markup
 
+    base_url = _get_base_url()
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload)
+            res = await client.post(f"{base_url}/sendMessage", json=payload)
             data = res.json()
             if not data.get("ok"):
                 desc = str(data.get("description", "")).lower()
@@ -51,7 +57,7 @@ async def send_message(
                         "Telegram sendMessage failed (%s). Retrying with fallback payload.",
                         data.get("description"),
                     )
-                    res_fb = await client.post(f"{TELEGRAM_BASE}/sendMessage", json=payload_fallback)
+                    res_fb = await client.post(f"{base_url}/sendMessage", json=payload_fallback)
                     return res_fb.json()
             return data
     except Exception as e:
@@ -77,9 +83,10 @@ async def edit_message(
     if reply_markup:
         payload["reply_markup"] = reply_markup
 
+    base_url = _get_base_url()
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.post(f"{TELEGRAM_BASE}/editMessageText", json=payload)
+            res = await client.post(f"{base_url}/editMessageText", json=payload)
             data = res.json()
             if not data.get("ok") and parse_mode:
                 desc = (data.get("description") or "").lower()
@@ -93,7 +100,7 @@ async def edit_message(
                 )
                 payload_fallback = dict(payload)
                 payload_fallback.pop("parse_mode", None)
-                res_fb = await client.post(f"{TELEGRAM_BASE}/editMessageText", json=payload_fallback)
+                res_fb = await client.post(f"{base_url}/editMessageText", json=payload_fallback)
                 return res_fb.json()
             return data
     except Exception as e:
@@ -103,10 +110,11 @@ async def edit_message(
 
 async def answer_callback_query(callback_query_id: str, text: str = "") -> None:
     """Jawab callback query agar loading spinner hilang."""
+    base_url = _get_base_url()
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
-                f"{TELEGRAM_BASE}/answerCallbackQuery",
+                f"{base_url}/answerCallbackQuery",
                 json={"callback_query_id": callback_query_id, "text": text},
             )
     except Exception:
@@ -131,26 +139,36 @@ async def get_file_base64(file_id: str) -> str | None:
     Download file Telegram (foto/audio) dan return sebagai base64 string.
     Menggantikan getTelegramImageBase64 dan getTelegramVoiceBase64 dari GAS.
     """
+    base_url = _get_base_url()
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             # 1. Dapatkan file path
-            res = await client.get(f"{TELEGRAM_BASE}/getFile?file_id={file_id}")
-            file_path = res.json()["result"]["file_path"]
+            res = await client.get(f"{base_url}/getFile", params={"file_id": file_id})
+            data = res.json()
+            if not data.get("ok"):
+                logger.error("Telegram getFile failed: %s", data.get("description"))
+                return None
+            file_path = data["result"]["file_path"]
 
             # 2. Download file bytes
             file_url = f"https://api.telegram.org/file/bot{settings.telegram_token}/{file_path}"
             file_res = await client.get(file_url)
-            
+            if file_res.status_code != 200:
+                logger.error("Telegram file download failed with status %s", file_res.status_code)
+                return None
+
             return base64.b64encode(file_res.content).decode("utf-8")
-    except Exception:
+    except Exception as e:
+        logger.error("Exception in get_file_base64: %s", e)
         return None
 
 
 async def set_webhook(url: str) -> dict:
     """Set webhook URL ke Telegram."""
+    base_url = _get_base_url()
     async with httpx.AsyncClient(timeout=15) as client:
         res = await client.post(
-            f"{TELEGRAM_BASE}/setWebhook",
+            f"{base_url}/setWebhook",
             json={"url": url, "allowed_updates": ["message", "callback_query"]},
         )
         return res.json()

@@ -68,7 +68,7 @@ async def get_all_system_settings(db: AsyncSession) -> dict[str, str]:
 
 async def save_bulk_system_settings(db: AsyncSession, settings_map: dict[str, Any]) -> None:
     """Simpan atau perbarui banyak konfigurasi ke tabel system_settings."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     for key, val in settings_map.items():
         if val is None:
             continue

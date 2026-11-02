@@ -55,7 +55,7 @@ async def update_user_context(db: AsyncSession, user_id: int, updates: dict) -> 
         if "conversation_history" in current:
             current["conversation_history"] = current["conversation_history"][-5:]
         session.context = current
-        session.updated_at = datetime.now(timezone.utc)
+        session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     await db.flush()
 

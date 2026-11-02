@@ -33,6 +33,17 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def isolate_env_and_settings(monkeypatch):
+    """Jaga agar test (mis. PUT /api/v1/config) tidak mengotori os.environ atau .env di disk."""
+    from app.api import config as api_config_module
+    monkeypatch.setattr(api_config_module, "_update_env_file", lambda *args, **kwargs: None)
+    for env_key in api_config_module.ENV_MAP.values():
+        if env_key not in ("TELEGRAM_TOKEN", "SUMOPOD_API_KEY", "DATABASE_URL", "BOT_PASSWORD"):
+            monkeypatch.delenv(env_key, raising=False)
+    yield
+
+
 @pytest.fixture
 async def engine():
     """Engine SQLite in-memory baru untuk setiap test."""
