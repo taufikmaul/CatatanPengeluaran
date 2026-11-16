@@ -2066,6 +2066,7 @@ async def settle_reimbursements(
     expense_ids: list[int],
     action: str = "mark_reimbursed",
     actor: str = "system",
+    bank_account_id: int | None = None,
 ) -> list[Expense]:
     """Tandai talangan sebagai sudah diganti atau batalkan status penggantian."""
     if not expense_ids:
@@ -2085,6 +2086,8 @@ async def settle_reimbursements(
         if action == "mark_reimbursed":
             if e.reimbursed_at is None:
                 e.reimbursed_at = now
+                if bank_account_id is not None:
+                    e.bank_account_id = bank_account_id
                 e.sheets_synced = False
                 await record_expense_log(
                     db,
@@ -2361,6 +2364,7 @@ async def settle_unpaid_expenses(
     expense_ids: list[int],
     action: str = "mark_paid",
     actor: str = "system",
+    bank_account_id: int | None = None,
 ) -> list[Expense]:
     """Tandai transaksi belum lunas menjadi lunas atau sebaliknya."""
     if not expense_ids:
@@ -2375,6 +2379,8 @@ async def settle_unpaid_expenses(
         old_status = e.pay_status
         if old_status != target_status:
             e.pay_status = target_status
+            if action == "mark_paid" and bank_account_id is not None:
+                e.bank_account_id = bank_account_id
             e.sheets_synced = False
             await record_expense_log(
                 db,

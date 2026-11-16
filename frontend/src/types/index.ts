@@ -285,6 +285,8 @@ export interface NeracaReportData {
   kewajiban_lancar: NeracaItemData[];
   subtotal_kewajiban: number;
   detail_hutang: UnpaidExpenseItem[];
+  ekuitas?: NeracaItemData[];
+  subtotal_ekuitas?: number;
 }
 
 export interface ArusKasItemData {

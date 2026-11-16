@@ -430,6 +430,7 @@ async def settle_reimbursements_endpoint(
         expense_ids=payload.expense_ids,
         action=payload.action,
         actor=actor,
+        bank_account_id=payload.bank_account_id,
     )
     await db.commit()
     return {
@@ -470,6 +471,7 @@ async def settle_unpaid_endpoint(
         expense_ids=payload.expense_ids,
         action=payload.action,
         actor=actor,
+        bank_account_id=payload.bank_account_id,
     )
     await db.commit()
     return {

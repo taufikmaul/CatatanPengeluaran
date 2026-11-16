@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, getUnpaidSummary, settleUnpaidExpenses } from "@/lib/api";
+import { api, getUnpaidSummary, settleUnpaidExpenses, getBankAccounts } from "@/lib/api";
 import { Expense, UnpaidSummaryResponse, UnpaidSupplierSummary } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
@@ -153,6 +153,12 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
   // Batch selection states
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [settleBankAccountId, setSettleBankAccountId] = useState<string>("");
+
+  const { data: bankAccounts = [] } = useQuery({
+    queryKey: ["bank-accounts", "active"],
+    queryFn: () => getBankAccounts(true),
+  });
   const [isSuppliersExpanded, setIsSuppliersExpanded] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -283,6 +289,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     settleMutation.mutate({
       expense_ids: [expense.id],
       action,
+      bank_account_id: action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
     });
   };
 
@@ -330,6 +337,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     settleMutation.mutate({
       expense_ids: selectedIds,
       action,
+      bank_account_id: action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
     });
   };
 
@@ -936,6 +944,21 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {bankAccounts.length > 0 && (
+              <select
+                value={settleBankAccountId}
+                onChange={(e) => setSettleBankAccountId(e.target.value)}
+                className="h-9 rounded-xl bg-white/95 text-slate-800 px-2.5 text-xs font-medium"
+                aria-label="Rekening Pembayar"
+              >
+                <option value="">Rekening Pembayar (Opsional)</option>
+                {bankAccounts.map((acc) => (
+                  <option key={acc.id} value={String(acc.id)}>
+                    {acc.name} ({acc.account_code})
+                  </option>
+                ))}
+              </select>
+            )}
             <Button
               size="sm"
               onClick={() => handleBatchSettle("mark_paid")}

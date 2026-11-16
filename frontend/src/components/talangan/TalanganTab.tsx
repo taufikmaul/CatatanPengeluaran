@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, settleReimbursements, getReimbursementSummary } from "@/lib/api";
+import { api, settleReimbursements, getReimbursementSummary, getBankAccounts } from "@/lib/api";
 import { Expense, ExpenseUser, ReimbursementSummaryResponse, ReimbursementUserSummary } from "@/types";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
@@ -84,6 +84,12 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
   // Selection states for batch action
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [settleBankAccountId, setSettleBankAccountId] = useState<string>("");
+
+  const { data: bankAccounts = [] } = useQuery({
+    queryKey: ["bank-accounts", "active"],
+    queryFn: () => getBankAccounts(true),
+  });
   const [isUsersExpanded, setIsUsersExpanded] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -204,6 +210,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     settleMutation.mutate({
       expense_ids: [expense.id],
       action,
+      bank_account_id: action === "mark_reimbursed" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
     });
   };
 
@@ -260,6 +267,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     settleMutation.mutate({
       expense_ids: selectedIds,
       action,
+      bank_account_id: action === "mark_reimbursed" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
     });
   };
 
@@ -798,6 +806,21 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               </span>
             ) : (
               <>
+                {bankAccounts.length > 0 && (
+                  <select
+                    value={settleBankAccountId}
+                    onChange={(e) => setSettleBankAccountId(e.target.value)}
+                    className="h-8.5 rounded-xl border border-slate-200 bg-white text-slate-800 px-2.5 text-xs font-medium"
+                    aria-label="Rekening Pembayar"
+                  >
+                    <option value="">Rekening Pembayar (Opsional)</option>
+                    {bankAccounts.map((acc) => (
+                      <option key={acc.id} value={String(acc.id)}>
+                        {acc.name} ({acc.account_code})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Button
                   size="sm"
                   onClick={() => handleBatchSettle("mark_reimbursed")}

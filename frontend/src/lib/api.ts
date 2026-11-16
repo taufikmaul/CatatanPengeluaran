@@ -527,6 +527,7 @@ export async function getReimbursementSummary(params?: {
 export async function settleReimbursements(payload: {
   expense_ids: number[];
   action: "mark_reimbursed" | "unmark";
+  bank_account_id?: number | null;
 }): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
   const res = await api.post("/expenses/reimbursements/settle", payload);
   return res.data;
@@ -548,6 +549,7 @@ export async function getUnpaidSummary(params?: {
 export async function settleUnpaidExpenses(payload: {
   expense_ids: number[];
   action?: "mark_paid" | "mark_unpaid";
+  bank_account_id?: number | null;
 }): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
   const res = await api.post("/expenses/unpaid/settle", payload);
   return res.data;

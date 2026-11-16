@@ -302,32 +302,65 @@ async def get_accounting_report(
 
     subtotal_aset_lancar = sum(i["nominal"] for i in aset_lancar)
 
-    # Aset Tetap (Peralatan & Mesin)
+    # Aset Tetap (Peralatan & Mesin - kumulatif s/d akhir bulan laporan)
     asset_line = next((item for item in all_account_lines if item["category"] == "Asset"), None)
-    subtotal_aset_tetap = float(asset_line["total"]) if asset_line else 0.0
+    asset_month_total = float(asset_line["total"]) if asset_line else 0.0
+    asset_cum_res = await db.execute(
+        select(func.coalesce(func.sum(Expense.total_price), 0.0)).where(
+            and_(
+                func.lower(Expense.category) == "asset",
+                Expense.expense_date < end_date,
+            )
+        )
+    )
+    subtotal_aset_tetap = float(asset_cum_res.scalar() or asset_month_total)
     aset_tetap = [
         {
             "account_code": "1-2100",
             "account_name": "Aset Tetap - Peralatan & Mesin",
             "group": "ASET_TETAP",
             "nominal": subtotal_aset_tetap,
-            "description": "Belanja modal peralatan, showcase, oven, mixer",
+            "description": f"Akumulasi belanja modal peralatan s/d {cur_month_name} {cur_year} (bulan ini: Rp {asset_month_total:,.0f})",
         }
     ]
 
     total_aset = subtotal_aset_lancar + subtotal_aset_tetap
 
-    # Kewajiban Lancar (Hutang Belanja Belum Lunas)
+    # Kewajiban Lancar (Hutang Belanja Tempo + Hutang Talangan/Reimbursement)
     list_hutang = cur_report.get("list_hutang", [])
-    subtotal_kewajiban = sum(float(item.get("nominal", 0)) for item in list_hutang)
+    subtotal_hutang_usaha = sum(float(item.get("nominal", 0)) for item in list_hutang)
+
+    reimb_res = await db.execute(
+        select(
+            func.count(Expense.id),
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        ).where(
+            and_(
+                Expense.is_reimbursement == True,  # noqa: E712
+                Expense.reimbursed_at.is_(None),
+            )
+        )
+    )
+    reimb_row = reimb_res.fetchone()
+    reimb_count = int(reimb_row[0] or 0) if reimb_row else 0
+    subtotal_hutang_talangan = float(reimb_row[1] or 0.0) if reimb_row else 0.0
+
+    subtotal_kewajiban = subtotal_hutang_usaha + subtotal_hutang_talangan
     kewajiban_lancar = [
         {
             "account_code": "2-1110",
             "account_name": "Hutang Usaha / Belanja Tempo",
             "group": "KEWAJIBAN",
-            "nominal": subtotal_kewajiban,
+            "nominal": subtotal_hutang_usaha,
             "description": f"{len(list_hutang)} transaksi belanja belum lunas / tempo ke supplier",
-        }
+        },
+        {
+            "account_code": "2-1120",
+            "account_name": "Hutang Talangan / Reimbursement",
+            "group": "KEWAJIBAN",
+            "nominal": subtotal_hutang_talangan,
+            "description": f"{reimb_count} transaksi talangan staf/owner yang belum diganti",
+        },
     ]
 
     # Posisi Kas & Bank per Rekening Setup (Terhubung ke COA 1-11xx)
@@ -441,11 +474,28 @@ async def get_accounting_report(
     )
     tr_out_all = {int(r[0]): float(r[1] or 0.0) for r in tr_out_all_res.fetchall()}
 
+    # Pengeluaran lunas kumulatif per rekening (all-time) agar konsisten dengan Rekening Setup
+    exp_all_res = await db.execute(
+        select(
+            Expense.bank_account_id,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            and_(
+                Expense.bank_account_id.is_not(None),
+                Expense.pay_status == "Lunas",
+            )
+        )
+        .group_by(Expense.bank_account_id)
+    )
+    exp_all_map = {int(r[0]): float(r[1] or 0.0) for r in exp_all_res.fetchall()}
+
     rekening_positions: list[dict[str, Any]] = []
     for acc in bank_accounts:
         in_m = inc_month_map.get(acc.id, 0.0)
         out_m = out_month_map.get(acc.id, 0.0)
         in_all = inc_all_map.get(acc.id, 0.0)
+        exp_all = exp_all_map.get(acc.id, 0.0)
         t_in = tr_in_all.get(acc.id, 0.0)
         t_out = tr_out_all.get(acc.id, 0.0)
         coa_code = acc.account_code or DEFAULT_COA_BY_TYPE.get(acc.account_type, "1-1120")
@@ -459,8 +509,28 @@ async def get_accounting_report(
             "incoming_month": in_m,
             "outgoing_month": out_m,
             "net_month_flow": in_m - out_m,
-            "estimated_balance": float(acc.opening_balance or 0.0) + in_all + t_in - t_out - out_m,
+            "estimated_balance": float(acc.opening_balance or 0.0) + in_all + t_in - t_out - exp_all,
         })
+
+    # Ekuitas (Modal Awal Rekening + Laba/Rugi Bersih Berjalan)
+    modal_awal_rekening = sum(float(acc.opening_balance or 0.0) for acc in bank_accounts)
+    ekuitas = [
+        {
+            "account_code": "3-1100",
+            "account_name": "Modal Awal & Saldo Awal Rekening",
+            "group": "EKUITAS",
+            "nominal": modal_awal_rekening,
+            "description": f"Akumulasi saldo awal dari {len(bank_accounts)} rekening aktif",
+        },
+        {
+            "account_code": "3-2100",
+            "account_name": f"Laba / Rugi Bersih ({cur_month_name} {cur_year})",
+            "group": "EKUITAS",
+            "nominal": net_profit,
+            "description": "Pendapatan bersih dikurangi total beban usaha (HPP + OPEX)",
+        },
+    ]
+    subtotal_ekuitas = modal_awal_rekening + net_profit
 
     neraca = {
         "aset_lancar": aset_lancar,
@@ -473,6 +543,8 @@ async def get_accounting_report(
         "kewajiban_lancar": kewajiban_lancar,
         "subtotal_kewajiban": subtotal_kewajiban,
         "detail_hutang": list_hutang,
+        "ekuitas": ekuitas,
+        "subtotal_ekuitas": subtotal_ekuitas,
     }
 
     # ─────────────────────────────────────────────────────────────

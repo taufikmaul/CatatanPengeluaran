@@ -1110,6 +1110,52 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       )}
                     </div>
                   </Card>
+
+                  {/* Ekuitas (Modal & Laba Berjalan) */}
+                  {accountingData.neraca.ekuitas && accountingData.neraca.ekuitas.length > 0 && (
+                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                      <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Scale className="w-4 h-4 text-blue-600" />
+                          <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                            Ekuitas (Modal &amp; Laba Berjalan)
+                          </h3>
+                        </div>
+                        <span className="font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
+                          {formatRupiah(accountingData.neraca.subtotal_ekuitas || 0)}
+                        </span>
+                      </div>
+                      <div className="p-4 space-y-2.5">
+                        {accountingData.neraca.ekuitas.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-xs"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-blue-800 dark:text-blue-300">
+                                  {item.account_code}
+                                </span>
+                                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                  {item.account_name}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-500 mt-0.5 block">
+                                {item.description}
+                              </span>
+                            </div>
+                            <span
+                              className={`font-bold tabular-nums text-sm ${
+                                item.nominal >= 0 ? "text-blue-700 dark:text-blue-300" : "text-rose-600"
+                              }`}
+                            >
+                              {formatRupiah(item.nominal)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
                 </div>
               </div>
             </div>
@@ -1432,6 +1478,47 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "buku_besar" && (
             <div className="space-y-6">
+              {/* Ringkasan Akun Kas (1-11xx) & Pendapatan (4-xxxx) */}
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-3">
+                  Ringkasan Akun Kas/Bank (1-11xx) &amp; Pendapatan (4-xxxx)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+                    <span className="font-mono font-bold text-emerald-700">4-1100</span>
+                    <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+                      Pendapatan Penjualan Kotor
+                    </div>
+                    <div className="text-sm font-bold text-emerald-700 tabular-nums mt-1">
+                      {formatRupiah(accountingData.laba_rugi.revenue_gross || 0)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg border border-rose-200 bg-rose-50/40 dark:border-rose-900/50 dark:bg-rose-950/20">
+                    <span className="font-mono font-bold text-rose-700">4-1200</span>
+                    <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+                      Diskon &amp; Komisi Platform
+                    </div>
+                    <div className="text-sm font-bold text-rose-700 tabular-nums mt-1">
+                      -{formatRupiah((accountingData.laba_rugi.revenue_discount || 0) + (accountingData.laba_rugi.revenue_platform_fee || 0))}
+                    </div>
+                  </div>
+                  {(accountingData.neraca.rekening_positions || []).slice(0, 2).map((rek) => (
+                    <div
+                      key={rek.id}
+                      className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30"
+                    >
+                      <span className="font-mono font-bold text-blue-700">{rek.account_code}</span>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                        {rek.name}
+                      </div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-1">
+                        {formatRupiah(rek.estimated_balance)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
               <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>

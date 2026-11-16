@@ -164,6 +164,7 @@ class ReimbursementSummaryResponse(BaseModel):
 class ReimbursementSettleRequest(BaseModel):
     expense_ids: list[int]
     action: str = "mark_reimbursed"  # "mark_reimbursed" | "unmark"
+    bank_account_id: int | None = None
 
 
 class UnpaidNearestDue(BaseModel):
@@ -203,6 +204,7 @@ class UnpaidSummaryResponse(BaseModel):
 class UnpaidSettleRequest(BaseModel):
     expense_ids: list[int]
     action: str = "mark_paid"  # "mark_paid" | "mark_unpaid"
+    bank_account_id: int | None = None
 
 
 class ExpenseLogResponse(BaseModel):
@@ -352,6 +354,8 @@ class NeracaReport(BaseModel):
     kewajiban_lancar: list[NeracaItem]
     subtotal_kewajiban: float
     detail_hutang: list[dict[str, Any]] = []
+    ekuitas: list[NeracaItem] = []
+    subtotal_ekuitas: float = 0.0
 
 
 class ArusKasItem(BaseModel):

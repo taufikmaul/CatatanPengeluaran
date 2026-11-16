@@ -6,6 +6,7 @@ import {
   createBankAccount,
   updateBankAccount,
   deleteBankAccount,
+  getMasterData,
 } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatters";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -120,6 +121,28 @@ export const BankAccountSection: React.FC = () => {
     queryFn: () => getBankAccounts(false),
   });
 
+  const { data: masterPayMethods = [] } = useQuery({
+    queryKey: ["master-data", "metode_bayar"],
+    queryFn: () => getMasterData("metode_bayar"),
+  });
+
+  const coaOptions = React.useMemo(() => {
+    const map = new Map<string, string>();
+    map.set("1-1110", "Kas Tunai Kasir");
+    map.set("1-1120", "Bank Operasional");
+    map.set("1-1121", "QRIS Settlement");
+    map.set("1-1122", "EDC Debit");
+    map.set("1-1130", "Dompet Platform (GoBiz / Grab / Shopee)");
+    masterPayMethods.forEach((m) => {
+      if (m.account_code && m.account_code.startsWith("1-")) {
+        map.set(m.account_code, m.account_name || m.name);
+      }
+    });
+    return Array.from(map.entries()).map(([code, label]) => ({ code, label }));
+  }, [masterPayMethods]);
+
+  const [customCoaMode, setCustomCoaMode] = useState(false);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = {
@@ -164,18 +187,21 @@ export const BankAccountSection: React.FC = () => {
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setCustomCoaMode(false);
     setDialogOpen(true);
   };
 
   const openEdit = (acc: BankAccount) => {
     setEditing(acc);
+    const code = acc.account_code || DEFAULT_COA_BY_TYPE[acc.account_type] || "1-1120";
+    setCustomCoaMode(!coaOptions.some((o) => o.code === code));
     setForm({
       name: acc.name,
       bank_name: acc.bank_name,
       account_number: acc.account_number || "",
       account_holder: acc.account_holder || "",
       account_type: acc.account_type,
-      account_code: acc.account_code || DEFAULT_COA_BY_TYPE[acc.account_type] || "1-1120",
+      account_code: code,
       opening_balance: String(acc.opening_balance || 0),
       channel_mappings: acc.channel_mappings || [],
       custom_channel: "",
@@ -472,12 +498,44 @@ export const BankAccountSection: React.FC = () => {
                 <label className="text-xs font-medium text-slate-700 block mb-1">
                   Kode Akun COA
                 </label>
-                <Input
-                  placeholder="cth. 1-1120"
-                  className="font-mono"
-                  value={form.account_code}
-                  onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                />
+                {!customCoaMode ? (
+                  <select
+                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-mono"
+                    value={form.account_code}
+                    onChange={(e) => {
+                      if (e.target.value === "__CUSTOM__") {
+                        setCustomCoaMode(true);
+                      } else {
+                        setForm({ ...form, account_code: e.target.value });
+                      }
+                    }}
+                  >
+                    {coaOptions.map((o) => (
+                      <option key={o.code} value={o.code}>
+                        {o.code} — {o.label}
+                      </option>
+                    ))}
+                    <option value="__CUSTOM__">+ Ketik Kode Lain...</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-1">
+                    <Input
+                      placeholder="cth. 1-1125"
+                      className="font-mono text-xs"
+                      value={form.account_code}
+                      onChange={(e) => setForm({ ...form, account_code: e.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] px-2"
+                      onClick={() => setCustomCoaMode(false)}
+                    >
+                      Pilih
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
