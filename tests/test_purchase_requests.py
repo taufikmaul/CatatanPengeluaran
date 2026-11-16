@@ -264,3 +264,118 @@ async def test_multi_item_request_purchasing_and_warehouse_flow(db):
     assert updated_req.status == "RECEIVED"
 
 
+@pytest.mark.asyncio
+async def test_purchasing_registered_suppliers_and_item_corrections(db, client, auth_cookies):
+    from app.models.supplier import Supplier
+
+    client.cookies.update(auth_cookies)
+
+    # Daftarkan 2 supplier aktif: sup_tepung punya riwayat Tepung Segitiga Biru, sup_lain tidak
+    sup_tepung = Supplier(name="PT. Citra Bhoga Jaya", phone="081111111", is_active=True)
+    sup_lain = Supplier(name="FUKUPAK", phone="082222222", is_active=True)
+    db.add_all([sup_tepung, sup_lain])
+    await db.commit()
+    await db.refresh(sup_tepung)
+    await db.refresh(sup_lain)
+
+    # Catat riwayat belanja Tepung Segitiga Biru di PT. Citra Bhoga Jaya
+    db.add(
+        Expense(
+            expense_date=date.today(),
+            supplier_id=sup_tepung.id,
+            supplier=sup_tepung.name,
+            item_name="Tepung Segitiga Biru",
+            qty=Decimal("5"),
+            unit="Kg",
+            unit_price=Decimal("16500"),
+            total_price=Decimal("82500"),
+            category="Bahan Kue",
+            pay_status="Lunas",
+        )
+    )
+    await db.commit()
+
+    # Buat request 2 item dan approve
+    req = await purchase_request_service.create_purchase_request(
+        db,
+        title="Belanja Tepung & Gula",
+        items=[
+            {"item_name": "Tepung Segitiga Biru", "qty": 2, "unit": "Kg"},
+            {"item_name": "Gula Halus", "qty": 3, "unit": "Kg"},
+        ],
+    )
+    await purchase_request_service.approve_purchase_request(db, req.id, reviewer_name="Owner")
+    item_tepung = req.items[0]
+    item_gula = req.items[1]
+
+    # 1. Supplier options hanya menggolongkan PT. Citra Bhoga Jaya di matching_suppliers
+    opt_res = await client.get(f"/api/v1/requests/purchasing/items/{item_tepung.id}/supplier-options")
+    assert opt_res.status_code == 200
+    opt_data = opt_res.json()
+    matching_names = [s["name"] for s in opt_data["matching_suppliers"]]
+    other_names = [s["name"] for s in opt_data["other_suppliers"]]
+    assert "PT. Citra Bhoga Jaya" in matching_names
+    assert "FUKUPAK" in other_names
+    assert opt_data["matching_suppliers"][0]["last_unit_price"] == 16500.0
+
+    # 2. Assign supplier unregistered ditolak dengan 400
+    bad_assign = await client.post(
+        f"/api/v1/requests/purchasing/items/{item_tepung.id}/assign-supplier",
+        json={"supplier_name": "Toko Tidak Terdaftar XYZ"},
+    )
+    assert bad_assign.status_code == 400
+
+    # 3. Assign supplier terdaftar berhasil
+    ok_assign = await client.post(
+        f"/api/v1/requests/purchasing/items/{item_tepung.id}/assign-supplier",
+        json={"supplier_id": sup_tepung.id, "estimated_price": 16500},
+    )
+    assert ok_assign.status_code == 200
+    assert ok_assign.json()["supplier_id"] == sup_tepung.id
+    assert ok_assign.json()["supplier_name"] == "PT. Citra Bhoga Jaya"
+
+    # 4. Koreksi qty / catatan item di halaman Purchasing
+    patch_res = await client.patch(
+        f"/api/v1/requests/purchasing/items/{item_tepung.id}",
+        json={"qty": 4, "unit": "Kg", "notes": "Stok gudang menipis, tambah jadi 4 kg"},
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["qty"] == 4.0
+    assert "4 kg" in patch_res.json()["notes"]
+
+    # 5. Tandai item tidak ada (CANCELLED) -> hilang dari daftar order Purchasing
+    cancel_res = await client.post(
+        f"/api/v1/requests/purchasing/items/{item_gula.id}/cancel",
+        json={"reason": "Stok supplier kosong"},
+    )
+    assert cancel_res.status_code == 200
+    assert cancel_res.json()["order_status"] == "CANCELLED"
+
+    # 6. Tambah barang susulan dari halaman Purchasing
+    add_res = await client.post(
+        "/api/v1/requests/purchasing/items",
+        json={
+            "request_id": req.id,
+            "item_name": "Ragi Instant",
+            "qty": 2,
+            "unit": "Pack",
+            "category": "Bahan Kue",
+            "supplier_id": sup_tepung.id,
+            "estimated_price": 32000,
+            "notes": "Susulan kurang",
+        },
+    )
+    assert add_res.status_code == 201
+    assert add_res.json()["item_name"] == "Ragi Instant"
+    assert add_res.json()["supplier_id"] == sup_tepung.id
+
+    # 7. Verifikasi grouped orders hanya memuat Tepung (qty 4) & Ragi Instant, tanpa Gula Halus
+    orders_res = await client.get("/api/v1/requests/purchasing/orders")
+    assert orders_res.status_code == 200
+    all_order_items = [it["item_name"] for grp in orders_res.json() for it in grp["items"]]
+    assert "Tepung Segitiga Biru" in all_order_items
+    assert "Ragi Instant" in all_order_items
+    assert "Gula Halus" not in all_order_items
+
+
+

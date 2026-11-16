@@ -966,6 +966,46 @@ export interface PurchasingSupplierGroup {
   items: PurchaseRequestItem[];
 }
 
+export interface PurchasingSupplierOption {
+  id: number;
+  name: string;
+  phone: string;
+  address: string;
+  has_item: boolean;
+  is_default_supplier: boolean;
+  tx_count: number;
+  last_unit_price?: number | null;
+  last_date?: string | null;
+}
+
+export interface PurchasingSupplierOptionsResponse {
+  item_id: number;
+  item_name: string;
+  matching_suppliers: PurchasingSupplierOption[];
+  other_suppliers: PurchasingSupplierOption[];
+}
+
+export interface PurchasingItemUpdateInput {
+  item_name?: string;
+  qty?: number;
+  unit?: string;
+  category?: string;
+  estimated_price?: number;
+  notes?: string;
+}
+
+export interface PurchasingItemCreateInput {
+  request_id?: number | null;
+  item_name: string;
+  qty: number;
+  unit: string;
+  category?: string;
+  supplier_id?: number | null;
+  supplier_name?: string;
+  estimated_price?: number;
+  notes?: string;
+}
+
 export interface WarehouseReceiveItemInput {
   qty_received: number;
   expired_date?: string;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createExpenseBatch, getExpenseUsers } from "@/lib/api";
+import { api, createExpenseBatch, getExpenseUsers, getPurchaseRequestStats } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
@@ -33,7 +33,10 @@ const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab")
 const UnpaidTab = React.lazy(() => import("@/components/unpaid/UnpaidTab").then(m => ({ default: m.UnpaidTab })));
 const SuppliersTab = React.lazy(() => import("@/components/supplier/SuppliersTab").then(m => ({ default: m.SuppliersTab })));
 const SupplierDetailPage = React.lazy(() => import("@/components/supplier/SupplierDetailPage").then(m => ({ default: m.SupplierDetailPage })));
-const PurchaseRequestsTab = React.lazy(() => import("@/components/requests/PurchaseRequestsTab").then(m => ({ default: m.PurchaseRequestsTab })));
+const StaffRequestsPage = React.lazy(() => import("@/components/requests/StaffRequestsPage").then(m => ({ default: m.StaffRequestsPage })));
+const ApprovalBelanjaPage = React.lazy(() => import("@/components/requests/ApprovalBelanjaPage").then(m => ({ default: m.ApprovalBelanjaPage })));
+const PurchasingOrdersPage = React.lazy(() => import("@/components/requests/PurchasingOrdersPage").then(m => ({ default: m.PurchasingOrdersPage })));
+const WarehouseReceivingPage = React.lazy(() => import("@/components/requests/WarehouseReceivingPage").then(m => ({ default: m.WarehouseReceivingPage })));
 const CsvImportModal = React.lazy(() => import("@/components/import/CsvImportModal").then(m => ({ default: m.CsvImportModal })));
 
 function TabLoadingFallback() {
@@ -98,7 +101,7 @@ function MainDashboardApp() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
@@ -115,6 +118,12 @@ function MainDashboardApp() {
     activeTab = "transactions";
   } else if (pathname === "/requests" || pathname === "/request" || pathname === "/request-belanja") {
     activeTab = "requests";
+  } else if (pathname === "/approval" || pathname === "/approval-belanja") {
+    activeTab = "approval";
+  } else if (pathname === "/purchasing") {
+    activeTab = "purchasing";
+  } else if (pathname === "/gudang" || pathname === "/warehouse") {
+    activeTab = "gudang";
   } else if (pathname === "/tukar-cash-ongkir") {
     activeTab = "tukar-cash-ongkir";
   } else if (pathname === "/talangan" || pathname === "/reimburse") {
@@ -127,7 +136,7 @@ function MainDashboardApp() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -260,24 +269,33 @@ function MainDashboardApp() {
   const canManageConfig = authData?.permissions?.can_manage_config ?? isOwner;
   const canSettleTalangan = (authData?.permissions?.can_settle_talangan ?? isOwner) && !isAdminInput;
 
-  // Proteksi navigasi & pembatasan menu sesuai role
+  // Proteksi navigasi & pembatasan menu sesuai role -> arahkan ke halaman khusus tiap user
   useEffect(() => {
     if (!authData?.authenticated) return;
 
     if (isStaff && activeTab !== "requests") {
       navigate("/requests");
-    } else if (isWarehouse && activeTab !== "requests" && activeTab !== "master") {
-      navigate("/requests");
+    } else if (isWarehouse && activeTab !== "gudang" && activeTab !== "master") {
+      navigate("/gudang");
     } else if (
       isPurchasing &&
+      activeTab !== "purchasing" &&
       activeTab !== "requests" &&
       activeTab !== "transactions" &&
       activeTab !== "suppliers" &&
+      activeTab !== "supplier-detail" &&
       activeTab !== "master" &&
       activeTab !== "menus"
     ) {
-      navigate("/requests");
-    } else if (isAdminInput && (activeTab === "config" || activeTab === "accounting")) {
+      navigate("/purchasing");
+    } else if (
+      isAdminInput &&
+      (activeTab === "config" ||
+        activeTab === "accounting" ||
+        activeTab === "approval" ||
+        activeTab === "purchasing" ||
+        activeTab === "gudang")
+    ) {
       navigate("/");
     }
   }, [authData?.authenticated, userRole, activeTab, isStaff, isWarehouse, isPurchasing, isAdminInput, navigate]);
@@ -301,6 +319,14 @@ function MainDashboardApp() {
       return res.data;
     },
     enabled: !!authData?.authenticated,
+  });
+
+  // 2b. Purchase Request Stats for Sidebar Badges
+  const { data: requestStatsData } = useQuery({
+    queryKey: ["purchase-request-stats"],
+    queryFn: getPurchaseRequestStats,
+    enabled: !!authData?.authenticated,
+    staleTime: 30_000,
   });
 
   // 3. Expenses List Query
@@ -620,6 +646,8 @@ function MainDashboardApp() {
           expenseCount={reportData?.expense_count}
           unpaidCount={reportData?.list_hutang?.length}
           reimbursePendingCount={reportData?.reimburse_pending_count || 0}
+          pendingApprovalCount={requestStatsData?.pending || 0}
+          purchasingReadyCount={requestStatsData?.approved || 0}
           username={authData?.username}
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
@@ -1606,12 +1634,31 @@ function MainDashboardApp() {
               )}
 
               {activeTab === "requests" && (
-                <PurchaseRequestsTab
+                <StaffRequestsPage
                   categories={categories}
                   itemSuggestions={suggestionsData?.items || []}
-                  isAdmin={userRole === "admin"}
                   currentUser={authData?.user || authData?.username || ""}
-                  userRole={userRole}
+                />
+              )}
+
+              {activeTab === "approval" && isOwner && (
+                <ApprovalBelanjaPage
+                  categories={categories}
+                  itemSuggestions={suggestionsData?.items || []}
+                  currentUser={authData?.user || authData?.username || ""}
+                />
+              )}
+
+              {activeTab === "purchasing" && (isOwner || isPurchasing) && (
+                <PurchasingOrdersPage
+                  categories={categories}
+                  itemSuggestions={suggestionsData?.items || []}
+                />
+              )}
+
+              {activeTab === "gudang" && (isOwner || isWarehouse) && (
+                <WarehouseReceivingPage
+                  currentUser={authData?.user || authData?.username || ""}
                 />
               )}
 

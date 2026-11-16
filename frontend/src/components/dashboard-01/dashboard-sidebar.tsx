@@ -21,6 +21,9 @@ import {
   Scale,
   ArrowDownToLine,
   BookOpen,
+  ShieldCheck,
+  ShoppingBasket,
+  Truck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -51,8 +54,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -64,6 +67,8 @@ export interface DashboardSidebarProps {
   expenseCount?: number;
   unpaidCount?: number;
   reimbursePendingCount?: number;
+  pendingApprovalCount?: number;
+  purchasingReadyCount?: number;
   username?: string;
   onLogout: () => void;
   isDarkMode: boolean;
@@ -84,6 +89,8 @@ export function DashboardSidebar({
   expenseCount = 0,
   unpaidCount = 0,
   reimbursePendingCount = 0,
+  pendingApprovalCount = 0,
+  purchasingReadyCount = 0,
   username,
   onLogout,
   isDarkMode,
@@ -91,7 +98,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -320,21 +327,87 @@ export function DashboardSidebar({
             Operasional
           </SidebarGroupLabel>
           <SidebarMenu className="gap-0.5">
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                isActive={activeTab === "requests"}
-                onClick={() => handleSelectTab("requests")}
-                tooltip="Request Belanja Bahan"
-                className={`h-9 rounded-lg font-medium text-sm ${
-                  activeTab === "requests"
-                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 font-semibold"
-                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                }`}
-              >
-                <ShoppingBag className="w-4 h-4 shrink-0 text-amber-500" />
-                <span className="truncate">Request Belanja</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {(isOwner || isStaff || isAdminInput || isPurchasing) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "requests"}
+                  onClick={() => handleSelectTab("requests")}
+                  tooltip="Pengajuan Belanja"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "requests"
+                      ? "bg-amber-50 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <ShoppingBag className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="truncate">Pengajuan Belanja</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {isOwner && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "approval"}
+                  onClick={() => handleSelectTab("approval")}
+                  tooltip="Approval Belanja (Manager / Owner)"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "approval"
+                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span className="truncate">Approval Belanja</span>
+                  {pendingApprovalCount > 0 && (
+                    <SidebarMenuBadge className="ml-auto text-[10px] bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
+                      {pendingApprovalCount}
+                    </SidebarMenuBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {(isOwner || isPurchasing) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "purchasing"}
+                  onClick={() => handleSelectTab("purchasing")}
+                  tooltip="Purchasing & Pemesanan Supplier"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "purchasing"
+                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <ShoppingBasket className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span className="truncate">Purchasing</span>
+                  {purchasingReadyCount > 0 && (
+                    <SidebarMenuBadge className="ml-auto text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 rounded px-1.5 py-0.5 tabular-nums font-bold">
+                      {purchasingReadyCount}
+                    </SidebarMenuBadge>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+
+            {(isOwner || isWarehouse) && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={activeTab === "gudang"}
+                  onClick={() => handleSelectTab("gudang")}
+                  tooltip="Gudang & Penerimaan Barang"
+                  className={`h-9 rounded-lg font-medium text-sm ${
+                    activeTab === "gudang"
+                      ? "bg-blue-50 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                  }`}
+                >
+                  <Truck className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                  <span className="truncate">Gudang &amp; Terima</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
 
             {(isOwner || isAdminInput) && (
               <SidebarMenuItem>

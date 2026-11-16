@@ -614,7 +614,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
       category: validItems[0].category,
     };
 
-    onSubmit(payload, initialData?.id);
+    onSubmit(payload, initialData?.id && initialData.id > 0 ? initialData.id : undefined);
   };
 
   const handleQuickKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -712,6 +712,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     submitCurrentRequest();
   };
 
+  const isEditingExisting = Boolean(initialData?.id && initialData.id > 0);
   const showQuickDropdown =
     isQuickDropdownOpen &&
     (matchedSuggestions.length > 0 || parsedQuickInput.itemQuery.length > 0);
@@ -720,7 +721,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         onOpenAutoFocus={(e) => {
-          if (!initialData) {
+          if (!isEditingExisting) {
             e.preventDefault();
             focusQuickInput();
           }
@@ -734,7 +735,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
             </div>
             <div className="min-w-0">
               <DialogTitle className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {initialData ? "Edit Daftar Belanja" : "Listing Request Belanja"}
+                {isEditingExisting ? "Edit Daftar Belanja" : "Listing Request Belanja"}
               </DialogTitle>
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
                 Catat beberapa barang kebutuhan dapur atau toko dalam 1 pengajuan untuk diteruskan ke Purchasing.
@@ -1040,7 +1041,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               )}
 
               {/* Isi Cepat dari Request Sebelumnya (Belanja Rutin) */}
-              {!initialData && usableRecentRequests.length > 0 && (
+              {!isEditingExisting && usableRecentRequests.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-amber-200/70 dark:border-amber-900/40">
                   <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 mr-1">
                     Belanja rutin:

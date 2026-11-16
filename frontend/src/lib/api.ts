@@ -664,11 +664,41 @@ export async function getPurchasingOrders(): Promise<import("@/types").Purchasin
   return res.data;
 }
 
+export async function getPurchasingSupplierOptions(
+  itemId: number
+): Promise<import("@/types").PurchasingSupplierOptionsResponse> {
+  const res = await api.get(`/requests/purchasing/items/${itemId}/supplier-options`);
+  return res.data;
+}
+
 export async function assignPurchasingSupplier(
   itemId: number,
   data: { supplier_id?: number | null; supplier_name?: string; estimated_price?: number }
 ): Promise<import("@/types").PurchaseRequestItem> {
   const res = await api.post(`/requests/purchasing/items/${itemId}/assign-supplier`, data);
+  return res.data;
+}
+
+export async function addPurchasingItem(
+  data: import("@/types").PurchasingItemCreateInput
+): Promise<import("@/types").PurchaseRequestItem> {
+  const res = await api.post("/requests/purchasing/items", data);
+  return res.data;
+}
+
+export async function updatePurchasingItem(
+  itemId: number,
+  data: import("@/types").PurchasingItemUpdateInput
+): Promise<import("@/types").PurchaseRequestItem> {
+  const res = await api.patch(`/requests/purchasing/items/${itemId}`, data);
+  return res.data;
+}
+
+export async function cancelPurchasingItem(
+  itemId: number,
+  reason: string
+): Promise<import("@/types").PurchaseRequestItem> {
+  const res = await api.post(`/requests/purchasing/items/${itemId}/cancel`, { reason });
   return res.data;
 }
 

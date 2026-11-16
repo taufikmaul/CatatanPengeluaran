@@ -10,7 +10,11 @@ import {
   fulfillPurchaseRequest,
   deletePurchaseRequest,
   getPurchasingOrders,
+  getPurchasingSupplierOptions,
   assignPurchasingSupplier,
+  addPurchasingItem,
+  updatePurchasingItem,
+  cancelPurchasingItem,
   generatePurchasingWhatsApp,
   markPurchasingOrdered,
   getWarehouseIncoming,
@@ -22,6 +26,9 @@ import {
   PurchaseRequestFormData,
   PurchaseRequestItem,
   PurchasingSupplierGroup,
+  PurchasingSupplierOption,
+  PurchasingItemCreateInput,
+  PurchasingItemUpdateInput,
   ItemSuggestion,
   WarehouseReceiveItemInput,
 } from "@/types";
@@ -79,6 +86,11 @@ interface PurchaseRequestsTabProps {
 }
 
 type MainTab = "staf" | "purchasing" | "gudang";
+
+const PURCHASING_UNITS = [
+  "Pcs", "Box", "Kg", "Gram", "Liter", "Pack", "Sak", "Bungkus",
+  "Kaleng", "Dus", "Botol", "Bal", "Roll", "Lembar", "Butir", "Ikat",
+];
 
 export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   categories = [],
@@ -142,8 +154,32 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
   // Supplier Assign Dialog state
   const [assignDialogItem, setAssignDialogItem] = useState<PurchaseRequestItem | null>(null);
+  const [assignSupplierId, setAssignSupplierId] = useState<number | null>(null);
   const [assignSupplierName, setAssignSupplierName] = useState("");
+  const [assignSupplierSearch, setAssignSupplierSearch] = useState("");
+  const [showOtherSuppliers, setShowOtherSuppliers] = useState(false);
   const [assignEstimatedPrice, setAssignEstimatedPrice] = useState<number | undefined>(undefined);
+
+  // Purchasing Correction (Edit / Cancel / Add Missing Item) Dialog states
+  const [editPurchasingItem, setEditPurchasingItem] = useState<PurchaseRequestItem | null>(null);
+  const [editItemName, setEditItemName] = useState("");
+  const [editItemQty, setEditItemQty] = useState<number>(1);
+  const [editItemUnit, setEditItemUnit] = useState("Pcs");
+  const [editItemPrice, setEditItemPrice] = useState<number | undefined>(undefined);
+  const [editItemNotes, setEditItemNotes] = useState("");
+
+  const [cancelPurchasingTarget, setCancelPurchasingTarget] = useState<PurchaseRequestItem | null>(null);
+  const [cancelPurchasingReason, setCancelPurchasingReason] = useState("Stok supplier kosong");
+
+  const [isAddPurchasingOpen, setIsAddPurchasingOpen] = useState(false);
+  const [addItemName, setAddItemName] = useState("");
+  const [addItemQty, setAddItemQty] = useState<number>(1);
+  const [addItemUnit, setAddItemUnit] = useState("Pcs");
+  const [addItemCategory, setAddItemCategory] = useState("Bahan Kue");
+  const [addItemSupplierId, setAddItemSupplierId] = useState<number | null>(null);
+  const [addItemPrice, setAddItemPrice] = useState<number | undefined>(undefined);
+  const [addItemNotes, setAddItemNotes] = useState("");
+  const [showAddSuggestions, setShowAddSuggestions] = useState(false);
 
   // Warehouse Tab state
   const [warehouseSearch, setWarehouseSearch] = useState("");
@@ -195,11 +231,22 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
     enabled: activeMainTab === "gudang" && !isAdminInput,
   });
 
-  // 4. Suppliers lookup query for quick assign
+  // 4. Suppliers lookup query for quick assign & add missing item
   const { data: suppliersData } = useQuery({
     queryKey: ["suppliers-lookup"],
-    queryFn: () => getSuppliers({ limit: 100, is_active: true }),
+    queryFn: () => getSuppliers({ limit: 200, is_active: true }),
     staleTime: 60_000,
+  });
+
+  // 5. Supplier options that actually carry the selected item
+  const {
+    data: supplierOptionsData,
+    isLoading: isLoadingSupplierOptions,
+    isError: isErrorSupplierOptions,
+  } = useQuery({
+    queryKey: ["purchasing-supplier-options", assignDialogItem?.id],
+    queryFn: () => getPurchasingSupplierOptions(assignDialogItem!.id),
+    enabled: !!assignDialogItem,
   });
 
   const requests = requestData?.items || [];
@@ -320,14 +367,17 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   const assignSupplierMutation = useMutation({
     mutationFn: ({
       itemId,
+      supplierId,
       supplierName,
       estimatedPrice,
     }: {
       itemId: number;
+      supplierId: number;
       supplierName: string;
       estimatedPrice?: number;
     }) =>
       assignPurchasingSupplier(itemId, {
+        supplier_id: supplierId,
         supplier_name: supplierName,
         estimated_price: estimatedPrice,
       }),
@@ -338,6 +388,47 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Gagal menetapkan supplier");
+    },
+  });
+
+  // Purchasing: Update Item Correction Mutation
+  const updatePurchasingItemMutation = useMutation({
+    mutationFn: ({ itemId, data }: { itemId: number; data: PurchasingItemUpdateInput }) =>
+      updatePurchasingItem(itemId, data),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Koreksi barang berhasil disimpan.");
+      setEditPurchasingItem(null);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan koreksi barang");
+    },
+  });
+
+  // Purchasing: Cancel / Unavailable Item Mutation
+  const cancelPurchasingItemMutation = useMutation({
+    mutationFn: ({ itemId, reason }: { itemId: number; reason: string }) =>
+      cancelPurchasingItem(itemId, reason),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Barang ditandai tidak ada dan dikeluarkan dari antrean order.");
+      setCancelPurchasingTarget(null);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal membatalkan item");
+    },
+  });
+
+  // Purchasing: Add Missing / Supplemental Item Mutation
+  const addPurchasingItemMutation = useMutation({
+    mutationFn: (data: PurchasingItemCreateInput) => addPurchasingItem(data),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Barang susulan berhasil ditambahkan ke daftar Purchasing.");
+      setIsAddPurchasingOpen(false);
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menambahkan barang susulan");
     },
   });
 
@@ -376,6 +467,48 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
       id: rejectDialogItem.id,
       reason: rejectReason.trim() || "Ditolak oleh admin",
     });
+  };
+
+  const openAssignSupplierModal = (item: PurchaseRequestItem) => {
+    setAssignDialogItem(item);
+    setAssignSupplierId(item.supplier_id ?? null);
+    setAssignSupplierName(
+      item.supplier_name && item.supplier_name !== "-" ? item.supplier_name : ""
+    );
+    setAssignSupplierSearch("");
+    setShowOtherSuppliers(false);
+    setAssignEstimatedPrice(
+      item.estimated_price ? Number(item.estimated_price) : undefined
+    );
+  };
+
+  const openEditPurchasingModal = (item: PurchaseRequestItem) => {
+    setEditPurchasingItem(item);
+    setEditItemName(item.item_name);
+    setEditItemQty(Number(item.qty) || 1);
+    setEditItemUnit(item.unit || "Pcs");
+    setEditItemPrice(item.estimated_price ? Number(item.estimated_price) : undefined);
+    setEditItemNotes(item.notes && item.notes !== "-" ? item.notes : "");
+  };
+
+  const openAddPurchasingModal = (presetSupplierId?: number | null) => {
+    setAddItemName("");
+    setAddItemQty(1);
+    setAddItemUnit("Pcs");
+    setAddItemCategory(categories[0] || "Bahan Kue");
+    setAddItemSupplierId(presetSupplierId ?? null);
+    setAddItemPrice(undefined);
+    setAddItemNotes("");
+    setShowAddSuggestions(false);
+    setIsAddPurchasingOpen(true);
+  };
+
+  const handleSelectSupplierOption = (sup: PurchasingSupplierOption) => {
+    setAssignSupplierId(sup.id);
+    setAssignSupplierName(sup.name);
+    if (sup.last_unit_price && sup.last_unit_price > 0) {
+      setAssignEstimatedPrice(sup.last_unit_price);
+    }
   };
 
   // Open WhatsApp Order Modal
@@ -1072,12 +1205,19 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => openAddPurchasingModal(null)}
+                className="h-9 sm:h-8 px-3 text-xs font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-lg flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Tambah Barang Susulan
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => queryClient.invalidateQueries({ queryKey: ["purchasing-orders"] })}
-                className="h-8 text-xs rounded-lg"
+                className="h-9 sm:h-8 text-xs rounded-lg"
               >
                 Refresh Order
               </Button>
@@ -1166,8 +1306,17 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                           <>
                             <Button
                               size="sm"
+                              variant="outline"
+                              onClick={() => openAddPurchasingModal(group.supplier_id)}
+                              className="h-9 sm:h-8 px-2.5 text-xs font-semibold border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" /> Tambah Item
+                            </Button>
+
+                            <Button
+                              size="sm"
                               onClick={() => handleOpenWhatsAppModal(group)}
-                              className="h-8 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm"
+                              className="h-9 sm:h-8 px-3 text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg flex items-center gap-1.5 shadow-sm"
                             >
                               <MessageCircle className="w-3.5 h-3.5" /> Salin Format WA / Email
                             </Button>
@@ -1185,7 +1334,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                                 }
                               }}
                               disabled={markOrderedMutation.isPending || pendingItems.length === 0}
-                              className="h-8 px-3 text-xs font-semibold text-blue-600 border-blue-200 dark:border-blue-900/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg flex items-center gap-1.5"
+                              className="h-9 sm:h-8 px-3 text-xs font-semibold text-blue-700 border-blue-200 dark:text-blue-300 dark:border-blue-900/60 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg flex items-center gap-1.5"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" /> Tandai Sudah Dipesan
                             </Button>
@@ -1237,27 +1386,45 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                             </div>
 
                             {/* Item Actions */}
-                            <div className="flex items-center gap-2 self-end sm:self-center">
-                              {/* Ganti / Tentukan Supplier */}
+                            <div className="flex flex-wrap items-center gap-1.5 self-end sm:self-center">
+                              {/* Ganti / Tentukan Supplier Terdaftar */}
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => {
-                                  setAssignDialogItem(item);
-                                  setAssignSupplierName(
-                                    item.supplier_name && item.supplier_name !== "-"
-                                      ? item.supplier_name
-                                      : ""
-                                  );
-                                  setAssignEstimatedPrice(
-                                    item.estimated_price ? Number(item.estimated_price) : undefined
-                                  );
-                                }}
-                                className="h-8 px-2.5 text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-lg flex items-center gap-1"
+                                onClick={() => openAssignSupplierModal(item)}
+                                className="h-9 sm:h-8 px-2.5 text-xs text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100 rounded-lg flex items-center gap-1"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Store className="w-3.5 h-3.5" />
                                 {isUnassigned ? "Pilih Supplier" : "Ubah Supplier"}
                               </Button>
+
+                              {/* Koreksi Qty / Nama / Satuan / Catatan */}
+                              {item.receiving_status === "PENDING" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => openEditPurchasingModal(item)}
+                                    className="h-9 sm:h-8 px-2.5 text-xs text-zinc-700 hover:text-amber-800 dark:text-zinc-300 dark:hover:text-amber-300 rounded-lg flex items-center gap-1"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    Koreksi
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setCancelPurchasingTarget(item);
+                                      setCancelPurchasingReason("Stok supplier kosong");
+                                    }}
+                                    className="h-9 sm:h-8 px-2.5 text-xs text-rose-700 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 rounded-lg flex items-center gap-1"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" />
+                                    Tidak Ada
+                                  </Button>
+                                </>
+                              )}
 
                               {/* Single item mark ordered */}
                               {!isOrdered && !isUnassigned && (
@@ -1265,7 +1432,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                                   size="sm"
                                   onClick={() => markOrderedMutation.mutate([item.id])}
                                   disabled={markOrderedMutation.isPending}
-                                  className="h-8 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 font-semibold"
+                                  className="h-9 sm:h-8 px-3 text-xs bg-blue-700 hover:bg-blue-800 text-white rounded-lg flex items-center gap-1 font-semibold"
                                 >
                                   <Check className="w-3.5 h-3.5" /> Dipesan
                                 </Button>
@@ -1623,67 +1790,436 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Modal Penetapan Supplier (Assign Supplier) */}
+      {/* Modal Penetapan Supplier Terdaftar (Berdasarkan Kepemilikan Barang) */}
       <Dialog open={!!assignDialogItem} onOpenChange={(open) => !open && setAssignDialogItem(null)}>
-        <DialogContent className="max-w-md bg-white dark:bg-zinc-950 rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-              <Store className="w-5 h-5 text-amber-500" /> Tentukan Supplier Barang
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-lg max-h-[90dvh] flex flex-col p-0 overflow-hidden bg-white dark:bg-zinc-950 rounded-2xl">
+          <DialogHeader className="px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0 text-left">
+            <DialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 pr-6">
+              <Store className="w-5 h-5 text-amber-700 dark:text-amber-400" /> Pilih Supplier Terdaftar
             </DialogTitle>
           </DialogHeader>
 
           {assignDialogItem && (
-            <div className="py-2 space-y-4">
-              <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs">
-                <div className="font-bold text-zinc-900 dark:text-zinc-100">
-                  {assignDialogItem.item_name}
-                </div>
-                <div className="text-zinc-500 mt-0.5">
-                  Jumlah: {assignDialogItem.qty} {assignDialogItem.unit}
-                </div>
-              </div>
-
-              {/* Nama Supplier Input / Dropdown */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                  Nama Supplier / Toko
-                </label>
-                <Input
-                  value={assignSupplierName}
-                  onChange={(e) => setAssignSupplierName(e.target.value)}
-                  placeholder="Misal: Toko Makmur, Sumber Harum, Agen Telur..."
-                  className="text-xs h-9"
-                  autoFocus
-                />
-                {/* Suggestions pill */}
-                {suppliersData?.items && suppliersData.items.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-                    <span className="text-[10px] text-zinc-400">Pilih cepat:</span>
-                    {suppliersData.items.slice(0, 5).map((sup) => (
-                      <button
-                        key={sup.id}
-                        type="button"
-                        onClick={() => setAssignSupplierName(sup.name)}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-amber-100 dark:hover:bg-amber-950 text-zinc-700 dark:text-zinc-300 transition-colors"
-                      >
-                        {sup.name}
-                      </button>
-                    ))}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                    {assignDialogItem.item_name}
                   </div>
+                  <div className="text-zinc-600 dark:text-zinc-400 mt-0.5">
+                    Jumlah: {assignDialogItem.qty} {assignDialogItem.unit}
+                  </div>
+                </div>
+                {assignSupplierName && (
+                  <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 text-[11px] shrink-0">
+                    Dipilih: {assignSupplierName}
+                  </Badge>
                 )}
               </div>
 
+              {/* Cari di daftar supplier terdaftar */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="assign-supplier-search"
+                  className="text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                >
+                  Cari Supplier Terdaftar
+                </label>
+                <div className="relative">
+                  <Search
+                    className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="assign-supplier-search"
+                    value={assignSupplierSearch}
+                    onChange={(e) => setAssignSupplierSearch(e.target.value)}
+                    placeholder="Ketik nama toko terdaftar..."
+                    className="pl-8 text-xs h-10 sm:h-9"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Daftar Supplier Terdaftar yang Punya Barang + Fallback Lainnya */}
+              {isLoadingSupplierOptions ? (
+                <div className="py-6 text-center text-xs text-zinc-600 dark:text-zinc-400">
+                  Memuat daftar supplier yang memiliki barang ini...
+                </div>
+              ) : isErrorSupplierOptions ? (
+                <div
+                  role="alert"
+                  className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800"
+                >
+                  Gagal memuat daftar supplier terdaftar. Tutup lalu coba lagi.
+                </div>
+              ) : (
+                (() => {
+                  const q = assignSupplierSearch.trim().toLowerCase();
+                  const matching = (supplierOptionsData?.matching_suppliers || []).filter(
+                    (s) => !q || s.name.toLowerCase().includes(q)
+                  );
+                  const others = (supplierOptionsData?.other_suppliers || []).filter(
+                    (s) => !q || s.name.toLowerCase().includes(q)
+                  );
+                  const shouldShowOthers =
+                    matching.length === 0 || q.length > 0 || showOtherSuppliers;
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                            Supplier Punya Barang Ini ({matching.length})
+                          </span>
+                        </div>
+
+                        {matching.length === 0 ? (
+                          <div className="p-3 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-xs text-zinc-600 dark:text-zinc-400">
+                            Belum ada supplier terdaftar yang tercatat memiliki "{assignDialogItem.item_name}". Pilih dari supplier terdaftar lainnya di bawah.
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                            {matching.map((sup) => {
+                              const isSelected = assignSupplierId === sup.id;
+                              return (
+                                <button
+                                  key={sup.id}
+                                  type="button"
+                                  onClick={() => handleSelectSupplierOption(sup)}
+                                  className={`w-full text-left p-2.5 min-h-[44px] rounded-xl border transition-colors flex items-center justify-between gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 ${
+                                    isSelected
+                                      ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-600"
+                                      : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                                  }`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                                        {sup.name}
+                                      </span>
+                                      {sup.is_default_supplier && (
+                                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] px-1.5 py-0">
+                                          Default
+                                        </Badge>
+                                      )}
+                                      {sup.tx_count > 0 && (
+                                        <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
+                                          {sup.tx_count}x beli
+                                        </span>
+                                      )}
+                                    </div>
+                                    {(sup.last_date || sup.phone) && (
+                                      <p className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate mt-0.5">
+                                        {sup.last_date ? `Terakhir: ${sup.last_date}` : ""}
+                                        {sup.last_date && sup.phone ? " • " : ""}
+                                        {sup.phone || ""}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {sup.last_unit_price && sup.last_unit_price > 0 && (
+                                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                        ~{formatRupiah(sup.last_unit_price)}
+                                      </span>
+                                    )}
+                                    {isSelected && (
+                                      <Check className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {others.length > 0 && (
+                        <div className="space-y-1.5 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                          {!shouldShowOthers ? (
+                            <button
+                              type="button"
+                              onClick={() => setShowOtherSuppliers(true)}
+                              className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-amber-800 underline py-1"
+                            >
+                              Lihat {others.length} supplier terdaftar lainnya
+                            </button>
+                          ) : (
+                            <>
+                              <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 block">
+                                Supplier Terdaftar Lainnya ({others.length})
+                              </span>
+                              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
+                                {others.map((sup) => {
+                                  const isSelected = assignSupplierId === sup.id;
+                                  return (
+                                    <button
+                                      key={sup.id}
+                                      type="button"
+                                      onClick={() => handleSelectSupplierOption(sup)}
+                                      className={`w-full text-left p-2.5 min-h-[44px] rounded-xl border transition-colors flex items-center justify-between gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 ${
+                                        isSelected
+                                          ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-600"
+                                          : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                                      }`}
+                                    >
+                                      <div className="min-w-0">
+                                        <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block truncate">
+                                          {sup.name}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                          Belum ada riwayat barang ini
+                                        </span>
+                                      </div>
+                                      {isSelected && (
+                                        <Check className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+
               {/* Estimasi Harga per Unit */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                <label
+                  htmlFor="assign-estimated-price"
+                  className="text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                >
                   Estimasi Harga Satuan (Opsional)
                 </label>
                 <Input
+                  id="assign-estimated-price"
                   type="number"
-                  value={assignEstimatedPrice || ""}
-                  onChange={(e) => setAssignEstimatedPrice(e.target.value ? Number(e.target.value) : undefined)}
+                  value={assignEstimatedPrice ?? ""}
+                  onChange={(e) =>
+                    setAssignEstimatedPrice(e.target.value ? Number(e.target.value) : undefined)
+                  }
                   placeholder="Rp per satuan"
-                  className="text-xs h-9"
+                  className="text-xs h-10 sm:h-9"
+                />
+              </div>
+
+              <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                Pilihan dibatasi pada supplier aktif yang sudah terdaftar di Master Supplier.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="px-5 py-3 border-t border-zinc-100 dark:border-zinc-800 shrink-0 flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAssignDialogItem(null)}
+              className="h-10 sm:h-9 px-3 text-xs rounded-xl"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!assignDialogItem || !assignSupplierId) {
+                  toast.error("Pilih supplier dari daftar terdaftar terlebih dahulu");
+                  return;
+                }
+                assignSupplierMutation.mutate({
+                  itemId: assignDialogItem.id,
+                  supplierId: assignSupplierId,
+                  supplierName: assignSupplierName,
+                  estimatedPrice: assignEstimatedPrice,
+                });
+              }}
+              disabled={!assignSupplierId || assignSupplierMutation.isPending}
+              className="h-10 sm:h-9 px-4 text-xs bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white font-semibold rounded-xl"
+            >
+              {assignSupplierMutation.isPending ? "Menyimpan..." : "Simpan Supplier"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Koreksi Item di Halaman Purchasing */}
+      <Dialog open={!!editPurchasingItem} onOpenChange={(open) => !open && setEditPurchasingItem(null)}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-md bg-white dark:bg-zinc-950 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <Edit2 className="w-4 h-4 text-amber-700 dark:text-amber-400" /> Koreksi Barang Belanja
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Nama Barang
+              </label>
+              <Input
+                value={editItemName}
+                onChange={(e) => setEditItemName(e.target.value)}
+                className="text-xs h-10 sm:h-9"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Jumlah (Qty)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  value={editItemQty}
+                  onChange={(e) => setEditItemQty(parseFloat(e.target.value) || 0)}
+                  className="text-xs h-10 sm:h-9 font-bold tabular-nums"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Satuan
+                </label>
+                <select
+                  value={editItemUnit}
+                  onChange={(e) => setEditItemUnit(e.target.value)}
+                  className="w-full h-10 sm:h-9 px-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md font-semibold"
+                >
+                  {(PURCHASING_UNITS.includes(editItemUnit)
+                    ? PURCHASING_UNITS
+                    : [editItemUnit, ...PURCHASING_UNITS]
+                  ).map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Estimasi Harga Satuan (Opsional)
+              </label>
+              <Input
+                type="number"
+                value={editItemPrice ?? ""}
+                onChange={(e) =>
+                  setEditItemPrice(e.target.value ? Number(e.target.value) : undefined)
+                }
+                placeholder="Rp per satuan"
+                className="text-xs h-10 sm:h-9"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Catatan Koreksi
+              </label>
+              <Input
+                value={editItemNotes}
+                onChange={(e) => setEditItemNotes(e.target.value)}
+                placeholder="Mis: Dikurangi karena stok di supplier sisa 3 kg..."
+                className="text-xs h-10 sm:h-9"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditPurchasingItem(null)}
+              className="h-10 sm:h-9 px-3 text-xs rounded-xl"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!editPurchasingItem) return;
+                if (!editItemName.trim() || editItemQty <= 0) {
+                  toast.error("Nama barang dan jumlah (> 0) wajib valid.");
+                  return;
+                }
+                updatePurchasingItemMutation.mutate({
+                  itemId: editPurchasingItem.id,
+                  data: {
+                    item_name: editItemName.trim(),
+                    qty: editItemQty,
+                    unit: editItemUnit,
+                    estimated_price: editItemPrice,
+                    notes: editItemNotes.trim() || "-",
+                  },
+                });
+              }}
+              disabled={updatePurchasingItemMutation.isPending}
+              className="h-10 sm:h-9 px-4 text-xs bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-xl"
+            >
+              {updatePurchasingItemMutation.isPending ? "Menyimpan..." : "Simpan Koreksi"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Tandai Barang Tidak Ada / Batalkan Item */}
+      <Dialog open={!!cancelPurchasingTarget} onOpenChange={(open) => !open && setCancelPurchasingTarget(null)}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-md bg-white dark:bg-zinc-950 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-rose-700 dark:text-rose-400" /> Barang Tidak Ada / Batalkan
+            </DialogTitle>
+          </DialogHeader>
+
+          {cancelPurchasingTarget && (
+            <div className="py-2 space-y-3">
+              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs">
+                <div className="font-bold text-zinc-900 dark:text-zinc-100">
+                  {cancelPurchasingTarget.item_name}
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400 mt-0.5">
+                  {cancelPurchasingTarget.qty} {cancelPurchasingTarget.unit}
+                  {cancelPurchasingTarget.supplier_name && cancelPurchasingTarget.supplier_name !== "-"
+                    ? ` • ${cancelPurchasingTarget.supplier_name}`
+                    : ""}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Alasan Pembatalan / Ketidaksediaan
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "Stok supplier kosong",
+                    "Barang tidak tersedia",
+                    "Salah input staf",
+                    "Diganti item lain",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCancelPurchasingReason(preset)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                        cancelPurchasingReason === preset
+                          ? "border-rose-600 bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+                          : "border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={cancelPurchasingReason}
+                  onChange={(e) => setCancelPurchasingReason(e.target.value)}
+                  placeholder="Tulis alasan singkat..."
+                  className="text-xs h-10 sm:h-9 mt-1"
                 />
               </div>
             </div>
@@ -1693,29 +2229,242 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setAssignDialogItem(null)}
-              className="h-9 px-3 text-xs rounded-xl"
+              onClick={() => setCancelPurchasingTarget(null)}
+              className="h-10 sm:h-9 px-3 text-xs rounded-xl"
             >
               Batal
             </Button>
             <Button
               type="button"
               onClick={() => {
-                if (!assignDialogItem) return;
-                if (!assignSupplierName.trim()) {
-                  toast.error("Nama supplier tidak boleh kosong");
-                  return;
-                }
-                assignSupplierMutation.mutate({
-                  itemId: assignDialogItem.id,
-                  supplierName: assignSupplierName.trim(),
-                  estimatedPrice: assignEstimatedPrice,
+                if (!cancelPurchasingTarget) return;
+                cancelPurchasingItemMutation.mutate({
+                  itemId: cancelPurchasingTarget.id,
+                  reason: cancelPurchasingReason.trim() || "Barang tidak tersedia di supplier",
                 });
               }}
-              disabled={assignSupplierMutation.isPending}
-              className="h-9 px-4 text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl"
+              disabled={cancelPurchasingItemMutation.isPending}
+              className="h-10 sm:h-9 px-4 text-xs bg-rose-700 hover:bg-rose-800 text-white font-semibold rounded-xl"
             >
-              {assignSupplierMutation.isPending ? "Menyimpan..." : "Simpan Supplier"}
+              {cancelPurchasingItemMutation.isPending ? "Memproses..." : "Konfirmasi Tidak Ada"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Tambah Barang Susulan / Kurang di Purchasing */}
+      <Dialog open={isAddPurchasingOpen} onOpenChange={setIsAddPurchasingOpen}>
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-md bg-white dark:bg-zinc-950 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-amber-700 dark:text-amber-400" /> Tambah Barang Susulan
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="space-y-1 relative">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Nama Barang
+              </label>
+              <Input
+                value={addItemName}
+                onChange={(e) => {
+                  setAddItemName(e.target.value);
+                  setShowAddSuggestions(true);
+                }}
+                onFocus={() => setShowAddSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowAddSuggestions(false), 150)}
+                placeholder="Ketik nama barang (Master Item atau barang baru)..."
+                className="text-xs h-10 sm:h-9"
+                autoFocus
+              />
+              {showAddSuggestions && addItemName.trim().length >= 1 && (
+                (() => {
+                  const q = addItemName.trim().toLowerCase();
+                  const matches = itemSuggestions
+                    .filter(
+                      (s) =>
+                        s.item_name.toLowerCase().includes(q) ||
+                        (s.aliases && s.aliases.toLowerCase().includes(q))
+                    )
+                    .slice(0, 6);
+                  if (matches.length === 0) return null;
+                  return (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {matches.map((s) => (
+                        <button
+                          key={s.item_name}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setAddItemName(s.item_name);
+                            if (s.satuan_beli) setAddItemUnit(s.satuan_beli);
+                            if (s.category) setAddItemCategory(s.category);
+                            if (s.last_unit_price > 0) setAddItemPrice(s.last_unit_price);
+                            if (s.last_supplier && s.last_supplier !== "-" && !addItemSupplierId && suppliersData?.items) {
+                              const supMatch = suppliersData.items.find(
+                                (sup) => sup.name.toLowerCase() === s.last_supplier.toLowerCase()
+                              );
+                              if (supMatch) setAddItemSupplierId(supMatch.id);
+                            }
+                            setShowAddSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                              {s.item_name}
+                            </div>
+                            <div className="text-[10px] text-zinc-500 truncate">
+                              {s.category} • {s.satuan_beli || "Pcs"}
+                              {s.last_supplier && s.last_supplier !== "-" ? ` • ${s.last_supplier}` : ""}
+                            </div>
+                          </div>
+                          {s.last_unit_price > 0 && (
+                            <span className="text-[11px] font-semibold text-emerald-700 shrink-0 tabular-nums">
+                              ~{formatRupiah(s.last_unit_price)}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Jumlah (Qty)
+                </label>
+                <Input
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  value={addItemQty}
+                  onChange={(e) => setAddItemQty(parseFloat(e.target.value) || 1)}
+                  className="text-xs h-10 sm:h-9 font-bold tabular-nums"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Satuan
+                </label>
+                <select
+                  value={addItemUnit}
+                  onChange={(e) => setAddItemUnit(e.target.value)}
+                  className="w-full h-10 sm:h-9 px-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md font-semibold"
+                >
+                  {PURCHASING_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Kategori
+                </label>
+                <select
+                  value={addItemCategory}
+                  onChange={(e) => setAddItemCategory(e.target.value)}
+                  className="w-full h-10 sm:h-9 px-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md font-semibold"
+                >
+                  {(categories.length > 0
+                    ? categories
+                    : ["Bahan Kue", "Bahan Minuman", "Kemasan", "Kebersihan", "Operasional"]
+                  ).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  Supplier Terdaftar
+                </label>
+                <select
+                  value={addItemSupplierId ?? ""}
+                  onChange={(e) =>
+                    setAddItemSupplierId(e.target.value ? Number(e.target.value) : null)
+                  }
+                  className="w-full h-10 sm:h-9 px-2.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md font-semibold"
+                >
+                  <option value="">Belum Ditentukan</option>
+                  {(suppliersData?.items || []).map((sup) => (
+                    <option key={sup.id} value={sup.id}>
+                      {sup.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Estimasi Harga Satuan (Opsional)
+              </label>
+              <Input
+                type="number"
+                value={addItemPrice ?? ""}
+                onChange={(e) =>
+                  setAddItemPrice(e.target.value ? Number(e.target.value) : undefined)
+                }
+                placeholder="Rp per satuan"
+                className="text-xs h-10 sm:h-9"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Catatan (Opsional)
+              </label>
+              <Input
+                value={addItemNotes}
+                onChange={(e) => setAddItemNotes(e.target.value)}
+                placeholder="Mis: Tambahan susulan dari dapur..."
+                className="text-xs h-10 sm:h-9"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddPurchasingOpen(false)}
+              className="h-10 sm:h-9 px-3 text-xs rounded-xl"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!addItemName.trim() || addItemQty <= 0) {
+                  toast.error("Nama barang dan jumlah (> 0) wajib diisi.");
+                  return;
+                }
+                addPurchasingItemMutation.mutate({
+                  item_name: addItemName.trim(),
+                  qty: addItemQty,
+                  unit: addItemUnit,
+                  category: addItemCategory,
+                  supplier_id: addItemSupplierId,
+                  estimated_price: addItemPrice,
+                  notes: addItemNotes.trim() || "-",
+                });
+              }}
+              disabled={addPurchasingItemMutation.isPending}
+              className="h-10 sm:h-9 px-4 text-xs bg-amber-700 hover:bg-amber-800 text-white font-semibold rounded-xl"
+            >
+              {addPurchasingItemMutation.isPending ? "Menyimpan..." : "Tambah ke Purchasing"}
             </Button>
           </DialogFooter>
         </DialogContent>

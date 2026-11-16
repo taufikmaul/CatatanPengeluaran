@@ -793,6 +793,7 @@ class PurchaseRequestUpdate(BaseModel):
     urgency: str | None = None
     notes: str | None = None
     requester_name: str | None = None
+    items: list[PurchaseRequestItemCreate] | None = None
 
 
 class PurchaseRequestRejectInput(BaseModel):
@@ -803,6 +804,50 @@ class PurchasingAssignSupplierInput(BaseModel):
     supplier_id: int | None = None
     supplier_name: str | None = None
     estimated_price: float | None = None
+
+
+class PurchasingSupplierOption(BaseModel):
+    id: int
+    name: str
+    phone: str = ""
+    address: str = ""
+    has_item: bool = False
+    is_default_supplier: bool = False
+    tx_count: int = 0
+    last_unit_price: float | None = None
+    last_date: str | None = None
+
+
+class PurchasingSupplierOptionsResponse(BaseModel):
+    item_id: int
+    item_name: str
+    matching_suppliers: list[PurchasingSupplierOption] = []
+    other_suppliers: list[PurchasingSupplierOption] = []
+
+
+class PurchasingItemUpdateInput(BaseModel):
+    item_name: str | None = None
+    qty: float | None = Field(None, gt=0)
+    unit: str | None = None
+    category: str | None = None
+    estimated_price: float | None = Field(None, ge=0)
+    notes: str | None = None
+
+
+class PurchasingItemCreateInput(BaseModel):
+    request_id: int | None = None
+    item_name: str
+    qty: float = Field(1, gt=0)
+    unit: str = "Pcs"
+    category: str | None = "Bahan Kue"
+    supplier_id: int | None = None
+    supplier_name: str | None = None
+    estimated_price: float | None = Field(None, ge=0)
+    notes: str = ""
+
+
+class PurchasingItemCancelInput(BaseModel):
+    reason: str = "Barang tidak tersedia di supplier"
 
 
 class PurchasingMarkOrderedInput(BaseModel):

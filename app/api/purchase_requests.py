@@ -8,6 +8,7 @@ Mendukung 3 peran:
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
@@ -20,6 +21,10 @@ from app.api.schemas import (
     PurchaseRequestListResponse,
     PurchaseRequestStatsResponse,
     PurchasingAssignSupplierInput,
+    PurchasingSupplierOptionsResponse,
+    PurchasingItemUpdateInput,
+    PurchasingItemCreateInput,
+    PurchasingItemCancelInput,
     PurchasingMarkOrderedInput,
     PurchasingWhatsAppTemplateInput,
     WarehouseReceiveItemInput,
@@ -179,23 +184,110 @@ async def get_purchasing_orders(db: AsyncSession = Depends(get_db)):
     return res
 
 
+@router.get("/purchasing/items/{item_id}/supplier-options", response_model=PurchasingSupplierOptionsResponse)
+async def get_purchasing_item_supplier_options(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Daftar supplier terdaftar yang memiliki item ini + opsi supplier terdaftar lainnya."""
+    data = await purchase_request_service.get_supplier_options_for_item(db, item_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
+    return PurchasingSupplierOptionsResponse(**data)
+
+
 @router.post("/purchasing/items/{item_id}/assign-supplier", response_model=PurchaseRequestItemResponse)
 async def assign_supplier_endpoint(
     item_id: int,
     payload: PurchasingAssignSupplierInput,
     db: AsyncSession = Depends(get_db),
 ):
-    """Purchasing mengaitkan item belanjaan dengan supplier tertentu."""
-    updated = await purchase_request_service.update_item_supplier(
-        db,
-        item_id=item_id,
-        supplier_id=payload.supplier_id,
-        supplier_name=payload.supplier_name,
-        estimated_price=payload.estimated_price,
-    )
+    """Purchasing mengaitkan item belanjaan dengan supplier terdaftar."""
+    try:
+        updated = await purchase_request_service.update_item_supplier(
+            db,
+            item_id=item_id,
+            supplier_id=payload.supplier_id,
+            supplier_name=payload.supplier_name,
+            estimated_price=payload.estimated_price,
+            require_registered=True,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
     if not updated:
         raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
     return PurchaseRequestItemResponse(**_item_to_dict(updated))
+
+
+@router.post("/purchasing/items", response_model=PurchaseRequestItemResponse, status_code=status.HTTP_201_CREATED)
+async def add_purchasing_item_endpoint(
+    payload: PurchasingItemCreateInput,
+    db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
+):
+    """Purchasing menambahkan item susulan / koreksi kekurangan ke antrean belanja."""
+    try:
+        created = await purchase_request_service.add_purchasing_item(
+            db,
+            item_name=payload.item_name,
+            qty=payload.qty,
+            unit=payload.unit,
+            category=payload.category,
+            supplier_id=payload.supplier_id,
+            supplier_name=payload.supplier_name,
+            estimated_price=payload.estimated_price,
+            notes=payload.notes,
+            request_id=payload.request_id,
+            actor=f"Purchasing ({role})",
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return PurchaseRequestItemResponse(**_item_to_dict(created))
+
+
+@router.patch("/purchasing/items/{item_id}", response_model=PurchaseRequestItemResponse)
+async def update_purchasing_item_endpoint(
+    item_id: int,
+    payload: PurchasingItemUpdateInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """Koreksi detail item belanja (qty, satuan, nama, harga, catatan) dari halaman Purchasing."""
+    try:
+        updated = await purchase_request_service.update_purchasing_item(
+            db,
+            item_id=item_id,
+            item_name=payload.item_name,
+            qty=payload.qty,
+            unit=payload.unit,
+            category=payload.category,
+            estimated_price=payload.estimated_price,
+            notes=payload.notes,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
+    return PurchaseRequestItemResponse(**_item_to_dict(updated))
+
+
+@router.post("/purchasing/items/{item_id}/cancel", response_model=PurchaseRequestItemResponse)
+async def cancel_purchasing_item_endpoint(
+    item_id: int,
+    payload: PurchasingItemCancelInput,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tandai item tidak tersedia / batalkan dari daftar pesanan Purchasing."""
+    try:
+        cancelled = await purchase_request_service.cancel_purchasing_item(
+            db,
+            item_id=item_id,
+            reason=payload.reason,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Item belanjaan tidak ditemukan")
+    return PurchaseRequestItemResponse(**_item_to_dict(cancelled))
 
 
 @router.post("/purchasing/generate-whatsapp")
@@ -207,7 +299,10 @@ async def generate_whatsapp_endpoint(
     from sqlalchemy import select
     from app.models.purchase_request import PurchaseRequestItem
 
-    stmt = select(PurchaseRequestItem).where(PurchaseRequestItem.id.in_(payload.item_ids))
+    stmt = select(PurchaseRequestItem).where(
+        PurchaseRequestItem.id.in_(payload.item_ids),
+        PurchaseRequestItem.order_status != "CANCELLED",
+    )
     res = await db.execute(stmt)
     items = res.scalars().all()
 
@@ -312,7 +407,12 @@ async def update_purchase_request(
     payload: PurchaseRequestUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Update detail pengajuan belanja."""
+    """Update detail pengajuan belanja (termasuk daftar item saat masih PENDING)."""
+    from app.models.purchase_request import PurchaseRequestItem
+    from app.services.master_item_service import list_master_items, find_best_master_match
+    from app.services.supplier_service import find_best_supplier_match
+    from app.models.supplier import Supplier
+
     req = await purchase_request_service.get_purchase_request_by_id(db, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
@@ -336,9 +436,51 @@ async def update_purchase_request(
     if payload.requester_name is not None:
         req.requester_name = payload.requester_name.strip()
 
+    if payload.items is not None and req.status == "PENDING":
+        master_items = await list_master_items(db)
+        sup_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
+        active_suppliers = list(sup_res.scalars().all())
+
+        req.items.clear()
+        await db.flush()
+        for it in payload.items:
+            it_name = (it.item_name or "").strip()
+            if not it_name:
+                continue
+            matched_master = find_best_master_match(it_name, master_items)
+            sup_id = None
+            sup_name = "-"
+            if it.supplier_name and it.supplier_name.strip() not in ("", "-"):
+                matched_sup = find_best_supplier_match(it.supplier_name.strip(), active_suppliers)
+                if matched_sup:
+                    sup_id = matched_sup.id
+                    sup_name = matched_sup.name
+            elif matched_master and matched_master.default_supplier and matched_master.default_supplier != "-":
+                matched_sup = find_best_supplier_match(matched_master.default_supplier, active_suppliers)
+                if matched_sup:
+                    sup_id = matched_sup.id
+                    sup_name = matched_sup.name
+
+            req.items.append(
+                PurchaseRequestItem(
+                    request_id=req.id,
+                    item_name=it_name,
+                    master_item_id=matched_master.id if matched_master else None,
+                    qty=Decimal(str(it.qty or 1)),
+                    unit=(it.unit or "Pcs").strip() or "Pcs",
+                    category=it.category or (matched_master.category if matched_master else "Bahan Kue"),
+                    notes=(it.notes or "-").strip() or "-",
+                    supplier_id=sup_id,
+                    supplier_name=sup_name,
+                    estimated_price=Decimal(str(it.estimated_price)) if it.estimated_price is not None else None,
+                    order_status="PENDING",
+                    receiving_status="PENDING",
+                )
+            )
+
     await db.commit()
-    await db.refresh(req)
-    return PurchaseRequestResponse(**_to_response_dict(req))
+    fresh = await purchase_request_service.get_purchase_request_by_id(db, req.id)
+    return PurchaseRequestResponse(**_to_response_dict(fresh))
 
 
 @router.post("/{request_id}/approve", response_model=PurchaseRequestResponse)
@@ -347,8 +489,13 @@ async def approve_request(
     db: AsyncSession = Depends(get_db),
     role: str = Depends(get_current_role),
 ):
-    """Setujui pengajuan belanja (Admin / Owner)."""
-    reviewer_name = "Admin Dashboard" if role == "admin" else "Reviewer"
+    """Setujui pengajuan belanja (hanya Owner / Manager)."""
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hanya Owner / Manager yang berhak menyetujui pengajuan belanja.",
+        )
+    reviewer_name = "Owner / Manager"
     req = await purchase_request_service.approve_purchase_request(
         db, request_id, reviewer_name=reviewer_name
     )
@@ -364,8 +511,13 @@ async def reject_request(
     db: AsyncSession = Depends(get_db),
     role: str = Depends(get_current_role),
 ):
-    """Tolak pengajuan belanja dengan alasan."""
-    reviewer_name = "Admin Dashboard" if role == "admin" else "Reviewer"
+    """Tolak pengajuan belanja dengan alasan (hanya Owner / Manager)."""
+    if role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hanya Owner / Manager yang berhak menolak pengajuan belanja.",
+        )
+    reviewer_name = "Owner / Manager"
     req = await purchase_request_service.reject_purchase_request(
         db, request_id, reviewer_name=reviewer_name, reason=payload.reason
     )

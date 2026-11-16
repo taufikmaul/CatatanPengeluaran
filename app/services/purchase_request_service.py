@@ -293,14 +293,181 @@ async def reject_purchase_request(
 # Modul Purchasing: Kelompokkan per Supplier & Order
 # ──────────────────────────────────────────────
 
+async def _sync_parent_request_order_status(db: AsyncSession, req_id: int) -> None:
+    """Sinkronkan status header PurchaseRequest berdasarkan order_status seluruh item."""
+    req = await get_purchase_request_by_id(db, req_id)
+    if not req or not req.items:
+        return
+    if req.status in ("RECEIVED", "FULFILLED", "REJECTED"):
+        return
+
+    statuses = [i.order_status or "PENDING" for i in req.items]
+    if all(s == "CANCELLED" for s in statuses):
+        req.status = "CANCELLED"
+    elif all(s in ("ORDERED", "CANCELLED") for s in statuses) and any(s == "ORDERED" for s in statuses):
+        req.status = "ORDERED"
+    elif any(s == "ORDERED" for s in statuses):
+        req.status = "PARTIAL_ORDERED"
+    else:
+        req.status = "APPROVED"
+
+
+async def get_supplier_options_for_item(
+    db: AsyncSession,
+    item_id: int,
+) -> dict | None:
+    """
+    Ambil daftar supplier TERDAFTAR yang memiliki barang ini (berdasarkan riwayat
+    belanja maupun default_supplier di MasterItem), beserta daftar supplier terdaftar lainnya.
+    """
+    from app.services.master_item_service import (
+        list_master_items,
+        find_best_master_match,
+        _normalize_str,
+        _parse_aliases,
+    )
+    from app.services.supplier_service import find_best_supplier_match
+
+    item = await db.get(PurchaseRequestItem, item_id)
+    if not item:
+        return None
+
+    sup_res = await db.execute(
+        select(Supplier)
+        .where(Supplier.is_active == True)
+        .order_by(func.lower(Supplier.name))
+    )
+    active_suppliers = list(sup_res.scalars().all())
+    sup_by_id = {s.id: s for s in active_suppliers}
+
+    master_items = await list_master_items(db)
+    matched_master: MasterItem | None = None
+    if item.master_item_id:
+        matched_master = next((m for m in master_items if m.id == item.master_item_id), None)
+    if not matched_master:
+        matched_master = find_best_master_match(item.item_name, master_items)
+
+    lower_names: set[str] = {item.item_name.strip().lower()}
+    norm_names: set[str] = {_normalize_str(item.item_name)}
+    if matched_master:
+        lower_names.add(matched_master.item_name.strip().lower())
+        norm_names.add(_normalize_str(matched_master.item_name))
+        for alias in _parse_aliases(matched_master.aliases):
+            lower_names.add(alias.strip().lower())
+            norm_names.add(_normalize_str(alias))
+    lower_names.discard("")
+    norm_names.discard("")
+
+    default_supplier_id: int | None = None
+    if matched_master and matched_master.default_supplier and matched_master.default_supplier.strip() not in ("", "-"):
+        def_sup = find_best_supplier_match(matched_master.default_supplier, active_suppliers)
+        if def_sup:
+            default_supplier_id = def_sup.id
+
+    exp_conds = []
+    if lower_names:
+        exp_conds.append(func.lower(func.trim(Expense.item_name)).in_(list(lower_names)))
+    if matched_master:
+        exp_conds.append(Expense.master_item_id == matched_master.id)
+    significant_tokens = [t for t in _normalize_str(item.item_name).split() if len(t) >= 3]
+    if significant_tokens:
+        exp_conds.append(func.lower(Expense.item_name).like(f"%{significant_tokens[0]}%"))
+
+    supplier_stats: dict[int, dict[str, Any]] = {}
+    if exp_conds:
+        exp_stmt = (
+            select(
+                Expense.supplier_id,
+                Expense.supplier,
+                Expense.item_name,
+                Expense.master_item_id,
+                Expense.unit_price,
+                Expense.expense_date,
+            )
+            .where(Expense.category != "Tukar Cash")
+            .where(or_(*exp_conds))
+            .order_by(desc(Expense.expense_date), desc(Expense.id))
+        )
+        exp_rows = (await db.execute(exp_stmt)).all()
+
+        for row in exp_rows:
+            is_item_match = bool(
+                (matched_master and row.master_item_id == matched_master.id)
+                or (_normalize_str(row.item_name or "") in norm_names)
+            )
+            if not is_item_match:
+                continue
+
+            matched_sup: Supplier | None = None
+            if row.supplier_id and row.supplier_id in sup_by_id:
+                matched_sup = sup_by_id[row.supplier_id]
+            elif row.supplier and row.supplier.strip() not in ("", "-"):
+                matched_sup = find_best_supplier_match(row.supplier, active_suppliers)
+
+            if not matched_sup:
+                continue
+
+            st = supplier_stats.setdefault(
+                matched_sup.id,
+                {"tx_count": 0, "last_unit_price": None, "last_date": None},
+            )
+            st["tx_count"] += 1
+            if st["last_date"] is None and row.expense_date:
+                st["last_date"] = row.expense_date.isoformat()
+            if st["last_unit_price"] is None and row.unit_price and float(row.unit_price) > 0:
+                st["last_unit_price"] = float(row.unit_price)
+
+    matching_suppliers: list[dict] = []
+    other_suppliers: list[dict] = []
+
+    for sup in active_suppliers:
+        st = supplier_stats.get(sup.id)
+        is_default = default_supplier_id == sup.id
+        has_item = bool(st or is_default)
+        entry = {
+            "id": sup.id,
+            "name": sup.name,
+            "phone": sup.phone or "",
+            "address": sup.address or "",
+            "has_item": has_item,
+            "is_default_supplier": is_default,
+            "tx_count": int(st["tx_count"]) if st else 0,
+            "last_unit_price": st["last_unit_price"] if st else None,
+            "last_date": st["last_date"] if st else None,
+        }
+        if has_item:
+            matching_suppliers.append(entry)
+        else:
+            other_suppliers.append(entry)
+
+    matching_suppliers.sort(
+        key=lambda x: (
+            1 if x["is_default_supplier"] else 0,
+            x["tx_count"],
+            x["last_date"] or "",
+        ),
+        reverse=True,
+    )
+
+    return {
+        "item_id": item.id,
+        "item_name": item.item_name,
+        "matching_suppliers": matching_suppliers,
+        "other_suppliers": other_suppliers,
+    }
+
+
 async def update_item_supplier(
     db: AsyncSession,
     item_id: int,
     supplier_id: int | None = None,
     supplier_name: str | None = None,
     estimated_price: Decimal | float | None = None,
+    require_registered: bool = False,
 ) -> PurchaseRequestItem | None:
-    """Purchasing mengaitkan item belanjaan dengan supplier tertentu."""
+    """Purchasing mengaitkan item belanjaan dengan supplier terdaftar."""
+    from app.services.supplier_service import find_best_supplier_match
+
     res = await db.execute(
         select(PurchaseRequestItem).where(PurchaseRequestItem.id == item_id)
     )
@@ -309,12 +476,24 @@ async def update_item_supplier(
         return None
 
     if supplier_id is not None:
-        item.supplier_id = supplier_id
         sup = await db.get(Supplier, supplier_id)
-        if sup:
-            item.supplier_name = sup.name
+        if not sup or not sup.is_active:
+            raise ValueError("Supplier terdaftar tidak ditemukan atau tidak aktif.")
+        item.supplier_id = sup.id
+        item.supplier_name = sup.name
     elif supplier_name is not None:
-        item.supplier_name = supplier_name.strip()
+        clean_sup = supplier_name.strip()
+        sup_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
+        active_suppliers = list(sup_res.scalars().all())
+        matched_sup = find_best_supplier_match(clean_sup, active_suppliers)
+        if matched_sup:
+            item.supplier_id = matched_sup.id
+            item.supplier_name = matched_sup.name
+        elif require_registered:
+            raise ValueError("Supplier belum terdaftar. Pilih supplier dari daftar terdaftar.")
+        else:
+            item.supplier_id = None
+            item.supplier_name = clean_sup
 
     if estimated_price is not None:
         item.estimated_price = Decimal(str(estimated_price))
@@ -322,6 +501,185 @@ async def update_item_supplier(
     await db.commit()
     await db.refresh(item)
     return item
+
+
+async def update_purchasing_item(
+    db: AsyncSession,
+    item_id: int,
+    item_name: str | None = None,
+    qty: Decimal | float | None = None,
+    unit: str | None = None,
+    category: str | None = None,
+    estimated_price: Decimal | float | None = None,
+    notes: str | None = None,
+) -> PurchaseRequestItem | None:
+    """Koreksi detail item belanja (qty kurang/berubah, nama, satuan, harga, catatan) di halaman Purchasing."""
+    item = await db.get(PurchaseRequestItem, item_id)
+    if not item:
+        return None
+    if item.receiving_status and item.receiving_status != "PENDING":
+        raise ValueError("Item sudah diperiksa gudang sehingga tidak dapat dikoreksi.")
+    if item.order_status == "CANCELLED":
+        raise ValueError("Item yang sudah dibatalkan tidak dapat diubah.")
+
+    if item_name is not None and item_name.strip():
+        clean_name = item_name.strip()
+        item.item_name = clean_name
+        from app.services.master_item_service import list_master_items, find_best_master_match
+        master_items = await list_master_items(db)
+        matched = find_best_master_match(clean_name, master_items)
+        item.master_item_id = matched.id if matched else None
+
+    if qty is not None:
+        item.qty = Decimal(str(qty))
+    if unit is not None and unit.strip():
+        item.unit = unit.strip()
+    if category is not None and category.strip():
+        item.category = category.strip()
+    if estimated_price is not None:
+        item.estimated_price = Decimal(str(estimated_price))
+    if notes is not None:
+        item.notes = notes.strip() or "-"
+
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def cancel_purchasing_item(
+    db: AsyncSession,
+    item_id: int,
+    reason: str = "Barang tidak tersedia di supplier",
+) -> PurchaseRequestItem | None:
+    """Tandai item belanja tidak ada / dibatalkan dari antrean Purchasing."""
+    item = await db.get(PurchaseRequestItem, item_id)
+    if not item:
+        return None
+    if item.receiving_status and item.receiving_status != "PENDING":
+        raise ValueError("Item sudah diterima gudang sehingga tidak dapat dibatalkan.")
+
+    clean_reason = (reason or "").strip() or "Barang tidak tersedia di supplier"
+    item.order_status = "CANCELLED"
+    cancel_tag = f"[Dibatalkan Purchasing: {clean_reason}]"
+    if not item.notes or item.notes == "-":
+        item.notes = cancel_tag
+    elif cancel_tag not in item.notes:
+        item.notes = f"{item.notes} {cancel_tag}"
+
+    await db.flush()
+    await _sync_parent_request_order_status(db, item.request_id)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+async def add_purchasing_item(
+    db: AsyncSession,
+    item_name: str,
+    qty: Decimal | float = 1,
+    unit: str = "Pcs",
+    category: str | None = "Bahan Kue",
+    supplier_id: int | None = None,
+    supplier_name: str | None = None,
+    estimated_price: Decimal | float | None = None,
+    notes: str = "",
+    request_id: int | None = None,
+    actor: str = "Purchasing",
+) -> PurchaseRequestItem:
+    """Tambah barang susulan / koreksi kekurangan langsung dari halaman Purchasing."""
+    clean_name = (item_name or "").strip()
+    if not clean_name:
+        raise ValueError("Nama barang wajib diisi.")
+
+    target_req: PurchaseRequest | None = None
+    if request_id is not None:
+        target_req = await get_purchase_request_by_id(db, request_id)
+        if not target_req or target_req.status in ("REJECTED", "CANCELLED"):
+            raise ValueError("Request belanja tujuan tidak valid.")
+    else:
+        latest_res = await db.execute(
+            select(PurchaseRequest)
+            .where(PurchaseRequest.status.in_(["APPROVED", "PARTIAL_ORDERED"]))
+            .order_by(desc(PurchaseRequest.id))
+            .limit(1)
+        )
+        target_req = latest_res.scalar_one_or_none()
+
+    if not target_req:
+        today = date.today()
+        target_req = PurchaseRequest(
+            title="Koreksi / Susulan Purchasing",
+            request_date=today,
+            requester_name=actor or "Purchasing",
+            urgency="NORMAL",
+            notes="Ditambahkan langsung melalui halaman Purchasing",
+            status="APPROVED",
+            item_name=clean_name,
+            qty=Decimal(str(qty)),
+            unit=(unit or "Pcs").strip() or "Pcs",
+            category=category or "Bahan Kue",
+        )
+        db.add(target_req)
+        await db.flush()
+        target_req.request_number = _generate_req_number(target_req.id, today)
+
+    from app.services.master_item_service import list_master_items, find_best_master_match
+    from app.services.supplier_service import find_best_supplier_match
+
+    master_items = await list_master_items(db)
+    matched_master = find_best_master_match(clean_name, master_items)
+    sup_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
+    active_suppliers = list(sup_res.scalars().all())
+
+    resolved_sup_id: int | None = None
+    resolved_sup_name: str = "-"
+    if supplier_id is not None:
+        sup = next((s for s in active_suppliers if s.id == supplier_id), None)
+        if not sup:
+            raise ValueError("Supplier terdaftar tidak ditemukan.")
+        resolved_sup_id = sup.id
+        resolved_sup_name = sup.name
+    elif supplier_name and supplier_name.strip() not in ("", "-"):
+        matched_sup = find_best_supplier_match(supplier_name.strip(), active_suppliers)
+        if matched_sup:
+            resolved_sup_id = matched_sup.id
+            resolved_sup_name = matched_sup.name
+    elif matched_master and matched_master.default_supplier and matched_master.default_supplier != "-":
+        matched_sup = find_best_supplier_match(matched_master.default_supplier, active_suppliers)
+        if matched_sup:
+            resolved_sup_id = matched_sup.id
+            resolved_sup_name = matched_sup.name
+
+    est_price = Decimal(str(estimated_price)) if estimated_price is not None else None
+    if est_price is None:
+        try:
+            from app.services.expense_service import search_last_price
+            last_exp = await search_last_price(db, clean_name)
+            if last_exp and last_exp.unit_price:
+                est_price = Decimal(str(last_exp.unit_price))
+        except Exception:
+            pass
+
+    new_item = PurchaseRequestItem(
+        request_id=target_req.id,
+        item_name=clean_name,
+        master_item_id=matched_master.id if matched_master else None,
+        qty=Decimal(str(qty)),
+        unit=(unit or "Pcs").strip() or "Pcs",
+        category=(category or (matched_master.category if matched_master else "Bahan Kue")) or "Bahan Kue",
+        notes=(notes or "").strip() or "-",
+        supplier_id=resolved_sup_id,
+        supplier_name=resolved_sup_name,
+        estimated_price=est_price,
+        order_status="PENDING",
+        receiving_status="PENDING",
+    )
+    db.add(new_item)
+    await db.flush()
+    await _sync_parent_request_order_status(db, target_req.id)
+    await db.commit()
+    await db.refresh(new_item)
+    return new_item
 
 
 async def get_purchasing_grouped_orders(
@@ -340,11 +698,8 @@ async def get_purchasing_grouped_orders(
             selectinload(PurchaseRequestItem.supplier),
         )
         .where(
-            or_(
-                PurchaseRequest.status == "APPROVED",
-                PurchaseRequest.status == "PARTIAL_ORDERED",
-                PurchaseRequestItem.order_status == "PENDING",
-            )
+            PurchaseRequest.status.in_(["APPROVED", "PARTIAL_ORDERED"]),
+            PurchaseRequestItem.order_status != "CANCELLED",
         )
         .order_by(PurchaseRequestItem.supplier_name.asc(), PurchaseRequestItem.id.asc())
     )
@@ -421,10 +776,13 @@ async def mark_items_as_ordered(
             selectinload(PurchaseRequestItem.request),
             selectinload(PurchaseRequestItem.supplier),
         )
-        .where(PurchaseRequestItem.id.in_(item_ids))
+        .where(
+            PurchaseRequestItem.id.in_(item_ids),
+            PurchaseRequestItem.order_status != "CANCELLED",
+        )
     )
     res = await db.execute(stmt)
-    items = res.scalars().all()
+    items = list(res.scalars().all())
 
     now = datetime.utcnow()
     affected_request_ids = set()
@@ -436,13 +794,7 @@ async def mark_items_as_ordered(
 
     # Cek & update status header PurchaseRequest
     for req_id in affected_request_ids:
-        req = await get_purchase_request_by_id(db, req_id)
-        if req and req.items:
-            all_ordered = all(i.order_status in ("ORDERED", "CANCELLED") for i in req.items)
-            if all_ordered:
-                req.status = "ORDERED"
-            else:
-                req.status = "PARTIAL_ORDERED"
+        await _sync_parent_request_order_status(db, req_id)
 
     await db.commit()
 
@@ -451,11 +803,11 @@ async def mark_items_as_ordered(
         from app.services.purchase_request_alert_service import notify_purchasing_ordered
         sup_names = {it.supplier_name for it in items if it.supplier_name and it.supplier_name != "-"}
         sup_label = ", ".join(sup_names) if len(sup_names) == 1 else None
-        await notify_purchasing_ordered(list(items), supplier_name=sup_label, actor=actor)
+        await notify_purchasing_ordered(items, supplier_name=sup_label, actor=actor)
     except Exception as alert_err:
         logger.warning("Gagal mengirim notifikasi pembelian belanja: %s", alert_err)
 
-    return list(items)
+    return items
 
 
 # ──────────────────────────────────────────────

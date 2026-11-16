@@ -32,7 +32,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopover";
 
 export interface DashboardHeaderProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
   month: number;
   year: number;
   onMonthChange: (month: number) => void;
@@ -95,7 +95,10 @@ export function DashboardHeader({
     "tukar-cash-ongkir": "Tukar Cash & Ongkir Kurir",
     talangan: "Daftar Talangan (Reimbursement)",
     unpaid: "Daftar Tagihan Belum Lunas (Tempo)",
-    requests: "Request Belanja (Kebutuhan Toko)",
+    requests: "Pengajuan Belanja",
+    approval: "Approval Belanja (Manager / Owner)",
+    purchasing: "Purchasing & Order Supplier",
+    gudang: "Gudang & Penerimaan Barang",
     config: "Konfigurasi Sistem",
   };
 
@@ -131,7 +134,7 @@ export function DashboardHeader({
           >
             {currentRoleBadge.label}
           </Badge>
-          {activeTab !== "requests" && (
+          {!["requests", "approval", "purchasing", "gudang"].includes(activeTab) && (
             <Badge
               variant="outline"
               className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden md:inline-flex shrink-0"
