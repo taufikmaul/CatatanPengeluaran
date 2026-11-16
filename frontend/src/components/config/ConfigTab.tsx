@@ -11,6 +11,7 @@ import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MasterDataSection } from "./MasterDataSection";
 import { MonthlyBudgetConfigSection } from "./MonthlyBudgetConfigSection";
+import { BankAccountSection } from "./BankAccountSection";
 import {
   Save,
   Bot,
@@ -33,6 +34,7 @@ import {
   RotateCcw,
   Layers,
   Shield,
+  Landmark,
 } from "lucide-react";
 
 interface ConfigTabProps {
@@ -281,13 +283,20 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       </div>
 
       <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full space-y-5">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full h-auto p-1.5 gap-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/70">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto p-1.5 gap-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/70">
           <TabsTrigger
             value="master-data"
             className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <Layers className="w-4 h-4 text-blue-600" />
             <span>Master Data</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="rekening"
+            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+          >
+            <Landmark className="w-4 h-4 text-sky-600" />
+            <span>Rekening Setup</span>
           </TabsTrigger>
           <TabsTrigger
             value="anggaran"
@@ -315,6 +324,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         {/* Tab 1: Master Data */}
         <TabsContent value="master-data" className="pt-1">
           <MasterDataSection onRefreshConfig={onRefreshConfig} />
+        </TabsContent>
+
+        {/* Tab 2: Rekening Setup */}
+        <TabsContent value="rekening" className="pt-1">
+          <BankAccountSection />
         </TabsContent>
 
         {/* Tab 2: Target Anggaran Bulanan */}

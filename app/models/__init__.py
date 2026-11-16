@@ -11,6 +11,8 @@ from app.models.master_data import MasterDataOption
 from app.models.system_setting import SystemSetting
 from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
 from app.models.background_job import BackgroundJobRecord
+from app.models.bank_account import BankAccount
+from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 
 __all__ = [
     "User",
@@ -27,5 +29,8 @@ __all__ = [
     "PurchaseRequest",
     "PurchaseRequestItem",
     "BackgroundJobRecord",
+    "BankAccount",
+    "IncomingTransaction",
+    "IncomingTransactionItem",
 ]
 

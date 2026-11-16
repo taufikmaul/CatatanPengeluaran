@@ -23,6 +23,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 // Lazy-loaded tabs & heavy modals untuk optimasi bundle size dan fast initial paint
 const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(m => ({ default: m.ConfigTab })));
+const IncomingTransactionsTab = React.lazy(() => import("@/components/incoming/IncomingTransactionsTab").then(m => ({ default: m.IncomingTransactionsTab })));
 const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsTab").then(m => ({ default: m.MasterItemsTab })));
 const AccountingTab = React.lazy(() => import("@/components/accounting/AccountingTab").then(m => ({ default: m.AccountingTab })));
 const TukarCashOngkirTab = React.lazy(() => import("@/components/cash-delivery/TukarCashOngkirTab").then(m => ({ default: m.TukarCashOngkirTab })));
@@ -78,13 +79,15 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
     activeTab = "suppliers";
   } else if (pathname === "/accounting" || pathname === "/akuntansi" || pathname === "/laporan-akuntansi") {
     activeTab = "accounting";
+  } else if (pathname === "/incoming" || pathname === "/transaksi-masuk") {
+    activeTab = "incoming";
   } else if (pathname === "/master") {
     activeTab = "master";
   } else if (pathname === "/transactions" || pathname === "/transaksi") {
@@ -103,7 +106,7 @@ export function App() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -1006,6 +1009,12 @@ export function App() {
                   </div>
                 )}
               </>
+            )}
+
+            {activeTab === "incoming" && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <IncomingTransactionsTab isAdmin={isOwner} />
+              </React.Suspense>
             )}
 
             {activeTab === "transactions" && (

@@ -700,6 +700,121 @@ export async function receiveWarehouseItem(
   return res.data;
 }
 
+// ── Rekening Setup (Bank Accounts) ────────────────────────────────────────────
+export async function getBankAccounts(
+  activeOnly = false
+): Promise<import("@/types").BankAccount[]> {
+  const res = await api.get(`/bank-accounts?active_only=${activeOnly}`);
+  return res.data.accounts;
+}
+
+export async function createBankAccount(
+  data: Partial<import("@/types").BankAccount>
+): Promise<import("@/types").BankAccount> {
+  const res = await api.post("/bank-accounts", data);
+  return res.data.account;
+}
+
+export async function updateBankAccount(
+  id: number,
+  data: Partial<import("@/types").BankAccount>
+): Promise<import("@/types").BankAccount> {
+  const res = await api.put(`/bank-accounts/${id}`, data);
+  return res.data.account;
+}
+
+export async function deleteBankAccount(id: number): Promise<void> {
+  await api.delete(`/bank-accounts/${id}`);
+}
+
+// ── Daftar Transaksi Masuk ────────────────────────────────────────────────────
+export async function getIncomingTransactions(params: {
+  start_date?: string;
+  end_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  status?: string;
+  bank_account_id?: number;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  transactions: import("@/types").IncomingTransaction[];
+  total_count: number;
+  summary: import("@/types").IncomingTransactionsSummary;
+  facets: { order_types: string[]; payment_methods: string[] };
+}> {
+  const res = await api.get("/incoming-transactions", { params });
+  return res.data;
+}
+
+export async function createManualIncomingTransaction(data: {
+  transaction_date: string;
+  transaction_time?: string;
+  order_type: string;
+  payment_method: string;
+  bank_account_id?: number | null;
+  receipt_no?: string;
+  order_no?: string;
+  customer_name?: string;
+  gross_sales: number;
+  discount_amount?: number;
+  platform_fee?: number;
+  notes?: string;
+}): Promise<import("@/types").IncomingTransaction> {
+  const res = await api.post("/incoming-transactions", data);
+  return res.data.transaction;
+}
+
+export async function reassignIncomingTxBankAccount(
+  txId: number,
+  bankAccountId: number | null
+): Promise<import("@/types").IncomingTransaction> {
+  const res = await api.patch(`/incoming-transactions/${txId}/bank-account`, {
+    bank_account_id: bankAccountId,
+  });
+  return res.data.transaction;
+}
+
+export async function deleteIncomingTransaction(txId: number): Promise<void> {
+  await api.delete(`/incoming-transactions/${txId}`);
+}
+
+export async function previewSalesImport(
+  file: File,
+  sourceType = "auto"
+): Promise<import("@/types").SalesImportPreview> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("source_type", sourceType);
+  const res = await api.post("/incoming-transactions/import/preview", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.preview;
+}
+
+export async function commitSalesImport(
+  file: File,
+  sourceType = "auto",
+  skipDuplicates = true,
+  includeVoid = true
+): Promise<{
+  inserted_paid: number;
+  inserted_void: number;
+  duplicate_count: number;
+  skipped_count: number;
+}> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("source_type", sourceType);
+  formData.append("skip_duplicates", String(skipDuplicates));
+  formData.append("include_void", String(includeVoid));
+  const res = await api.post("/incoming-transactions/import/commit", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.result;
+}
+
 
 
 

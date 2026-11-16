@@ -949,6 +949,114 @@ export interface PurchaseRequestListResponse {
   stats?: PurchaseRequestStats;
 }
 
+export type BankAccountType = "bank" | "cash" | "ewallet" | "aggregator";
+
+export interface BankAccount {
+  id: number;
+  name: string;
+  bank_name: string;
+  account_number: string;
+  account_holder: string;
+  account_type: BankAccountType;
+  opening_balance: number;
+  total_incoming: number;
+  estimated_balance: number;
+  tx_count: number;
+  channel_mappings: string[];
+  notes: string;
+  is_default: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface IncomingTransactionItem {
+  id: number;
+  category?: string | null;
+  product_group?: string | null;
+  product_name: string;
+  sku?: string | null;
+  qty: number;
+  modifier?: string | null;
+  unit_price: number;
+  extra_price: number;
+  gross_amount: number;
+  discount_amount: number;
+}
+
+export interface IncomingTransaction {
+  id: number;
+  source_type: string;
+  receipt_no?: string | null;
+  order_no?: string | null;
+  transaction_date: string;
+  transaction_time?: string | null;
+  location_name?: string | null;
+  order_type: string;
+  payment_method: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string | null;
+  customer_name?: string | null;
+  cashier_name?: string | null;
+  gross_sales: number;
+  discount_amount: number;
+  net_sales: number;
+  platform_fee: number;
+  net_received: number;
+  cancellation_total: number;
+  promo_name?: string | null;
+  status: "paid" | "void" | "cancelled";
+  void_at?: string | null;
+  notes?: string | null;
+  items: IncomingTransactionItem[];
+}
+
+export interface IncomingTransactionsSummary {
+  paid_count: number;
+  gross_sales: number;
+  discount_amount: number;
+  net_sales: number;
+  platform_fee: number;
+  net_received: number;
+  void_count: number;
+  cancellation_total: number;
+}
+
+export interface SalesImportPreview {
+  source_type: string;
+  total_transactions: number;
+  new_paid_count: number;
+  new_void_count: number;
+  duplicate_count: number;
+  skipped_count: number;
+  total_items: number;
+  total_gross_sales: number;
+  total_discount: number;
+  total_platform_fee: number;
+  total_net_received: number;
+  total_void_amount: number;
+  channel_breakdown: Record<
+    string,
+    { count: number; net_received: number; platform_fee: number }
+  >;
+  sample_rows: Array<{
+    receipt_no?: string | null;
+    order_no?: string | null;
+    transaction_date: string;
+    transaction_time?: string | null;
+    order_type: string;
+    payment_method: string;
+    bank_account_name?: string | null;
+    gross_sales: number;
+    discount_amount: number;
+    platform_fee: number;
+    net_received: number;
+    status: string;
+    item_count: number;
+  }>;
+}
+
 
 
 

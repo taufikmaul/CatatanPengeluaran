@@ -12,6 +12,8 @@ from app.api.suppliers import router as suppliers_router
 from app.api.budgets import router as budgets_router
 from app.api.jobs import router as jobs_router
 from app.api.purchase_requests import router as purchase_requests_router
+from app.api.bank_accounts import router as bank_accounts_router
+from app.api.incoming_transactions import router as incoming_transactions_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -25,4 +27,6 @@ api_router.include_router(suppliers_router)
 api_router.include_router(budgets_router)
 api_router.include_router(jobs_router)
 api_router.include_router(purchase_requests_router)
+api_router.include_router(bank_accounts_router)
+api_router.include_router(incoming_transactions_router)
 

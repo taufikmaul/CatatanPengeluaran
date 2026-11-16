@@ -32,7 +32,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopover";
 
 export interface DashboardHeaderProps {
-  activeTab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
   month: number;
   year: number;
   onMonthChange: (month: number) => void;
@@ -86,6 +86,7 @@ export function DashboardHeader({
   const titleMap: Record<string, string> = {
     overview: "Overview & Analisis Keuangan",
     transactions: "Daftar Transaksi & Peringkat Belanja",
+    incoming: "Daftar Transaksi Masuk (POS & Platform)",
     accounting: "Laporan & Analisis Akuntansi",
     master: "Katalog Master Item",
     suppliers: "Master Supplier / Toko",

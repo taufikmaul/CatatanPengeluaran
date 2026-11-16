@@ -19,6 +19,7 @@ import {
   CalendarClock,
   ShoppingBag,
   Scale,
+  ArrowDownToLine,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -49,8 +50,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -89,7 +90,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -205,6 +206,24 @@ export function DashboardSidebar({
                         {expenseCount}
                       </SidebarMenuBadge>
                     )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {(isOwner || isAdminInput) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "incoming"}
+                    onClick={() => handleSelectTab("incoming")}
+                    tooltip="Daftar Transaksi Masuk (POS, GoFood, GrabFood, ShopeeFood)"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "incoming"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <ArrowDownToLine className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Transaksi Masuk</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
