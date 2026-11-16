@@ -235,3 +235,200 @@ async def test_menu_delete_requires_admin_role(
     client.cookies.update(auth_cookies)
     res_del_ok = await client.delete(f"/api/v1/menus/{menu_id}")
     assert res_del_ok.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_unit_conversion_hint_and_price_drift_alert(
+    client: AsyncClient, db: AsyncSession, auth_cookies: dict
+):
+    client.cookies.update(auth_cookies)
+
+    butter = MasterItem(
+        item_name="Butter Anchor",
+        category="Bahan Kue",
+        satuan_beli="Kg",
+        satuan_ecer="Gram",
+        isi_paket="5 Kg",
+    )
+    vanili = MasterItem(
+        item_name="Ekstrak Vanili",
+        category="Bahan Kue",
+        satuan_beli="Liter",
+        satuan_ecer="ml",
+    )
+    telur = MasterItem(
+        item_name="Telur Ayam",
+        category="Bahan Kue",
+        satuan_beli="Lusin",
+        satuan_ecer="Butir",
+    )
+    db.add_all([butter, vanili, telur])
+    await db.flush()
+
+    # Dua histori pembelian butter: harga naik dari 180000 -> 216000 (+20%)
+    db.add_all(
+        [
+            Expense(
+                expense_date=date(2026, 11, 1),
+                supplier="Toko A",
+                item_name="Butter Anchor",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=180000,
+                total_price=180000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=butter.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 14),
+                supplier="Toko A",
+                item_name="Butter Anchor",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=216000,
+                total_price=216000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=butter.id,
+            ),
+        ]
+    )
+    await db.commit()
+
+    # 1. Cek conversion hint API
+    h1 = await client.get(f"/api/v1/menus/conversion-hint?master_item_id={butter.id}&recipe_unit=Gram")
+    assert h1.status_code == 200
+    assert h1.json()["yield_factor"] == 1000.0
+
+    h2 = await client.get(f"/api/v1/menus/conversion-hint?master_item_id={vanili.id}&recipe_unit=ml")
+    assert h2.status_code == 200
+    assert h2.json()["yield_factor"] == 1000.0
+
+    h3 = await client.get(f"/api/v1/menus/conversion-hint?master_item_id={telur.id}&recipe_unit=Butir")
+    assert h3.status_code == 200
+    assert h3.json()["yield_factor"] == 12.0
+
+    # 2. Menu dengan Butter memicu price_drift_alert (+20%)
+    res_create = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Butter Cake Classic",
+            "selling_price": 120000,
+            "ingredients": [
+                {
+                    "master_item_id": butter.id,
+                    "qty": 250,
+                    "unit": "Gram",
+                    "yield_factor": 1000,
+                }
+            ],
+        },
+    )
+    assert res_create.status_code == 201
+    created = res_create.json()["item"]
+    assert created["has_price_drift"] is True
+    assert created["price_drift_count"] == 1
+    assert created["max_ingredient_increase_pct"] == 20.0
+    assert created["ingredients"][0]["price_drift_alert"] is True
+    assert created["ingredients"][0]["master_prev_price"] == 180000.0
+
+    res_list = await client.get("/api/v1/menus?hpp_status=price_drift")
+    assert res_list.status_code == 200
+    assert res_list.json()["summary"]["price_drift_menus_count"] == 1
+    assert len(res_list.json()["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_template_csv_export_json_and_anonymize_lock_share(
+    client: AsyncClient, auth_cookies: dict
+):
+    client.cookies.update(auth_cookies)
+
+    m1 = (
+        await client.post(
+            "/api/v1/menus",
+            json={"name": "Red Velvet Slice", "sku": "RV-01", "selling_price": 40000, "hpp_manual": 12000},
+        )
+    ).json()["item"]
+    m2 = (
+        await client.post(
+            "/api/v1/menus",
+            json={"name": "Americano Iced", "sku": "AM-01", "selling_price": 25000, "hpp_manual": 6000},
+        )
+    ).json()["item"]
+
+    # 1. Quick-edit massal
+    res_bulk = await client.patch(
+        "/api/v1/menus/bulk-update",
+        json={
+            "updates": [
+                {"id": m1["id"], "selling_price": 45000, "hpp_manual": 13500},
+                {"id": m2["id"], "hpp_manual": 7500, "is_active": False},
+            ]
+        },
+    )
+    assert res_bulk.status_code == 200
+    assert res_bulk.json()["updated_count"] == 2
+
+    # 2. Template CSV
+    res_tpl = await client.get("/api/v1/menus/template-csv")
+    assert res_tpl.status_code == 200
+    assert "Nama Menu,Kode Anonim,SKU,Kategori" in res_tpl.text
+
+    # 3. Export JSON (anonymized)
+    res_json = await client.get("/api/v1/menus/export-json?anonymize=true&download=false")
+    assert res_json.status_code == 200
+    body_json = res_json.json()
+    assert body_json["anonymized"] is True
+    exported_names = {it["name"] for it in body_json["items"]}
+    assert exported_names == {"MENU-001", "MENU-002"}
+    assert "Red Velvet Slice" not in str(body_json["items"])
+
+    # 4. Share token read-only (tanpa login cookie)
+    res_share = await client.post("/api/v1/menus/share-token", json={"expire_hours": 24})
+    assert res_share.status_code == 200
+    share_token = res_share.json()["token"]
+
+    client.cookies.clear()
+    res_shared_get = await client.get(f"/api/v1/menus/shared/{share_token}")
+    assert res_shared_get.status_code == 200
+    shared_data = res_shared_get.json()
+    assert shared_data["anonymized"] is True
+    assert shared_data["read_only"] is True
+    assert all(it["name"].startswith("MENU-") for it in shared_data["items"])
+
+    res_shared_bad = await client.get("/api/v1/menus/shared/invalid.token")
+    assert res_shared_bad.status_code == 401
+
+    # 5. Kunci Mode Anonim Read-Only (hanya admin bisa mengunci/membuka)
+    purchasing_token = create_session_token(role="purchasing")
+    client.cookies.set(SESSION_COOKIE_NAME, purchasing_token)
+    res_lock_forbidden = await client.post("/api/v1/menus/anonymize-lock", json={"locked": True})
+    assert res_lock_forbidden.status_code == 403
+
+    client.cookies.update(auth_cookies)
+    res_lock = await client.post("/api/v1/menus/anonymize-lock", json={"locked": True})
+    assert res_lock.status_code == 200
+    assert res_lock.json()["anonymize_locked"] is True
+
+    # Saat terkunci, ?anonymize=false tetap memaksa anonymize=True dan mutasi ditolak (403)
+    res_locked_list = await client.get("/api/v1/menus?anonymize=false")
+    assert res_locked_list.status_code == 200
+    assert res_locked_list.json()["anonymized"] is True
+    assert res_locked_list.json()["anonymize_locked"] is True
+    assert all(it["name"].startswith("MENU-") for it in res_locked_list.json()["items"])
+
+    res_locked_mut = await client.patch(
+        "/api/v1/menus/bulk-update",
+        json={"updates": [{"id": m1["id"], "selling_price": 50000}]},
+    )
+    assert res_locked_mut.status_code == 403
+
+    # Buka kunci kembali sebagai admin
+    res_unlock = await client.post("/api/v1/menus/anonymize-lock", json={"locked": False})
+    assert res_unlock.status_code == 200
+    assert res_unlock.json()["anonymize_locked"] is False
+

@@ -1,20 +1,27 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   anonymizeAllMenus,
   api,
+  bulkUpdateMenus,
   createMenu,
+  createMenuShareToken,
   deleteMenu,
   downloadMenusCsv,
+  downloadMenusJson,
+  downloadMenusTemplateCsv,
   getMenus,
+  getMenusJsonPayload,
   importMenusCsv,
   importMenusFromPos,
+  setMenuAnonymizeLock,
   updateMenu,
 } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatters";
 import {
   FoodCostStatus,
   MasterItem,
+  MenuHppMode,
   MenuProduct,
   MenuProductPayload,
 } from "@/types";
@@ -35,25 +42,46 @@ import { toast } from "sonner";
 import {
   AlertCircle,
   BookOpen,
+  Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Edit3,
   Eye,
   EyeOff,
+  FileJson,
+  FileSpreadsheet,
+  Link2,
   Loader2,
+  Lock,
+  PencilLine,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Shield,
   Trash2,
+  TrendingUp,
+  Unlock,
   Upload,
+  X,
 } from "lucide-react";
 
 interface MenuProductsTabProps {
   isAdmin: boolean;
   units: string[];
 }
+
+interface QuickEditRow {
+  selling_price: string;
+  hpp_manual: string;
+  hpp_mode: MenuHppMode;
+  is_active: boolean;
+}
+
+const PAGE_SIZE = 25;
 
 function getFoodCostBadge(status: FoodCostStatus): {
   label: string;
@@ -104,10 +132,17 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [hppStatusFilter, setHppStatusFilter] = useState("all");
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
+  const [page, setPage] = useState(1);
+
+  // Quick-edit massal state
+  const [quickEditMode, setQuickEditMode] = useState(false);
+  const [quickEdits, setQuickEdits] = useState<Record<number, QuickEditRow>>({});
 
   // Modal states
   const [formOpen, setFormOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<MenuProduct | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MenuProduct | null>(null);
+
   const [importCsvOpen, setImportCsvOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [updateExistingCsv, setUpdateExistingCsv] = useState(true);
@@ -116,6 +151,10 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [anonymizeDialogOpen, setAnonymizeDialogOpen] = useState(false);
   const [anonPrefix, setAnonPrefix] = useState("MENU");
   const [preserveCustomAnon, setPreserveCustomAnon] = useState(false);
+
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareExpireHours, setShareExpireHours] = useState(24);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState("");
 
   const {
     data: menuRes,
@@ -146,6 +185,27 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const items = menuRes?.items || [];
   const summary = menuRes?.summary;
   const categories = menuRes?.categories || [];
+  const isLockedReadOnly = !!menuRes?.anonymize_locked;
+  const effectiveAnonymized = isLockedReadOnly || !!menuRes?.anonymized || anonymizeMode;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, categoryFilter, hppStatusFilter]);
+
+  useEffect(() => {
+    if (isLockedReadOnly) {
+      setAnonymizeMode(true);
+      setQuickEditMode(false);
+      setQuickEdits({});
+    }
+  }, [isLockedReadOnly]);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedItems = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return items.slice(start, start + PAGE_SIZE);
+  }, [items, safePage]);
 
   const invalidateMenus = () => {
     queryClient.invalidateQueries({ queryKey: ["menus"] });
@@ -181,10 +241,33 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     mutationFn: (id: number) => deleteMenu(id),
     onSuccess: () => {
       toast.success("Menu berhasil dihapus.");
+      setDeleteTarget(null);
       invalidateMenus();
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menghapus menu.");
+    },
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: () => {
+      const updates = Object.entries(quickEdits).map(([idStr, draft]) => ({
+        id: Number(idStr),
+        selling_price: Math.max(0, Number(draft.selling_price) || 0),
+        hpp_manual: Math.max(0, Number(draft.hpp_manual) || 0),
+        hpp_mode: draft.hpp_mode,
+        is_active: draft.is_active,
+      }));
+      return bulkUpdateMenus(updates);
+    },
+    onSuccess: (res) => {
+      toast.success(`${res.updated_count} menu berhasil diperbarui sekaligus.`);
+      setQuickEdits({});
+      setQuickEditMode(false);
+      invalidateMenus();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal menyimpan quick-edit massal.");
     },
   });
 
@@ -239,16 +322,48 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     },
   });
 
+  const lockMutation = useMutation({
+    mutationFn: (locked: boolean) => setMenuAnonymizeLock(locked),
+    onSuccess: (res) => {
+      if (res.anonymize_locked) {
+        setAnonymizeMode(true);
+        setQuickEditMode(false);
+        setQuickEdits({});
+        toast.success("Mode Anonim Read-Only dikunci. Semua perubahan data dinonaktifkan.");
+      } else {
+        toast.success("Kunci Mode Anonim Read-Only dibuka.");
+      }
+      invalidateMenus();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal mengubah status kunci mode anonim.");
+    },
+  });
+
+  const shareTokenMutation = useMutation({
+    mutationFn: () => createMenuShareToken(shareExpireHours),
+    onSuccess: (res) => {
+      const fullUrl = `${window.location.origin}${res.share_path}`;
+      setGeneratedShareUrl(fullUrl);
+      toast.success("Link presentasi anonim read-only berhasil dibuat.");
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal membuat link presentasi.");
+    },
+  });
+
+  const currentFilterParams = {
+    search: search.trim() || undefined,
+    category: categoryFilter !== "all" ? categoryFilter : undefined,
+    hpp_status: hppStatusFilter !== "all" ? hppStatusFilter : undefined,
+    anonymize: effectiveAnonymized,
+  };
+
   const handleExportCsv = async () => {
     try {
-      await downloadMenusCsv({
-        search: search.trim() || undefined,
-        category: categoryFilter !== "all" ? categoryFilter : undefined,
-        hpp_status: hppStatusFilter !== "all" ? hppStatusFilter : undefined,
-        anonymize: anonymizeMode,
-      });
+      await downloadMenusCsv(currentFilterParams);
       toast.success(
-        anonymizeMode
+        effectiveAnonymized
           ? "File CSV (Mode Anonim) berhasil diunduh."
           : "File CSV database menu berhasil diunduh."
       );
@@ -257,23 +372,95 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     }
   };
 
+  const handleExportJson = async () => {
+    try {
+      await downloadMenusJson(currentFilterParams);
+      toast.success(
+        effectiveAnonymized
+          ? "File JSON (Mode Anonim) berhasil diunduh."
+          : "File JSON database menu berhasil diunduh."
+      );
+    } catch {
+      toast.error("Gagal mengunduh file JSON menu.");
+    }
+  };
+
+  const handleCopyJson = async () => {
+    try {
+      const payload = await getMenusJsonPayload(currentFilterParams);
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      toast.success(
+        effectiveAnonymized
+          ? "JSON anonim disalin ke clipboard."
+          : "JSON database menu disalin ke clipboard."
+      );
+    } catch {
+      toast.error("Gagal menyalin JSON ke clipboard.");
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      await downloadMenusTemplateCsv();
+      toast.success("Template CSV siap isi berhasil diunduh.");
+    } catch {
+      toast.error("Gagal mengunduh template CSV.");
+    }
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const openCreateModal = () => {
+    if (effectiveAnonymized) {
+      toast.info("Matikan atau buka kunci Mode Anonim terlebih dahulu untuk menambah menu.");
+      return;
+    }
     setEditingMenu(null);
     setFormOpen(true);
   };
 
   const openEditModal = (menu: MenuProduct) => {
-    if (anonymizeMode) {
-      toast.info("Matikan Mode Anonim terlebih dahulu untuk mengedit nama dan resep asli.");
+    if (effectiveAnonymized) {
+      toast.info("Matikan atau buka kunci Mode Anonim terlebih dahulu untuk mengedit menu.");
       return;
     }
     setEditingMenu(menu);
     setFormOpen(true);
   };
+
+  const getQuickRow = (menu: MenuProduct): QuickEditRow => {
+    return (
+      quickEdits[menu.id] || {
+        selling_price: String(menu.selling_price || 0),
+        hpp_manual: String(menu.hpp_manual || 0),
+        hpp_mode: menu.hpp_mode,
+        is_active: menu.is_active,
+      }
+    );
+  };
+
+  const setQuickField = <K extends keyof QuickEditRow>(
+    menu: MenuProduct,
+    field: K,
+    value: QuickEditRow[K]
+  ) => {
+    setQuickEdits((prev) => {
+      const base = prev[menu.id] || {
+        selling_price: String(menu.selling_price || 0),
+        hpp_manual: String(menu.hpp_manual || 0),
+        hpp_mode: menu.hpp_mode,
+        is_active: menu.is_active,
+      };
+      return {
+        ...prev,
+        [menu.id]: { ...base, [field]: value },
+      };
+    });
+  };
+
+  const dirtyCount = Object.keys(quickEdits).length;
 
   const hasFilters = Boolean(
     search.trim() || categoryFilter !== "all" || hppStatusFilter !== "all"
@@ -286,13 +473,12 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   };
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
-
   const displayedTotal = useMemo(() => summary?.total_menus || 0, [summary]);
 
   return (
     <div className="space-y-4">
       {/* Header & Primary Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5">
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -304,34 +490,43 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             >
               {displayedTotal} Menu
             </Badge>
-            {anonymizeMode && (
-              <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-semibold">
-                Mode Anonim Aktif
+            {effectiveAnonymized && (
+              <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-semibold gap-1">
+                {isLockedReadOnly && <Lock className="w-3 h-3" />}
+                {isLockedReadOnly ? "Mode Anonim Terkunci (Read-Only)" : "Mode Anonim Aktif"}
               </Badge>
             )}
           </div>
           <p className="text-xs text-slate-600 dark:text-slate-400">
-            Kelola katalog menu jual, perhitungan HPP / Food Cost (manual atau resep bahan Master Item), dan samarkan identitas produk dengan Mode Anonim saat presentasi atau export.
+            Kelola menu jual, HPP / Food Cost (manual atau resep bahan dengan konversi satuan otomatis), deteksi kenaikan harga bahan, quick-edit massal, dan proteksi Mode Anonim.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant={anonymizeMode ? "default" : "outline"}
+            variant={effectiveAnonymized ? "default" : "outline"}
             size="sm"
-            onClick={() => setAnonymizeMode((prev) => !prev)}
+            disabled={isLockedReadOnly}
+            onClick={() => {
+              const next = !anonymizeMode;
+              setAnonymizeMode(next);
+              if (next) {
+                setQuickEditMode(false);
+                setQuickEdits({});
+              }
+            }}
             className={`min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 ${
-              anonymizeMode
+              effectiveAnonymized
                 ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
                 : ""
             }`}
-            aria-pressed={anonymizeMode}
+            aria-pressed={effectiveAnonymized}
           >
-            {anonymizeMode ? (
+            {effectiveAnonymized ? (
               <>
                 <EyeOff className="w-3.5 h-3.5" />
-                <span>Mode Anonim: Aktif</span>
+                <span>{isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim: Aktif"}</span>
               </>
             ) : (
               <>
@@ -341,10 +536,54 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             )}
           </Button>
 
+          {isAdmin && (
+            <Button
+              type="button"
+              variant={isLockedReadOnly ? "default" : "outline"}
+              size="sm"
+              disabled={lockMutation.isPending}
+              onClick={() => lockMutation.mutate(!isLockedReadOnly)}
+              className={`min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 ${
+                isLockedReadOnly
+                  ? "bg-amber-700 hover:bg-amber-800 text-white"
+                  : ""
+              }`}
+            >
+              {isLockedReadOnly ? (
+                <>
+                  <Unlock className="w-3.5 h-3.5" />
+                  <span>Buka Kunci Read-Only</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Kunci Read-Only</span>
+                </>
+              )}
+            </Button>
+          )}
+
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setGeneratedShareUrl("");
+                setShareDialogOpen(true);
+              }}
+              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              <span>Link Anonim</span>
+            </Button>
+          )}
+
           <Button
             type="button"
             variant="outline"
             size="sm"
+            disabled={isLockedReadOnly}
             onClick={() => setAnonymizeDialogOpen(true)}
             className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
           >
@@ -354,10 +593,29 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
           <Button
             type="button"
+            variant={quickEditMode ? "default" : "outline"}
+            size="sm"
+            disabled={effectiveAnonymized || items.length === 0}
+            onClick={() => {
+              if (quickEditMode) {
+                setQuickEditMode(false);
+                setQuickEdits({});
+              } else {
+                setQuickEditMode(true);
+              }
+            }}
+            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+          >
+            <PencilLine className="w-3.5 h-3.5" />
+            <span>{quickEditMode ? "Keluar Quick-Edit" : "Quick-Edit Massal"}</span>
+          </Button>
+
+          <Button
+            type="button"
             variant="outline"
             size="sm"
             onClick={() => posImportMutation.mutate()}
-            disabled={posImportMutation.isPending}
+            disabled={posImportMutation.isPending || isLockedReadOnly}
             className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
           >
             <RefreshCw
@@ -370,6 +628,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             type="button"
             variant="outline"
             size="sm"
+            disabled={isLockedReadOnly}
             onClick={() => setImportCsvOpen(true)}
             className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
           >
@@ -386,14 +645,38 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{anonymizeMode ? "Export CSV Anonim" : "Export CSV"}</span>
+            <span>{effectiveAnonymized ? "CSV Anonim" : "Export CSV"}</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleExportJson}
+            disabled={items.length === 0}
+            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+          >
+            <FileJson className="w-3.5 h-3.5" />
+            <span>{effectiveAnonymized ? "JSON Anonim" : "Export JSON"}</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCopyJson}
+            disabled={items.length === 0}
+            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Salin JSON</span>
           </Button>
 
           <Button
             type="button"
             size="sm"
             onClick={openCreateModal}
-            disabled={anonymizeMode}
+            disabled={effectiveAnonymized}
             className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -403,25 +686,81 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
       </div>
 
       {/* Mode Anonim Privacy Notice */}
-      {anonymizeMode && (
+      {effectiveAnonymized && (
         <div className="rounded-xl border border-slate-300 bg-slate-900 text-slate-100 dark:border-slate-700 dark:bg-slate-800 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
           <div>
-            <strong>Mode Anonim aktif:</strong> Nama asli menu, SKU, catatan, dan nama bahan resep disembunyikan oleh server dan diganti menjadi kode anonim (mis. MENU-001) serta Bahan #1.
+            <strong>{isLockedReadOnly ? "Proteksi Mode Anonim Read-Only Terkunci:" : "Mode Anonim aktif:"}</strong>{" "}
+            Nama asli menu, SKU, catatan, dan nama bahan resep disembunyikan oleh server (menjadi kode MENU-001 &amp; Bahan #1).
+            {isLockedReadOnly
+              ? " Semua aksi ubah/hapus/import dinonaktifkan sampai Owner membuka kunci."
+              : ""}
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => setAnonymizeMode(false)}
-            className="h-8 text-xs shrink-0 self-start sm:self-auto"
-          >
-            Kembali ke Nama Asli
-          </Button>
+          {!isLockedReadOnly ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setAnonymizeMode(false)}
+              className="h-8 text-xs shrink-0 self-start sm:self-auto"
+            >
+              Kembali ke Nama Asli
+            </Button>
+          ) : isAdmin ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => lockMutation.mutate(false)}
+              disabled={lockMutation.isPending}
+              className="h-8 text-xs shrink-0 self-start sm:self-auto gap-1"
+            >
+              <Unlock className="w-3.5 h-3.5" />
+              Buka Kunci
+            </Button>
+          ) : null}
+        </div>
+      )}
+
+      {/* Quick-Edit Massal Action Bar */}
+      {quickEditMode && !effectiveAnonymized && (
+        <div className="rounded-xl border border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+          <div className="text-blue-900 dark:text-blue-200">
+            <strong>Mode Quick-Edit Massal aktif:</strong> Ubah Harga Jual, HPP Manual, Mode HPP, atau Status Aktif langsung pada tabel di bawah lalu simpan sekaligus.
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setQuickEdits({});
+                setQuickEditMode(false);
+              }}
+              className="h-9 text-xs gap-1 bg-white dark:bg-slate-900"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Batal</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={dirtyCount === 0 || bulkUpdateMutation.isPending}
+              onClick={() => bulkUpdateMutation.mutate()}
+              className="h-9 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>
+                {bulkUpdateMutation.isPending
+                  ? "Menyimpan..."
+                  : `Simpan Perubahan (${dirtyCount})`}
+              </span>
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Real-Data KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Card className="border-slate-200 dark:border-slate-800 shadow-none">
           <CardContent className="p-3.5">
             <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
@@ -499,6 +838,33 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </CardContent>
           </Card>
         </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setHppStatusFilter((prev) => (prev === "price_drift" ? "all" : "price_drift"))
+          }
+          className="text-left rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600 col-span-2 lg:col-span-1"
+        >
+          <Card
+            className={`border-slate-200 dark:border-slate-800 shadow-none transition-colors ${
+              hppStatusFilter === "price_drift" ? "ring-2 ring-amber-600" : "hover:bg-slate-50 dark:hover:bg-slate-900"
+            }`}
+          >
+            <CardContent className="p-3.5">
+              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                <TrendingUp className="w-3.5 h-3.5 text-rose-600" />
+                <span>Harga Bahan Naik (&ge;5%)</span>
+              </div>
+              <div className="text-lg font-bold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
+                {summary?.price_drift_menus_count ?? 0}
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                Klik untuk cek menu terdampak
+              </div>
+            </CardContent>
+          </Card>
+        </button>
       </div>
 
       {/* Filters */}
@@ -511,7 +877,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={
-                  anonymizeMode
+                  effectiveAnonymized
                     ? "Cari kode anonim atau kategori..."
                     : "Cari nama menu, kode anonim, SKU, kategori..."
                 }
@@ -545,6 +911,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 <option value="ideal">Ideal (&le;35%)</option>
                 <option value="moderate">Sedang (35% - 45%)</option>
                 <option value="high">Tinggi (&gt;45%)</option>
+                <option value="price_drift">Harga Bahan Naik (&ge;5%)</option>
                 <option value="missing_hpp">Belum Ada HPP</option>
                 <option value="no_price">Belum Ada Harga Jual</option>
               </select>
@@ -613,7 +980,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                     type="button"
                     size="sm"
                     onClick={openCreateModal}
-                    disabled={anonymizeMode}
+                    disabled={effectiveAnonymized}
                     className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -624,7 +991,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                     variant="outline"
                     size="sm"
                     onClick={() => posImportMutation.mutate()}
-                    disabled={posImportMutation.isPending}
+                    disabled={posImportMutation.isPending || isLockedReadOnly}
                     className="gap-1.5"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
@@ -634,6 +1001,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                     type="button"
                     variant="outline"
                     size="sm"
+                    disabled={isLockedReadOnly}
                     onClick={() => setImportCsvOpen(true)}
                     className="gap-1.5"
                   >
@@ -653,23 +1021,34 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                   <tr>
                     <th className="w-9 px-2 py-2.5" aria-label="Expand resep" />
                     <th className="text-left px-3 py-2.5 font-semibold">
-                      {anonymizeMode ? "Kode Anonim Menu" : "Nama Menu / Produk"}
+                      {effectiveAnonymized ? "Kode Anonim Menu" : "Nama Menu / Produk"}
                     </th>
                     <th className="text-left px-3 py-2.5 font-semibold">Kategori</th>
                     <th className="text-right px-3 py-2.5 font-semibold">Harga Jual</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">HPP / Food Cost</th>
+                    <th className="text-right px-3 py-2.5 font-semibold">
+                      {quickEditMode ? "HPP Manual & Mode" : "HPP / Food Cost"}
+                    </th>
                     <th className="text-center px-3 py-2.5 font-semibold">Food Cost %</th>
                     <th className="text-right px-3 py-2.5 font-semibold">Margin Kotor</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">Aksi</th>
+                    <th className="text-right px-3 py-2.5 font-semibold">
+                      {quickEditMode ? "Aktif" : "Aksi"}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {items.map((menu) => {
+                  {pagedItems.map((menu) => {
                     const isExpanded = !!expandedIds[menu.id];
                     const fcBadge = getFoodCostBadge(menu.food_cost_status);
+                    const qRow = getQuickRow(menu);
+                    const isDirty = !!quickEdits[menu.id];
+
                     return (
                       <React.Fragment key={menu.id}>
-                        <tr className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40">
+                        <tr
+                          className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 ${
+                            isDirty ? "bg-blue-50/40 dark:bg-blue-950/20" : ""
+                          }`}
+                        >
                           <td className="px-2 py-2.5 text-center">
                             {menu.ingredient_count > 0 && (
                               <button
@@ -692,7 +1071,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                               <span className="font-semibold text-slate-900 dark:text-slate-100">
                                 {menu.display_name}
                               </span>
-                              {!anonymizeMode && (
+                              {!effectiveAnonymized && (
                                 <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px]">
                                   {menu.anonymous_name}
                                 </span>
@@ -702,10 +1081,19 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                                   Nonaktif
                                 </Badge>
                               )}
+                              {menu.has_price_drift && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 gap-1"
+                                >
+                                  <TrendingUp className="w-3 h-3" />
+                                  Bahan +{menu.max_ingredient_increase_pct}%
+                                </Badge>
+                              )}
                             </div>
                             <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                               Satuan: {menu.unit}
-                              {!anonymizeMode && menu.sku ? ` | SKU: ${menu.sku}` : ""}
+                              {!effectiveAnonymized && menu.sku ? ` | SKU: ${menu.sku}` : ""}
                               {menu.product_group ? ` | Grup: ${menu.product_group}` : ""}
                             </div>
                           </td>
@@ -715,17 +1103,67 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                             </Badge>
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums font-medium text-slate-900 dark:text-slate-100">
-                            {menu.selling_price > 0 ? formatRupiah(menu.selling_price) : "-"}
+                            {quickEditMode ? (
+                              <Input
+                                type="number"
+                                min={0}
+                                step="any"
+                                value={qRow.selling_price}
+                                onChange={(e) =>
+                                  setQuickField(menu, "selling_price", e.target.value)
+                                }
+                                aria-label={`Harga jual ${menu.display_name}`}
+                                className="h-8 w-28 ml-auto text-right text-xs tabular-nums"
+                              />
+                            ) : menu.selling_price > 0 ? (
+                              formatRupiah(menu.selling_price)
+                            ) : (
+                              "-"
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100">
-                              {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
-                            </div>
-                            <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                              {menu.active_hpp_source === "recipe"
-                                ? `Resep (${menu.ingredient_count} bahan)`
-                                : "Input Manual"}
-                            </div>
+                            {quickEditMode ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step="any"
+                                  value={qRow.hpp_manual}
+                                  onChange={(e) =>
+                                    setQuickField(menu, "hpp_manual", e.target.value)
+                                  }
+                                  aria-label={`HPP manual ${menu.display_name}`}
+                                  className="h-8 w-28 text-right text-xs tabular-nums"
+                                />
+                                <select
+                                  value={qRow.hpp_mode}
+                                  onChange={(e) =>
+                                    setQuickField(
+                                      menu,
+                                      "hpp_mode",
+                                      e.target.value as MenuHppMode
+                                    )
+                                  }
+                                  aria-label={`Mode HPP ${menu.display_name}`}
+                                  className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-1.5 text-[11px]"
+                                >
+                                  <option value="auto">Auto</option>
+                                  <option value="manual">Manual</option>
+                                  <option value="recipe">Resep</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                                  {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
+                                </div>
+                                <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                                  {menu.active_hpp_source === "recipe"
+                                    ? `Resep (${menu.ingredient_count} bahan)`
+                                    : "Input Manual"}
+                                </div>
+                              </>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-center">
                             <div className="inline-flex flex-col items-center gap-0.5">
@@ -756,37 +1194,44 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-right">
-                            <div className="inline-flex items-center justify-end gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEditModal(menu)}
-                                disabled={anonymizeMode}
-                                aria-label={`Edit ${menu.display_name}`}
-                                className="h-8 w-8 p-0 text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </Button>
-                              {isAdmin && (
+                            {quickEditMode ? (
+                              <input
+                                type="checkbox"
+                                checked={qRow.is_active}
+                                onChange={(e) =>
+                                  setQuickField(menu, "is_active", e.target.checked)
+                                }
+                                aria-label={`Status aktif ${menu.display_name}`}
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                              />
+                            ) : (
+                              <div className="inline-flex items-center justify-end gap-1">
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    if (
-                                      confirm(`Hapus menu "${menu.display_name}" dari database?`)
-                                    ) {
-                                      deleteMutation.mutate(menu.id);
-                                    }
-                                  }}
-                                  aria-label={`Hapus ${menu.display_name}`}
-                                  className="h-8 w-8 p-0 text-slate-600 hover:text-rose-700 dark:text-slate-400 dark:hover:text-rose-400"
+                                  onClick={() => openEditModal(menu)}
+                                  disabled={effectiveAnonymized}
+                                  aria-label={`Edit ${menu.display_name}`}
+                                  className="h-8 w-8 p-0 text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Edit3 className="w-3.5 h-3.5" />
                                 </Button>
-                              )}
-                            </div>
+                                {isAdmin && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isLockedReadOnly}
+                                    onClick={() => setDeleteTarget(menu)}
+                                    aria-label={`Hapus ${menu.display_name}`}
+                                    className="h-8 w-8 p-0 text-slate-600 hover:text-rose-700 dark:text-slate-400 dark:hover:text-rose-400"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
 
@@ -801,16 +1246,25 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                                 {menu.ingredients.map((ing, idx) => (
                                   <div
                                     key={ing.id || idx}
-                                    className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-300 border-b border-slate-200/70 dark:border-slate-800 pb-1 last:border-0"
+                                    className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-slate-300 border-b border-slate-200/70 dark:border-slate-800 pb-1 last:border-0"
                                   >
-                                    <div>
+                                    <div className="flex flex-wrap items-center gap-2">
                                       <span className="font-medium">{ing.ingredient_name}</span>
-                                      <span className="text-slate-600 dark:text-slate-400 ml-2">
+                                      <span className="text-slate-600 dark:text-slate-400">
                                         {ing.qty} {ing.unit}
                                         {ing.yield_factor !== 1 ? ` (pembagi ${ing.yield_factor})` : ""}
                                       </span>
+                                      {ing.price_drift_alert && ing.price_change_pct != null && (
+                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 text-[10px] font-medium">
+                                          <TrendingUp className="w-3 h-3" />
+                                          Naik +{ing.price_change_pct}%
+                                          {ing.master_prev_price != null && ing.master_latest_price != null
+                                            ? ` (${formatRupiah(ing.master_prev_price)} -> ${formatRupiah(ing.master_latest_price)})`
+                                            : ""}
+                                        </span>
+                                      )}
                                     </div>
-                                    <div className="tabular-nums font-medium">
+                                    <div className="tabular-nums font-medium shrink-0">
                                       {formatRupiah(ing.line_cost || 0)}
                                     </div>
                                   </div>
@@ -828,9 +1282,11 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
             {/* Mobile Reflow Cards */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-              {items.map((menu) => {
+              {pagedItems.map((menu) => {
                 const fcBadge = getFoodCostBadge(menu.food_cost_status);
                 const isExpanded = !!expandedIds[menu.id];
+                const qRow = getQuickRow(menu);
+
                 return (
                   <div key={menu.id} className="p-3.5 space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
@@ -842,7 +1298,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                           <Badge variant="outline" className="text-[10px]">
                             {menu.category}
                           </Badge>
-                          {!anonymizeMode && (
+                          {!effectiveAnonymized && (
                             <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px]">
                               {menu.anonymous_name}
                             </span>
@@ -850,6 +1306,14 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                           <Badge variant="outline" className={`text-[10px] ${fcBadge.className}`}>
                             {fcBadge.label}
                           </Badge>
+                          {menu.has_price_drift && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
+                            >
+                              Bahan +{menu.max_ingredient_increase_pct}%
+                            </Badge>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0 tabular-nums">
@@ -862,28 +1326,94 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 dark:bg-slate-900/70 p-2 text-xs tabular-nums">
-                      <div>
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400">HPP</div>
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
+                    {quickEditMode ? (
+                      <div className="grid grid-cols-2 gap-2 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 p-2.5 text-xs">
+                        <div>
+                          <label className="block text-[10px] text-slate-600 dark:text-slate-400 mb-0.5">
+                            Harga Jual
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={qRow.selling_price}
+                            onChange={(e) =>
+                              setQuickField(menu, "selling_price", e.target.value)
+                            }
+                            className="h-9 text-xs tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-600 dark:text-slate-400 mb-0.5">
+                            HPP Manual
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={qRow.hpp_manual}
+                            onChange={(e) =>
+                              setQuickField(menu, "hpp_manual", e.target.value)
+                            }
+                            className="h-9 text-xs tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-600 dark:text-slate-400 mb-0.5">
+                            Mode HPP
+                          </label>
+                          <select
+                            value={qRow.hpp_mode}
+                            onChange={(e) =>
+                              setQuickField(menu, "hpp_mode", e.target.value as MenuHppMode)
+                            }
+                            className="h-9 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 text-xs"
+                          >
+                            <option value="auto">Auto</option>
+                            <option value="manual">Manual</option>
+                            <option value="recipe">Resep</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end pb-1.5">
+                          <label className="inline-flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={qRow.is_active}
+                              onChange={(e) =>
+                                setQuickField(menu, "is_active", e.target.checked)
+                              }
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                            />
+                            <span>Aktif</span>
+                          </label>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400">Food Cost</div>
-                        <div className="font-semibold text-slate-900 dark:text-slate-100">
-                          {menu.selling_price > 0 && menu.effective_hpp > 0
-                            ? `${menu.food_cost_pct.toFixed(1)}%`
-                            : "-"}
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 dark:bg-slate-900/70 p-2 text-xs tabular-nums">
+                        <div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400">HPP</div>
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">
+                            {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                            Food Cost
+                          </div>
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">
+                            {menu.selling_price > 0 && menu.effective_hpp > 0
+                              ? `${menu.food_cost_pct.toFixed(1)}%`
+                              : "-"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                            Margin
+                          </div>
+                          <div className="font-semibold text-emerald-700 dark:text-emerald-400">
+                            {menu.selling_price > 0 ? formatRupiah(menu.gross_margin) : "-"}
+                          </div>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400">Margin</div>
-                        <div className="font-semibold text-emerald-700 dark:text-emerald-400">
-                          {menu.selling_price > 0 ? formatRupiah(menu.gross_margin) : "-"}
-                        </div>
-                      </div>
-                    </div>
+                    )}
 
                     {menu.ingredient_count > 0 && (
                       <div>
@@ -906,6 +1436,9 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                               <div key={ing.id || idx} className="flex justify-between gap-2">
                                 <span>
                                   {ing.ingredient_name} ({ing.qty} {ing.unit})
+                                  {ing.price_drift_alert && ing.price_change_pct != null
+                                    ? ` [+${ing.price_change_pct}%]`
+                                    : ""}
                                 </span>
                                 <span className="tabular-nums font-medium shrink-0">
                                   {formatRupiah(ing.line_cost || 0)}
@@ -917,39 +1450,71 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 pt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditModal(menu)}
-                        disabled={anonymizeMode}
-                        className="flex-1 min-h-[44px] text-xs gap-1.5"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>Edit Menu</span>
-                      </Button>
-                      {isAdmin && (
+                    {!quickEditMode && (
+                      <div className="flex items-center gap-2 pt-1">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            if (confirm(`Hapus menu "${menu.display_name}"?`)) {
-                              deleteMutation.mutate(menu.id);
-                            }
-                          }}
-                          className="min-h-[44px] min-w-[44px] text-rose-700 border-rose-200 hover:bg-rose-50 dark:text-rose-400 dark:border-rose-900"
-                          aria-label={`Hapus ${menu.display_name}`}
+                          onClick={() => openEditModal(menu)}
+                          disabled={effectiveAnonymized}
+                          className="flex-1 min-h-[44px] text-xs gap-1.5"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit Menu</span>
                         </Button>
-                      )}
-                    </div>
+                        {isAdmin && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={isLockedReadOnly}
+                            onClick={() => setDeleteTarget(menu)}
+                            className="min-h-[44px] min-w-[44px] text-rose-700 border-rose-200 hover:bg-rose-50 dark:text-rose-400 dark:border-rose-900"
+                            aria-label={`Hapus ${menu.display_name}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
+                <span>
+                  Halaman {safePage} dari {totalPages} ({items.length} menu)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="h-8 px-2.5 text-xs gap-1"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span>Sebelumnya</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="h-8 px-2.5 text-xs gap-1"
+                  >
+                    <span>Berikutnya</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </Card>
@@ -975,6 +1540,36 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         }}
       />
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Hapus Menu / Produk</DialogTitle>
+            <DialogDescription>
+              Hapus <strong>{deleteTarget?.display_name}</strong> beserta rincian resepnya dari database? Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Menghapus..." : "Hapus Menu"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Import CSV Dialog */}
       <Dialog open={importCsvOpen} onOpenChange={setImportCsvOpen}>
         <DialogContent className="max-w-md">
@@ -985,11 +1580,21 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-xs">
-            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 space-y-1 text-slate-700 dark:text-slate-300">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 space-y-2 text-slate-700 dark:text-slate-300">
               <div className="font-semibold">Format header yang didukung:</div>
               <div className="font-mono text-[11px]">
-                Nama Menu, Kategori, Harga Jual, HPP, Satuan, Kode Anonim
+                Nama Menu, Kode Anonim, SKU, Kategori, Grup Produk, Satuan, Harga Jual, HPP, Catatan
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadTemplate}
+                className="h-8 text-xs gap-1.5"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Unduh Template CSV</span>
+              </Button>
             </div>
             <div>
               <input
@@ -1078,6 +1683,78 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
               disabled={!anonPrefix.trim() || batchAnonMutation.isPending}
             >
               {batchAnonMutation.isPending ? "Memproses..." : "Terapkan Kode Anonim"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Anonymized Read-Only Link Dialog */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Buat Link Presentasi Anonim (Read-Only)</DialogTitle>
+            <DialogDescription>
+              Bagikan data menu, HPP, dan Food Cost % ke pihak luar tanpa membocorkan nama menu asli, SKU, atau nama bahan baku.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-xs">
+            <div>
+              <label htmlFor="share-expiry" className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Masa Berlaku Link
+              </label>
+              <select
+                id="share-expiry"
+                value={shareExpireHours}
+                onChange={(e) => setShareExpireHours(Number(e.target.value))}
+                className="h-9 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 text-xs"
+              >
+                <option value={24}>24 Jam (1 Hari)</option>
+                <option value={72}>72 Jam (3 Hari)</option>
+                <option value={168}>168 Jam (7 Hari)</option>
+              </select>
+            </div>
+
+            {generatedShareUrl && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/30 p-3 space-y-2">
+                <div className="font-semibold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Link Read-Only Siap Dibagikan</span>
+                </div>
+                <Input
+                  readOnly
+                  value={generatedShareUrl}
+                  className="h-8 text-[11px] font-mono bg-white dark:bg-slate-900"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(generatedShareUrl);
+                    toast.success("Link presentasi disalin.");
+                  }}
+                  className="h-8 text-xs gap-1.5 w-full"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Salin Link</span>
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShareDialogOpen(false)}
+            >
+              Tutup
+            </Button>
+            <Button
+              type="button"
+              onClick={() => shareTokenMutation.mutate()}
+              disabled={shareTokenMutation.isPending}
+            >
+              {shareTokenMutation.isPending ? "Membuat..." : "Generate Link Anonim"}
             </Button>
           </DialogFooter>
         </DialogContent>

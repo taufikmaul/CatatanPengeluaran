@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatRupiah } from "@/lib/formatters";
+import { getMenuConversionHint } from "@/lib/api";
 import {
   MasterItem,
   MenuHppMode,
@@ -18,7 +19,7 @@ import {
   MenuProduct,
   MenuProductPayload,
 } from "@/types";
-import { Plus, Trash2, Calculator } from "lucide-react";
+import { Plus, Trash2, Calculator, TrendingUp } from "lucide-react";
 
 interface IngredientDraftRow {
   key: string;
@@ -29,6 +30,10 @@ interface IngredientDraftRow {
   unit_cost_override: string;
   yield_factor: string;
   notes: string;
+  conversion_hint?: string;
+  price_drift_alert?: boolean;
+  price_change_pct?: number | null;
+  master_prev_price?: number | null;
 }
 
 interface MenuFormDialogProps {
@@ -115,6 +120,9 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
               : "",
           yield_factor: String(ing.yield_factor ?? 1),
           notes: ing.notes || "",
+          price_drift_alert: ing.price_drift_alert,
+          price_change_pct: ing.price_change_pct,
+          master_prev_price: ing.master_prev_price,
         }))
       );
     } else {
@@ -163,23 +171,58 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
   const foodCostPct = sellingPriceNum > 0 ? (effectiveHpp / sellingPriceNum) * 100 : 0;
   const grossMargin = sellingPriceNum - effectiveHpp;
 
+  const applyConversionHint = async (rowKey: string, masterId: number, recipeUnit: string) => {
+    try {
+      const res = await getMenuConversionHint(masterId, recipeUnit);
+      setIngredients((prev) =>
+        prev.map((r) =>
+          r.key === rowKey && r.master_item_id === masterId
+            ? {
+                ...r,
+                yield_factor: String(res.yield_factor),
+                conversion_hint: res.reason,
+              }
+            : r
+        )
+      );
+    } catch {
+      // Abaikan bila offline; user tetap bisa mengisi pembagi manual
+    }
+  };
+
   const handleSelectMasterItem = (rowKey: string, rawId: string) => {
     const mid = rawId ? Number(rawId) : null;
     const found = mid ? masterMap.get(mid) : undefined;
+    const nextUnit = found ? found.satuan_ecer || found.satuan_beli || "Gram" : "";
     setIngredients((prev) =>
       prev.map((r) => {
         if (r.key !== rowKey) return r;
         if (!found) {
-          return { ...r, master_item_id: null };
+          return { ...r, master_item_id: null, conversion_hint: undefined };
         }
         return {
           ...r,
           master_item_id: found.id,
           ingredient_name: found.item_name,
-          unit: found.satuan_ecer || found.satuan_beli || r.unit,
+          unit: nextUnit || r.unit,
+          price_drift_alert: false,
+          price_change_pct: null,
+          master_prev_price: null,
         };
       })
     );
+    if (found) {
+      void applyConversionHint(rowKey, found.id, nextUnit || "Gram");
+    }
+  };
+
+  const handleUnitChange = (rowKey: string, newUnit: string, masterId: number | null) => {
+    setIngredients((prev) =>
+      prev.map((r) => (r.key === rowKey ? { ...r, unit: newUnit } : r))
+    );
+    if (masterId && newUnit.trim()) {
+      void applyConversionHint(rowKey, masterId, newUnit.trim());
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -528,11 +571,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             list="menu-unit-list"
                             value={row.unit}
                             onChange={(e) =>
-                              setIngredients((prev) =>
-                                prev.map((r) =>
-                                  r.key === row.key ? { ...r, unit: e.target.value } : r
-                                )
-                              )
+                              handleUnitChange(row.key, e.target.value, row.master_item_id)
                             }
                             className="h-8 text-xs"
                           />
@@ -585,15 +624,31 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             }
                             className="h-8 text-xs tabular-nums"
                           />
+                          {row.conversion_hint && (
+                            <div className="text-[10px] text-blue-700 dark:text-blue-300 mt-0.5">
+                              {row.conversion_hint}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="sm:col-span-4 flex items-center justify-between sm:justify-end gap-2 pt-3 sm:pt-4">
-                          <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                            Subtotal:
-                          </span>
-                          <Badge variant="outline" className="text-xs font-semibold tabular-nums">
-                            {formatRupiah(rowCalc.cost)}
-                          </Badge>
+                        <div className="sm:col-span-4 flex flex-col items-start sm:items-end justify-center gap-1 pt-3 sm:pt-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                              Subtotal:
+                            </span>
+                            <Badge variant="outline" className="text-xs font-semibold tabular-nums">
+                              {formatRupiah(rowCalc.cost)}
+                            </Badge>
+                          </div>
+                          {row.price_drift_alert && row.price_change_pct !== null && row.price_change_pct !== undefined && (
+                            <div className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-700 dark:text-rose-400">
+                              <TrendingUp className="w-3 h-3 shrink-0" />
+                              <span>
+                                Harga naik +{row.price_change_pct}%
+                                {row.master_prev_price ? ` (dari ${formatRupiah(row.master_prev_price)})` : ""}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="sm:col-span-1 flex justify-end pt-3 sm:pt-4">

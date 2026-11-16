@@ -972,6 +972,100 @@ export async function downloadMenusCsv(params?: {
   URL.revokeObjectURL(url);
 }
 
+export async function downloadMenusTemplateCsv(): Promise<void> {
+  const res = await api.get("/menus/template-csv", { responseType: "blob" });
+  const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "template_import_menu_hpp.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function getMenusJsonPayload(params?: {
+  search?: string;
+  category?: string;
+  hpp_status?: string;
+  active_only?: boolean;
+  anonymize?: boolean;
+}): Promise<any> {
+  const res = await api.get("/menus/export-json", {
+    params: { ...params, download: false },
+  });
+  return res.data;
+}
+
+export async function downloadMenusJson(params?: {
+  search?: string;
+  category?: string;
+  hpp_status?: string;
+  active_only?: boolean;
+  anonymize?: boolean;
+}): Promise<void> {
+  const res = await api.get("/menus/export-json", {
+    params: { ...params, download: true },
+    responseType: "blob",
+  });
+  const blob = new Blob([res.data], { type: "application/json;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = params?.anonymize ? "database_menu_hpp_anonim.json" : "database_menu_hpp.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function bulkUpdateMenus(
+  updates: Array<{
+    id: number;
+    selling_price?: number;
+    hpp_manual?: number;
+    hpp_mode?: import("@/types").MenuHppMode;
+    is_active?: boolean;
+  }>
+): Promise<{ ok: boolean; updated_count: number }> {
+  const res = await api.patch("/menus/bulk-update", { updates });
+  return res.data;
+}
+
+export async function getMenuConversionHint(
+  masterItemId: number,
+  recipeUnit: string
+): Promise<{ yield_factor: number; reason: string }> {
+  const res = await api.get("/menus/conversion-hint", {
+    params: { master_item_id: masterItemId, recipe_unit: recipeUnit },
+  });
+  return res.data;
+}
+
+export async function setMenuAnonymizeLock(
+  locked: boolean
+): Promise<{ ok: boolean; anonymize_locked: boolean }> {
+  const res = await api.post("/menus/anonymize-lock", { locked });
+  return res.data;
+}
+
+export async function createMenuShareToken(
+  expireHours = 24
+): Promise<{ ok: boolean; token: string; expire_hours: number; share_path: string; api_path: string }> {
+  const res = await api.post("/menus/share-token", { expire_hours: expireHours });
+  return res.data;
+}
+
+export async function getSharedAnonymousMenus(
+  token: string,
+  params?: { search?: string; category?: string; hpp_status?: string }
+): Promise<import("@/types").MenuListResponse> {
+  const res = await api.get(`/menus/shared/${encodeURIComponent(token)}`, { params });
+  return res.data;
+}
+
+
 
 
 

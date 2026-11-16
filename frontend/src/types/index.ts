@@ -1199,6 +1199,9 @@ export interface MenuIngredient {
   unit: string;
   unit_cost_override?: number | null;
   master_latest_price?: number;
+  master_prev_price?: number | null;
+  price_change_pct?: number | null;
+  price_drift_alert?: boolean;
   effective_unit_cost?: number;
   yield_factor: number;
   line_cost?: number;
@@ -1244,6 +1247,9 @@ export interface MenuProduct {
   food_cost_pct: number;
   margin_pct: number;
   food_cost_status: FoodCostStatus;
+  has_price_drift?: boolean;
+  price_drift_count?: number;
+  max_ingredient_increase_pct?: number;
 }
 
 export interface MenuProductPayload {
@@ -1267,6 +1273,7 @@ export interface MenuSummary {
   with_hpp_count: number;
   missing_hpp_count: number;
   recipe_based_count: number;
+  price_drift_menus_count?: number;
   avg_food_cost_pct: number;
   avg_margin_pct: number;
   ideal_count: number;
@@ -1280,6 +1287,9 @@ export interface MenuListResponse {
   summary: MenuSummary;
   categories: string[];
   anonymized: boolean;
+  anonymize_locked?: boolean;
+  read_only?: boolean;
+  expires_at?: number;
 }
 
 

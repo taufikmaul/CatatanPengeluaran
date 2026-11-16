@@ -26,6 +26,7 @@ const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(
 const IncomingTransactionsTab = React.lazy(() => import("@/components/incoming/IncomingTransactionsTab").then(m => ({ default: m.IncomingTransactionsTab })));
 const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsTab").then(m => ({ default: m.MasterItemsTab })));
 const MenuProductsTab = React.lazy(() => import("@/components/menu/MenuProductsTab").then(m => ({ default: m.MenuProductsTab })));
+const SharedMenuReadOnlyPage = React.lazy(() => import("@/components/menu/SharedMenuReadOnlyPage").then(m => ({ default: m.SharedMenuReadOnlyPage })));
 const AccountingTab = React.lazy(() => import("@/components/accounting/AccountingTab").then(m => ({ default: m.AccountingTab })));
 const TukarCashOngkirTab = React.lazy(() => import("@/components/cash-delivery/TukarCashOngkirTab").then(m => ({ default: m.TukarCashOngkirTab })));
 const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab").then(m => ({ default: m.TalanganTab })));
@@ -57,8 +58,9 @@ import { Plus, ReceiptText, ArrowRight } from "lucide-react";
 
 // Tangani SSO token dari URL (dikirim oleh HCTeams Hub) secara langsung sebelum render
 try {
+  const isSharedRoute = window.location.pathname.includes("/shared/");
   const initParams = new URLSearchParams(window.location.search);
-  const initUrlToken = initParams.get("token");
+  const initUrlToken = isSharedRoute ? null : initParams.get("token");
   if (initUrlToken) {
     localStorage.setItem("hcteams_token", initUrlToken);
     localStorage.setItem("dashboard_session_token", initUrlToken);
@@ -71,6 +73,22 @@ try {
 }
 
 export function App() {
+  const location = useLocation();
+  const pathname = location.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/shared/menus") {
+    const params = new URLSearchParams(location.search);
+    const shareToken = params.get("share") || params.get("token") || "";
+    return (
+      <React.Suspense fallback={<TabLoadingFallback />}>
+        <Toaster position="top-right" richColors closeButton />
+        <SharedMenuReadOnlyPage token={shareToken} />
+      </React.Suspense>
+    );
+  }
+  return <MainDashboardApp />;
+}
+
+function MainDashboardApp() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
