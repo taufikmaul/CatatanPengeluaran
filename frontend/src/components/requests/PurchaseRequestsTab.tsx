@@ -175,6 +175,12 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
     queryFn: getPurchaseRequestStats,
   });
 
+  const { data: recentRequestsData } = useQuery({
+    queryKey: ["purchase-requests-recent"],
+    queryFn: () => getPurchaseRequests({ limit: 5 }),
+    staleTime: 60_000,
+  });
+
   // 2. Purchasing orders query
   const { data: purchasingGroups, isLoading: isLoadingPurchasing } = useQuery({
     queryKey: ["purchasing-orders"],
@@ -219,6 +225,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["purchase-requests"] });
+    queryClient.invalidateQueries({ queryKey: ["purchase-requests-recent"] });
     queryClient.invalidateQueries({ queryKey: ["purchase-request-stats"] });
     queryClient.invalidateQueries({ queryKey: ["purchasing-orders"] });
     queryClient.invalidateQueries({ queryKey: ["warehouse-incoming"] });
@@ -1483,6 +1490,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
         initialData={editingRequest}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
         itemSuggestions={itemSuggestions}
+        recentRequests={recentRequestsData?.items || requests}
         categories={categories}
         currentUser={currentUser}
       />
