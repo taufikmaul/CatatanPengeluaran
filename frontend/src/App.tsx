@@ -25,6 +25,7 @@ import { Spinner } from "@/components/ui/spinner";
 const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(m => ({ default: m.ConfigTab })));
 const IncomingTransactionsTab = React.lazy(() => import("@/components/incoming/IncomingTransactionsTab").then(m => ({ default: m.IncomingTransactionsTab })));
 const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsTab").then(m => ({ default: m.MasterItemsTab })));
+const MenuProductsTab = React.lazy(() => import("@/components/menu/MenuProductsTab").then(m => ({ default: m.MenuProductsTab })));
 const AccountingTab = React.lazy(() => import("@/components/accounting/AccountingTab").then(m => ({ default: m.AccountingTab })));
 const TukarCashOngkirTab = React.lazy(() => import("@/components/cash-delivery/TukarCashOngkirTab").then(m => ({ default: m.TukarCashOngkirTab })));
 const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab").then(m => ({ default: m.TalanganTab })));
@@ -79,11 +80,13 @@ export function App() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
     activeTab = "suppliers";
+  } else if (pathname === "/menus" || pathname === "/menu" || pathname === "/produk") {
+    activeTab = "menus";
   } else if (pathname === "/accounting" || pathname === "/akuntansi" || pathname === "/laporan-akuntansi") {
     activeTab = "accounting";
   } else if (pathname === "/incoming" || pathname === "/transaksi-masuk") {
@@ -106,7 +109,7 @@ export function App() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -252,7 +255,8 @@ export function App() {
       activeTab !== "requests" &&
       activeTab !== "transactions" &&
       activeTab !== "suppliers" &&
-      activeTab !== "master"
+      activeTab !== "master" &&
+      activeTab !== "menus"
     ) {
       navigate("/requests");
     } else if (isAdminInput && (activeTab === "config" || activeTab === "accounting")) {
@@ -1422,6 +1426,13 @@ export function App() {
                   categories={categories}
                   units={activeUnits}
                   onInspectItemPrice={handleInspectItemPrice}
+                />
+              )}
+
+              {activeTab === "menus" && (
+                <MenuProductsTab
+                  isAdmin={isOwner}
+                  units={activeUnits}
                 />
               )}
 

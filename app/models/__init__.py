@@ -14,6 +14,7 @@ from app.models.background_job import BackgroundJobRecord
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_transfer import BankTransfer
+from app.models.menu_product import MenuProduct, MenuIngredient
 
 __all__ = [
     "User",
@@ -34,5 +35,7 @@ __all__ = [
     "IncomingTransaction",
     "IncomingTransactionItem",
     "BankTransfer",
+    "MenuProduct",
+    "MenuIngredient",
 ]
 

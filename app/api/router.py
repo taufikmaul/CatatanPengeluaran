@@ -16,6 +16,7 @@ from app.api.bank_accounts import router as bank_accounts_router
 from app.api.incoming_transactions import router as incoming_transactions_router
 from app.api.bank_transfers import router as bank_transfers_router
 from app.api.reconciliation import router as reconciliation_router
+from app.api.menus import router as menus_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -33,4 +34,5 @@ api_router.include_router(bank_accounts_router)
 api_router.include_router(incoming_transactions_router)
 api_router.include_router(bank_transfers_router)
 api_router.include_router(reconciliation_router)
+api_router.include_router(menus_router)
 

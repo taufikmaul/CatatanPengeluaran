@@ -877,6 +877,102 @@ export async function applyReconciliation(payload: {
   return res.data.result;
 }
 
+// ── Database Menu / Produk & HPP / Food Cost ──────────────────────────────────
+export async function getMenus(params?: {
+  search?: string;
+  category?: string;
+  hpp_status?: string;
+  active_only?: boolean;
+  anonymize?: boolean;
+}): Promise<import("@/types").MenuListResponse> {
+  const res = await api.get("/menus", { params });
+  return res.data;
+}
+
+export async function getMenuDetail(
+  menuId: number,
+  anonymize = false
+): Promise<import("@/types").MenuProduct> {
+  const res = await api.get(`/menus/${menuId}`, { params: { anonymize } });
+  return res.data.item;
+}
+
+export async function createMenu(
+  payload: import("@/types").MenuProductPayload
+): Promise<import("@/types").MenuProduct> {
+  const res = await api.post("/menus", payload);
+  return res.data.item;
+}
+
+export async function updateMenu(
+  menuId: number,
+  payload: Partial<import("@/types").MenuProductPayload>
+): Promise<import("@/types").MenuProduct> {
+  const res = await api.put(`/menus/${menuId}`, payload);
+  return res.data.item;
+}
+
+export async function deleteMenu(menuId: number): Promise<void> {
+  await api.delete(`/menus/${menuId}`);
+}
+
+export async function importMenusFromPos(): Promise<{
+  ok: boolean;
+  added: number;
+  skipped: number;
+  total_pos_products: number;
+}> {
+  const res = await api.post("/menus/import-from-pos");
+  return res.data;
+}
+
+export async function importMenusCsv(
+  file: File,
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("update_existing", String(updateExisting));
+  const res = await api.post("/menus/import-csv", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export async function anonymizeAllMenus(
+  prefix = "MENU",
+  preserveCustom = false
+): Promise<{ ok: boolean; updated_count: number }> {
+  const res = await api.post("/menus/anonymize-all", {
+    prefix,
+    preserve_custom: preserveCustom,
+  });
+  return res.data;
+}
+
+export async function downloadMenusCsv(params?: {
+  search?: string;
+  category?: string;
+  hpp_status?: string;
+  active_only?: boolean;
+  anonymize?: boolean;
+}): Promise<void> {
+  const res = await api.get("/menus/export", {
+    params,
+    responseType: "blob",
+  });
+  const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = params?.anonymize ? "database_menu_hpp_anonim.csv" : "database_menu_hpp.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+
 
 
 

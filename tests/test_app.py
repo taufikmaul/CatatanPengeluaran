@@ -99,4 +99,10 @@ class TestSchemaConsistency:
             "purchase_requests",
             "purchase_request_items",
             "background_jobs",
+            "bank_accounts",
+            "incoming_transactions",
+            "incoming_transaction_items",
+            "bank_transfers",
+            "menu_products",
+            "menu_ingredients",
         }

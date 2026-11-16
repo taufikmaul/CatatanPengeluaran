@@ -1189,6 +1189,99 @@ export interface SalesImportPreview {
   }>;
 }
 
+export interface MenuIngredient {
+  id?: number;
+  menu_id?: number;
+  master_item_id?: number | null;
+  master_item_name?: string | null;
+  ingredient_name: string;
+  qty: number;
+  unit: string;
+  unit_cost_override?: number | null;
+  master_latest_price?: number;
+  effective_unit_cost?: number;
+  yield_factor: number;
+  line_cost?: number;
+  notes?: string | null;
+}
+
+export interface MenuIngredientInput {
+  master_item_id?: number | null;
+  ingredient_name?: string;
+  qty: number;
+  unit: string;
+  unit_cost_override?: number | null;
+  yield_factor: number;
+  notes?: string | null;
+}
+
+export type MenuHppMode = "auto" | "manual" | "recipe";
+export type FoodCostStatus = "no_price" | "no_hpp" | "ideal" | "moderate" | "high";
+
+export interface MenuProduct {
+  id: number;
+  name: string;
+  display_name: string;
+  anonymous_name: string;
+  sku?: string | null;
+  category: string;
+  product_group?: string | null;
+  unit: string;
+  notes?: string | null;
+  is_active: boolean;
+  is_anonymized: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  ingredients: MenuIngredient[];
+  ingredient_count: number;
+  recipe_hpp: number;
+  hpp_manual: number;
+  hpp_mode: MenuHppMode;
+  active_hpp_source: "manual" | "recipe";
+  effective_hpp: number;
+  selling_price: number;
+  gross_margin: number;
+  food_cost_pct: number;
+  margin_pct: number;
+  food_cost_status: FoodCostStatus;
+}
+
+export interface MenuProductPayload {
+  name: string;
+  anonymous_name?: string | null;
+  sku?: string | null;
+  category: string;
+  product_group?: string | null;
+  unit: string;
+  selling_price: number;
+  hpp_manual: number;
+  hpp_mode: MenuHppMode;
+  notes?: string | null;
+  is_active: boolean;
+  ingredients?: MenuIngredientInput[];
+}
+
+export interface MenuSummary {
+  total_menus: number;
+  active_menus: number;
+  with_hpp_count: number;
+  missing_hpp_count: number;
+  recipe_based_count: number;
+  avg_food_cost_pct: number;
+  avg_margin_pct: number;
+  ideal_count: number;
+  moderate_count: number;
+  high_count: number;
+}
+
+export interface MenuListResponse {
+  ok: boolean;
+  items: MenuProduct[];
+  summary: MenuSummary;
+  categories: string[];
+  anonymized: boolean;
+}
+
 
 
 

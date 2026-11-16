@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Scale,
   ArrowDownToLine,
+  BookOpen,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -50,8 +51,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -90,7 +91,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -249,28 +250,48 @@ export function DashboardSidebar({
           </SidebarGroup>
         )}
 
-        {/* Group 2: Data Master (Owner, Purchasing, Warehouse) */}
-        {(isOwner || isPurchasing || isWarehouse) && (
+        {/* Group 2: Data Master (Owner, Purchasing, Warehouse, Admin Input) */}
+        {(isOwner || isPurchasing || isWarehouse || isAdminInput) && (
           <SidebarGroup className="mt-3">
             <SidebarGroupLabel className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wider px-2 mb-0.5">
               Katalog
             </SidebarGroupLabel>
             <SidebarMenu className="gap-0.5">
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={activeTab === "master"}
-                  onClick={() => handleSelectTab("master")}
-                  tooltip="Master Item & Harga"
-                  className={`h-9 rounded-lg font-medium text-sm ${
-                    activeTab === "master"
-                      ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
-                      : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
-                  }`}
-                >
-                  <PackageCheck className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Master Item</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              {(isOwner || isPurchasing || isWarehouse) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "master"}
+                    onClick={() => handleSelectTab("master")}
+                    tooltip="Master Item & Harga"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "master"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <PackageCheck className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Master Item</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {(isOwner || isPurchasing || isAdminInput) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "menus"}
+                    onClick={() => handleSelectTab("menus")}
+                    tooltip="Database Menu / Produk, HPP & Mode Anonim"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "menus"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <BookOpen className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Menu &amp; HPP</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
               {(isOwner || isPurchasing) && (
                 <SidebarMenuItem>
