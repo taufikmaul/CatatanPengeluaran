@@ -24,6 +24,9 @@ export interface Expense {
   user_id?: number | null;
   user_name?: string | null;
   master_item_id?: number | null;
+  bank_account_id?: number | null;
+  reconciled_at?: string | null;
+  reconciled_ref?: string | null;
   supplier_id?: number | null;
   sheets_synced: boolean;
 }
@@ -230,6 +233,24 @@ export interface LabaRugiReportData {
   total_beban: number;
   prev_total_beban: number;
   mom_beban_change_pct: number | null;
+  paid_tx_count?: number;
+  revenue_gross?: number;
+  revenue_discount?: number;
+  revenue_platform_fee?: number;
+  revenue_net?: number;
+  prev_revenue_net?: number;
+  mom_revenue_change_pct?: number | null;
+  gross_profit?: number;
+  net_profit?: number;
+  prev_net_profit?: number;
+  revenue_by_channel?: Array<{
+    channel: string;
+    tx_count: number;
+    gross_sales: number;
+    platform_fee: number;
+    net_received: number;
+    percentage: number;
+  }>;
 }
 
 export interface NeracaItemData {
@@ -240,9 +261,24 @@ export interface NeracaItemData {
   description: string;
 }
 
+export interface RekeningPositionData {
+  id: number;
+  account_code: string;
+  name: string;
+  bank_name: string;
+  account_type: string;
+  opening_balance: number;
+  incoming_month: number;
+  outgoing_month: number;
+  net_month_flow: number;
+  estimated_balance: number;
+}
+
 export interface NeracaReportData {
   aset_lancar: NeracaItemData[];
   subtotal_aset_lancar: number;
+  rekening_positions?: RekeningPositionData[];
+  total_rekening_balance?: number;
   aset_tetap: NeracaItemData[];
   subtotal_aset_tetap: number;
   total_aset: number;
@@ -259,6 +295,8 @@ export interface ArusKasItemData {
 }
 
 export interface ArusKasReportData {
+  total_kas_masuk?: number;
+  net_cash_flow?: number;
   aktivitas_operasi: ArusKasItemData[];
   subtotal_operasi: number;
   aktivitas_investasi: ArusKasItemData[];
@@ -630,6 +668,7 @@ export interface ExpenseFormData {
   user_id?: number | null;
   master_item_id?: number | null;
   supplier_id?: number | null;
+  bank_account_id?: number | null;
 }
 
 export interface OcrExtractedItem {
@@ -958,8 +997,12 @@ export interface BankAccount {
   account_number: string;
   account_holder: string;
   account_type: BankAccountType;
+  account_code: string;
   opening_balance: number;
   total_incoming: number;
+  total_expenses?: number;
+  transfers_in?: number;
+  transfers_out?: number;
   estimated_balance: number;
   tx_count: number;
   channel_mappings: string[];
@@ -1009,7 +1052,94 @@ export interface IncomingTransaction {
   status: "paid" | "void" | "cancelled";
   void_at?: string | null;
   notes?: string | null;
+  reconciled_at?: string | null;
+  reconciled_ref?: string | null;
   items: IncomingTransactionItem[];
+}
+
+export interface BankTransfer {
+  id: number;
+  transfer_date: string;
+  from_account_id: number;
+  from_account_name?: string | null;
+  to_account_id: number;
+  to_account_name?: string | null;
+  amount: number;
+  admin_fee: number;
+  transfer_type: "setor_tunai" | "pencairan_platform" | "antar_rekening";
+  reference_no?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+}
+
+export interface IncomingAnalytics {
+  top_products: Array<{
+    product_name: string;
+    category: string;
+    total_qty: number;
+    net_sales: number;
+    order_lines: number;
+  }>;
+  categories: Array<{
+    category: string;
+    total_qty: number;
+    net_sales: number;
+  }>;
+  peak_hours: Array<{
+    hour: number;
+    label: string;
+    offline_count: number;
+    online_count: number;
+    total_count: number;
+    net_received: number;
+  }>;
+  void_by_channel: Array<{
+    channel: string;
+    count: number;
+    amount: number;
+  }>;
+}
+
+export interface ReconciliationPreview {
+  mode: "mutasi_bank" | "settlement_platform";
+  total_rows: number;
+  matched_incoming: Array<{
+    row_no: number;
+    reconciled_ref: string;
+    bank_date?: string;
+    bank_desc?: string;
+    tx_id: number;
+    receipt_no?: string | null;
+    order_no?: string | null;
+    transaction_date: string;
+    order_type: string;
+    old_platform_fee: number;
+    new_platform_fee: number;
+    old_net_received: number;
+    new_net_received: number;
+    diff_net: number;
+    bank_account_id?: number | null;
+  }>;
+  matched_expenses: Array<{
+    row_no: number;
+    reconciled_ref: string;
+    bank_date: string;
+    bank_desc: string;
+    expense_id: number;
+    expense_date: string;
+    supplier: string;
+    item_name: string;
+    total_price: number;
+    pay_method: string;
+    bank_account_id?: number | null;
+  }>;
+  unmatched_rows: Array<{
+    row_no: number;
+    date?: string | null;
+    description: string;
+    direction: string;
+    amount: number;
+  }>;
 }
 
 export interface IncomingTransactionsSummary {

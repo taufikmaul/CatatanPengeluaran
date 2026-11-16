@@ -9,8 +9,12 @@ from sqlalchemy import select, and_, func
 
 from app.models.expense import Expense
 from app.models.master_data import MasterDataOption
+from app.models.bank_account import BankAccount
+from app.models.incoming_transaction import IncomingTransaction
+from app.models.bank_transfer import BankTransfer
 from app.services.expense_service import get_monthly_report
 from app.services.master_data_service import get_category_accounting_map, get_master_options
+from app.services.bank_account_service import DEFAULT_COA_BY_TYPE, _parse_mappings
 
 MONTH_NAMES = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -125,8 +129,75 @@ async def get_accounting_report(
     all_account_lines.sort(key=lambda x: (x["account_code"], x["category"]))
 
     # ─────────────────────────────────────────────────────────────
-    # 1. LAPORAN LABA RUGI (INCOME STATEMENT - BEBAN USAHA)
+    # 1. LAPORAN LABA RUGI (PENDAPATAN USAHA & BEBAN USAHA)
     # ─────────────────────────────────────────────────────────────
+    prev_start_date = date(prev_year, prev_month, 1)
+    prev_end_date = start_date
+
+    rev_cur_res = await db.execute(
+        select(
+            func.count(IncomingTransaction.id),
+            func.coalesce(func.sum(IncomingTransaction.gross_sales), 0.0),
+            func.coalesce(func.sum(IncomingTransaction.discount_amount), 0.0),
+            func.coalesce(func.sum(IncomingTransaction.platform_fee), 0.0),
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        ).where(
+            and_(
+                IncomingTransaction.transaction_date >= start_date,
+                IncomingTransaction.transaction_date < end_date,
+                IncomingTransaction.status == "paid",
+            )
+        )
+    )
+    rev_cur_row = rev_cur_res.fetchone()
+    paid_tx_count = int(rev_cur_row[0] or 0) if rev_cur_row else 0
+    revenue_gross = float(rev_cur_row[1] or 0.0) if rev_cur_row else 0.0
+    revenue_discount = float(rev_cur_row[2] or 0.0) if rev_cur_row else 0.0
+    revenue_platform_fee = float(rev_cur_row[3] or 0.0) if rev_cur_row else 0.0
+    revenue_net = float(rev_cur_row[4] or 0.0) if rev_cur_row else 0.0
+
+    rev_prev_res = await db.execute(
+        select(func.coalesce(func.sum(IncomingTransaction.net_received), 0.0)).where(
+            and_(
+                IncomingTransaction.transaction_date >= prev_start_date,
+                IncomingTransaction.transaction_date < prev_end_date,
+                IncomingTransaction.status == "paid",
+            )
+        )
+    )
+    prev_revenue_net = float(rev_prev_res.scalar() or 0.0)
+    mom_revenue_pct = _calc_mom_pct(revenue_net, prev_revenue_net)
+
+    rev_channel_res = await db.execute(
+        select(
+            IncomingTransaction.order_type,
+            func.count(IncomingTransaction.id),
+            func.coalesce(func.sum(IncomingTransaction.gross_sales), 0.0),
+            func.coalesce(func.sum(IncomingTransaction.platform_fee), 0.0),
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        )
+        .where(
+            and_(
+                IncomingTransaction.transaction_date >= start_date,
+                IncomingTransaction.transaction_date < end_date,
+                IncomingTransaction.status == "paid",
+            )
+        )
+        .group_by(IncomingTransaction.order_type)
+        .order_by(func.sum(IncomingTransaction.net_received).desc())
+    )
+    revenue_by_channel = [
+        {
+            "channel": r[0] or "Lainnya",
+            "tx_count": int(r[1] or 0),
+            "gross_sales": float(r[2] or 0.0),
+            "platform_fee": float(r[3] or 0.0),
+            "net_received": float(r[4] or 0.0),
+            "percentage": round((float(r[4] or 0.0) / revenue_net) * 100.0, 1) if revenue_net > 0 else 0.0,
+        }
+        for r in rev_channel_res.fetchall()
+    ]
+
     hpp_items: list[dict[str, Any]] = [
         item for item in all_account_lines
         if item["account_group"] == "HPP" or item["category"] == "Ongkir"
@@ -147,6 +218,10 @@ async def get_accounting_report(
     prev_total_beban = prev_subtotal_hpp + prev_subtotal_opex
     mom_beban_pct = _calc_mom_pct(total_beban, prev_total_beban)
 
+    gross_profit = revenue_net - subtotal_hpp
+    net_profit = revenue_net - total_beban
+    prev_net_profit = prev_revenue_net - prev_total_beban
+
     # Tambahkan proporsi persentase ke masing-masing item Laba Rugi
     for item in hpp_items:
         item["percentage_of_group"] = round((item["total"] / subtotal_hpp) * 100.0, 1) if subtotal_hpp > 0 else 0.0
@@ -157,6 +232,17 @@ async def get_accounting_report(
         item["percentage_of_total_expense"] = round((item["total"] / total_beban) * 100.0, 1) if total_beban > 0 else 0.0
 
     laba_rugi = {
+        "paid_tx_count": paid_tx_count,
+        "revenue_gross": revenue_gross,
+        "revenue_discount": revenue_discount,
+        "revenue_platform_fee": revenue_platform_fee,
+        "revenue_net": revenue_net,
+        "prev_revenue_net": prev_revenue_net,
+        "mom_revenue_change_pct": mom_revenue_pct,
+        "gross_profit": gross_profit,
+        "net_profit": net_profit,
+        "prev_net_profit": prev_net_profit,
+        "revenue_by_channel": revenue_by_channel,
         "hpp_items": hpp_items,
         "subtotal_hpp": subtotal_hpp,
         "prev_subtotal_hpp": prev_subtotal_hpp,
@@ -244,9 +330,143 @@ async def get_accounting_report(
         }
     ]
 
+    # Posisi Kas & Bank per Rekening Setup (Terhubung ke COA 1-11xx)
+    bank_accs_res = await db.execute(
+        select(BankAccount)
+        .where(BankAccount.is_active == True)  # noqa: E712
+        .order_by(BankAccount.sort_order.asc(), BankAccount.id.asc())
+    )
+    bank_accounts = bank_accs_res.scalars().all()
+
+    inc_month_res = await db.execute(
+        select(
+            IncomingTransaction.bank_account_id,
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        )
+        .where(
+            and_(
+                IncomingTransaction.transaction_date >= start_date,
+                IncomingTransaction.transaction_date < end_date,
+                IncomingTransaction.status == "paid",
+                IncomingTransaction.bank_account_id.is_not(None),
+            )
+        )
+        .group_by(IncomingTransaction.bank_account_id)
+    )
+    inc_month_map = {int(r[0]): float(r[1] or 0.0) for r in inc_month_res.fetchall()}
+
+    inc_all_res = await db.execute(
+        select(
+            IncomingTransaction.bank_account_id,
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        )
+        .where(
+            and_(
+                IncomingTransaction.status == "paid",
+                IncomingTransaction.bank_account_id.is_not(None),
+            )
+        )
+        .group_by(IncomingTransaction.bank_account_id)
+    )
+    inc_all_map = {int(r[0]): float(r[1] or 0.0) for r in inc_all_res.fetchall()}
+
+    # Cocokkan pengeluaran (cur_metode) ke rekening berdasarkan channel_mappings
+    method_to_acc_id: dict[str, int] = {}
+    default_acc_id: int | None = None
+    for acc in bank_accounts:
+        if acc.is_default and default_acc_id is None:
+            default_acc_id = acc.id
+        for m in _parse_mappings(acc.channel_mappings):
+            key = m.strip().lower()
+            if key and key not in method_to_acc_id:
+                method_to_acc_id[key] = acc.id
+
+    # Pengeluaran bulan ini yang sudah memilih bank_account_id langsung
+    exp_direct_res = await db.execute(
+        select(
+            Expense.bank_account_id,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            and_(
+                Expense.expense_date >= start_date,
+                Expense.expense_date < end_date,
+                Expense.pay_status == "Lunas",
+                Expense.bank_account_id.is_not(None),
+            )
+        )
+        .group_by(Expense.bank_account_id)
+    )
+    out_month_map: dict[int, float] = {int(r[0]): float(r[1] or 0.0) for r in exp_direct_res.fetchall()}
+
+    # Pengeluaran bulan ini yang belum punya bank_account_id -> fallback mapping pay_method
+    exp_unassigned_res = await db.execute(
+        select(
+            Expense.pay_method,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            and_(
+                Expense.expense_date >= start_date,
+                Expense.expense_date < end_date,
+                Expense.pay_status == "Lunas",
+                Expense.bank_account_id.is_(None),
+            )
+        )
+        .group_by(Expense.pay_method)
+    )
+    for m_name, m_total in exp_unassigned_res.fetchall():
+        m_key = (m_name or "").strip().lower()
+        matched_id = method_to_acc_id.get(m_key)
+        if matched_id is None:
+            for k, aid in method_to_acc_id.items():
+                if k in m_key or m_key in k:
+                    matched_id = aid
+                    break
+        if matched_id is None:
+            matched_id = default_acc_id
+        if matched_id is not None:
+            out_month_map[matched_id] = out_month_map.get(matched_id, 0.0) + float(m_total or 0.0)
+
+    # Transfer antar rekening (all-time & bulan ini)
+    tr_in_all_res = await db.execute(
+        select(BankTransfer.to_account_id, func.coalesce(func.sum(BankTransfer.amount), 0.0))
+        .group_by(BankTransfer.to_account_id)
+    )
+    tr_in_all = {int(r[0]): float(r[1] or 0.0) for r in tr_in_all_res.fetchall()}
+
+    tr_out_all_res = await db.execute(
+        select(BankTransfer.from_account_id, func.coalesce(func.sum(BankTransfer.amount + BankTransfer.admin_fee), 0.0))
+        .group_by(BankTransfer.from_account_id)
+    )
+    tr_out_all = {int(r[0]): float(r[1] or 0.0) for r in tr_out_all_res.fetchall()}
+
+    rekening_positions: list[dict[str, Any]] = []
+    for acc in bank_accounts:
+        in_m = inc_month_map.get(acc.id, 0.0)
+        out_m = out_month_map.get(acc.id, 0.0)
+        in_all = inc_all_map.get(acc.id, 0.0)
+        t_in = tr_in_all.get(acc.id, 0.0)
+        t_out = tr_out_all.get(acc.id, 0.0)
+        coa_code = acc.account_code or DEFAULT_COA_BY_TYPE.get(acc.account_type, "1-1120")
+        rekening_positions.append({
+            "id": acc.id,
+            "account_code": coa_code,
+            "name": acc.name,
+            "bank_name": acc.bank_name,
+            "account_type": acc.account_type,
+            "opening_balance": float(acc.opening_balance or 0.0),
+            "incoming_month": in_m,
+            "outgoing_month": out_m,
+            "net_month_flow": in_m - out_m,
+            "estimated_balance": float(acc.opening_balance or 0.0) + in_all + t_in - t_out - out_m,
+        })
+
     neraca = {
         "aset_lancar": aset_lancar,
         "subtotal_aset_lancar": subtotal_aset_lancar,
+        "rekening_positions": rekening_positions,
+        "total_rekening_balance": sum(r["estimated_balance"] for r in rekening_positions),
         "aset_tetap": aset_tetap,
         "subtotal_aset_tetap": subtotal_aset_tetap,
         "total_aset": total_aset,
@@ -311,6 +531,8 @@ async def get_accounting_report(
     metode_distribution.sort(key=lambda x: -x["nominal"])
 
     arus_kas = {
+        "total_kas_masuk": revenue_net,
+        "net_cash_flow": revenue_net - total_kas_keluar_riil,
         "aktivitas_operasi": arus_operasi,
         "subtotal_operasi": subtotal_arus_operasi,
         "aktivitas_investasi": arus_investasi,

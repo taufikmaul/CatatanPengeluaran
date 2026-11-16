@@ -20,6 +20,7 @@ class BankAccount(Base):
     account_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
     account_holder: Mapped[str | None] = mapped_column(String(100), nullable=True)
     account_type: Mapped[str] = mapped_column(String(30), default="bank", nullable=False)  # bank | cash | ewallet | aggregator
+    account_code: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Kode akun COA (cth: 1-1110, 1-1120)
     opening_balance: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     channel_mappings: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of strings
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

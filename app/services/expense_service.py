@@ -191,6 +191,7 @@ async def save_expenses(
             msg_link=msg_link,
             user_id=user_id,
             master_item_id=master_item_id,
+            bank_account_id=item.get("bank_account_id"),
             sheets_synced=False,
         )
         db.add(expense)
@@ -314,6 +315,9 @@ def expense_to_dict(e: Expense) -> dict:
         "user_id": e.user_id,
         "user_name": user_name,
         "master_item_id": getattr(e, "master_item_id", None),
+        "bank_account_id": getattr(e, "bank_account_id", None),
+        "reconciled_at": getattr(e, "reconciled_at", None),
+        "reconciled_ref": getattr(e, "reconciled_ref", None),
         "sheets_synced": bool(e.sheets_synced),
     }
 

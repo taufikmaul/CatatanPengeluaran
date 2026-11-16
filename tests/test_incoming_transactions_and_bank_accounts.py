@@ -173,3 +173,17 @@ async def test_bank_account_and_incoming_tx_flow(client: AsyncSession, auth_cook
     assert accs[bca_id]["total_incoming"] == 175000.0
     assert accs[bca_id]["estimated_balance"] == 1175000.0
     assert accs[gobiz_id]["total_incoming"] == 57420.0
+
+    # 7. Cek integrasi ke Laporan Akuntansi (Laba Rugi, Neraca Rekening, Arus Kas)
+    res_acc_rep = await client.get("/api/v1/reports/accounting?month=11&year=2026")
+    assert res_acc_rep.status_code == 200
+    rep = res_acc_rep.json()
+    assert rep["laba_rugi"]["revenue_net"] == 232420.0
+    assert rep["laba_rugi"]["paid_tx_count"] == 2
+    assert rep["arus_kas"]["total_kas_masuk"] == 232420.0
+    pos_by_id = {p["id"]: p for p in rep["neraca"]["rekening_positions"]}
+    assert pos_by_id[bca_id]["account_code"] == "1-1120"
+    assert pos_by_id[bca_id]["incoming_month"] == 175000.0
+    assert pos_by_id[bca_id]["estimated_balance"] == 1175000.0
+    assert pos_by_id[gobiz_id]["account_code"] == "1-1130"
+    assert pos_by_id[gobiz_id]["incoming_month"] == 57420.0

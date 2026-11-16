@@ -7,6 +7,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
+from app.models.bank_transfer import BankTransfer
+from app.models.expense import Expense
 
 
 def _parse_mappings(raw: str | None) -> list[str]:
@@ -21,11 +23,24 @@ def _parse_mappings(raw: str | None) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+DEFAULT_COA_BY_TYPE: dict[str, str] = {
+    "cash": "1-1110",
+    "bank": "1-1120",
+    "ewallet": "1-1121",
+    "aggregator": "1-1130",
+}
+
+
 def serialize_bank_account(
     acc: BankAccount,
     total_incoming: float = 0.0,
     tx_count: int = 0,
+    total_expenses: float = 0.0,
+    transfers_in: float = 0.0,
+    transfers_out: float = 0.0,
 ) -> dict[str, Any]:
+    opening = float(acc.opening_balance or 0.0)
+    estimated = opening + float(total_incoming) + float(transfers_in) - float(transfers_out) - float(total_expenses)
     return {
         "id": acc.id,
         "name": acc.name,
@@ -33,9 +48,13 @@ def serialize_bank_account(
         "account_number": acc.account_number or "",
         "account_holder": acc.account_holder or "",
         "account_type": acc.account_type,
-        "opening_balance": float(acc.opening_balance or 0.0),
+        "account_code": acc.account_code or DEFAULT_COA_BY_TYPE.get(acc.account_type, "1-1120"),
+        "opening_balance": opening,
         "total_incoming": float(total_incoming),
-        "estimated_balance": float(acc.opening_balance or 0.0) + float(total_incoming),
+        "total_expenses": float(total_expenses),
+        "transfers_in": float(transfers_in),
+        "transfers_out": float(transfers_out),
+        "estimated_balance": estimated,
         "tx_count": int(tx_count),
         "channel_mappings": _parse_mappings(acc.channel_mappings),
         "notes": acc.notes or "",
@@ -75,11 +94,43 @@ async def list_bank_accounts(
         for row in agg_res.fetchall()
     }
 
+    exp_res = await db.execute(
+        select(
+            Expense.bank_account_id,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            Expense.bank_account_id.is_not(None),
+            Expense.pay_status == "Lunas",
+        )
+        .group_by(Expense.bank_account_id)
+    )
+    exp_map = {int(r[0]): float(r[1] or 0.0) for r in exp_res.fetchall()}
+
+    tr_in_res = await db.execute(
+        select(
+            BankTransfer.to_account_id,
+            func.coalesce(func.sum(BankTransfer.amount), 0.0),
+        ).group_by(BankTransfer.to_account_id)
+    )
+    tr_in_map = {int(r[0]): float(r[1] or 0.0) for r in tr_in_res.fetchall()}
+
+    tr_out_res = await db.execute(
+        select(
+            BankTransfer.from_account_id,
+            func.coalesce(func.sum(BankTransfer.amount + BankTransfer.admin_fee), 0.0),
+        ).group_by(BankTransfer.from_account_id)
+    )
+    tr_out_map = {int(r[0]): float(r[1] or 0.0) for r in tr_out_res.fetchall()}
+
     return [
         serialize_bank_account(
             acc,
             total_incoming=agg_map.get(acc.id, (0.0, 0))[0],
             tx_count=agg_map.get(acc.id, (0.0, 0))[1],
+            total_expenses=exp_map.get(acc.id, 0.0),
+            transfers_in=tr_in_map.get(acc.id, 0.0),
+            transfers_out=tr_out_map.get(acc.id, 0.0),
         )
         for acc in accounts
     ]
@@ -92,12 +143,15 @@ async def create_bank_account(db: AsyncSession, data: dict[str, Any]) -> BankAcc
             acc.is_default = False
 
     mappings = data.get("channel_mappings") or []
+    acc_type = (data.get("account_type") or "bank").strip()
+    acc_code = (data.get("account_code") or "").strip() or DEFAULT_COA_BY_TYPE.get(acc_type, "1-1120")
     acc = BankAccount(
         name=data["name"].strip(),
         bank_name=data["bank_name"].strip(),
         account_number=(data.get("account_number") or "").strip() or None,
         account_holder=(data.get("account_holder") or "").strip() or None,
-        account_type=(data.get("account_type") or "bank").strip(),
+        account_type=acc_type,
+        account_code=acc_code,
         opening_balance=float(data.get("opening_balance") or 0.0),
         channel_mappings=json.dumps([str(m).strip() for m in mappings if str(m).strip()]),
         notes=(data.get("notes") or "").strip() or None,
@@ -126,7 +180,7 @@ async def update_bank_account(
         for other in existing.scalars().all():
             other.is_default = False
 
-    for field in ("name", "bank_name", "account_number", "account_holder", "account_type", "notes"):
+    for field in ("name", "bank_name", "account_number", "account_holder", "account_type", "account_code", "notes"):
         if field in data and data[field] is not None:
             val = str(data[field]).strip()
             setattr(acc, field, val if val or field in ("name", "bank_name", "account_type") else None)

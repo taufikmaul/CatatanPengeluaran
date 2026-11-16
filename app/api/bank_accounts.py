@@ -25,6 +25,7 @@ class BankAccountCreate(BaseModel):
     account_number: Optional[str] = Field(None, max_length=60)
     account_holder: Optional[str] = Field(None, max_length=100)
     account_type: str = Field("bank", pattern="^(bank|cash|ewallet|aggregator)$")
+    account_code: Optional[str] = Field(None, max_length=20)
     opening_balance: float = 0.0
     channel_mappings: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
@@ -39,6 +40,7 @@ class BankAccountUpdate(BaseModel):
     account_number: Optional[str] = Field(None, max_length=60)
     account_holder: Optional[str] = Field(None, max_length=100)
     account_type: Optional[str] = Field(None, pattern="^(bank|cash|ewallet|aggregator)$")
+    account_code: Optional[str] = Field(None, max_length=20)
     opening_balance: Optional[float] = None
     channel_mappings: Optional[list[str]] = None
     notes: Optional[str] = None

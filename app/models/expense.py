@@ -68,6 +68,13 @@ class Expense(Base):
     supplier_rel: Mapped["Supplier | None"] = relationship(
         "Supplier", foreign_keys=[supplier_id], back_populates="expenses", lazy="selectin"
     )
+
+    # Relasi rekening sumber pembayaran (Kas / Bank / Petty Cash) & Rekonsiliasi
+    bank_account_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("bank_accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    reconciled_ref: Mapped[str | None] = mapped_column(String(120), nullable=True, default=None)
     
     # Untuk Google Sheets sync
     sheets_synced: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -82,6 +82,9 @@ def _to_response_dict(e: Expense) -> dict:
         "user_name": user_name,
         "master_item_id": getattr(e, "master_item_id", None),
         "supplier_id": getattr(e, "supplier_id", None),
+        "bank_account_id": getattr(e, "bank_account_id", None),
+        "reconciled_at": getattr(e, "reconciled_at", None),
+        "reconciled_ref": getattr(e, "reconciled_ref", None),
         "sheets_synced": bool(e.sheets_synced),
     }
 
@@ -228,6 +231,7 @@ async def create_expense(
         msg_link=payload.msg_link or "Web Dashboard",
         user_id=payload.user_id,
         master_item_id=norm.get("master_item_id") or payload.master_item_id,
+        bank_account_id=payload.bank_account_id,
         sheets_synced=False,
     )
     db.add(expense)
@@ -313,6 +317,7 @@ async def create_expense_batch(
             "msg_link": it.msg_link or "Web Dashboard",
             "user_id": it.user_id,
             "master_item_id": it.master_item_id,
+            "bank_account_id": it.bank_account_id,
         })
 
     if not dict_items:

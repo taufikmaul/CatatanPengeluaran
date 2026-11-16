@@ -520,6 +520,80 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "laba_rugi" && (
             <div className="space-y-6">
+              {/* 0. SECTION PENDAPATAN & LABA BERSIH (Akun Kepala 4 - dari Transaksi Masuk) */}
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+                <div className="bg-emerald-50/70 dark:bg-emerald-950/30 px-5 py-3.5 border-b border-emerald-200/70 dark:border-emerald-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded">
+                      AKUN 4-1100
+                    </span>
+                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                      Pendapatan Usaha &amp; Ringkasan Laba / Rugi
+                    </h3>
+                  </div>
+                  <div className="text-right text-xs text-slate-500">
+                    {accountingData.laba_rugi.paid_tx_count || 0} transaksi masuk dibayar
+                  </div>
+                </div>
+                <CardContent className="p-4 space-y-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                      <div className="text-[11px] text-slate-500">Penjualan Kotor</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
+                        {formatRupiah(accountingData.laba_rugi.revenue_gross || 0)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                      <div className="text-[11px] text-slate-500">Diskon &amp; Fee Platform</div>
+                      <div className="text-sm font-bold text-rose-600 tabular-nums mt-0.5">
+                        -{formatRupiah((accountingData.laba_rugi.revenue_discount || 0) + (accountingData.laba_rugi.revenue_platform_fee || 0))}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400">Pendapatan Bersih</div>
+                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">
+                        {formatRupiah(accountingData.laba_rugi.revenue_net || 0)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                      <div className="text-[11px] text-slate-500">Laba Kotor (Net - HPP)</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
+                        {formatRupiah(accountingData.laba_rugi.gross_profit || 0)}
+                      </div>
+                    </div>
+                    <div className={`rounded-lg border p-3 ${
+                      (accountingData.laba_rugi.net_profit || 0) >= 0
+                        ? "border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/60 dark:bg-emerald-950/20"
+                        : "border-rose-200 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20"
+                    }`}>
+                      <div className="text-[11px] text-slate-600 dark:text-slate-300">Laba / Rugi Bersih</div>
+                      <div className={`text-sm font-bold tabular-nums mt-0.5 ${
+                        (accountingData.laba_rugi.net_profit || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
+                      }`}>
+                        {formatRupiah(accountingData.laba_rugi.net_profit || 0)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {accountingData.laba_rugi.revenue_by_channel && accountingData.laba_rugi.revenue_by_channel.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {accountingData.laba_rugi.revenue_by_channel.map((ch) => (
+                        <div
+                          key={ch.channel}
+                          className="text-xs px-2.5 py-1.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                        >
+                          <span className="font-medium text-slate-800 dark:text-slate-200">{ch.channel}</span>{" "}
+                          <span className="text-slate-400">({ch.tx_count} tx • {ch.percentage}%)</span>:{" "}
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                            {formatRupiah(ch.net_received)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Visual Proportion Bar HPP vs OPEX */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
                 <div className="flex items-center justify-between text-xs mb-2">
@@ -847,6 +921,66 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "neraca" && (
             <div className="space-y-6">
+              {/* Posisi Kas & Bank per Rekening Setup (Terhubung ke COA 1-11xx) */}
+              {accountingData.neraca.rekening_positions && accountingData.neraca.rekening_positions.length > 0 && (
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+                  <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-blue-600" />
+                      <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        Posisi Kas &amp; Bank per Rekening Setup (Akun 1-11xx)
+                      </h3>
+                    </div>
+                    <span className="font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
+                      Total Estimasi: {formatRupiah(accountingData.neraca.total_rekening_balance || 0)}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 bg-slate-50/60 dark:bg-slate-800/40">
+                          <th className="py-2.5 px-4 font-semibold w-24">Kode COA</th>
+                          <th className="py-2.5 px-4 font-semibold">Rekening / Akun Kas</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Saldo Awal</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Masuk (Bulan Ini)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Keluar (Bulan Ini)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Estimasi Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {accountingData.neraca.rekening_positions.map((rek) => (
+                          <tr key={rek.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                            <td className="py-2.5 px-4 font-mono text-slate-600 dark:text-slate-300">
+                              {rek.account_code}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                {rek.name}
+                              </span>
+                              <span className="text-[11px] text-slate-400 ml-1.5">
+                                ({rek.bank_name})
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-slate-600">
+                              {formatRupiah(rek.opening_balance)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-emerald-700 font-medium">
+                              +{formatRupiah(rek.incoming_month)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-rose-600 font-medium">
+                              -{formatRupiah(rek.outgoing_month)}
+                            </td>
+                            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                              {formatRupiah(rek.estimated_balance)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* SISI KIRI: ASET (AKTIVA) */}
                 <div className="space-y-6">
@@ -986,6 +1120,36 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "arus_kas" && (
             <div className="space-y-6">
+              {/* Ringkasan Arus Kas Masuk vs Keluar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <Card className="border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-xs">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-emerald-700 dark:text-emerald-400">Total Kas Masuk (Penjualan Bersih)</div>
+                    <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-1">
+                      +{formatRupiah(accountingData.arus_kas.total_kas_masuk || 0)}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-slate-500">Total Kas Keluar Riil</div>
+                    <div className="text-lg font-bold text-rose-600 tabular-nums mt-1">
+                      -{formatRupiah(accountingData.arus_kas.total_kas_keluar_riil)}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
+                  <CardContent className="p-4">
+                    <div className="text-xs text-slate-500">Arus Kas Bersih (Net Cash Flow)</div>
+                    <div className={`text-lg font-bold tabular-nums mt-1 ${
+                      (accountingData.arus_kas.net_cash_flow || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
+                    }`}>
+                      {formatRupiah(accountingData.arus_kas.net_cash_flow || 0)}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* 1. Aktivitas Operasi */}
                 <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">

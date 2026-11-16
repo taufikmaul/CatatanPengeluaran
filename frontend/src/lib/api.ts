@@ -815,6 +815,66 @@ export async function commitSalesImport(
   return res.data.result;
 }
 
+export async function getIncomingAnalytics(params?: {
+  start_date?: string;
+  end_date?: string;
+}): Promise<import("@/types").IncomingAnalytics> {
+  const res = await api.get("/incoming-transactions/analytics", { params });
+  return res.data.analytics;
+}
+
+// ── Transfer Antar Rekening ───────────────────────────────────────────────────
+export async function getBankTransfers(params?: {
+  start_date?: string;
+  end_date?: string;
+  account_id?: number;
+}): Promise<import("@/types").BankTransfer[]> {
+  const res = await api.get("/bank-transfers", { params });
+  return res.data.transfers;
+}
+
+export async function createBankTransfer(data: {
+  transfer_date: string;
+  from_account_id: number;
+  to_account_id: number;
+  amount: number;
+  admin_fee?: number;
+  transfer_type: "setor_tunai" | "pencairan_platform" | "antar_rekening";
+  reference_no?: string;
+  notes?: string;
+}): Promise<import("@/types").BankTransfer> {
+  const res = await api.post("/bank-transfers", data);
+  return res.data.transfer;
+}
+
+export async function deleteBankTransfer(id: number): Promise<void> {
+  await api.delete(`/bank-transfers/${id}`);
+}
+
+// ── Rekonsiliasi Settlement & Mutasi Bank ─────────────────────────────────────
+export async function previewReconciliation(
+  file: File,
+  mode: "mutasi_bank" | "settlement_platform",
+  bankAccountId?: number | null
+): Promise<import("@/types").ReconciliationPreview> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("mode", mode);
+  if (bankAccountId) formData.append("bank_account_id", String(bankAccountId));
+  const res = await api.post("/reconciliation/preview", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.preview;
+}
+
+export async function applyReconciliation(payload: {
+  incoming_matches: any[];
+  expense_matches: any[];
+}): Promise<{ reconciled_incoming: number; reconciled_expenses: number }> {
+  const res = await api.post("/reconciliation/apply", payload);
+  return res.data.result;
+}
+
 
 
 

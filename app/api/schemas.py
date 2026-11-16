@@ -30,6 +30,7 @@ class ExpenseBase(BaseModel):
     user_id: int | None = None
     master_item_id: int | None = None
     supplier_id: int | None = None
+    bank_account_id: int | None = None
 
 
 class ExpenseCreate(ExpenseBase):
@@ -64,6 +65,7 @@ class ExpenseUpdate(BaseModel):
     user_id: int | None = None
     master_item_id: int | None = None
     supplier_id: int | None = None
+    bank_account_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -93,6 +95,9 @@ class ExpenseResponse(BaseModel):
     user_name: str | None = None
     master_item_id: int | None = None
     supplier_id: int | None = None
+    bank_account_id: int | None = None
+    reconciled_at: datetime | None = None
+    reconciled_ref: str | None = None
     sheets_synced: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -291,6 +296,17 @@ class AccountLineItem(BaseModel):
 
 
 class LabaRugiReport(BaseModel):
+    paid_tx_count: int = 0
+    revenue_gross: float = 0.0
+    revenue_discount: float = 0.0
+    revenue_platform_fee: float = 0.0
+    revenue_net: float = 0.0
+    prev_revenue_net: float = 0.0
+    mom_revenue_change_pct: float | None = None
+    gross_profit: float = 0.0
+    net_profit: float = 0.0
+    prev_net_profit: float = 0.0
+    revenue_by_channel: list[dict[str, Any]] = []
     hpp_items: list[AccountLineItem]
     subtotal_hpp: float
     prev_subtotal_hpp: float
@@ -312,9 +328,24 @@ class NeracaItem(BaseModel):
     description: str = ""
 
 
+class RekeningPositionItem(BaseModel):
+    id: int
+    account_code: str
+    name: str
+    bank_name: str
+    account_type: str
+    opening_balance: float = 0.0
+    incoming_month: float = 0.0
+    outgoing_month: float = 0.0
+    net_month_flow: float = 0.0
+    estimated_balance: float = 0.0
+
+
 class NeracaReport(BaseModel):
     aset_lancar: list[NeracaItem]
     subtotal_aset_lancar: float
+    rekening_positions: list[RekeningPositionItem] = []
+    total_rekening_balance: float = 0.0
     aset_tetap: list[NeracaItem]
     subtotal_aset_tetap: float
     total_aset: float
@@ -331,6 +362,8 @@ class ArusKasItem(BaseModel):
 
 
 class ArusKasReport(BaseModel):
+    total_kas_masuk: float = 0.0
+    net_cash_flow: float = 0.0
     aktivitas_operasi: list[ArusKasItem]
     subtotal_operasi: float
     aktivitas_investasi: list[ArusKasItem]

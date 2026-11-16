@@ -51,6 +51,8 @@ class IncomingTransaction(Base):
     status: Mapped[str] = mapped_column(String(20), default="paid", nullable=False, index=True)  # paid | void | cancelled
     void_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    reconciled_ref: Mapped[str | None] = mapped_column(String(120), nullable=True, default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { Expense, ExpenseFormData, ExpenseUser, ItemSuggestion, OcrExtractedItem } from "@/types";
+import { BankAccount, Expense, ExpenseFormData, ExpenseUser, ItemSuggestion, OcrExtractedItem } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
-import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate } from "@/lib/api";
+import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate, getBankAccounts } from "@/lib/api";
 import {
   CalendarClock,
   Store,
@@ -109,9 +109,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   });
 
   const [usersList, setUsersList] = useState<ExpenseUser[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
 
   useEffect(() => {
     if (isOpen) {
+      getBankAccounts(true).then(setBankAccounts).catch(() => {});
       getExpenseUsers().then((res) => {
         if (Array.isArray(res)) setUsersList(res);
       }).catch(() => {});
@@ -288,6 +290,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         user_id: initialData.user_id ?? null,
         master_item_id: initialData.master_item_id ?? null,
         supplier_id: initialData.supplier_id ?? null,
+        bank_account_id: initialData.bank_account_id ?? null,
       });
     } else if (repeatData) {
       reset({
@@ -1324,6 +1327,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   selectedSuggestionHint={selectedSuggestionHint}
                   itemSuggestions={itemSuggestions}
                   upsertNoteTag={upsertNoteTag}
+                  bankAccounts={bankAccounts}
                 />
               </div>
             </div>

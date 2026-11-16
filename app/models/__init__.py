@@ -13,6 +13,7 @@ from app.models.purchase_request import PurchaseRequest, PurchaseRequestItem
 from app.models.background_job import BackgroundJobRecord
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
+from app.models.bank_transfer import BankTransfer
 
 __all__ = [
     "User",
@@ -32,5 +33,6 @@ __all__ = [
     "BankAccount",
     "IncomingTransaction",
     "IncomingTransactionItem",
+    "BankTransfer",
 ]
 

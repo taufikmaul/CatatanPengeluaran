@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Control, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-form";
-import { ExpenseFormData, ItemSuggestion } from "@/types";
+import { BankAccount, ExpenseFormData, ItemSuggestion } from "@/types";
 import { CategoryFormProfile } from "@/lib/categoryFormConfig";
 import { formatRupiah } from "@/lib/formatters";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ interface LedgerSummaryPanelProps {
   selectedSuggestionHint: ItemSuggestion | null;
   itemSuggestions: ItemSuggestion[];
   upsertNoteTag: (tagPrefix: string, val: string) => void;
+  bankAccounts?: BankAccount[];
 }
 
 export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(({
@@ -32,9 +33,11 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
   selectedSuggestionHint,
   itemSuggestions,
   upsertNoteTag,
+  bankAccounts = [],
 }) => {
   const [showNewTurunan, setShowNewTurunan] = useState(false);
   const [customTurunan, setCustomTurunan] = useState("");
+  const selectedBankAccountId = useWatch({ control, name: "bank_account_id" });
 
   // Isolated watcher: hanya komponen ini yang re-render saat angka kalkulasi berubah
   const [
@@ -543,6 +546,29 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
           </select>
         </div>
       </div>
+
+      {/* Rekening Sumber (Kas / Bank / Petty Cash) */}
+      {bankAccounts.length > 0 && !isUnpaid && (
+        <div>
+          <label className="text-xs font-semibold text-slate-700 block mb-1">
+            Rekening Sumber (Kas / Bank / Petty Cash)
+          </label>
+          <select
+            value={selectedBankAccountId ?? ""}
+            onChange={(e) =>
+              setValue("bank_account_id", e.target.value ? Number(e.target.value) : null)
+            }
+            className="h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-medium text-slate-800"
+          >
+            <option value="">-- Otomatis (Sesuai Mapping Metode Bayar) --</option>
+            {bankAccounts.map((acc) => (
+              <option key={acc.id} value={String(acc.id)}>
+                {acc.name} ({acc.account_code}) — {acc.bank_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas) */}
       {isUnpaid && (

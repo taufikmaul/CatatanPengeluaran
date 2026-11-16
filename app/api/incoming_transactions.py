@@ -47,6 +47,8 @@ def _serialize_tx(tx: IncomingTransaction) -> dict[str, Any]:
         "status": tx.status,
         "void_at": tx.void_at,
         "notes": tx.notes,
+        "reconciled_at": tx.reconciled_at.isoformat() if tx.reconciled_at else None,
+        "reconciled_ref": tx.reconciled_ref,
         "items": [
             {
                 "id": it.id,
@@ -185,6 +187,142 @@ async def api_list_incoming_transactions(
         "facets": {
             "order_types": [r[0] for r in ot_res.fetchall() if r[0]],
             "payment_methods": [r[0] for r in pm_res.fetchall() if r[0]],
+        },
+    }
+
+
+@router.get("/analytics")
+async def api_incoming_analytics(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Radar Menu Terlaris & Jam Sibuk Toko:
+    - top_products: produk terlaris berdasarkan qty & penjualan
+    - categories: ringkasan per kategori produk
+    - peak_hours: distribusi transaksi per jam (offline vs online delivery)
+    - void_summary: ringkasan transaksi void
+    """
+    tx_conds = [IncomingTransaction.status == "paid"]
+    if start_date:
+        tx_conds.append(IncomingTransaction.transaction_date >= start_date)
+    if end_date:
+        tx_conds.append(IncomingTransaction.transaction_date <= end_date)
+    paid_where = and_(*tx_conds)
+
+    # 1. Top Products
+    prod_res = await db.execute(
+        select(
+            IncomingTransactionItem.product_name,
+            func.max(IncomingTransactionItem.category),
+            func.coalesce(func.sum(IncomingTransactionItem.qty), 0.0),
+            func.coalesce(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount), 0.0),
+            func.count(IncomingTransactionItem.id),
+        )
+        .join(IncomingTransaction, IncomingTransactionItem.transaction_id == IncomingTransaction.id)
+        .where(paid_where)
+        .group_by(IncomingTransactionItem.product_name)
+        .order_by(func.sum(IncomingTransactionItem.qty).desc(), func.sum(IncomingTransactionItem.gross_amount).desc())
+        .limit(15)
+    )
+    top_products = [
+        {
+            "product_name": r[0],
+            "category": r[1] or "Lainnya",
+            "total_qty": float(r[2] or 0.0),
+            "net_sales": float(r[3] or 0.0),
+            "order_lines": int(r[4] or 0),
+        }
+        for r in prod_res.fetchall()
+    ]
+
+    # 2. Category Breakdown
+    cat_res = await db.execute(
+        select(
+            IncomingTransactionItem.category,
+            func.coalesce(func.sum(IncomingTransactionItem.qty), 0.0),
+            func.coalesce(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount), 0.0),
+        )
+        .join(IncomingTransaction, IncomingTransactionItem.transaction_id == IncomingTransaction.id)
+        .where(paid_where)
+        .group_by(IncomingTransactionItem.category)
+        .order_by(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount).desc())
+    )
+    categories = [
+        {
+            "category": r[0] or "Lainnya",
+            "total_qty": float(r[1] or 0.0),
+            "net_sales": float(r[2] or 0.0),
+        }
+        for r in cat_res.fetchall()
+    ]
+
+    # 3. Peak Hours (offline vs online delivery)
+    tx_rows_res = await db.execute(
+        select(
+            IncomingTransaction.transaction_time,
+            IncomingTransaction.order_type,
+            IncomingTransaction.net_received,
+        ).where(paid_where)
+    )
+    hour_buckets: dict[int, dict[str, Any]] = {}
+    for t_time, o_type, net_rec in tx_rows_res.fetchall():
+        hour = None
+        if t_time and ":" in t_time:
+            try:
+                hour = int(t_time.split(":")[0].strip())
+            except ValueError:
+                hour = None
+        if hour is None or not (0 <= hour <= 23):
+            continue
+        if hour not in hour_buckets:
+            hour_buckets[hour] = {
+                "hour": hour,
+                "label": f"{hour:02d}:00",
+                "offline_count": 0,
+                "online_count": 0,
+                "total_count": 0,
+                "net_received": 0.0,
+            }
+        ot_lower = (o_type or "").lower()
+        is_online = any(k in ot_lower for k in ("gofood", "grabfood", "shopeefood", "marketplace"))
+        if is_online:
+            hour_buckets[hour]["online_count"] += 1
+        else:
+            hour_buckets[hour]["offline_count"] += 1
+        hour_buckets[hour]["total_count"] += 1
+        hour_buckets[hour]["net_received"] += float(net_rec or 0.0)
+
+    peak_hours = [hour_buckets[h] for h in sorted(hour_buckets.keys())]
+
+    # 4. Void Summary
+    void_conds = [IncomingTransaction.status != "paid"]
+    if start_date:
+        void_conds.append(IncomingTransaction.transaction_date >= start_date)
+    if end_date:
+        void_conds.append(IncomingTransaction.transaction_date <= end_date)
+    void_res = await db.execute(
+        select(
+            IncomingTransaction.order_type,
+            func.count(IncomingTransaction.id),
+            func.coalesce(func.sum(IncomingTransaction.cancellation_total), 0.0),
+        )
+        .where(and_(*void_conds))
+        .group_by(IncomingTransaction.order_type)
+    )
+    void_by_channel = [
+        {"channel": r[0] or "Lainnya", "count": int(r[1] or 0), "amount": float(r[2] or 0.0)}
+        for r in void_res.fetchall()
+    ]
+
+    return {
+        "ok": True,
+        "analytics": {
+            "top_products": top_products,
+            "categories": categories,
+            "peak_hours": peak_hours,
+            "void_by_channel": void_by_channel,
         },
     }
 

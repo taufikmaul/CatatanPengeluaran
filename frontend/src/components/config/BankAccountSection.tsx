@@ -78,6 +78,7 @@ interface FormState {
   account_number: string;
   account_holder: string;
   account_type: BankAccountType;
+  account_code: string;
   opening_balance: string;
   channel_mappings: string[];
   custom_channel: string;
@@ -86,12 +87,20 @@ interface FormState {
   is_active: boolean;
 }
 
+const DEFAULT_COA_BY_TYPE: Record<BankAccountType, string> = {
+  cash: "1-1110",
+  bank: "1-1120",
+  ewallet: "1-1121",
+  aggregator: "1-1130",
+};
+
 const EMPTY_FORM: FormState = {
   name: "",
   bank_name: "",
   account_number: "",
   account_holder: "",
   account_type: "bank",
+  account_code: "1-1120",
   opening_balance: "0",
   channel_mappings: [],
   custom_channel: "",
@@ -119,6 +128,7 @@ export const BankAccountSection: React.FC = () => {
         account_number: form.account_number.trim() || undefined,
         account_holder: form.account_holder.trim() || undefined,
         account_type: form.account_type,
+        account_code: form.account_code.trim() || DEFAULT_COA_BY_TYPE[form.account_type],
         opening_balance: Number(form.opening_balance) || 0,
         channel_mappings: form.channel_mappings,
         notes: form.notes.trim() || undefined,
@@ -165,6 +175,7 @@ export const BankAccountSection: React.FC = () => {
       account_number: acc.account_number || "",
       account_holder: acc.account_holder || "",
       account_type: acc.account_type,
+      account_code: acc.account_code || DEFAULT_COA_BY_TYPE[acc.account_type] || "1-1120",
       opening_balance: String(acc.opening_balance || 0),
       channel_mappings: acc.channel_mappings || [],
       custom_channel: "",
@@ -293,6 +304,11 @@ export const BankAccountSection: React.FC = () => {
                             <Badge variant="outline" className={`text-[10px] ${meta.badgeClass}`}>
                               {meta.label}
                             </Badge>
+                            {acc.account_code && (
+                              <Badge variant="outline" className="text-[10px] font-mono bg-slate-50 text-slate-600">
+                                COA {acc.account_code}
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 mt-0.5 truncate">
                             {acc.bank_name}
@@ -414,9 +430,14 @@ export const BankAccountSection: React.FC = () => {
                 <select
                   className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
                   value={form.account_type}
-                  onChange={(e) =>
-                    setForm({ ...form, account_type: e.target.value as BankAccountType })
-                  }
+                  onChange={(e) => {
+                    const nextType = e.target.value as BankAccountType;
+                    setForm({
+                      ...form,
+                      account_type: nextType,
+                      account_code: DEFAULT_COA_BY_TYPE[nextType] || form.account_code,
+                    });
+                  }}
                 >
                   <option value="bank">Rekening Bank</option>
                   <option value="cash">Kas Tunai</option>
@@ -426,7 +447,7 @@ export const BankAccountSection: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-700 block mb-1">
                   Nama Bank / Provider *
@@ -445,6 +466,17 @@ export const BankAccountSection: React.FC = () => {
                   placeholder="Opsional"
                   value={form.account_number}
                   onChange={(e) => setForm({ ...form, account_number: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700 block mb-1">
+                  Kode Akun COA
+                </label>
+                <Input
+                  placeholder="cth. 1-1120"
+                  className="font-mono"
+                  value={form.account_code}
+                  onChange={(e) => setForm({ ...form, account_code: e.target.value })}
                 />
               </div>
             </div>
