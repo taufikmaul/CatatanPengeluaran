@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   ShoppingBasket,
   Truck,
+  Boxes,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -54,8 +55,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => void;
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
+  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -98,7 +99,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -314,6 +315,24 @@ export function DashboardSidebar({
                   >
                     <Store className="w-4 h-4 shrink-0" />
                     <span className="truncate">Master Supplier</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {(isOwner || isAdminInput || isWarehouse) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeTab === "inventaris"}
+                    onClick={() => handleSelectTab("inventaris")}
+                    tooltip="Inventaris Aset Tetap, Penyusutan & Label QR"
+                    className={`h-9 rounded-lg font-medium text-sm ${
+                      activeTab === "inventaris"
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 font-semibold"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                    }`}
+                  >
+                    <Boxes className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Inventaris Aset</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}

@@ -66,6 +66,13 @@ class ExpenseBase(BaseModel):
     master_item_id: int | None = None
     supplier_id: int | None = None
     bank_account_id: int | None = None
+    # Opsional: integrasi otomatis ke Inventaris Aset & Maintenance
+    asset_id: int | None = None
+    maintenance_type: str | None = None
+    next_service_date: date | None = None
+    warranty_months: int | None = None
+    useful_life_months: int | None = None
+    asset_location: str | None = None
 
 
 class ExpenseCreate(ExpenseBase):
@@ -104,6 +111,13 @@ class ExpenseUpdate(BaseModel):
     master_item_id: int | None = None
     supplier_id: int | None = None
     bank_account_id: int | None = None
+    # Opsional: integrasi otomatis ke Inventaris Aset & Maintenance
+    asset_id: int | None = None
+    maintenance_type: str | None = None
+    next_service_date: date | None = None
+    warranty_months: int | None = None
+    useful_life_months: int | None = None
+    asset_location: str | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -613,6 +627,8 @@ class SystemConfigUpdate(BaseModel):
     webhook_url: str | None = None
     monthly_budget_limit: int | None = None
     category_budgets: dict[str, float] | None = None
+    asset_capitalization_threshold: int | None = None
+    asset_default_useful_life_months: int | None = None
 
 
 class MonthlyBudgetUpsert(BaseModel):
@@ -697,6 +713,9 @@ class SupplierBase(BaseModel):
     address: str = ""
     aliases: str = ""
     notes: str = ""
+    supplier_type: str = "toko"
+    courier_category: str | None = None
+    is_subscribed: bool = False
     is_active: bool = True
 
 
@@ -710,6 +729,9 @@ class SupplierUpdate(BaseModel):
     address: str | None = None
     aliases: str | None = None
     notes: str | None = None
+    supplier_type: str | None = None
+    courier_category: str | None = None
+    is_subscribed: bool | None = None
     is_active: bool | None = None
 
 
@@ -978,6 +1000,84 @@ class PurchaseRequestListResponse(BaseModel):
 
 class SsoExchangeRequest(BaseModel):
     token: str = Field(..., min_length=10, max_length=4096)
+
+
+# ──────────────────────────────────────────────
+# Fixed Assets & Maintenance Schemas (SAK EMKM)
+# ──────────────────────────────────────────────
+
+class FixedAssetCreate(BaseModel):
+    name: str
+    asset_group: str = "Mesin & Peralatan Dapur"
+    brand_model: str = ""
+    serial_number: str = ""
+    vendor_name: str = "-"
+    supplier_id: int | None = None
+    expense_id: int | None = None
+    location: str = "Dapur Produksi"
+    pic_name: str = "-"
+    condition: str = "Baik"
+    status: str = "Aktif"
+    purchase_date: date = Field(default_factory=date.today)
+    warranty_months: int = 0
+    warranty_expiry_date: date | None = None
+    warranty_notes: str = ""
+    acquisition_cost: float = Field(..., ge=0)
+    salvage_value: float = Field(0.0, ge=0)
+    useful_life_months: int | None = None
+    depreciation_method: str | None = None
+    capitalization_status: str | None = None
+    is_capitalization_overridden: bool = False
+    depreciation_start_date: date | None = None
+    notes: str = ""
+
+
+class FixedAssetUpdate(BaseModel):
+    name: str | None = None
+    asset_group: str | None = None
+    brand_model: str | None = None
+    serial_number: str | None = None
+    vendor_name: str | None = None
+    location: str | None = None
+    pic_name: str | None = None
+    condition: str | None = None
+    status: str | None = None
+    warranty_months: int | None = None
+    warranty_expiry_date: date | None = None
+    warranty_notes: str | None = None
+    acquisition_cost: float | None = Field(None, ge=0)
+    salvage_value: float | None = Field(None, ge=0)
+    useful_life_months: int | None = Field(None, ge=0)
+    depreciation_method: str | None = None
+    capitalization_status: str | None = None
+    is_capitalization_overridden: bool | None = None
+    notes: str | None = None
+
+
+class FixedAssetDisposeRequest(BaseModel):
+    disposed_at: date = Field(default_factory=date.today)
+    disposal_type: str = "rusak"  # "rusak" | "hilang" | "dijual"
+    disposal_proceeds: float = Field(0.0, ge=0)
+    disposal_notes: str = ""
+
+
+class AssetMaintenanceCreate(BaseModel):
+    maintenance_date: date = Field(default_factory=date.today)
+    maintenance_type: str = "Perbaikan"
+    vendor_name: str = "-"
+    cost: float = Field(0.0, ge=0)
+    description: str = "-"
+    next_service_date: date | None = None
+    service_warranty_until: date | None = None
+    performed_by: str = "-"
+    create_expense: bool = False
+    pay_method: str = "Tunai"
+
+
+class AssetReanalyzeRequest(BaseModel):
+    asset_capitalization_threshold: int | None = Field(None, ge=0)
+    asset_default_useful_life_months: int | None = Field(None, ge=1)
+
 
 
 

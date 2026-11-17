@@ -20,6 +20,28 @@ from app.models.master_item import MasterItem
 from app.models.expense_log import ExpenseLog
 
 
+DEFAULT_COURIERS: list[dict[str, Any]] = [
+    {"name": "GoSend", "courier_category": "Instan", "aliases": "GoSend Car, GoSend Bike, Gojek, Go-Send", "is_subscribed": False},
+    {"name": "GoCar", "courier_category": "Instan", "aliases": "Gocar, Go-Car", "is_subscribed": False},
+    {"name": "Lalamove", "courier_category": "Instan", "aliases": "Lalamove Mobil, Lalamove Motor", "is_subscribed": False},
+    {"name": "GrabExpress", "courier_category": "Instan", "aliases": "Grab Express, GrabExpress Instant, GrabExpress SameDay, GrabCar, GrabBike, Grab", "is_subscribed": False},
+    {"name": "Shopee Express", "courier_category": "Ekspedisi", "aliases": "SPX, SPX Express, Shopee Express Instant", "is_subscribed": False},
+    {"name": "Maxim", "courier_category": "Instan", "aliases": "Maxim Car, Maxim Bike, Maxim Delivery", "is_subscribed": False},
+    {"name": "JNE", "courier_category": "Ekspedisi", "aliases": "JNE Reg, JNE YES, JNE Express", "is_subscribed": False},
+    {"name": "J&T Express", "courier_category": "Ekspedisi", "aliases": "J&T, JNT, J&T Cargo", "is_subscribed": False},
+    {"name": "SiCepat", "courier_category": "Ekspedisi", "aliases": "SiCepat Express, SiCepat Halu", "is_subscribed": False},
+    {"name": "Anteraja", "courier_category": "Ekspedisi", "aliases": "Anter Aja", "is_subscribed": False},
+    {"name": "Kurir Lainnya", "courier_category": "Lainnya", "aliases": "Ongkir Umum", "is_subscribed": False},
+]
+
+COURIER_KEYWORDS = (
+    "gosend", "go-send", "gocar", "go-car", "gojek",
+    "lalamove", "grab", "grabexpress", "shopee express", "spx",
+    "maxim", "jne", "j&t", "jnt", "sicepat", "anteraja",
+    "paxel", "ninja", "lion parcel", "pos indonesia", "kurir",
+)
+
+
 def _normalize_supplier_name(s: str) -> str:
     """Bersihkan karakter non-alfanumerik berlebih dan kecilkan huruf."""
     s = (s or "").strip().lower()
@@ -96,44 +118,111 @@ def find_best_supplier_match(
     return best_match
 
 
+async def ensure_default_couriers(db: AsyncSession) -> dict[str, Supplier]:
+    """Pastikan daftar kurir default tersedia dengan supplier_type='kurir'."""
+    existing_res = await db.execute(select(Supplier))
+    all_suppliers = list(existing_res.scalars().all())
+    by_lower = {s.name.strip().lower(): s for s in all_suppliers}
+    result_map: dict[str, Supplier] = {}
+    changed = False
+
+    for cfg in DEFAULT_COURIERS:
+        key = cfg["name"].strip().lower()
+        sup = by_lower.get(key)
+        if sup:
+            if sup.supplier_type != "kurir":
+                sup.supplier_type = "kurir"
+                changed = True
+            if not sup.courier_category and cfg.get("courier_category"):
+                sup.courier_category = cfg["courier_category"]
+                changed = True
+            if not sup.aliases and cfg.get("aliases"):
+                sup.aliases = cfg["aliases"]
+                changed = True
+            result_map[key] = sup
+        else:
+            sup = Supplier(
+                name=cfg["name"],
+                phone="",
+                address="",
+                aliases=cfg.get("aliases", ""),
+                notes="",
+                supplier_type="kurir",
+                courier_category=cfg.get("courier_category", "Lainnya"),
+                is_subscribed=bool(cfg.get("is_subscribed", False)),
+                is_active=True,
+            )
+            db.add(sup)
+            result_map[key] = sup
+            changed = True
+
+    if changed:
+        await db.flush()
+    return result_map
+
+
 async def get_or_create_supplier_by_name(
     db: AsyncSession,
     raw_name: str,
-    auto_create: bool = True
+    auto_create: bool = True,
+    supplier_type: str = "toko",
+    courier_category: str | None = None,
+    is_subscribed: bool = False,
 ) -> Supplier | None:
     """
-    Ambil atau buat otomatis record Supplier berdasarkan teks nama toko.
+    Ambil atau buat otomatis record Supplier berdasarkan teks nama toko/kurir.
     Jika raw_name kosong / '-' kembalikan None.
     """
     name = (raw_name or "").strip()
     if not name or name in ("-", "None", "null"):
         return None
 
+    target_type = "kurir" if supplier_type == "kurir" else "toko"
+    if target_type == "kurir":
+        await ensure_default_couriers(db)
+
     # Cari exact match dulu (case-insensitive)
     stmt = select(Supplier).where(func.lower(Supplier.name) == name.lower())
     res = await db.execute(stmt)
     supplier = res.scalar_one_or_none()
     if supplier:
+        if target_type == "kurir" and supplier.supplier_type != "kurir":
+            supplier.supplier_type = "kurir"
+            if not supplier.courier_category:
+                supplier.courier_category = courier_category or "Langganan"
+            await db.flush()
         return supplier
 
-    # Cari via aliases dan fuzzy match terhadap semua supplier aktif
-    all_suppliers_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
-    all_suppliers = list(all_suppliers_res.scalars().all())
-
-    matched = find_best_supplier_match(name, all_suppliers, threshold=0.88)
+    # Cari via aliases dan fuzzy match terhadap supplier aktif (utamakan tipe yang sama)
+    same_type_res = await db.execute(
+        select(Supplier).where(Supplier.is_active == True, Supplier.supplier_type == target_type)
+    )
+    same_type_suppliers = list(same_type_res.scalars().all())
+    matched = find_best_supplier_match(name, same_type_suppliers, threshold=0.85 if target_type == "kurir" else 0.88)
     if matched:
         return matched
+
+    if target_type != "kurir":
+        all_suppliers_res = await db.execute(select(Supplier).where(Supplier.is_active == True))
+        all_suppliers = list(all_suppliers_res.scalars().all())
+        matched = find_best_supplier_match(name, all_suppliers, threshold=0.88)
+        if matched:
+            return matched
 
     if not auto_create:
         return None
 
-    # Buat supplier baru otomatis
+    # Buat supplier/kurir baru otomatis
+    inferred_subscribed = bool(is_subscribed or (target_type == "kurir" and not courier_category))
     new_supplier = Supplier(
         name=name,
         phone="",
         address="",
         aliases="",
         notes="",
+        supplier_type=target_type,
+        courier_category=courier_category or ("Langganan" if target_type == "kurir" else None),
+        is_subscribed=inferred_subscribed if target_type == "kurir" else False,
         is_active=True,
     )
     db.add(new_supplier)
@@ -146,6 +235,7 @@ async def get_suppliers(
     search: str | None = None,
     is_active: bool | None = None,
     has_unpaid: bool | None = None,
+    supplier_type: str | None = None,
     skip: int = 0,
     limit: int = 50,
     sort_by: str = "total_spent",
@@ -156,6 +246,8 @@ async def get_suppliers(
     total_spent, transaction_count, unpaid_bills_count, unpaid_bills_total, last_expense_date,
     serta summary agregat seluruh supplier.
     """
+    if supplier_type == "kurir":
+        await ensure_default_couriers(db)
     # Subquery agregasi dari tabel expenses
     exp_sub = (
         select(
@@ -211,6 +303,9 @@ async def get_suppliers(
     if is_active is not None:
         filters.append(Supplier.is_active == is_active)
 
+    if supplier_type in ("toko", "kurir"):
+        filters.append(Supplier.supplier_type == supplier_type)
+
     if has_unpaid is True:
         filters.append(func.coalesce(exp_sub.c.unpaid_bills_count, 0) > 0)
     elif has_unpaid is False:
@@ -261,6 +356,9 @@ async def get_suppliers(
             "address": supp.address or "",
             "aliases": supp.aliases or "",
             "notes": supp.notes or "",
+            "supplier_type": supp.supplier_type or "toko",
+            "courier_category": supp.courier_category,
+            "is_subscribed": bool(supp.is_subscribed),
             "is_active": supp.is_active,
             "created_at": supp.created_at,
             "updated_at": supp.updated_at,
@@ -291,6 +389,8 @@ async def get_suppliers(
     )
     if is_active is not None:
         summary_stmt = summary_stmt.where(Supplier.is_active == is_active)
+    if supplier_type in ("toko", "kurir"):
+        summary_stmt = summary_stmt.where(Supplier.supplier_type == supplier_type)
 
     summary_row = (await db.execute(summary_stmt)).one()
     summary = {
@@ -383,6 +483,9 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
         "address": supp.address or "",
         "aliases": supp.aliases or "",
         "notes": supp.notes or "",
+        "supplier_type": supp.supplier_type or "toko",
+        "courier_category": supp.courier_category,
+        "is_subscribed": bool(supp.is_subscribed),
         "is_active": supp.is_active,
         "created_at": supp.created_at,
         "updated_at": supp.updated_at,
@@ -404,6 +507,9 @@ async def create_supplier(
     address: str = "",
     aliases: str = "",
     notes: str = "",
+    supplier_type: str = "toko",
+    courier_category: str | None = None,
+    is_subscribed: bool = False,
     is_active: bool = True,
 ) -> Supplier:
     """Buat master supplier baru dengan validasi keunikan nama."""
@@ -427,12 +533,16 @@ async def create_supplier(
             detail=f"Supplier dengan nama '{clean_name}' sudah ada.",
         )
 
+    clean_type = "kurir" if supplier_type == "kurir" else "toko"
     supplier = Supplier(
         name=clean_name,
         phone=phone.strip(),
         address=address.strip(),
         aliases=aliases.strip(),
         notes=notes.strip(),
+        supplier_type=clean_type,
+        courier_category=courier_category.strip() if courier_category else ("Langganan" if clean_type == "kurir" else None),
+        is_subscribed=bool(is_subscribed) if clean_type == "kurir" else False,
         is_active=is_active,
     )
     db.add(supplier)
@@ -448,6 +558,9 @@ async def update_supplier(
     address: str | None = None,
     aliases: str | None = None,
     notes: str | None = None,
+    supplier_type: str | None = None,
+    courier_category: str | None = None,
+    is_subscribed: bool | None = None,
     is_active: bool | None = None,
 ) -> Supplier:
     """Update informasi master supplier."""
@@ -489,6 +602,12 @@ async def update_supplier(
         supplier.aliases = aliases.strip()
     if notes is not None:
         supplier.notes = notes.strip()
+    if supplier_type is not None:
+        supplier.supplier_type = "kurir" if supplier_type == "kurir" else "toko"
+    if courier_category is not None:
+        supplier.courier_category = courier_category.strip() or None
+    if is_subscribed is not None:
+        supplier.is_subscribed = bool(is_subscribed)
     if is_active is not None:
         supplier.is_active = is_active
 
@@ -990,12 +1109,16 @@ async def sync_existing_expenses(db: AsyncSession) -> dict:
             supplier = find_best_supplier_match(raw_name, all_suppliers)
             if not supplier:
                 # Buat supplier baru
+                is_courier_exp = (exp.category or "").strip().lower() == "ongkir"
                 supplier = Supplier(
                     name=raw_name,
                     phone="",
                     address="",
                     aliases="",
                     notes="",
+                    supplier_type="kurir" if is_courier_exp else "toko",
+                    courier_category="Langganan" if is_courier_exp else None,
+                    is_subscribed=is_courier_exp,
                     is_active=True,
                 )
                 db.add(supplier)
@@ -1013,4 +1136,140 @@ async def sync_existing_expenses(db: AsyncSession) -> dict:
         "synced_count": synced_count,
         "created_suppliers": created_count,
         "message": f"Berhasil mensinkronisasi {synced_count} transaksi belanja ({created_count} supplier baru dibuat).",
+    }
+
+
+async def migrate_legacy_ongkir_expenses(
+    db: AsyncSession,
+    actor: str = "system",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """
+    Migrasi transaksi ongkir lama (mis. kategori 'Operasional' dengan item 'Ongkir' atau nama kurir)
+    menjadi kategori 'Ongkir' dan menautkan supplier_id ke Master Kurir (supplier_type='kurir').
+    """
+    import json
+
+    await ensure_default_couriers(db)
+    couriers = list(
+        (await db.execute(select(Supplier).where(Supplier.supplier_type == "kurir"))).scalars().all()
+    )
+
+    expenses_res = await db.execute(select(Expense).order_by(Expense.id.asc()))
+    all_expenses = list(expenses_res.scalars().all())
+
+    migrated_count = 0
+    reclassified_from_operasional = 0
+    created_couriers = 0
+    preview_items: list[dict[str, Any]] = []
+
+    for exp in all_expenses:
+        cat_l = (exp.category or "").strip().lower()
+        if cat_l == "tukar cash":
+            continue
+        item_l = (exp.item_name or "").strip().lower()
+        sup_raw = (exp.supplier or "").strip()
+        sup_l = sup_raw.lower()
+
+        is_ongkir_record = (
+            cat_l == "ongkir"
+            or (cat_l == "operasional" and ("ongkir" in item_l or "ongkos kirim" in item_l))
+            or ("ongkir" in item_l and cat_l in ("operasional", "", "lainnya"))
+            or (cat_l == "operasional" and any(kw in sup_l for kw in COURIER_KEYWORDS))
+        )
+        if not is_ongkir_record:
+            continue
+
+        needs_category_fix = (exp.category or "").strip() != "Ongkir"
+        matched_courier = find_best_supplier_match(sup_raw, couriers, threshold=0.82) if sup_raw and sup_raw not in ("-", "None", "null") else None
+
+        if not matched_courier and sup_raw and sup_raw not in ("-", "None", "null"):
+            # Cek apakah sudah ada supplier dengan nama sama lalu ubah jadi kurir
+            existing_sup = (
+                await db.execute(select(Supplier).where(func.lower(Supplier.name) == sup_l))
+            ).scalar_one_or_none()
+            if existing_sup:
+                if not dry_run and existing_sup.supplier_type != "kurir":
+                    existing_sup.supplier_type = "kurir"
+                    if not existing_sup.courier_category:
+                        existing_sup.courier_category = "Langganan"
+                    existing_sup.is_subscribed = True
+                matched_courier = existing_sup
+                if existing_sup not in couriers:
+                    couriers.append(existing_sup)
+            elif not dry_run:
+                matched_courier = Supplier(
+                    name=sup_raw,
+                    phone="",
+                    address="",
+                    aliases="",
+                    notes="Kurir langganan (hasil migrasi ongkir)",
+                    supplier_type="kurir",
+                    courier_category="Langganan",
+                    is_subscribed=True,
+                    is_active=True,
+                )
+                db.add(matched_courier)
+                await db.flush()
+                couriers.append(matched_courier)
+                created_couriers += 1
+        elif not matched_courier:
+            matched_courier = next((c for c in couriers if c.name.lower() == "kurir lainnya"), None)
+
+        needs_supplier_link = bool(matched_courier and (exp.supplier_id != matched_courier.id or exp.supplier != matched_courier.name))
+        if not needs_category_fix and not needs_supplier_link:
+            continue
+
+        if len(preview_items) < 25:
+            preview_items.append({
+                "expense_id": exp.id,
+                "date": str(exp.expense_date),
+                "item_name": exp.item_name,
+                "old_category": exp.category,
+                "new_category": "Ongkir",
+                "old_supplier": exp.supplier,
+                "new_supplier": matched_courier.name if matched_courier else (sup_raw or "Kurir Lainnya"),
+            })
+
+        if not dry_run:
+            old_cat = exp.category
+            old_sup = exp.supplier
+            exp.category = "Ongkir"
+            if matched_courier:
+                exp.supplier_id = matched_courier.id
+                exp.supplier = matched_courier.name
+            exp.sheets_synced = False
+            db.add(
+                ExpenseLog(
+                    expense_id=exp.id,
+                    action="MIGRATE_ONGKIR",
+                    actor=actor,
+                    details=json.dumps({
+                        "old_category": old_cat,
+                        "new_category": "Ongkir",
+                        "old_supplier": old_sup,
+                        "new_supplier": exp.supplier,
+                    }),
+                )
+            )
+
+        migrated_count += 1
+        if needs_category_fix:
+            reclassified_from_operasional += 1
+
+    if not dry_run:
+        await db.flush()
+
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "migrated_count": migrated_count,
+        "reclassified_from_operasional": reclassified_from_operasional,
+        "created_couriers": created_couriers,
+        "preview": preview_items,
+        "message": (
+            f"Ditemukan {migrated_count} transaksi ongkir yang siap dimigrasi."
+            if dry_run
+            else f"Berhasil memigrasi {migrated_count} transaksi ongkir ({reclassified_from_operasional} direklasifikasi ke kategori Ongkir, {created_couriers} kurir baru ditambahkan)."
+        ),
     }

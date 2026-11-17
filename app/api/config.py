@@ -68,6 +68,8 @@ ENV_MAP = {
     "request_belanja_thread_id": "REQUEST_BELANJA_THREAD_ID",
     "webhook_url": "WEBHOOK_URL",
     "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
+    "asset_capitalization_threshold": "ASSET_CAPITALIZATION_THRESHOLD",
+    "asset_default_useful_life_months": "ASSET_DEFAULT_USEFUL_LIFE_MONTHS",
 }
 
 
@@ -193,6 +195,8 @@ async def get_system_config(
         "units": units or ["Pcs", "Box", "Pouch", "Kg", "Dus", "Kaleng", "Pack", "Sak", "Bal", "Botol", "Tray", "Liter", "Gram", "Roll", "Lembar", "Meter"],
         "monthly_budget_limit": settings.monthly_budget_limit,
         "category_budgets": settings.category_budgets,
+        "asset_capitalization_threshold": settings.asset_capitalization_threshold,
+        "asset_default_useful_life_months": settings.asset_default_useful_life_months,
     }
 
 

@@ -206,6 +206,7 @@ export async function getSuppliers(params?: {
   search?: string;
   is_active?: boolean;
   has_unpaid?: boolean;
+  supplier_type?: "toko" | "kurir" | string;
   page?: number;
   limit?: number;
   sort_by?: string;
@@ -215,6 +216,7 @@ export async function getSuppliers(params?: {
   if (params?.search?.trim()) query.set("search", params.search.trim());
   if (params?.is_active !== undefined) query.set("is_active", String(params.is_active));
   if (params?.has_unpaid !== undefined) query.set("has_unpaid", String(params.has_unpaid));
+  if (params?.supplier_type && params.supplier_type !== "all") query.set("supplier_type", params.supplier_type);
   if (params?.page) query.set("page", String(params.page));
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.sort_by) query.set("sort_by", params.sort_by);
@@ -1132,6 +1134,114 @@ export async function getSharedAnonymousMenus(
   params?: { search?: string; category?: string; hpp_status?: string }
 ): Promise<import("@/types").MenuListResponse> {
   const res = await api.get(`/menus/shared/${encodeURIComponent(token)}`, { params });
+  return res.data;
+}
+
+// ──────────────────────────────────────────────
+// Migrasi Ongkir & Inventaris Aset Tetap (SAK EMKM)
+// ──────────────────────────────────────────────
+
+export async function migrateLegacyOngkir(dryRun = false): Promise<{
+  ok: boolean;
+  dry_run: boolean;
+  migrated_count: number;
+  reclassified_from_operasional: number;
+  created_couriers: number;
+  message: string;
+}> {
+  const res = await api.post(`/suppliers/migrate-ongkir?dry_run=${dryRun}`);
+  return res.data;
+}
+
+export async function getAssets(params?: {
+  search?: string;
+  status?: string;
+  capitalization_status?: string;
+  asset_group?: string;
+  location?: string;
+  as_of_year?: number;
+  as_of_month?: number;
+}): Promise<import("@/types").AssetListResponse> {
+  const res = await api.get("/assets", { params });
+  return res.data;
+}
+
+export async function getAssetDetail(
+  assetId: number
+): Promise<{ ok: boolean; asset: import("@/types").FixedAsset }> {
+  const res = await api.get(`/assets/${assetId}`);
+  return res.data;
+}
+
+export async function getAssetByQrToken(
+  qrToken: string
+): Promise<{ ok: boolean; asset: import("@/types").FixedAsset }> {
+  const res = await api.get(`/assets/label/${encodeURIComponent(qrToken)}`);
+  return res.data;
+}
+
+export async function createAsset(
+  payload: Partial<import("@/types").FixedAsset>
+): Promise<{ ok: boolean; asset: import("@/types").FixedAsset }> {
+  const res = await api.post("/assets", payload);
+  return res.data;
+}
+
+export async function updateAsset(
+  assetId: number,
+  payload: Partial<import("@/types").FixedAsset>
+): Promise<{ ok: boolean; asset: import("@/types").FixedAsset }> {
+  const res = await api.put(`/assets/${assetId}`, payload);
+  return res.data;
+}
+
+export async function disposeAsset(
+  assetId: number,
+  payload: {
+    disposed_at: string;
+    disposal_type: string;
+    disposal_proceeds?: number;
+    disposal_notes?: string;
+  }
+): Promise<{ ok: boolean; asset: import("@/types").FixedAsset }> {
+  const res = await api.post(`/assets/${assetId}/dispose`, payload);
+  return res.data;
+}
+
+export async function addAssetMaintenance(
+  assetId: number,
+  payload: {
+    maintenance_date: string;
+    maintenance_type: string;
+    vendor_name?: string;
+    cost?: number;
+    description: string;
+    next_service_date?: string | null;
+    service_warranty_until?: string | null;
+    performed_by?: string;
+    create_expense?: boolean;
+    pay_method?: string;
+  }
+): Promise<{ ok: boolean; maintenance_id: number; asset: import("@/types").FixedAsset }> {
+  const res = await api.post(`/assets/${assetId}/maintenances`, payload);
+  return res.data;
+}
+
+export async function syncExistingAssets(): Promise<{
+  ok: boolean;
+  synced_expenses: number;
+  created_assets: number;
+  message: string;
+}> {
+  const res = await api.post("/assets/sync-existing");
+  return res.data;
+}
+
+export async function reanalyzeAssets(payload?: {
+  asset_capitalization_threshold?: number;
+  asset_default_useful_life_months?: number;
+}): Promise<import("@/types").AssetReanalyzeResult> {
+  const res = await api.post("/assets/reanalyze", payload || {});
   return res.data;
 }
 

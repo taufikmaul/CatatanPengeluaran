@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { api, migrateLegacyOngkir, reanalyzeAssets } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatters";
 import { toast } from "sonner";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
@@ -68,6 +68,10 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState<number>(0);
   const [categoryBudgets, setCategoryBudgets] = useState<Record<string, number>>({});
+  const [assetThreshold, setAssetThreshold] = useState<number>(500000);
+  const [assetDefaultLife, setAssetDefaultLife] = useState<number>(48);
+  const [isReanalyzingAssets, setIsReanalyzingAssets] = useState(false);
+  const [isMigratingOngkir, setIsMigratingOngkir] = useState(false);
 
   // UI helpers
   const [showTokens, setShowTokens] = useState(false);
@@ -121,6 +125,8 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setSpreadsheetId(config.spreadsheet_id || "");
       setMonthlyBudgetLimit(config.monthly_budget_limit || 0);
       setCategoryBudgets(config.category_budgets || {});
+      setAssetThreshold(config.asset_capitalization_threshold ?? 500000);
+      setAssetDefaultLife(config.asset_default_useful_life_months ?? 48);
     }
   }, [config]);
 
@@ -144,6 +150,8 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         webhook_url: webhookUrl.trim(),
         monthly_budget_limit: Number(monthlyBudgetLimit) || 0,
         category_budgets: categoryBudgets,
+        asset_capitalization_threshold: Number(assetThreshold) || 0,
+        asset_default_useful_life_months: Number(assetDefaultLife) || 48,
       };
 
       if (botPassword.trim()) payload.bot_password = botPassword.trim();
@@ -322,8 +330,100 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         </TabsList>
 
         {/* Tab 1: Master Data */}
-        <TabsContent value="master-data" className="pt-1">
+        <TabsContent value="master-data" className="pt-1 space-y-5">
           <MasterDataSection onRefreshConfig={onRefreshConfig} />
+
+          {/* Kebijakan Aset Tetap (SAK EMKM) & Migrasi Ongkir */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="p-4 md:p-5 pb-2">
+              <CardTitle className="text-sm md:text-base font-semibold text-slate-900">
+                Kebijakan Inventaris Aset Tetap (SAK EMKM) &amp; Migrasi Data
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 md:p-5 pt-2 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Minimal Harga Kapitalisasi Aset (Rp)
+                  </label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={assetThreshold}
+                    onChange={(e) => setAssetThreshold(Number(e.target.value || 0))}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                  <span className="text-[11px] text-slate-500 block mt-1">
+                    Pembelian aset &ge; batas ini masuk Neraca (1-2100) dan disusutkan. Di bawah batas ini masuk inventaris sebagai Peralatan Nilai Rendah (6-2200).
+                  </span>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">
+                    Masa Manfaat Default Aset (Bulan)
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={assetDefaultLife}
+                    onChange={(e) => setAssetDefaultLife(Number(e.target.value || 48))}
+                    className="h-10 text-xs rounded-xl"
+                  />
+                  <span className="text-[11px] text-slate-500 block mt-1">
+                    Standar UMKM/SAK EMKM peralatan &amp; mesin umumnya 48 bulan (4 tahun) garis lurus.
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isReanalyzingAssets}
+                  onClick={async () => {
+                    setIsReanalyzingAssets(true);
+                    try {
+                      const res = await reanalyzeAssets({
+                        asset_capitalization_threshold: Number(assetThreshold) || 0,
+                        asset_default_useful_life_months: Number(assetDefaultLife) || 48,
+                      });
+                      toast.success(res.message);
+                      onRefreshConfig();
+                    } catch (err: any) {
+                      toast.error(err?.response?.data?.detail || "Gagal menganalisa ulang aset.");
+                    } finally {
+                      setIsReanalyzingAssets(false);
+                    }
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9 text-xs font-semibold gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isReanalyzingAssets ? "animate-spin" : ""}`} />
+                  {isReanalyzingAssets ? "Menganalisa..." : "Simpan & Analisa Ulang Aset"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isMigratingOngkir}
+                  onClick={async () => {
+                    setIsMigratingOngkir(true);
+                    try {
+                      const res = await migrateLegacyOngkir(false);
+                      toast.success(res.message);
+                    } catch (err: any) {
+                      toast.error(err?.response?.data?.detail || "Gagal memigrasi ongkir.");
+                    } finally {
+                      setIsMigratingOngkir(false);
+                    }
+                  }}
+                  className="rounded-xl h-9 text-xs font-semibold gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isMigratingOngkir ? "animate-spin" : ""}`} />
+                  {isMigratingOngkir ? "Memigrasi..." : "Migrasi Ongkir Operasional → Ongkir"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Tab 2: Rekening Setup */}

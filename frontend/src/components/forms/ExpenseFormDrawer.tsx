@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { BankAccount, Expense, ExpenseFormData, ExpenseUser, ItemSuggestion, OcrExtractedItem } from "@/types";
+import { BankAccount, Expense, ExpenseFormData, ExpenseUser, FixedAsset, ItemSuggestion, OcrExtractedItem, Supplier } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
-import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate, getBankAccounts } from "@/lib/api";
+import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate, getBankAccounts, getSuppliers, createSupplier, getAssets } from "@/lib/api";
 import {
   CalendarClock,
   Store,
@@ -112,6 +112,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   const [usersList, setUsersList] = useState<ExpenseUser[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [courierList, setCourierList] = useState<Supplier[]>([]);
+  const [newCourierName, setNewCourierName] = useState("");
+  const [showAddCourier, setShowAddCourier] = useState(false);
+  const [isAddingCourier, setIsAddingCourier] = useState(false);
+  const [assetsList, setAssetsList] = useState<FixedAsset[]>([]);
+  const [assetThreshold, setAssetThreshold] = useState<number>(500000);
 
   useEffect(() => {
     if (isOpen) {
@@ -119,6 +125,17 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       getExpenseUsers().then((res) => {
         if (Array.isArray(res)) setUsersList(res);
       }).catch(() => {});
+      getSuppliers({ supplier_type: "kurir", is_active: true, limit: 100 })
+        .then((res) => setCourierList(res.items || []))
+        .catch(() => {});
+      getAssets()
+        .then((res) => {
+          setAssetsList(res.items || []);
+          if (res.config?.asset_capitalization_threshold !== undefined) {
+            setAssetThreshold(res.config.asset_capitalization_threshold);
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
 
@@ -161,6 +178,38 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const isOngkir = catProfile.archetype === "ongkir";
   const isTukarCash = catProfile.archetype === "tukar_cash";
   const isPayroll = catProfile.archetype === "payroll";
+  const isAssetCategory = categoryVal.trim().toLowerCase() === "asset";
+  const isMaintenanceCategory = categoryVal.trim().toLowerCase() === "maintenance";
+  const totalPriceVal = Number(watch("total_price") || 0);
+  const qtyVal = Math.max(1, Number(watch("qty") || 1));
+
+  const handleAddSubscribedCourier = async () => {
+    const clean = newCourierName.trim();
+    if (!clean) {
+      toast.error("Masukkan nama kurir langganan.");
+      return;
+    }
+    setIsAddingCourier(true);
+    try {
+      const created = await createSupplier({
+        name: clean,
+        supplier_type: "kurir",
+        courier_category: "Langganan",
+        is_subscribed: true,
+        is_active: true,
+      });
+      setCourierList((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
+      setValue("supplier", created.name);
+      setValue("supplier_id", created.id);
+      setNewCourierName("");
+      setShowAddCourier(false);
+      toast.success(`Kurir langganan "${created.name}" ditambahkan.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Gagal menambahkan kurir langganan.");
+    } finally {
+      setIsAddingCourier(false);
+    }
+  };
   const msgLinkVal = watch("msg_link") || "";
   const notesVal = watch("notes") || "";
   const initialTgMeta = parseTelegramLink(initialData?.msg_link);
@@ -1012,46 +1061,97 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                       <input type="hidden" {...register("supplier")} value="-" />
                     </div>
                   ) : isOngkir ? (
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        {catProfile.supplierLabel}
-                      </label>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-700 block">
+                          {catProfile.supplierLabel}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddCourier((v) => !v)}
+                          className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                        >
+                          {showAddCourier ? "Tutup" : "+ Kurir Langganan"}
+                        </button>
+                      </div>
                       <Input
                         placeholder={catProfile.supplierPlaceholder}
                         list="ongkir-courier-list"
                         {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
+                        onChange={(e) => {
+                          setValue("supplier", e.target.value);
+                          const matched = courierList.find(
+                            (c) => c.name.toLowerCase() === e.target.value.trim().toLowerCase()
+                          );
+                          setValue("supplier_id", matched ? matched.id : null);
+                        }}
                         className="h-11 sm:h-10 text-xs rounded-xl"
                       />
                       <datalist id="ongkir-courier-list">
-                        <option value="GoSend Car" />
-                        <option value="GoSend Bike" />
-                        <option value="GrabExpress Instant" />
-                        <option value="GrabExpress SameDay" />
-                        <option value="Lalamove" />
-                        <option value="Maxim" />
-                        <option value="J&T Express" />
-                        <option value="SiCepat" />
-                        <option value="Anteraja" />
+                        {(courierList.length > 0
+                          ? courierList.map((c) => c.name)
+                          : ["GoSend", "GoCar", "Lalamove", "GrabExpress", "Shopee Express", "Maxim", "JNE", "Kurir Lainnya"]
+                        ).map((cname) => (
+                          <option key={cname} value={cname} />
+                        ))}
                       </datalist>
-                      {catProfile.quickSupplierChips && (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-[10px] text-slate-400">Pilih kurir:</span>
-                          {catProfile.quickSupplierChips.map((c) => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => setValue("supplier", c)}
-                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
-                                supplierVal === c
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
-                              }`}
-                            >
-                              {c}
-                            </button>
-                          ))}
+
+                      {showAddCourier && (
+                        <div className="flex flex-col sm:flex-row gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                          <Input
+                            value={newCourierName}
+                            onChange={(e) => setNewCourierName(e.target.value)}
+                            placeholder="Nama kurir langganan (mis: Pak Budi Kurir)"
+                            className="h-9 text-xs bg-white flex-1"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={isAddingCourier}
+                            onClick={handleAddSubscribedCourier}
+                            className="h-9 text-xs shrink-0"
+                          >
+                            {isAddingCourier ? "Menyimpan..." : "Simpan Kurir"}
+                          </Button>
                         </div>
                       )}
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] text-slate-400">Pilih kurir:</span>
+                        {(courierList.length > 0
+                          ? [
+                              ...courierList.filter((c) => c.is_subscribed),
+                              ...courierList.filter((c) => !c.is_subscribed),
+                            ].slice(0, 12)
+                          : (catProfile.quickSupplierChips || []).map((name, idx) => ({
+                              id: -(idx + 1),
+                              name,
+                              is_subscribed: false,
+                            }))
+                        ).map((c) => {
+                          const isSelected = supplierVal.trim().toLowerCase() === c.name.toLowerCase();
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setValue("supplier", c.name);
+                                setValue("supplier_id", c.id > 0 ? c.id : null);
+                              }}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
+                                isSelected
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : c.is_subscribed
+                                    ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200"
+                                    : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
+                              }`}
+                            >
+                              {c.name}
+                              {c.is_subscribed ? " (Langganan)" : ""}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : (
                     <div className="relative">
@@ -1242,6 +1342,103 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                           )}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Pengaturan Otomatis Inventaris Aset (saat kategori Asset dipilih) */}
+                  {isAssetCategory && !initialData && (
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">
+                            Otomatis Masuk Inventaris Aset Tetap (SAK EMKM)
+                          </p>
+                          <p className="text-[11px] text-slate-600">
+                            Batas kapitalisasi aktif: <span className="font-semibold">{formatRupiah(assetThreshold)}</span>/unit.{" "}
+                            {totalPriceVal > 0 && (
+                              totalPriceVal / qtyVal >= assetThreshold
+                                ? "Aset ini akan dikapitalisasi ke Neraca (1-2100) dan disusutkan garis lurus."
+                                : "Nilai per unit di bawah batas minimal — masuk inventaris & QR label sebagai Peralatan Nilai Rendah (6-2200)."
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                            Masa Garansi (Bulan)
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="mis: 12 (0 = tanpa garansi)"
+                            {...register("warranty_months", {
+                              setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                            })}
+                            className="h-9 text-xs rounded-xl bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                            Masa Manfaat Penyusutan (Bulan)
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            placeholder="Default 48 bln (4 tahun)"
+                            {...register("useful_life_months", {
+                              setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                            })}
+                            className="h-9 text-xs rounded-xl bg-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tautan Unit Aset (saat kategori Maintenance dipilih) */}
+                  {isMaintenanceCategory && !initialData && (
+                    <div className="p-3.5 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-3">
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">
+                          Tautkan ke Inventaris Aset (Opsional)
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          Pilih unit mesin/aset yang diservis agar biaya ini otomatis tercatat ke riwayat maintenance aset tersebut.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                            Pilih Unit Aset
+                          </label>
+                          <select
+                            {...register("asset_id", {
+                              setValueAs: (v) => (v === "" ? null : Number(v)),
+                            })}
+                            className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white"
+                          >
+                            <option value="">-- Tidak ditautkan --</option>
+                            {assetsList
+                              .filter((a) => a.status !== "Dihapuskan" && a.status !== "Dijual")
+                              .map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  [{a.asset_code}] {a.name} ({a.location})
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                            Jadwal Servis Berikutnya (Opsional)
+                          </label>
+                          <Input
+                            type="date"
+                            {...register("next_service_date")}
+                            className="h-9 text-xs rounded-xl bg-white"
+                          />
+                        </div>
+                      </div>
                     </div>
                   )}
 

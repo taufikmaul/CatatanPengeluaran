@@ -1030,7 +1030,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </span>
                     </div>
 
-                    <div className="p-4">
+                    <div className="p-4 space-y-2.5">
                       {accountingData.neraca.aset_tetap.map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs">
                           <div>
@@ -1040,11 +1040,19 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                             </div>
                             <span className="text-[11px] text-slate-400 mt-0.5 block">{item.description}</span>
                           </div>
-                          <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
-                            {formatRupiah(item.nominal)}
+                          <span className={`font-bold tabular-nums text-sm ${item.nominal < 0 ? "text-amber-700 dark:text-amber-400" : "text-slate-900 dark:text-slate-100"}`}>
+                            {item.nominal < 0 ? `(${formatRupiah(Math.abs(item.nominal))})` : formatRupiah(item.nominal)}
                           </span>
                         </div>
                       ))}
+                      {accountingData.neraca.aset_tetap_summary && (
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-slate-100">
+                          <span>Nilai Buku Bersih Aset Tetap</span>
+                          <span className="tabular-nums text-purple-700 dark:text-purple-400">
+                            {formatRupiah(accountingData.neraca.aset_tetap_summary.net_book_value)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </Card>
                 </div>

@@ -576,6 +576,50 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
         </Card>
       </div>
 
+      {/* Rekap Ongkir per Kurir */}
+      {reportData?.ongkir_by_courier && reportData.ongkir_by_courier.length > 0 && (
+        <Card className="border-slate-200/90 bg-white shadow-2xs">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-sky-600" />
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Rekap Biaya Ongkir per Kurir (Bulan Ini)
+                </h3>
+              </div>
+              <span className="text-[11px] text-slate-500">
+                {reportData.ongkir_by_courier.length} layanan kurir
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {reportData.ongkir_by_courier.map((c) => (
+                <div
+                  key={c.courier_name}
+                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between gap-1"
+                >
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-xs font-bold text-slate-900 truncate">
+                      {c.courier_name}
+                    </span>
+                    {c.is_subscribed && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-800 shrink-0">
+                        Langganan
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 tabular-nums">
+                    {formatRupiah(c.total_amount)}
+                  </div>
+                  <div className="text-[11px] text-slate-500 tabular-nums">
+                    {c.trip_count} trip • rata-rata {formatRupiah(c.avg_per_trip)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Info Tip Mutasi Kasir */}
       <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-2xl p-4 flex items-start gap-3">
         <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />

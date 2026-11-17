@@ -42,6 +42,7 @@ async def list_suppliers(
     search: str | None = Query(None, description="Pencarian nama, alias, telp, atau alamat"),
     is_active: bool | None = Query(None, description="Filter status aktif"),
     has_unpaid: bool | None = Query(None, description="Hanya toko yang memiliki tagihan belum lunas"),
+    supplier_type: str | None = Query(None, description="Filter tipe: toko atau kurir"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     sort_by: str = Query("total_spent", description="total_spent, unpaid_bills_total, unpaid_bills_count, name, transaction_count, last_expense_date, created_at"),
@@ -55,11 +56,13 @@ async def list_suppliers(
         search=search,
         is_active=is_active,
         has_unpaid=has_unpaid,
+        supplier_type=supplier_type,
         skip=skip,
         limit=limit,
         sort_by=sort_by,
         sort_order=sort_order,
     )
+    await db.commit()
     return SupplierListResponse(
         items=[SupplierResponse(**it) for it in items],
         total=total,
@@ -74,7 +77,7 @@ async def create_supplier(
     payload: SupplierCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """Tambah master supplier / toko baru (Admin & Owner)."""
+    """Tambah master supplier / toko / kurir baru (Admin & Owner)."""
     supp = await supplier_service.create_supplier(
         db,
         name=payload.name,
@@ -82,12 +85,29 @@ async def create_supplier(
         address=payload.address,
         aliases=payload.aliases,
         notes=payload.notes,
+        supplier_type=payload.supplier_type,
+        courier_category=payload.courier_category,
+        is_subscribed=payload.is_subscribed,
         is_active=payload.is_active,
     )
     await db.commit()
     # Muat detail dengan statistik awal (0)
     data = await supplier_service.get_supplier_by_id(db, supp.id)
     return SupplierResponse(**data)
+
+
+@router.post("/migrate-ongkir", dependencies=[Depends(require_admin_role)])
+async def migrate_legacy_ongkir_endpoint(
+    request: Request,
+    dry_run: bool = Query(False, description="Simulasi tanpa mengubah database"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Audit dan migrasi pengeluaran ongkir lama (Operasional -> Ongkir + tautkan Master Kurir)."""
+    actor = f"dashboard:{get_current_role(request)}"
+    result = await supplier_service.migrate_legacy_ongkir_expenses(db, actor=actor, dry_run=dry_run)
+    if not dry_run:
+        await db.commit()
+    return result
 
 
 @router.post("/sync-existing", dependencies=[Depends(require_admin_role)])
@@ -160,6 +180,9 @@ async def update_supplier(
         address=payload.address,
         aliases=payload.aliases,
         notes=payload.notes,
+        supplier_type=payload.supplier_type,
+        courier_category=payload.courier_category,
+        is_subscribed=payload.is_subscribed,
         is_active=payload.is_active,
     )
     await db.commit()

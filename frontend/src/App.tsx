@@ -33,6 +33,8 @@ const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab")
 const UnpaidTab = React.lazy(() => import("@/components/unpaid/UnpaidTab").then(m => ({ default: m.UnpaidTab })));
 const SuppliersTab = React.lazy(() => import("@/components/supplier/SuppliersTab").then(m => ({ default: m.SuppliersTab })));
 const SupplierDetailPage = React.lazy(() => import("@/components/supplier/SupplierDetailPage").then(m => ({ default: m.SupplierDetailPage })));
+const AssetsTab = React.lazy(() => import("@/components/assets/AssetsTab").then(m => ({ default: m.AssetsTab })));
+const AssetPublicLabelPage = React.lazy(() => import("@/components/assets/AssetPublicLabelPage").then(m => ({ default: m.AssetPublicLabelPage })));
 const StaffRequestsPage = React.lazy(() => import("@/components/requests/StaffRequestsPage").then(m => ({ default: m.StaffRequestsPage })));
 const ApprovalBelanjaPage = React.lazy(() => import("@/components/requests/ApprovalBelanjaPage").then(m => ({ default: m.ApprovalBelanjaPage })));
 const PurchasingOrdersPage = React.lazy(() => import("@/components/requests/PurchasingOrdersPage").then(m => ({ default: m.PurchasingOrdersPage })));
@@ -76,6 +78,29 @@ try {
   // Abaikan saat SSR atau testing environment
 }
 
+function AssetQrRouteView({ qrToken }: { qrToken: string }) {
+  const navigate = useNavigate();
+  const { data: authData } = useQuery<{ authenticated: boolean }>({
+    queryKey: ["auth-status"],
+    queryFn: async () => {
+      const res = await api.get("/auth/status");
+      return res.data;
+    },
+    retry: false,
+  });
+
+  return (
+    <React.Suspense fallback={<TabLoadingFallback />}>
+      <Toaster position="top-right" richColors closeButton />
+      <AssetPublicLabelPage
+        qrToken={qrToken}
+        isAuthenticated={Boolean(authData?.authenticated)}
+        onBackToDashboard={authData?.authenticated ? () => navigate("/inventaris") : undefined}
+      />
+    </React.Suspense>
+  );
+}
+
 export function App() {
   const location = useLocation();
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
@@ -88,6 +113,10 @@ export function App() {
         <SharedMenuReadOnlyPage token={shareToken} />
       </React.Suspense>
     );
+  }
+  const assetLabelMatch = pathname.match(/^\/inventaris\/label\/([^/]+)$/);
+  if (assetLabelMatch) {
+    return <AssetQrRouteView qrToken={decodeURIComponent(assetLabelMatch[1])} />;
   }
   return <MainDashboardApp />;
 }
@@ -102,11 +131,13 @@ function MainDashboardApp() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
     activeTab = "suppliers";
+  } else if (pathname === "/inventaris" || pathname === "/assets") {
+    activeTab = "inventaris";
   } else if (pathname === "/menus" || pathname === "/menu" || pathname === "/produk") {
     activeTab = "menus";
   } else if (pathname === "/accounting" || pathname === "/akuntansi" || pathname === "/laporan-akuntansi") {
@@ -137,7 +168,7 @@ function MainDashboardApp() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -283,7 +314,7 @@ function MainDashboardApp() {
 
     if (isStaff && activeTab !== "requests") {
       navigate("/requests");
-    } else if (isWarehouse && activeTab !== "gudang" && activeTab !== "master") {
+    } else if (isWarehouse && activeTab !== "gudang" && activeTab !== "master" && activeTab !== "inventaris") {
       navigate("/gudang");
     } else if (
       isPurchasing &&
@@ -1505,6 +1536,10 @@ function MainDashboardApp() {
                   onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
                   canDelete={canDelete}
                 />
+              )}
+
+              {activeTab === "inventaris" && (
+                <AssetsTab isOwner={isOwner} />
               )}
 
               {activeTab === "supplier-detail" && selectedSupplierId && (

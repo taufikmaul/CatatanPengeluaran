@@ -294,6 +294,9 @@ export interface LabaRugiReportData {
   gross_profit?: number;
   net_profit?: number;
   prev_net_profit?: number;
+  disposal_gain_loss?: number;
+  depreciation_expense?: number;
+  low_value_asset_expense?: number;
   revenue_by_channel?: Array<{
     channel: string;
     tx_count: number;
@@ -331,6 +334,15 @@ export interface NeracaReportData {
   rekening_positions?: RekeningPositionData[];
   total_rekening_balance?: number;
   aset_tetap: NeracaItemData[];
+  aset_tetap_summary?: {
+    gross_cost: number;
+    accumulated_depreciation: number;
+    net_book_value: number;
+    monthly_depreciation: number;
+    active_capitalized_count: number;
+    low_value_count: number;
+    disposal_gain_loss_month: number;
+  };
   subtotal_aset_tetap: number;
   total_aset: number;
   kewajiban_lancar: NeracaItemData[];
@@ -443,6 +455,14 @@ export interface MonthlyReport {
   ongkir_count?: number;
   ongkir_reimburse_count?: number;
   ongkir_reimburse_total?: number;
+  ongkir_by_courier?: Array<{
+    courier_name: string;
+    supplier_id?: number | null;
+    trip_count: number;
+    total_amount: number;
+    avg_per_trip: number;
+    is_subscribed?: boolean;
+  }>;
   total_belanja_riil?: number;
   expense_count: number;
   prev_month_name?: string | null;
@@ -661,6 +681,8 @@ export interface SystemConfig {
   master_data?: Record<string, MasterDataOption[]>;
   monthly_budget_limit?: number;
   category_budgets?: Record<string, number>;
+  asset_capitalization_threshold?: number;
+  asset_default_useful_life_months?: number;
 }
 
 export interface SupplierPriceComparison {
@@ -727,6 +749,12 @@ export interface ExpenseFormData {
   master_item_id?: number | null;
   supplier_id?: number | null;
   bank_account_id?: number | null;
+  asset_id?: number | null;
+  maintenance_type?: string;
+  next_service_date?: string;
+  warranty_months?: number;
+  useful_life_months?: number;
+  asset_location?: string;
 }
 
 export interface OcrExtractedItem {
@@ -843,6 +871,9 @@ export interface Supplier {
   address: string;
   aliases: string;
   notes: string;
+  supplier_type?: "toko" | "kurir" | string;
+  courier_category?: string | null;
+  is_subscribed?: boolean;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -938,6 +969,9 @@ export interface SupplierFormData {
   address?: string;
   aliases?: string;
   notes?: string;
+  supplier_type?: "toko" | "kurir" | string;
+  courier_category?: string | null;
+  is_subscribed?: boolean;
   is_active?: boolean;
 }
 
@@ -1388,6 +1422,137 @@ export interface MenuListResponse {
   anonymize_locked?: boolean;
   read_only?: boolean;
   expires_at?: number;
+}
+
+// ──────────────────────────────────────────────
+// Inventaris Aset Tetap & Maintenance (SAK EMKM)
+// ──────────────────────────────────────────────
+
+export interface AssetMaintenance {
+  id: number;
+  asset_id: number;
+  expense_id?: number | null;
+  maintenance_date: string;
+  maintenance_type: string;
+  vendor_name: string;
+  cost?: number;
+  description: string;
+  next_service_date?: string | null;
+  service_warranty_until?: string | null;
+  performed_by: string;
+  created_at?: string | null;
+}
+
+export interface AssetDepreciationScheduleRow {
+  period: number;
+  year: number;
+  month: number;
+  period_label: string;
+  depreciation_amount: number;
+  accumulated_depreciation: number;
+  net_book_value: number;
+}
+
+export interface AssetLogEntry {
+  id: number;
+  action: string;
+  actor: string;
+  details: Record<string, unknown>;
+  created_at?: string | null;
+}
+
+export interface FixedAsset {
+  id: number;
+  asset_code: string;
+  qr_token: string;
+  name: string;
+  asset_group: string;
+  brand_model: string;
+  serial_number: string;
+  qty_in_lot: number;
+  vendor_name: string;
+  location: string;
+  pic_name: string;
+  condition: string;
+  status: string;
+  purchase_date: string;
+  warranty_months: number;
+  warranty_expiry_date?: string | null;
+  warranty_status: string;
+  days_to_warranty_end?: number | null;
+  warranty_notes: string;
+  notes: string;
+  maintenance_count: number;
+  last_maintenance_date?: string | null;
+  next_service_date?: string | null;
+  maintenances: AssetMaintenance[];
+  is_public_view?: boolean;
+  // Financial fields (only when authenticated)
+  expense_id?: number | null;
+  unit_index?: number;
+  supplier_id?: number | null;
+  acquisition_cost?: number;
+  salvage_value?: number;
+  useful_life_months?: number;
+  depreciation_method?: string;
+  capitalization_status?: "capitalized" | "expensed_low_value" | string;
+  is_capitalization_overridden?: boolean;
+  depreciation_start_date?: string;
+  monthly_depreciation?: number;
+  depreciation_in_period?: number;
+  accumulated_depreciation?: number;
+  net_book_value?: number;
+  remaining_months?: number;
+  total_maintenance_cost?: number;
+  total_cost_of_ownership?: number;
+  disposed_at?: string | null;
+  disposal_type?: string | null;
+  disposal_proceeds?: number | null;
+  disposal_notes?: string | null;
+  depreciation_schedule?: AssetDepreciationScheduleRow[];
+  logs?: AssetLogEntry[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AssetListSummary {
+  total_assets: number;
+  active_assets: number;
+  capitalized_count: number;
+  low_value_count: number;
+  total_acquisition_cost: number;
+  total_accumulated_depreciation: number;
+  total_net_book_value: number;
+  monthly_depreciation_total: number;
+  warranty_expiring_count: number;
+  upcoming_service_count: number;
+}
+
+export interface AssetListResponse {
+  ok: boolean;
+  items: FixedAsset[];
+  total: number;
+  config: {
+    asset_capitalization_threshold: number;
+    asset_default_useful_life_months: number;
+  };
+  summary: AssetListSummary;
+}
+
+export interface AssetReanalyzeResult {
+  ok: boolean;
+  threshold: number;
+  default_useful_life_months: number;
+  total_assets_checked: number;
+  promoted_to_capitalized: number;
+  moved_to_low_value: number;
+  unchanged: number;
+  overridden_skipped: number;
+  disposed_skipped: number;
+  capitalized_total_before: number;
+  capitalized_total_after: number;
+  balance_sheet_delta: number;
+  message: string;
 }
 
 

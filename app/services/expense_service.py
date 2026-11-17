@@ -175,6 +175,20 @@ async def save_expenses(
             )
             if not has_reimb_keyword:
                 is_reimb = False
+            # Resolusi master kurir (supplier_type='kurir')
+            if not sup_id and sup_name and str(sup_name).strip() not in ("-", "None", ""):
+                from app.services.supplier_service import get_or_create_supplier_by_name
+                courier_obj = await get_or_create_supplier_by_name(
+                    db, str(sup_name), auto_create=True, supplier_type="kurir"
+                )
+                if courier_obj:
+                    sup_id = courier_obj.id
+                    sup_name = courier_obj.name
+            elif sup_id and (not sup_name or sup_name == "-"):
+                from app.models.supplier import Supplier
+                s_obj = await db.get(Supplier, sup_id)
+                if s_obj:
+                    sup_name = s_obj.name
         else:
             item_cat = item_cat or "Operasional"
             pay_method = item.get("metode_bayar") or item.get("pay_method") or "Tunai"
@@ -244,7 +258,7 @@ async def save_expenses(
     await db.flush()
 
     effective_actor = actor or (f"telegram:{user_id}" if user_id else "system")
-    for exp in saved:
+    for idx, exp in enumerate(saved):
         await record_expense_log(
             db,
             expense_id=exp.id,
@@ -260,6 +274,33 @@ async def save_expenses(
                 "msg_link": exp.msg_link,
             },
         )
+        src_item = items[idx] if idx < len(items) else {}
+        exp_cat_l = (exp.category or "").strip().lower()
+        if exp_cat_l == "asset":
+            from app.services.asset_service import sync_expense_to_fixed_assets
+            await sync_expense_to_fixed_assets(
+                db,
+                exp,
+                actor=effective_actor,
+                warranty_months=src_item.get("warranty_months"),
+                useful_life_months=src_item.get("useful_life_months"),
+                location=src_item.get("location"),
+            )
+        elif exp_cat_l == "maintenance" and src_item.get("asset_id"):
+            from app.services.asset_service import add_asset_maintenance
+            await add_asset_maintenance(
+                db,
+                asset_id=int(src_item["asset_id"]),
+                maintenance_date=exp.expense_date,
+                maintenance_type=src_item.get("maintenance_type") or "Perbaikan",
+                vendor_name=exp.supplier or "-",
+                cost=exp.total_price,
+                description=f"{exp.item_name} — {exp.notes}" if exp.notes and exp.notes != "-" else exp.item_name,
+                next_service_date=src_item.get("next_service_date"),
+                expense_id=exp.id,
+                create_expense=False,
+                actor=effective_actor,
+            )
 
     await db.flush()
 
@@ -639,6 +680,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
     ongkir_count = 0
     ongkir_reimburse_count = 0
     ongkir_reimburse_total = 0.0
+    ongkir_by_courier_map: dict[str, dict[str, Any]] = {}
     per_kategori: dict[str, float] = {}
     per_metode_bayar: dict[str, float] = {}
     list_hutang: list[dict] = []
@@ -663,7 +705,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
             kat.lower() == "ongkir"
             or item_l.startswith("ongkir")
             or "ongkir" in item_l
-            or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "maxim", "j&t", "sicepat", "anteraja"))
+            or any(k in sup_l for k in ("gosend", "gocar", "grabexpress", "lalamove", "maxim", "shopee express", "spx", "jne", "j&t", "sicepat", "anteraja"))
         )
         if is_ongkir and not is_tukar_cash:
             total_ongkir += nominal
@@ -671,6 +713,22 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
             if bool(e.is_reimbursement):
                 ongkir_reimburse_count += 1
                 ongkir_reimburse_total += nominal
+            courier_label = (e.supplier or "Kurir Lainnya").strip() or "Kurir Lainnya"
+            if courier_label == "-":
+                courier_label = "Kurir Lainnya"
+            c_key = courier_label.lower()
+            if c_key not in ongkir_by_courier_map:
+                ongkir_by_courier_map[c_key] = {
+                    "courier_name": courier_label,
+                    "supplier_id": e.supplier_id,
+                    "trip_count": 0,
+                    "total_amount": 0.0,
+                    "is_subscribed": bool(getattr(getattr(e, "supplier_rel", None), "is_subscribed", False)),
+                }
+            ongkir_by_courier_map[c_key]["trip_count"] += 1
+            ongkir_by_courier_map[c_key]["total_amount"] += nominal
+            if not ongkir_by_courier_map[c_key]["supplier_id"] and e.supplier_id:
+                ongkir_by_courier_map[c_key]["supplier_id"] = e.supplier_id
         elif float(e.shipping_fee or 0) > 0 and not is_tukar_cash:
             total_ongkir += float(e.shipping_fee)
 
@@ -779,6 +837,18 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
     accounting_breakdown.sort(key=lambda x: (x["account_code"], -x["total"]))
 
+    ongkir_by_courier = sorted(
+        [
+            {
+                **row,
+                "total_amount": round(row["total_amount"], 2),
+                "avg_per_trip": round(row["total_amount"] / row["trip_count"], 2) if row["trip_count"] > 0 else 0.0,
+            }
+            for row in ongkir_by_courier_map.values()
+        ],
+        key=lambda x: (-x["total_amount"], -x["trip_count"]),
+    )
+
     return {
         "total_lunas": total_lunas,
         "total_tukar_cash": total_tukar_cash,
@@ -787,6 +857,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "ongkir_count": ongkir_count,
         "ongkir_reimburse_count": ongkir_reimburse_count,
         "ongkir_reimburse_total": ongkir_reimburse_total,
+        "ongkir_by_courier": ongkir_by_courier,
         "total_belanja_riil": total_lunas,
         "per_kategori": per_kategori,
         "per_metode_bayar": per_metode_bayar,
@@ -1466,7 +1537,12 @@ async def update_expense(
                     if expense.supplier != s_obj.name:
                         expense.supplier = s_obj.name
             else:
-                supplier_obj = await get_or_create_supplier_by_name(db, raw_sup, auto_create=True)
+                supplier_obj = await get_or_create_supplier_by_name(
+                    db,
+                    raw_sup,
+                    auto_create=True,
+                    supplier_type="kurir" if cat_lower == "ongkir" else "toko",
+                )
                 if supplier_obj:
                     if expense.supplier_id != supplier_obj.id:
                         changes["supplier_id"] = {
@@ -1523,6 +1599,11 @@ async def update_expense(
             changes_diff="\n".join(diff_lines),
         )
 
+    # Sinkronkan perubahan ke Inventaris Aset Tetap jika terkait kategori Asset
+    if "category" in changes or cat_lower == "asset":
+        from app.services.asset_service import sync_expense_to_fixed_assets
+        await sync_expense_to_fixed_assets(db, expense, actor=actor)
+
     await db.flush()
     return expense
 
@@ -1575,6 +1656,9 @@ async def delete_expense(
             }
         },
     )
+
+    from app.services.asset_service import remove_assets_for_deleted_expense
+    await remove_assets_for_deleted_expense(db, expense.id, actor=actor)
 
     await db.delete(expense)
     await db.flush()
@@ -2015,7 +2099,12 @@ async def batch_insert_expenses(
             sup_id = None
         elif not sup_id and sup_name not in ("-", "None", ""):
             from app.services.supplier_service import get_or_create_supplier_by_name
-            s_obj = await get_or_create_supplier_by_name(db, sup_name, auto_create=True)
+            s_obj = await get_or_create_supplier_by_name(
+                db,
+                sup_name,
+                auto_create=True,
+                supplier_type="kurir" if cat_lower == "ongkir" else "toko",
+            )
             if s_obj:
                 sup_id = s_obj.id
                 sup_name = s_obj.name
@@ -2094,7 +2183,11 @@ async def batch_insert_expenses(
                 )
             )
 
-    for exp in saved:
+    valid_src_items = [
+        item for item in items
+        if Decimal(str(item.get("total_price") if item.get("total_price") is not None else (item.get("total_harga") or 0))) > 0
+    ]
+    for idx, exp in enumerate(saved):
         await record_expense_log(
             db,
             expense_id=exp.id,
@@ -2109,6 +2202,33 @@ async def batch_insert_expenses(
                 "msg_link": exp.msg_link,
             },
         )
+        src_item = valid_src_items[idx] if idx < len(valid_src_items) else {}
+        exp_cat_l = (exp.category or "").strip().lower()
+        if exp_cat_l == "asset":
+            from app.services.asset_service import sync_expense_to_fixed_assets
+            await sync_expense_to_fixed_assets(
+                db,
+                exp,
+                actor=actor,
+                warranty_months=src_item.get("warranty_months"),
+                useful_life_months=src_item.get("useful_life_months"),
+                location=src_item.get("location") or src_item.get("asset_location"),
+            )
+        elif exp_cat_l == "maintenance" and src_item.get("asset_id"):
+            from app.services.asset_service import add_asset_maintenance
+            await add_asset_maintenance(
+                db,
+                asset_id=int(src_item["asset_id"]),
+                maintenance_date=exp.expense_date,
+                maintenance_type=src_item.get("maintenance_type") or "Perbaikan",
+                vendor_name=exp.supplier or "-",
+                cost=exp.total_price,
+                description=f"{exp.item_name} — {exp.notes}" if exp.notes and exp.notes != "-" else exp.item_name,
+                next_service_date=src_item.get("next_service_date"),
+                expense_id=exp.id,
+                create_expense=False,
+                actor=actor,
+            )
 
     await db.flush()
 

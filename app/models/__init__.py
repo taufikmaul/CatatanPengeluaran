@@ -16,11 +16,15 @@ from app.models.incoming_transaction import IncomingTransaction, IncomingTransac
 from app.models.bank_transfer import BankTransfer
 from app.models.menu_product import MenuProduct, MenuIngredient
 from app.models.expense_payment import ExpensePayment
+from app.models.fixed_asset import FixedAsset, AssetMaintenance, AssetLog
 
 __all__ = [
     "User",
     "Expense",
     "ExpensePayment",
+    "FixedAsset",
+    "AssetMaintenance",
+    "AssetLog",
     "ConversationSession",
     "DashboardPin",
     "DashboardAccessLog",

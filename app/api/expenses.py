@@ -247,7 +247,12 @@ async def create_expense(
         sup_name = "-"
     elif not sup_id and sup_name not in ("-", "None", ""):
         from app.services.supplier_service import get_or_create_supplier_by_name
-        s_obj = await get_or_create_supplier_by_name(db, sup_name, auto_create=True)
+        s_obj = await get_or_create_supplier_by_name(
+            db,
+            sup_name,
+            auto_create=True,
+            supplier_type="kurir" if cat_check == "ongkir" else "toko",
+        )
         if s_obj:
             sup_id = s_obj.id
             sup_name = s_obj.name
@@ -358,6 +363,33 @@ async def create_expense(
         },
     )
 
+    exp_cat_l = (expense.category or "").strip().lower()
+    if exp_cat_l == "asset":
+        from app.services.asset_service import sync_expense_to_fixed_assets
+        await sync_expense_to_fixed_assets(
+            db,
+            expense,
+            actor=actor,
+            warranty_months=payload.warranty_months,
+            useful_life_months=payload.useful_life_months,
+            location=payload.asset_location,
+        )
+    elif exp_cat_l == "maintenance" and payload.asset_id:
+        from app.services.asset_service import add_asset_maintenance
+        await add_asset_maintenance(
+            db,
+            asset_id=payload.asset_id,
+            maintenance_date=expense.expense_date,
+            maintenance_type=payload.maintenance_type or "Perbaikan",
+            vendor_name=expense.supplier or "-",
+            cost=expense.total_price,
+            description=f"{expense.item_name} — {expense.notes}" if expense.notes and expense.notes != "-" else expense.item_name,
+            next_service_date=payload.next_service_date,
+            expense_id=expense.id,
+            create_expense=False,
+            actor=actor,
+        )
+
     await db.commit()
     await db.refresh(expense)
     if expense.user_id:
@@ -426,6 +458,12 @@ async def create_expense_batch(
             "user_id": it.user_id,
             "master_item_id": it.master_item_id,
             "bank_account_id": it.bank_account_id,
+            "asset_id": it.asset_id,
+            "maintenance_type": it.maintenance_type,
+            "next_service_date": it.next_service_date,
+            "warranty_months": it.warranty_months,
+            "useful_life_months": it.useful_life_months,
+            "asset_location": it.asset_location,
         })
 
     if not dict_items:

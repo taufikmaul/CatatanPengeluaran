@@ -21,6 +21,13 @@ class Supplier(Base):
     address: Mapped[str | None] = mapped_column(Text, nullable=True, default="", server_default=text("''"))
     aliases: Mapped[str | None] = mapped_column(Text, nullable=True, default="", server_default=text("''"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True, default="", server_default=text("''"))
+    supplier_type: Mapped[str] = mapped_column(
+        String(30), default="toko", server_default=text("'toko'"), nullable=False, index=True
+    )
+    courier_category: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    is_subscribed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False, index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), index=True)
 
     created_at: Mapped[datetime] = mapped_column(

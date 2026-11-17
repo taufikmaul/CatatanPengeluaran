@@ -43,6 +43,8 @@ ENV_MAP: dict[str, str] = {
     "webhook_url": "WEBHOOK_URL",
     "monthly_budget_limit": "MONTHLY_BUDGET_LIMIT",
     "category_budgets_json": "CATEGORY_BUDGETS_JSON",
+    "asset_capitalization_threshold": "ASSET_CAPITALIZATION_THRESHOLD",
+    "asset_default_useful_life_months": "ASSET_DEFAULT_USEFUL_LIFE_MONTHS",
 }
 
 INT_FIELDS = {
@@ -51,6 +53,8 @@ INT_FIELDS = {
     "dashboard_pin_thread_id",
     "request_belanja_thread_id",
     "monthly_budget_limit",
+    "asset_capitalization_threshold",
+    "asset_default_useful_life_months",
 }
 
 
@@ -133,6 +137,10 @@ def apply_settings_to_runtime(settings_map: dict[str, Any]) -> None:
                         setattr(settings, key, 7)
                     elif key == "monthly_budget_limit":
                         setattr(settings, key, 0)
+                    elif key == "asset_capitalization_threshold":
+                        setattr(settings, key, 500000)
+                    elif key == "asset_default_useful_life_months":
+                        setattr(settings, key, 48)
             else:
                 setattr(settings, key, str_val)
 

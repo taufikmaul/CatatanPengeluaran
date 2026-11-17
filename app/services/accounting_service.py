@@ -13,9 +13,11 @@ from app.models.master_data import MasterDataOption
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
 from app.models.bank_transfer import BankTransfer
+from app.models.fixed_asset import FixedAsset
 from app.services.expense_service import get_monthly_report
 from app.services.master_data_service import get_category_accounting_map, get_master_options
 from app.services.bank_account_service import DEFAULT_COA_BY_TYPE, _parse_mappings
+from app.services.asset_service import calculate_asset_depreciation
 
 MONTH_NAMES = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -130,6 +132,84 @@ async def get_accounting_report(
     all_account_lines.sort(key=lambda x: (x["account_code"], x["category"]))
 
     # ─────────────────────────────────────────────────────────────
+    # INVENTARIS ASET TETAP & PENYUSUTAN SAK EMKM
+    # ─────────────────────────────────────────────────────────────
+    fixed_assets_res = await db.execute(select(FixedAsset).order_by(FixedAsset.id.asc()))
+    all_fixed_assets = list(fixed_assets_res.scalars().all())
+
+    cur_dep_expense = 0.0
+    prev_dep_expense = 0.0
+    cur_low_value_expense = 0.0
+    prev_low_value_expense = 0.0
+    cur_gross_fixed_asset = 0.0
+    cur_accum_dep = 0.0
+    cur_disposal_gain_loss = 0.0
+    prev_disposal_gain_loss = 0.0
+    active_capitalized_count = 0
+    low_value_asset_count = 0
+    linked_asset_expense_ids: set[int] = set()
+
+    for ast in all_fixed_assets:
+        if ast.expense_id:
+            linked_asset_expense_ids.add(ast.expense_id)
+        cur_calc = calculate_asset_depreciation(ast, cur_year, cur_month)
+        prev_calc = calculate_asset_depreciation(ast, prev_year, prev_month)
+
+        cur_dep_expense += cur_calc["depreciation_in_period"]
+        prev_dep_expense += prev_calc["depreciation_in_period"]
+        cur_low_value_expense += cur_calc["immediate_expense_in_period"]
+        prev_low_value_expense += prev_calc["immediate_expense_in_period"]
+        cur_gross_fixed_asset += cur_calc["gross_balance_sheet_cost"]
+        cur_accum_dep += cur_calc["accumulated_depreciation"]
+        cur_disposal_gain_loss += cur_calc["disposal_gain_loss_in_period"]
+        prev_disposal_gain_loss += prev_calc["disposal_gain_loss_in_period"]
+
+        if cur_calc["is_owned_in_period"] and not cur_calc["is_disposed_as_of"]:
+            if ast.capitalization_status == "capitalized":
+                active_capitalized_count += 1
+            else:
+                low_value_asset_count += 1
+
+    cur_dep_expense = round(cur_dep_expense, 2)
+    prev_dep_expense = round(prev_dep_expense, 2)
+    cur_low_value_expense = round(cur_low_value_expense, 2)
+    prev_low_value_expense = round(prev_low_value_expense, 2)
+    cur_gross_fixed_asset = round(cur_gross_fixed_asset, 2)
+    cur_accum_dep = round(cur_accum_dep, 2)
+
+    if cur_dep_expense > 0 or prev_dep_expense > 0:
+        all_account_lines.append({
+            "account_code": "6-2100",
+            "account_name": "Beban Penyusutan Aset Tetap",
+            "category": "Penyusutan Aset",
+            "account_group": "OPEX",
+            "report_type": "LABA_RUGI",
+            "total": cur_dep_expense,
+            "prev_total": prev_dep_expense,
+            "diff_nominal": round(cur_dep_expense - prev_dep_expense, 2),
+            "mom_change_pct": _calc_mom_pct(cur_dep_expense, prev_dep_expense),
+            "transaction_count": active_capitalized_count,
+            "description": "Beban penyusutan garis lurus aset tetap bulan berjalan (non-kas, SAK EMKM)",
+        })
+
+    if cur_low_value_expense > 0 or prev_low_value_expense > 0:
+        all_account_lines.append({
+            "account_code": "6-2200",
+            "account_name": "Beban Peralatan Nilai Rendah",
+            "category": "Peralatan Kecil",
+            "account_group": "OPEX",
+            "report_type": "LABA_RUGI",
+            "total": cur_low_value_expense,
+            "prev_total": prev_low_value_expense,
+            "diff_nominal": round(cur_low_value_expense - prev_low_value_expense, 2),
+            "mom_change_pct": _calc_mom_pct(cur_low_value_expense, prev_low_value_expense),
+            "transaction_count": low_value_asset_count,
+            "description": "Pembelian alat di bawah batas minimal kapitalisasi yang langsung dibebankan",
+        })
+
+    all_account_lines.sort(key=lambda x: (x["account_code"], x["category"]))
+
+    # ─────────────────────────────────────────────────────────────
     # 1. LAPORAN LABA RUGI (PENDAPATAN USAHA & BEBAN USAHA)
     # ─────────────────────────────────────────────────────────────
     prev_start_date = date(prev_year, prev_month, 1)
@@ -220,8 +300,8 @@ async def get_accounting_report(
     mom_beban_pct = _calc_mom_pct(total_beban, prev_total_beban)
 
     gross_profit = revenue_net - subtotal_hpp
-    net_profit = revenue_net - total_beban
-    prev_net_profit = prev_revenue_net - prev_total_beban
+    net_profit = revenue_net - total_beban + round(cur_disposal_gain_loss, 2)
+    prev_net_profit = prev_revenue_net - prev_total_beban + round(prev_disposal_gain_loss, 2)
 
     # Tambahkan proporsi persentase ke masing-masing item Laba Rugi
     for item in hpp_items:
@@ -243,6 +323,9 @@ async def get_accounting_report(
         "gross_profit": gross_profit,
         "net_profit": net_profit,
         "prev_net_profit": prev_net_profit,
+        "disposal_gain_loss": round(cur_disposal_gain_loss, 2),
+        "depreciation_expense": cur_dep_expense,
+        "low_value_asset_expense": cur_low_value_expense,
         "revenue_by_channel": revenue_by_channel,
         "hpp_items": hpp_items,
         "subtotal_hpp": subtotal_hpp,
@@ -303,27 +386,54 @@ async def get_accounting_report(
 
     subtotal_aset_lancar = sum(i["nominal"] for i in aset_lancar)
 
-    # Aset Tetap (Peralatan & Mesin - kumulatif s/d akhir bulan laporan)
+    # Aset Tetap (Peralatan & Mesin - Nilai Perolehan & Akumulasi Penyusutan SAK EMKM)
     asset_line = next((item for item in all_account_lines if item["category"] == "Asset"), None)
     asset_month_total = float(asset_line["total"]) if asset_line else 0.0
-    asset_cum_res = await db.execute(
-        select(func.coalesce(func.sum(Expense.total_price), 0.0)).where(
+
+    # Fallback hanya untuk transaksi Asset lama/langsung yang belum masuk ke fixed_assets
+    unlinked_asset_res = await db.execute(
+        select(Expense.id, Expense.total_price).where(
             and_(
                 func.lower(Expense.category) == "asset",
                 Expense.expense_date < end_date,
             )
         )
     )
-    subtotal_aset_tetap = float(asset_cum_res.scalar() or asset_month_total)
+    unlinked_asset_total = sum(
+        float(r[1] or 0.0)
+        for r in unlinked_asset_res.fetchall()
+        if r[0] not in linked_asset_expense_ids
+    )
+
+    gross_aset_tetap = round(cur_gross_fixed_asset + unlinked_asset_total, 2)
+    net_aset_tetap = round(max(0.0, gross_aset_tetap - cur_accum_dep), 2)
+    subtotal_aset_tetap = net_aset_tetap
+
     aset_tetap = [
         {
             "account_code": "1-2100",
-            "account_name": "Aset Tetap - Peralatan & Mesin",
+            "account_name": "Aset Tetap - Peralatan & Mesin (Harga Perolehan)",
             "group": "ASET_TETAP",
-            "nominal": subtotal_aset_tetap,
-            "description": f"Akumulasi belanja modal peralatan s/d {cur_month_name} {cur_year} (bulan ini: Rp {asset_month_total:,.0f})",
-        }
+            "nominal": gross_aset_tetap,
+            "description": f"{active_capitalized_count} unit aset tetap dikapitalisasi s/d {cur_month_name} {cur_year} (pembelian bulan ini: Rp {asset_month_total:,.0f})",
+        },
+        {
+            "account_code": "1-2190",
+            "account_name": "Akumulasi Penyusutan Aset Tetap",
+            "group": "ASET_TETAP",
+            "nominal": -cur_accum_dep,
+            "description": f"Akumulasi penyusutan garis lurus s/d {cur_month_name} {cur_year} (beban bulan ini: Rp {cur_dep_expense:,.0f})",
+        },
     ]
+    aset_tetap_summary = {
+        "gross_cost": gross_aset_tetap,
+        "accumulated_depreciation": cur_accum_dep,
+        "net_book_value": net_aset_tetap,
+        "monthly_depreciation": cur_dep_expense,
+        "active_capitalized_count": active_capitalized_count,
+        "low_value_count": low_value_asset_count,
+        "disposal_gain_loss_month": round(cur_disposal_gain_loss, 2),
+    }
 
     total_aset = subtotal_aset_lancar + subtotal_aset_tetap
 
@@ -575,6 +685,7 @@ async def get_accounting_report(
         "rekening_positions": rekening_positions,
         "total_rekening_balance": sum(r["estimated_balance"] for r in rekening_positions),
         "aset_tetap": aset_tetap,
+        "aset_tetap_summary": aset_tetap_summary,
         "subtotal_aset_tetap": subtotal_aset_tetap,
         "total_aset": total_aset,
         "kewajiban_lancar": kewajiban_lancar,
@@ -587,33 +698,36 @@ async def get_accounting_report(
     # ─────────────────────────────────────────────────────────────
     # 3. LAPORAN ARUS KAS (CASH FLOW STATEMENT)
     # ─────────────────────────────────────────────────────────────
-    # Arus Kas Operasi: Pengeluaran lunas untuk HPP dan OPEX
+    # Arus Kas Operasi: Pengeluaran kas untuk HPP dan OPEX (tidak termasuk beban penyusutan non-kas 6-2100)
+    cash_opex = round(max(0.0, subtotal_opex - cur_dep_expense), 2)
+    cash_total_beban = subtotal_hpp + cash_opex
     arus_operasi = [
         {
             "activity": "Pengeluaran Kas untuk Pembelian Bahan Baku & HPP",
             "account_name": "Harga Pokok Penjualan",
             "nominal": subtotal_hpp,
-            "percentage": round((subtotal_hpp / total_beban) * 100.0, 1) if total_beban > 0 else 0.0,
+            "percentage": round((subtotal_hpp / cash_total_beban) * 100.0, 1) if cash_total_beban > 0 else 0.0,
         },
         {
             "activity": "Pengeluaran Kas untuk Operasional, Gaji, Sewa, & Utilitas",
-            "account_name": "Beban Operasional (OPEX)",
-            "nominal": subtotal_opex,
-            "percentage": round((subtotal_opex / total_beban) * 100.0, 1) if total_beban > 0 else 0.0,
+            "account_name": "Beban Operasional (OPEX Kas)",
+            "nominal": cash_opex,
+            "percentage": round((cash_opex / cash_total_beban) * 100.0, 1) if cash_total_beban > 0 else 0.0,
         },
     ]
-    subtotal_arus_operasi = subtotal_hpp + subtotal_opex
+    subtotal_arus_operasi = subtotal_hpp + cash_opex
 
-    # Arus Kas Investasi: Pembelian Aset Tetap
+    # Arus Kas Investasi: Pembelian Aset Tetap dikapitalisasi bulan berjalan (hindari double count aset nilai rendah yang sudah masuk OPEX 6-2200)
+    capex_cash_month = round(max(0.0, asset_month_total - cur_low_value_expense), 2)
     arus_investasi = [
         {
-            "activity": "Pengeluaran Kas untuk Pembelian Aset Tetap & Peralatan",
+            "activity": "Pengeluaran Kas untuk Pembelian Aset Tetap & Peralatan (Capex Bulan Ini)",
             "account_name": "Belanja Modal (Capex)",
-            "nominal": subtotal_aset_tetap,
-            "percentage": 100.0 if subtotal_aset_tetap > 0 else 0.0,
+            "nominal": capex_cash_month,
+            "percentage": 100.0 if capex_cash_month > 0 else 0.0,
         }
     ]
-    subtotal_arus_investasi = subtotal_aset_tetap
+    subtotal_arus_investasi = capex_cash_month
 
     # Arus Kas Kliring / Transfer
     arus_kliring = [

@@ -6,6 +6,7 @@ import {
   updateSupplier,
   deleteSupplier,
   syncSupplierExpenses,
+  migrateLegacyOngkir,
 } from "@/lib/api";
 import { Supplier, SupplierFormData } from "@/types";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
@@ -77,6 +78,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 
   // Search & Filter state
   const [search, setSearch] = useState("");
+  const [supplierTypeFilter, setSupplierTypeFilter] = useState<"all" | "toko" | "kurir">("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [unpaidFilter, setUnpaidFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("total_spent");
@@ -95,6 +97,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   const [formAddress, setFormAddress] = useState("");
   const [formAliases, setFormAliases] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formSupplierType, setFormSupplierType] = useState<"toko" | "kurir">("toko");
+  const [formCourierCategory, setFormCourierCategory] = useState("Langganan");
+  const [formIsSubscribed, setFormIsSubscribed] = useState(false);
   const [formIsActive, setFormIsActive] = useState(true);
 
   // Query Data Suppliers
@@ -102,6 +107,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     queryKey: [
       "suppliers",
       search,
+      supplierTypeFilter,
       statusFilter,
       unpaidFilter,
       sortBy,
@@ -111,6 +117,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     queryFn: () =>
       getSuppliers({
         search: search || undefined,
+        supplier_type: supplierTypeFilter === "all" ? undefined : supplierTypeFilter,
         is_active:
           statusFilter === "all" ? undefined : statusFilter === "active",
         has_unpaid:
@@ -173,17 +180,33 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     },
   });
 
-  const resetForm = () => {
+  const migrateOngkirMutation = useMutation({
+    mutationFn: () => migrateLegacyOngkir(false),
+    onSuccess: (res) => {
+      toast.success(res.message);
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["report"] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal memigrasi transaksi ongkir.");
+    },
+  });
+
+  const resetForm = (defaultType: "toko" | "kurir" = "toko") => {
     setFormName("");
     setFormPhone("");
     setFormAddress("");
     setFormAliases("");
     setFormNotes("");
+    setFormSupplierType(defaultType);
+    setFormCourierCategory("Langganan");
+    setFormIsSubscribed(defaultType === "kurir");
     setFormIsActive(true);
   };
 
   const openAddModal = () => {
-    resetForm();
+    resetForm(supplierTypeFilter === "kurir" ? "kurir" : "toko");
     setIsAddOpen(true);
   };
 
@@ -195,6 +218,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     setFormAddress(s.address || "");
     setFormAliases(s.aliases || "");
     setFormNotes(s.notes || "");
+    setFormSupplierType(s.supplier_type === "kurir" ? "kurir" : "toko");
+    setFormCourierCategory(s.courier_category || "Langganan");
+    setFormIsSubscribed(Boolean(s.is_subscribed));
     setFormIsActive(s.is_active);
     setIsEditOpen(true);
   };
@@ -226,6 +252,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
       address: formAddress.trim(),
       aliases: formAliases.trim(),
       notes: formNotes.trim(),
+      supplier_type: formSupplierType,
+      courier_category: formSupplierType === "kurir" ? formCourierCategory : null,
+      is_subscribed: formSupplierType === "kurir" ? formIsSubscribed : false,
       is_active: formIsActive,
     });
   };
@@ -241,6 +270,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         address: formAddress.trim(),
         aliases: formAliases.trim(),
         notes: formNotes.trim(),
+        supplier_type: formSupplierType,
+        courier_category: formSupplierType === "kurir" ? formCourierCategory : null,
+        is_subscribed: formSupplierType === "kurir" ? formIsSubscribed : false,
         is_active: formIsActive,
       },
     });
@@ -360,8 +392,18 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
               className="cursor-pointer group/name"
               onClick={() => onSelectSupplier(s.id)}
             >
-              <div className="font-semibold text-slate-900 dark:text-slate-100 group-hover/name:text-blue-600 transition-colors">
-                {s.name}
+              <div className="font-semibold text-slate-900 dark:text-slate-100 group-hover/name:text-blue-600 transition-colors flex flex-wrap items-center gap-1.5">
+                <span>{s.name}</span>
+                {s.supplier_type === "kurir" && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-sky-200 bg-sky-50 text-sky-700">
+                    Kurir{s.courier_category ? ` • ${s.courier_category}` : ""}
+                  </Badge>
+                )}
+                {s.is_subscribed && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-800">
+                    Langganan
+                  </Badge>
+                )}
               </div>
               {s.aliases && (
                 <div className="text-[10px] text-slate-400 truncate max-w-xs mt-0.5">
@@ -615,6 +657,18 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             Audit Toko Ganda
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => migrateOngkirMutation.mutate()}
+            disabled={migrateOngkirMutation.isPending}
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+            title="Migrasi ongkir lama (Operasional -> Ongkir) & tautkan ke Master Kurir"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${migrateOngkirMutation.isPending ? "animate-spin" : ""}`} />
+            Migrasi Ongkir
+          </Button>
+
           {/* Tombol Tambah Supplier */}
           <Button
             size="sm"
@@ -622,7 +676,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            Tambah Toko
+            {supplierTypeFilter === "kurir" ? "Tambah Kurir" : "Tambah Toko"}
           </Button>
         </div>
       </div>
@@ -760,6 +814,30 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 
             {/* Filter & Sort Controls */}
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+              <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-0.5">
+                {[
+                  { id: "all", label: "Semua" },
+                  { id: "toko", label: "Toko & Vendor" },
+                  { id: "kurir", label: "Kurir Ongkir" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      setSupplierTypeFilter(tab.id as "all" | "toko" | "kurir");
+                      setPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      supplierTypeFilter === tab.id
+                        ? "bg-white dark:bg-slate-800 text-blue-600 shadow-xs"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
               <Filters
                 variant="advanced"
                 advancedMode="popover"
@@ -849,9 +927,58 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           </DialogHeader>
 
           <form onSubmit={handleCreateSubmit} className="space-y-3.5 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Tipe Pihak *
+                </label>
+                <select
+                  value={formSupplierType}
+                  onChange={(e) => {
+                    const nextType = e.target.value === "kurir" ? "kurir" : "toko";
+                    setFormSupplierType(nextType);
+                    if (nextType === "kurir") setFormIsSubscribed(true);
+                  }}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                >
+                  <option value="toko">Toko / Vendor</option>
+                  <option value="kurir">Kurir Pengiriman</option>
+                </select>
+              </div>
+              {formSupplierType === "kurir" && (
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Kategori Kurir
+                  </label>
+                  <select
+                    value={formCourierCategory}
+                    onChange={(e) => setFormCourierCategory(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                  >
+                    <option value="Instan">Instan (GoSend/GoCar/Grab/Lalamove/Maxim)</option>
+                    <option value="Ekspedisi">Ekspedisi (Shopee Express/JNE/J&T)</option>
+                    <option value="Langganan">Kurir Langganan</option>
+                    <option value="Lainnya">Lainnya</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {formSupplierType === "kurir" && (
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formIsSubscribed}
+                  onChange={(e) => setFormIsSubscribed(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                <span className="font-medium text-slate-700">Tandai sebagai Kurir Langganan (prioritas di pilihan cepat)</span>
+              </label>
+            )}
+
             <div>
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Nama Toko / Supplier *
+                {formSupplierType === "kurir" ? "Nama Kurir / Layanan *" : "Nama Toko / Supplier *"}
               </label>
               <Input
                 value={formName}
@@ -963,9 +1090,54 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           </DialogHeader>
 
           <form onSubmit={handleEditSubmit} className="space-y-3.5 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Tipe Pihak *
+                </label>
+                <select
+                  value={formSupplierType}
+                  onChange={(e) => setFormSupplierType(e.target.value === "kurir" ? "kurir" : "toko")}
+                  className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                >
+                  <option value="toko">Toko / Vendor</option>
+                  <option value="kurir">Kurir Pengiriman</option>
+                </select>
+              </div>
+              {formSupplierType === "kurir" && (
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Kategori Kurir
+                  </label>
+                  <select
+                    value={formCourierCategory}
+                    onChange={(e) => setFormCourierCategory(e.target.value)}
+                    className="h-9 w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-xs"
+                  >
+                    <option value="Instan">Instan</option>
+                    <option value="Ekspedisi">Ekspedisi</option>
+                    <option value="Langganan">Kurir Langganan</option>
+                    <option value="Lainnya">Lainnya</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {formSupplierType === "kurir" && (
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50/50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formIsSubscribed}
+                  onChange={(e) => setFormIsSubscribed(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                <span className="font-medium text-slate-700">Tandai sebagai Kurir Langganan</span>
+              </label>
+            )}
+
             <div>
               <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                Nama Toko / Supplier *
+                {formSupplierType === "kurir" ? "Nama Kurir / Layanan *" : "Nama Toko / Supplier *"}
               </label>
               <Input
                 value={formName}

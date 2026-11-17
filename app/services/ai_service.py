@@ -79,15 +79,15 @@ Aturan Khusus Bukti Transfer Bank / E-Wallet (Tukar Cash / Tarik Tunai Karyawan)
   * "keterangan": WAJIB cantumkan nama bank & pengirim transfer (contoh: "Transfer BCA dari Budi (Ref: 123456)")
   * "is_reimbursement": false
 
-Aturan Khusus Bukti Ongkir & Kurir Pengiriman Kue (GoSend Car, GoSend Bike, GrabExpress, Lalamove, Maxim, J&T, SiCepat):
-- Jika gambar adalah bukti pemesanan pengiriman/kurir atau struk ekspedisi delivery cake:
+Aturan Khusus Bukti Ongkir & Kurir Pengiriman Kue (GoSend, GoCar, GrabExpress, Lalamove, Shopee Express, Maxim, JNE, J&T, SiCepat, Kurir Langganan):
+- Jika gambar atau teks adalah bukti pemesanan pengiriman/kurir atau struk ekspedisi delivery cake:
   * "kategori": WAJIB "Ongkir"
   * "barang": "ongkir delivery cake" atau "Ongkir [Layanan] - [Penerima/Tujuan/Kue]" (contoh: "ongkir delivery cake", "Ongkir GoSend - Bolu Ibu Maya")
   * "qty": 1
   * "satuan": "Trip"
   * "harga_satuan": total biaya ongkir bersih yang dibayar
   * "total_harga": total biaya ongkir bersih yang dibayar
-  * "toko_supplier": nama kurir / armada (contoh: "GoSend Car", "GoSend Bike", "GrabExpress", "Lalamove", "Maxim", "J&T", "SiCepat", atau nama kurir khusus)
+  * "toko_supplier": nama kurir / armada baku (contoh: "GoSend", "GoCar", "Lalamove", "GrabExpress", "Shopee Express", "Maxim", "JNE", "J&T Express", "SiCepat", atau nama kurir langganan seperti "Pak Budi Kurir")
   * "metode_bayar": metode bayar beserta akun jika ada (contoh: "GoPay", "OVO", "Transfer", "Tunai", "QRIS"). WAJIB dinormalisasi sesuai master data.
   * Status & Reimbursement:
     - "status_pembayaran": "Lunas" (ongkir selalu lunas)
@@ -265,10 +265,20 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                 or "ongkir" in barang_l
                 or "ongkos kirim" in barang_l
                 or "gosend" in barang_l
+                or "gocar" in barang_l
                 or "grabexpress" in barang_l
+                or "grab express" in barang_l
                 or "lalamove" in barang_l
+                or "shopee express" in barang_l
                 or "maxim" in barang_l
-                or any(k in sup_l for k in ("gosend", "grabexpress", "lalamove", "maxim", "gojek", "grab", "j&t", "sicepat", "anteraja"))
+                or any(
+                    k in sup_l
+                    for k in (
+                        "gosend", "gocar", "go-car", "grabexpress", "grab express",
+                        "lalamove", "shopee express", "spx", "maxim", "jne",
+                        "gojek", "grab", "j&t", "sicepat", "anteraja",
+                    )
+                )
             )
             if is_ongkir and item.get("kategori") != "Tukar Cash":
                 item["kategori"] = "Ongkir"
@@ -278,12 +288,15 @@ async def _execute_fetch(messages: list[dict]) -> dict:
                     item["satuan"] = "Trip"
                 # Pastikan nama kurir di toko_supplier
                 if not item.get("toko_supplier") or item.get("toko_supplier") == "-":
-                    for kurir in ("GoSend Car", "GoSend Bike", "GoSend", "GrabExpress", "Lalamove", "Maxim", "J&T", "SiCepat"):
+                    for kurir in (
+                        "GoSend", "GoCar", "GrabExpress", "Lalamove",
+                        "Shopee Express", "Maxim", "JNE", "J&T Express", "SiCepat", "Anteraja",
+                    ):
                         if kurir.lower() in barang_l or kurir.lower() in notes:
                             item["toko_supplier"] = kurir
                             break
                     if not item.get("toko_supplier") or item.get("toko_supplier") == "-":
-                        item["toko_supplier"] = "Kurir"
+                        item["toko_supplier"] = "Kurir Lainnya"
                 # Ongkir by default TIDAK masuk talangan (is_reimbursement = False)
                 # HANYA jika caption/catatan secara eksplisit menyebutkan talangan/reimburse
                 has_reimb_keyword = any(

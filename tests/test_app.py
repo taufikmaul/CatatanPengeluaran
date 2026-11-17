@@ -106,4 +106,7 @@ class TestSchemaConsistency:
             "bank_transfers",
             "menu_products",
             "menu_ingredients",
+            "fixed_assets",
+            "asset_maintenances",
+            "asset_logs",
         }
