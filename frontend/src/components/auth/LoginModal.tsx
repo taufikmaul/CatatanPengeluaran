@@ -199,10 +199,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
         role: loginMode,
         password: rolePassword.trim(),
       });
-      if (res.data?.token) {
-        localStorage.setItem("dashboard_session_token", res.data.token);
-        localStorage.removeItem("hcteams_token");
-      }
       toast.success(res.data.message || `Login ${ROLES_INFO[loginMode].label} berhasil!`);
       setRolePassword("");
       setAuthError(null);
@@ -282,11 +278,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onSuccess }) => 
     setIsVerifying(true);
     setAuthError(null);
     try {
-      const res = await api.post("/auth/verify-pin", { pin });
-      if (res.data?.token) {
-        localStorage.setItem("dashboard_session_token", res.data.token);
-        localStorage.removeItem("hcteams_token");
-      }
+      await api.post("/auth/verify-pin", { pin });
       toast.success("Login Owner berhasil! Selamat datang kembali.");
       setPin("");
       setAuthError(null);

@@ -163,6 +163,11 @@ export const UnpaidOrdersCard: React.FC<UnpaidOrdersCardProps> = ({
                       <span className="font-bold text-rose-600 text-xs md:text-sm block tabular-nums">
                         {formatRupiah(item.nominal)}
                       </span>
+                      {item.paid_amount !== undefined && item.paid_amount > 0 && item.total_invoice && (
+                        <span className="text-[10px] text-amber-700 font-semibold block tabular-nums">
+                          DP {formatRupiah(item.paid_amount)} / {formatRupiah(item.total_invoice)}
+                        </span>
+                      )}
                     </div>
                   </div>
 

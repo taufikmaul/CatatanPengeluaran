@@ -7,6 +7,36 @@ from typing import Any
 from pydantic import BaseModel, Field, ConfigDict
 
 
+class ExpensePaymentCreate(BaseModel):
+    amount: float | None = Field(None, gt=0)
+    dp_percent: float | None = Field(None, gt=0, le=100)
+    payment_date: date = Field(default_factory=date.today)
+    pay_method: str = "Transfer"
+    bank_account_id: int | None = None
+    reference_no: str | None = None
+    notes: str = "-"
+    due_date: str | None = None
+    settle_full: bool = False
+
+
+class ExpensePaymentResponse(BaseModel):
+    id: int
+    expense_id: int
+    payment_type: str
+    amount: float
+    dp_percent: float | None = None
+    payment_date: str
+    pay_method: str
+    bank_account_id: int | None = None
+    bank_account_name: str | None = None
+    reference_no: str | None = None
+    notes: str = "-"
+    actor: str = "system"
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ExpenseBase(BaseModel):
     expense_date: date = Field(default_factory=date.today)
     supplier: str = "-"
@@ -23,6 +53,11 @@ class ExpenseBase(BaseModel):
     pay_method: str = "Tunai"
     pay_status: str = "Lunas"
     due_date: str = "-"
+    paid_amount: float = 0.0
+    dp_type: str | None = None
+    dp_percent: float | None = None
+    dp_payment_date: date | None = None
+    dp_reference_no: str | None = None
     notes: str = "-"
     is_reimbursement: bool = False
     invoice_number: str = "-"
@@ -57,6 +92,9 @@ class ExpenseUpdate(BaseModel):
     pay_method: str | None = None
     pay_status: str | None = None
     due_date: str | None = None
+    paid_amount: float | None = None
+    dp_type: str | None = None
+    dp_percent: float | None = None
     notes: str | None = None
     is_reimbursement: bool | None = None
     invoice_number: str | None = None
@@ -86,6 +124,13 @@ class ExpenseResponse(BaseModel):
     pay_method: str
     pay_status: str
     due_date: str
+    paid_amount: float = 0.0
+    remaining_amount: float = 0.0
+    dp_type: str | None = None
+    dp_percent: float | None = None
+    payment_progress_pct: float = 0.0
+    payments_count: int = 0
+    payments: list[ExpensePaymentResponse] = []
     notes: str
     msg_link: str
     is_reimbursement: bool = False
@@ -172,10 +217,15 @@ class UnpaidNearestDue(BaseModel):
     item_name: str
     supplier: str
     due_date: str
+    parsed_due_date: str | None = None
     total_price: float
+    paid_amount: float = 0.0
+    remaining_amount: float = 0.0
+    pay_status: str = "Belum Lunas"
     days_left: int | None = None
     is_overdue: bool = False
     is_today: bool = False
+    urgency: str = "upcoming"
 
 
 class UnpaidSupplierSummary(BaseModel):
@@ -183,20 +233,38 @@ class UnpaidSupplierSummary(BaseModel):
     supplier_name: str
     unpaid_count: int = 0
     unpaid_total: float = 0.0
+    dp_count: int = 0
+    dp_paid_total: float = 0.0
+    paid_count: int = 0
+    paid_total: float = 0.0
+    total_count: int = 0
+    total_nominal: float = 0.0
     nearest_due_date: str | None = None
     nearest_days_left: int | None = None
+    has_overdue: bool = False
 
 
 class UnpaidSummaryResponse(BaseModel):
     ok: bool = True
     total_unpaid_count: int = 0
     total_unpaid_nominal: float = 0.0
+    unpaid_count: int = 0
+    unpaid_total: float = 0.0
+    dp_count: int = 0
+    dp_paid_nominal: float = 0.0
+    dp_remaining_nominal: float = 0.0
+    total_invoice_nominal: float = 0.0
+    paid_count: int = 0
+    paid_total: float = 0.0
+    total_count: int = 0
     overdue_count: int = 0
     overdue_nominal: float = 0.0
+    overdue_total: float = 0.0
     due_today_count: int = 0
     due_today_nominal: float = 0.0
     due_soon_count: int = 0
     due_soon_nominal: float = 0.0
+    no_due_date_count: int = 0
     nearest_due: UnpaidNearestDue | None = None
     by_supplier: list[UnpaidSupplierSummary] = []
 
@@ -205,6 +273,10 @@ class UnpaidSettleRequest(BaseModel):
     expense_ids: list[int]
     action: str = "mark_paid"  # "mark_paid" | "mark_unpaid"
     bank_account_id: int | None = None
+    pay_method: str | None = None
+    payment_date: date | None = None
+    reference_no: str | None = None
+    notes: str | None = None
 
 
 class ExpenseLogResponse(BaseModel):
@@ -659,6 +731,8 @@ class SupplierUnpaidBillItem(BaseModel):
     expense_date: str
     item_name: str
     total_price: float
+    paid_amount: float = 0.0
+    remaining_amount: float = 0.0
     due_date: str = "-"
     invoice_number: str = "-"
     notes: str = "-"
@@ -900,6 +974,10 @@ class PurchaseRequestListResponse(BaseModel):
     items: list[PurchaseRequestResponse]
     total: int
     stats: PurchaseRequestStatsResponse | None = None
+
+
+class SsoExchangeRequest(BaseModel):
+    token: str = Field(..., min_length=10, max_length=4096)
 
 
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, Response, HTTPEx
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
-from app.api.deps import require_auth
+from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.services.csv_import_service import parse_csv_file
 from app.services.expense_service import (
     bulk_check_duplicates,
@@ -13,21 +13,15 @@ from app.services.expense_service import (
     make_duplicate_key,
 )
 
-router = APIRouter(prefix="/import", tags=["import"], dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/import", tags=["import"])
 
 
-@router.post("/csv")
+@router.post("/csv", dependencies=[Depends(require_admin_role)])
 async def api_import_csv(
     file: UploadFile = File(...),
     skip_duplicates: bool = Form(True),
     db: AsyncSession = Depends(get_db),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Format file tidak valid. Harap unggah file dengan format .csv",
-        )
-
     try:
         content = await file.read()
     except Exception as e:
@@ -35,6 +29,7 @@ async def api_import_csv(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Gagal membaca file: {str(e)}",
         )
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
 
     parsed = parse_csv_file(content, valid_categories=settings.valid_categories)
     if not parsed.valid_rows and not parsed.skipped_rows:
@@ -79,7 +74,7 @@ async def api_import_csv(
     }
 
 
-@router.get("/template")
+@router.get("/template", dependencies=[Depends(require_roles("admin", "admin_input"))])
 async def api_download_template():
     template_csv = (
         "Timestamp,Tanggal Nota,Toko / Supplier,Barang,Qty,Kategori,Harga Satuan,Tax,Diskon,Total Harga,Metode Bayar,Status Pembayaran,Jatuh Tempo,Keterangan,Link Pesan\r\n"

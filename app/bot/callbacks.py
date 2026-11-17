@@ -79,6 +79,13 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         await agent._handle_ai_analysis(force_refresh=(data == "refresh_ai_analysis"))
 
     elif data == "action_autofix":
+        if not settings.is_admin_telegram(cb["from"]["id"]):
+            await tg.send_message(
+                chat_id,
+                "⛔ *Akses ditolak.* Hanya admin/owner yang dapat menjalankan Auto-Fix kategori.",
+                thread_id,
+            )
+            return
         sent = await tg.send_message(
             chat_id,
             "⏳ *Auto-Fix dimulai...*\n_Menganalisis & memperbaiki kategori via AI..._",
@@ -114,6 +121,13 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         await tg.send_message(chat_id, help_msg, thread_id)
 
     elif data == "menu_config":
+        if not settings.is_admin_telegram(cb["from"]["id"]):
+            await tg.send_message(
+                chat_id,
+                "⛔ *Akses ditolak.* Informasi konfigurasi sistem hanya untuk admin/owner.",
+                thread_id,
+            )
+            return
         msg = (
             f"⚙️ *Konfigurasi Aktif:*\n"
             f"- Provider AI: *Sumopod AI*\n"
@@ -186,19 +200,35 @@ async def handle_callback_query(cb: dict, db: AsyncSession) -> None:
         sender_actor = f"telegram:{cb['from']['id']}"
 
         # Ambil detail items sebelum dihapus agar tetap tersimpan di teks chat untuk pencarian
+        sender_tg_id = cb["from"]["id"]
+        is_tg_admin = settings.is_admin_telegram(sender_tg_id)
         expenses_to_delete = []
+        unauthorized_ids = []
         for eid in expense_ids:
             exp = await get_expense_by_id(db, eid)
             if exp:
+                if exp.user_id and not is_tg_admin:
+                    owner_tg_id = exp.user.telegram_id if getattr(exp, "user", None) else None
+                    if owner_tg_id is not None and owner_tg_id != sender_tg_id:
+                        unauthorized_ids.append(eid)
+                        continue
                 expenses_to_delete.append(exp)
+
+        if unauthorized_ids and not expenses_to_delete:
+            await tg.send_message(
+                chat_id,
+                "⛔ *Akses ditolak.* Hanya pembuat transaksi atau admin/owner yang dapat membatalkan pencatatan ini.",
+                thread_id,
+            )
+            return
 
         deleted_count = 0
         for exp in expenses_to_delete:
             if await delete_expense(db, exp.id, actor=sender_actor):
                 deleted_count += 1
-        # Hapus juga ID yang mungkin belum ter-fetch
+        # Hapus juga ID yang belum ter-fetch (kecuali yang ditolak otorisasinya)
         for eid in expense_ids:
-            if eid not in [e.id for e in expenses_to_delete]:
+            if eid not in [e.id for e in expenses_to_delete] and eid not in unauthorized_ids:
                 if await delete_expense(db, eid, actor=sender_actor):
                     deleted_count += 1
         await db.commit()
@@ -447,6 +477,14 @@ async def _handle_req_approve(
     from app.services.purchase_request_service import approve_purchase_request
     from app.utils.auth import get_or_create_user
 
+    if not settings.is_admin_telegram(cb["from"]["id"]):
+        await tg.send_message(
+            chat_id,
+            "⛔ *Akses ditolak.* Hanya admin/owner yang dapat menyetujui pengajuan belanja.",
+            thread_id,
+        )
+        return
+
     reviewer_user = await get_or_create_user(db, cb["from"]["id"])
     reviewer_name = cb["from"].get("first_name") or "Admin"
 
@@ -486,6 +524,14 @@ async def _handle_req_reject(
     """Admin menolak pengajuan belanja via tombol inline."""
     from app.services.purchase_request_service import reject_purchase_request
     from app.utils.auth import get_or_create_user
+
+    if not settings.is_admin_telegram(cb["from"]["id"]):
+        await tg.send_message(
+            chat_id,
+            "⛔ *Akses ditolak.* Hanya admin/owner yang dapat menolak pengajuan belanja.",
+            thread_id,
+        )
+        return
 
     reviewer_user = await get_or_create_user(db, cb["from"]["id"])
     reviewer_name = cb["from"].get("first_name") or "Admin"

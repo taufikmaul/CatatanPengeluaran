@@ -9,14 +9,14 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth, require_admin_role
+from app.api.deps import require_admin_role, require_roles
 from app.models.bank_account import BankAccount
 from app.models.bank_transfer import BankTransfer
 
 router = APIRouter(
     prefix="/bank-transfers",
     tags=["bank-transfers"],
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_roles("admin", "admin_input"))],
 )
 
 

@@ -19,6 +19,8 @@ os.environ.setdefault("TELEGRAM_TOKEN", "123456:TEST-TOKEN")
 os.environ.setdefault("SUMOPOD_API_KEY", "sk-test-key")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("BOT_PASSWORD", "test-password")
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-minimum-32-characters-long")
+os.environ.setdefault("AUTH_SECRET", "test-only-auth-secret-minimum-32-characters-long")
 
 import pytest  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402

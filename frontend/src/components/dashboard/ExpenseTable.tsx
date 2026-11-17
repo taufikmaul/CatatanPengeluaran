@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Expense } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
+import { getExpensePaymentBreakdown, isPaidStatus } from "@/lib/paymentStatus";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -295,26 +296,33 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           <DataGridColumnHeader title="Status" column={column} className="justify-center text-center" />
         ),
         cell: ({ row }) => {
-          const isLunas = (row.original.pay_status || "").toLowerCase().includes("lunas");
+          const bd = getExpensePaymentBreakdown(row.original);
           return (
             <div className="text-center whitespace-nowrap">
               <button
                 onClick={() => onToggleStatus(row.original)}
                 title="Klik untuk ubah status pembayaran"
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${
-                  isLunas
+                  bd.isPaid
                     ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100"
+                    : bd.isDp
+                    ? "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100"
                     : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100"
                 }`}
               >
-                {isLunas ? (
+                {bd.isPaid ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Lunas</span>
                   </>
+                ) : bd.isDp ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>DP {Math.round(bd.progressPct)}%</span>
+                  </>
                 ) : (
                   <>
-                    <Clock className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 animate-pulse" />
+                    <Clock className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                     <span>Hutang</span>
                   </>
                 )}
@@ -548,7 +556,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
           {expenses.map((e) => {
             const catColor = getCategoryColor(e.category);
-            const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
+            const bd = getExpensePaymentBreakdown(e);
+            const isLunas = bd.isPaid;
             const tgMeta = parseTelegramLink(e.msg_link);
 
             return (
@@ -629,6 +638,8 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                       className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border ${
                         isLunas
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : bd.isDp
+                          ? "bg-amber-50 text-amber-800 border-amber-300"
                           : "bg-rose-50 text-rose-700 border-rose-200"
                       }`}
                     >
@@ -636,6 +647,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                           <span>Lunas</span>
+                        </>
+                      ) : bd.isDp ? (
+                        <>
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span>DP {Math.round(bd.progressPct)}%</span>
                         </>
                       ) : (
                         <>

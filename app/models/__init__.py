@@ -15,10 +15,12 @@ from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_transfer import BankTransfer
 from app.models.menu_product import MenuProduct, MenuIngredient
+from app.models.expense_payment import ExpensePayment
 
 __all__ = [
     "User",
     "Expense",
+    "ExpensePayment",
     "ConversationSession",
     "DashboardPin",
     "DashboardAccessLog",

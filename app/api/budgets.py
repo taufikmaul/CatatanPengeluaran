@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
-from app.api.deps import require_auth, require_admin_role
+from app.api.deps import require_admin_role, require_roles
 from app.api.schemas import (
     MonthlyBudgetUpsert,
     MonthlyBudgetCopyRequest,
@@ -22,7 +22,7 @@ from app.services.budget_service import (
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 
-@router.get("", response_model=MonthlyBudgetDetailResponse, dependencies=[Depends(require_auth)])
+@router.get("", response_model=MonthlyBudgetDetailResponse, dependencies=[Depends(require_roles("admin", "admin_input"))])
 async def get_budget_endpoint(
     year: int | None = Query(None, ge=2000, le=2100),
     month: int | None = Query(None, ge=1, le=12),

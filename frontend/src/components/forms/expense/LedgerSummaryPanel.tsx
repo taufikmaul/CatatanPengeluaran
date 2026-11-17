@@ -6,9 +6,15 @@ import { formatRupiah } from "@/lib/formatters";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarClock, Package, ShoppingBag, Calculator } from "lucide-react";
+import { CalendarClock, Package, ShoppingBag, Calculator, Percent, Wallet } from "lucide-react";
 import { InlineMathInput } from "./InlineMathInput";
 import { PriceSpikeAlert } from "./PriceSpikeAlert";
+import {
+  getEndOfMonthDate,
+  getTempoQuickDate,
+  isDpStatus,
+  isPaidStatus,
+} from "@/lib/paymentStatus";
 
 interface LedgerSummaryPanelProps {
   control: Control<ExpenseFormData>;
@@ -51,6 +57,12 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
     payStatus = "Lunas",
     itemName = "",
     notes = "",
+    dpType = "percent",
+    dpPercent = 50,
+    paidAmount = 0,
+    dueDate = "-",
+    expenseDate = "",
+    dpPaymentDate = "",
   ] = useWatch({
     control,
     name: [
@@ -64,14 +76,20 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
       "pay_status",
       "item_name",
       "notes",
+      "dp_type",
+      "dp_percent",
+      "paid_amount",
+      "due_date",
+      "expense_date",
+      "dp_payment_date",
     ],
   });
 
   const isOngkir = catProfile.archetype === "ongkir";
   const isTukarCash = catProfile.archetype === "tukar_cash";
-  const isUnpaid =
-    (payStatus || "").toLowerCase().includes("belum") ||
-    (payStatus || "").toLowerCase().includes("hutang");
+  const isPaid = isPaidStatus(payStatus);
+  const isDp = isDpStatus(payStatus);
+  const isUnpaid = !isPaid;
 
   const baseSubtotal = Math.max(0, Number(qty || 0) * Number(unitPrice || 0));
   const extraFeesTotal =
@@ -85,6 +103,25 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
   useEffect(() => {
     setValue("total_price", calculatedTotal, { shouldDirty: false });
   }, [calculatedTotal, setValue]);
+
+  // Sinkronkan nominal DP saat mode persentase aktif
+  useEffect(() => {
+    if (!isDp) return;
+    if ((dpType || "percent") === "percent" && calculatedTotal > 0) {
+      const pct = Math.max(1, Math.min(99, Number(dpPercent || 50)));
+      const computed = Math.round(calculatedTotal * (pct / 100));
+      setValue("paid_amount", computed, { shouldDirty: false });
+    }
+  }, [isDp, dpType, dpPercent, calculatedTotal, setValue]);
+
+  const effectiveDpAmount = isDp
+    ? Math.min(calculatedTotal, Math.max(0, Number(paidAmount || 0)))
+    : 0;
+  const remainingAfterDp = Math.max(0, calculatedTotal - effectiveDpAmount);
+  const effectiveDpPct =
+    calculatedTotal > 0
+      ? Math.round((effectiveDpAmount / calculatedTotal) * 1000) / 10
+      : 0;
 
   // Cari referensi harga terakhir untuk deteksi Price Spike / Typo
   const matchedReference = React.useMemo(() => {
@@ -538,20 +575,161 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
             Status Pembayaran
           </label>
           <select
-            {...register("pay_status")}
+            {...register("pay_status", {
+              onChange: (e) => {
+                const nextStatus = e.target.value;
+                if (isDpStatus(nextStatus)) {
+                  if (!dpType) setValue("dp_type", "percent");
+                  if (!dpPercent) setValue("dp_percent", 50);
+                  if (!dueDate || dueDate === "-") {
+                    setValue("due_date", getTempoQuickDate(14, expenseDate));
+                  }
+                } else if (nextStatus === "Belum Lunas") {
+                  setValue("paid_amount", 0);
+                  if (!dueDate || dueDate === "-") {
+                    setValue("due_date", getTempoQuickDate(7, expenseDate));
+                  }
+                }
+              },
+            })}
             className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
           >
             <option value="Lunas">Lunas</option>
+            <option value="DP / Sebagian">DP / Bayar Sebagian</option>
             <option value="Belum Lunas">Belum Lunas (Hutang)</option>
           </select>
         </div>
       </div>
 
-      {/* Rekening Sumber (Kas / Bank / Petty Cash) */}
-      {bankAccounts.length > 0 && !isUnpaid && (
+      {/* Skema DP (tampil saat status = DP / Sebagian) */}
+      {isDp && (
+        <div className="p-3.5 bg-amber-50/80 border border-amber-300/90 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+              <Wallet className="w-4 h-4 text-amber-700" />
+              <span>Rincian DP (Uang Muka)</span>
+            </span>
+            <span className="text-[11px] font-bold text-amber-900 tabular-nums">
+              {effectiveDpPct}% dibayar awal
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setValue("dp_type", "percent");
+                if (!dpPercent) setValue("dp_percent", 50);
+              }}
+              className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
+                (dpType || "percent") === "percent"
+                  ? "bg-amber-700 text-white border-amber-800"
+                  : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100/60"
+              }`}
+            >
+              <Percent className="w-3.5 h-3.5" />
+              <span>Persentase (%)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setValue("dp_type", "amount")}
+              className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
+                dpType === "amount"
+                  ? "bg-amber-700 text-white border-amber-800"
+                  : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100/60"
+              }`}
+            >
+              <span>Nominal (Rp)</span>
+            </button>
+          </div>
+
+          {(dpType || "percent") === "percent" ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[20, 30, 50, 70].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setValue("dp_percent", pct)}
+                    className={`min-h-[36px] px-3 rounded-lg text-xs font-bold border transition-colors ${
+                      Number(dpPercent) === pct
+                        ? "bg-amber-700 text-white border-amber-800"
+                        : "bg-white text-slate-800 border-amber-200 hover:bg-amber-100"
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+                <div className="flex items-center gap-1 ml-auto">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={99}
+                    value={Number(dpPercent || 50)}
+                    onChange={(e) => setValue("dp_percent", Number(e.target.value))}
+                    aria-label="Persentase DP"
+                    className="w-16 h-9 text-xs font-bold text-center rounded-lg bg-white"
+                  />
+                  <span className="text-xs font-bold text-slate-700">%</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-[11px] font-semibold text-amber-900 block mb-1">
+                Nominal DP Dibayar Sekarang
+              </label>
+              <InlineMathInput
+                value={Number(paidAmount || 0)}
+                onChange={(val) => {
+                  setValue("paid_amount", val, { shouldDirty: true });
+                  if (calculatedTotal > 0) {
+                    setValue(
+                      "dp_percent",
+                      Math.round((val / calculatedTotal) * 10000) / 100
+                    );
+                  }
+                }}
+                className="h-10 text-xs font-bold rounded-xl bg-white tabular-nums"
+                placeholder="Ketik nominal DP, mis: 500k"
+              />
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-amber-200/80 text-xs">
+            <div>
+              <span className="text-[11px] text-amber-900 block">DP Dibayar:</span>
+              <span className="font-bold text-emerald-800 tabular-nums">
+                {formatRupiah(effectiveDpAmount)}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-[11px] text-amber-900 block">Sisa Pelunasan:</span>
+              <span className="font-bold text-rose-700 tabular-nums">
+                {formatRupiah(remainingAfterDp)}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-semibold text-amber-900 block mb-1">
+              Tanggal Bayar DP (Opsional, default tanggal nota)
+            </label>
+            <Input
+              type="date"
+              value={dpPaymentDate || expenseDate || ""}
+              onChange={(e) => setValue("dp_payment_date", e.target.value)}
+              className="h-9 text-xs rounded-xl bg-white border-amber-200"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Rekening Sumber (Kas / Bank / Petty Cash) - tampil untuk Lunas maupun DP */}
+      {bankAccounts.length > 0 && (isPaid || isDp) && (
         <div>
           <label className="text-xs font-semibold text-slate-700 block mb-1">
-            Rekening Sumber (Kas / Bank / Petty Cash)
+            {isDp ? "Rekening Sumber Pembayaran DP" : "Rekening Sumber (Kas / Bank / Petty Cash)"}
           </label>
           <select
             value={selectedBankAccountId ?? ""}
@@ -560,28 +738,49 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
             }
             className="h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-medium text-slate-800"
           >
-            <option value="">-- Otomatis (Sesuai Mapping Metode Bayar) --</option>
+            <option value="">Otomatis (Sesuai Mapping Metode Bayar)</option>
             {bankAccounts.map((acc) => (
               <option key={acc.id} value={String(acc.id)}>
-                {acc.name} ({acc.account_code}) — {acc.bank_name}
+                {acc.name} ({acc.account_code}) - {acc.bank_name}
               </option>
             ))}
           </select>
         </div>
       )}
 
-      {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas) */}
+      {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas atau DP) */}
       {isUnpaid && (
-        <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl">
-          <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5 mb-1.5">
+        <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl space-y-2">
+          <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5">
             <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
-            Tanggal Jatuh Tempo Tagihan
+            <span>{isDp ? "Tempo Waktu Pelunasan Sisa" : "Tanggal Jatuh Tempo Tagihan"}</span>
           </label>
           <Input
             type="date"
             {...register("due_date")}
             className="h-10 text-xs rounded-xl bg-white border-rose-200"
           />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { label: "+7 Hari", val: getTempoQuickDate(7, expenseDate) },
+              { label: "+14 Hari", val: getTempoQuickDate(14, expenseDate) },
+              { label: "+30 Hari", val: getTempoQuickDate(30, expenseDate) },
+              { label: "Akhir Bulan", val: getEndOfMonthDate(expenseDate) },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setValue("due_date", preset.val, { shouldDirty: true })}
+                className={`min-h-[32px] px-2.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+                  dueDate === preset.val
+                    ? "bg-rose-700 text-white border-rose-800"
+                    : "bg-white text-slate-700 border-rose-200 hover:bg-rose-100"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -605,17 +804,30 @@ export const IsolatedStickyFooter: React.FC<IsolatedStickyFooterProps> = React.m
   isEditing,
   onClose,
 }) => {
-  const totalPrice = useWatch({ control, name: "total_price" }) || 0;
+  const [totalPrice = 0, payStatus = "Lunas", paidAmount = 0] = useWatch({
+    control,
+    name: ["total_price", "pay_status", "paid_amount"],
+  });
+  const isDp = isDpStatus(payStatus);
+  const dpPaid = isDp ? Math.min(Number(totalPrice), Math.max(0, Number(paidAmount))) : 0;
+  const dpRemaining = Math.max(0, Number(totalPrice) - dpPaid);
 
   return (
     <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <span className="text-[10px] font-semibold text-slate-500 block truncate">
-          {catProfile.totalLabel}
+        <span className="text-[10px] font-semibold text-slate-600 block truncate">
+          {isDp ? "Total Invoice (DP & Sisa)" : catProfile.totalLabel}
         </span>
-        <span className="text-sm sm:text-base font-extrabold text-slate-900 tabular-nums">
-          {formatRupiah(Number(totalPrice))}
-        </span>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm sm:text-base font-extrabold text-slate-900 tabular-nums">
+            {formatRupiah(Number(totalPrice))}
+          </span>
+          {isDp && (
+            <span className="text-[11px] font-semibold text-amber-800 tabular-nums">
+              DP {formatRupiah(dpPaid)} / Sisa {formatRupiah(dpRemaining)}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">

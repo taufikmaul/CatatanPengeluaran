@@ -35,6 +35,8 @@ import {
 import { parseTelegramLink } from "@/lib/telegram";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
+import { isDpStatus } from "@/lib/paymentStatus";
+import { toast } from "sonner";
 import { LedgerSummaryPanel, IsolatedStickyFooter } from "./expense/LedgerSummaryPanel";
 import { ExpenseMultiItemForm } from "./expense/ExpenseMultiItemForm";
 
@@ -283,6 +285,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         pay_method: initialData.pay_method || "Transfer",
         pay_status: initialData.pay_status || "Lunas",
         due_date: initialData.due_date || "-",
+        paid_amount: initialData.paid_amount || 0,
+        dp_type: initialData.dp_type || "percent",
+        dp_percent: initialData.dp_percent ?? 50,
         notes: initialData.notes || "-",
         invoice_number: initialData.invoice_number || "-",
         is_reimbursement: Boolean(initialData.is_reimbursement),
@@ -309,6 +314,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         pay_method: repeatData.pay_method || "Transfer",
         pay_status: repeatData.pay_status || "Lunas",
         due_date: repeatData.due_date || "-",
+        paid_amount: repeatData.paid_amount || 0,
+        dp_type: repeatData.dp_type || "percent",
+        dp_percent: repeatData.dp_percent ?? 50,
         notes: repeatData.notes || "-",
         invoice_number: repeatData.invoice_number || "-",
         is_reimbursement: Boolean(repeatData.is_reimbursement),
@@ -334,6 +342,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         pay_method: "Transfer",
         pay_status: "Lunas",
         due_date: "-",
+        paid_amount: 0,
+        dp_type: "percent",
+        dp_percent: 50,
         notes: "-",
         invoice_number: "-",
         is_reimbursement: false,
@@ -452,6 +463,26 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       data.master_item_id = null;
     } else if (isOngkir) {
       data.master_item_id = null;
+    }
+    if (isDpStatus(data.pay_status)) {
+      const totalVal = Number(data.total_price || 0);
+      const dpVal =
+        data.dp_type === "percent" && data.dp_percent
+          ? Math.round((totalVal * Number(data.dp_percent)) / 100)
+          : Number(data.paid_amount || 0);
+      if (dpVal <= 0) {
+        toast.error("Nominal DP awal harus lebih dari Rp 0.");
+        return;
+      }
+      if (totalVal > 0 && dpVal >= totalVal) {
+        toast.error("Nominal DP tidak boleh sama atau melebihi total invoice. Pilih status Lunas jika dibayar penuh.");
+        return;
+      }
+      data.paid_amount = dpVal;
+      if (!data.due_date || data.due_date === "-") {
+        toast.error("Tentukan tanggal jatuh tempo pelunasan untuk sisa DP.");
+        return;
+      }
     }
     onSubmit(data, initialData ? initialData.id : undefined);
     onClose();

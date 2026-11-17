@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
-from app.api.deps import require_auth, require_admin_role, get_current_role
+from app.models.expense_payment import ExpensePayment
+from app.api.deps import require_admin_role, require_roles, get_current_role, validate_upload_file
 from app.api.schemas import (
     ExpenseCreate,
     ExpenseBatchCreate,
@@ -18,6 +19,8 @@ from app.api.schemas import (
     ExpenseUserResponse,
     ExpenseLogResponse,
     ExpenseAuditResponse,
+    ExpensePaymentCreate,
+    ExpensePaymentResponse,
     ReimbursementSummaryResponse,
     ReimbursementSettleRequest,
     UnpaidSummaryResponse,
@@ -39,13 +42,44 @@ from app.services.expense_service import (
     settle_reimbursements,
     get_unpaid_summary,
     settle_unpaid_expenses,
+    get_expense_payments,
+    record_expense_payment,
+    delete_expense_payment,
+    get_expense_payment_breakdown,
+    is_paid_status,
+    is_dp_status,
     get_data_hygiene_stats,
     run_bulk_data_clean,
     check_invoice_duplicate,
 )
 from app.services.ai_service import call_ai_image
 
-router = APIRouter(prefix="/expenses", tags=["expenses"], dependencies=[Depends(require_auth)])
+router = APIRouter(
+    prefix="/expenses",
+    tags=["expenses"],
+    dependencies=[Depends(require_roles("admin", "admin_input", "purchasing"))],
+)
+
+
+def _payment_to_dict(p: ExpensePayment) -> dict:
+    bank_name = None
+    if getattr(p, "bank_account", None) and p.bank_account:
+        bank_name = p.bank_account.name
+    return {
+        "id": p.id,
+        "expense_id": p.expense_id,
+        "payment_type": p.payment_type,
+        "amount": float(p.amount or 0),
+        "dp_percent": float(p.dp_percent) if p.dp_percent is not None else None,
+        "payment_date": str(p.payment_date),
+        "pay_method": p.pay_method or "Transfer",
+        "bank_account_id": p.bank_account_id,
+        "bank_account_name": bank_name,
+        "reference_no": p.reference_no,
+        "notes": p.notes or "-",
+        "actor": p.actor or "system",
+        "created_at": p.created_at,
+    }
 
 
 def _to_response_dict(e: Expense) -> dict:
@@ -54,6 +88,9 @@ def _to_response_dict(e: Expense) -> dict:
         user_name = e.user.name
     elif getattr(e, "user_id", None):
         user_name = f"User #{e.user_id}"
+
+    _, paid_val, remaining_val, progress_pct = get_expense_payment_breakdown(e)
+    raw_payments = list(getattr(e, "payments", None) or [])
 
     return {
         "id": e.id,
@@ -73,6 +110,13 @@ def _to_response_dict(e: Expense) -> dict:
         "pay_method": e.pay_method or "Tunai",
         "pay_status": e.pay_status or "Lunas",
         "due_date": e.due_date or "-",
+        "paid_amount": paid_val,
+        "remaining_amount": remaining_val,
+        "dp_type": getattr(e, "dp_type", None),
+        "dp_percent": float(e.dp_percent) if getattr(e, "dp_percent", None) is not None else None,
+        "payment_progress_pct": progress_pct,
+        "payments_count": len(raw_payments),
+        "payments": [_payment_to_dict(p) for p in raw_payments],
         "notes": e.notes or "-",
         "msg_link": e.msg_link or "Web Dashboard",
         "is_reimbursement": bool(e.is_reimbursement),
@@ -208,6 +252,46 @@ async def create_expense(
             sup_id = s_obj.id
             sup_name = s_obj.name
 
+    raw_pay_status = payload.pay_status or "Lunas"
+    dp_type_val = payload.dp_type
+    dp_percent_val = Decimal(str(payload.dp_percent)) if payload.dp_percent is not None else None
+    paid_amount_val = Decimal(str(payload.paid_amount or 0))
+
+    if is_dp_status(raw_pay_status):
+        if dp_type_val == "percent" and dp_percent_val is not None:
+            if dp_percent_val <= 0 or dp_percent_val >= 100:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Persentase DP harus di antara 1% dan 99%.",
+                )
+            paid_amount_val = (total_price * dp_percent_val / Decimal("100")).quantize(Decimal("0.01"))
+        if paid_amount_val <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Nominal DP awal harus lebih dari Rp 0.",
+            )
+        if paid_amount_val >= total_price:
+            resolved_pay_status = "Lunas"
+            paid_amount_val = total_price
+            dp_type_val = None
+            dp_percent_val = None
+        else:
+            resolved_pay_status = "DP / Sebagian"
+            if dp_type_val is None:
+                dp_type_val = "amount"
+            if dp_percent_val is None and total_price > 0:
+                dp_percent_val = (paid_amount_val / total_price * Decimal("100")).quantize(Decimal("0.01"))
+    elif is_paid_status(raw_pay_status):
+        resolved_pay_status = "Lunas"
+        paid_amount_val = total_price
+        dp_type_val = None
+        dp_percent_val = None
+    else:
+        resolved_pay_status = raw_pay_status
+        paid_amount_val = Decimal("0")
+        dp_type_val = None
+        dp_percent_val = None
+
     expense = Expense(
         expense_date=payload.expense_date,
         supplier=sup_name,
@@ -223,8 +307,11 @@ async def create_expense(
         discount=discount,
         total_price=total_price,
         pay_method=payload.pay_method or "Tunai",
-        pay_status=payload.pay_status or "Lunas",
+        pay_status=resolved_pay_status,
         due_date=payload.due_date or "-",
+        paid_amount=paid_amount_val,
+        dp_type=dp_type_val,
+        dp_percent=dp_percent_val,
         notes=norm["notes"] or "-",
         is_reimbursement=payload.is_reimbursement,
         invoice_number=payload.invoice_number or "-",
@@ -238,6 +325,23 @@ async def create_expense(
     await db.flush()
 
     actor = f"dashboard:{get_current_role(request)}"
+    if is_dp_status(resolved_pay_status) and paid_amount_val > 0:
+        db.add(
+            ExpensePayment(
+                expense_id=expense.id,
+                payment_type="dp",
+                amount=paid_amount_val,
+                dp_percent=dp_percent_val,
+                payment_date=payload.dp_payment_date or payload.expense_date,
+                pay_method=payload.pay_method or "Transfer",
+                bank_account_id=payload.bank_account_id,
+                reference_no=payload.dp_reference_no,
+                notes="Pembayaran DP awal",
+                actor=actor,
+            )
+        )
+        await db.flush()
+
     await record_expense_log(
         db,
         expense_id=expense.id,
@@ -246,6 +350,7 @@ async def create_expense(
         details={
             "item_name": expense.item_name,
             "total_price": float(expense.total_price),
+            "paid_amount": float(expense.paid_amount or 0),
             "supplier": expense.supplier,
             "expense_date": str(expense.expense_date),
             "category": expense.category,
@@ -311,6 +416,9 @@ async def create_expense_batch(
             "pay_method": it.pay_method or "Tunai",
             "pay_status": it.pay_status or "Lunas",
             "due_date": it.due_date or "-",
+            "paid_amount": it.paid_amount,
+            "dp_type": it.dp_type,
+            "dp_percent": it.dp_percent,
             "notes": it.notes or "-",
             "is_reimbursement": it.is_reimbursement,
             "invoice_number": it.invoice_number or "-",
@@ -351,11 +459,13 @@ async def scan_expense_ocr(
 ):
     """Pindai gambar nota/struk/invoice dengan Vision AI untuk auto-fill form pengeluaran."""
     content = await file.read()
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File nota kosong atau tidak dapat dibaca.",
-        )
+    validate_upload_file(
+        content,
+        file.filename,
+        allowed_extensions=(".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"),
+        content_type=file.content_type,
+        allowed_mime_prefixes=("image/",),
+    )
 
     b64_img = base64.b64encode(content).decode("utf-8")
     extracted = await call_ai_image(
@@ -453,13 +563,13 @@ async def get_unpaid_summary_endpoint(
     return UnpaidSummaryResponse(**data)
 
 
-@router.post("/unpaid/settle")
+@router.post("/unpaid/settle", dependencies=[Depends(require_admin_role)])
 async def settle_unpaid_endpoint(
     payload: UnpaidSettleRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Tandai transaksi belum lunas menjadi lunas atau sebaliknya."""
+    """Tandai transaksi belum lunas / DP menjadi lunas atau batalkan pelunasan."""
     if not payload.expense_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -472,6 +582,10 @@ async def settle_unpaid_endpoint(
         action=payload.action,
         actor=actor,
         bank_account_id=payload.bank_account_id,
+        pay_method=payload.pay_method,
+        payment_date=payload.payment_date,
+        reference_no=payload.reference_no,
+        notes=payload.notes,
     )
     await db.commit()
     return {
@@ -480,6 +594,67 @@ async def settle_unpaid_endpoint(
         "updated_count": len(updated),
         "updated_ids": [e.id for e in updated],
     }
+
+
+@router.get("/{expense_id}/payments", response_model=list[ExpensePaymentResponse])
+async def list_expense_payments_endpoint(
+    expense_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil riwayat pembayaran DP, termin/cicilan, dan pelunasan untuk satu tagihan."""
+    exp = await get_expense_by_id(db, expense_id)
+    if not exp:
+        raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
+    payments = await get_expense_payments(db, expense_id)
+    return [ExpensePaymentResponse(**_payment_to_dict(p)) for p in payments]
+
+
+@router.post("/{expense_id}/payments", response_model=ExpenseResponse, dependencies=[Depends(require_admin_role)])
+async def create_expense_payment_endpoint(
+    expense_id: int,
+    payload: ExpensePaymentCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Catat pembayaran DP, termin/cicilan, atau pelunasan sisa tagihan."""
+    actor = f"dashboard:{get_current_role(request)}"
+    expense, _ = await record_expense_payment(
+        db,
+        expense_id=expense_id,
+        amount=payload.amount,
+        dp_percent=payload.dp_percent,
+        payment_date=payload.payment_date,
+        pay_method=payload.pay_method,
+        bank_account_id=payload.bank_account_id,
+        reference_no=payload.reference_no,
+        notes=payload.notes,
+        due_date=payload.due_date,
+        settle_full=payload.settle_full,
+        actor=actor,
+    )
+    await db.commit()
+    await db.refresh(expense)
+    return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.delete("/{expense_id}/payments/{payment_id}", response_model=ExpenseResponse, dependencies=[Depends(require_admin_role)])
+async def delete_expense_payment_endpoint(
+    expense_id: int,
+    payment_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Hapus satu record pembayaran DP/termin/pelunasan dan hitung ulang sisa tagihan."""
+    actor = f"dashboard:{get_current_role(request)}"
+    expense = await delete_expense_payment(
+        db,
+        expense_id=expense_id,
+        payment_id=payment_id,
+        actor=actor,
+    )
+    await db.commit()
+    await db.refresh(expense)
+    return ExpenseResponse(**_to_response_dict(expense))
 
 
 @router.get("/price-history")
@@ -503,7 +678,7 @@ async def get_expense_price_history(
     }
 
 
-@router.get("/audit-duplicates", response_model=ExpenseAuditResponse)
+@router.get("/audit-duplicates", response_model=ExpenseAuditResponse, dependencies=[Depends(require_admin_role)])
 async def audit_duplicate_expense_entries(
     min_similarity: float = Query(0.90, ge=0.50, le=1.0, description="Ambang batas kemiripan nama barang (default 0.90 / 90%)"),
     month: int | None = Query(None, ge=1, le=12, description="Filter bulan"),
@@ -528,7 +703,7 @@ async def audit_duplicate_expense_entries(
     )
 
 
-@router.get("/data-hygiene")
+@router.get("/data-hygiene", dependencies=[Depends(require_admin_role)])
 async def get_data_hygiene_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
@@ -588,7 +763,7 @@ async def list_recent_expense_logs(
     return [ExpenseLogResponse.model_validate(log) for log in logs]
 
 
-@router.get("/logs/export")
+@router.get("/logs/export", dependencies=[Depends(require_admin_role)])
 async def export_expense_logs_csv(
     action: str | None = None,
     search: str | None = None,

@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { Expense, MonthlyReport, ExpenseUser, UnpaidExpenseItem } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
+import { getExpensePaymentBreakdown } from "@/lib/paymentStatus";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1007,7 +1008,8 @@ export function OwnerMobileView({
             <div className="space-y-3">
               {expenses.map((e) => {
                 const catColor = getCategoryColor(e.category);
-                const isLunas = (e.pay_status || "").toLowerCase().includes("lunas");
+                const bd = getExpensePaymentBreakdown(e);
+                const isLunas = bd.isPaid;
                 const tgMeta = parseTelegramLink(e.msg_link);
                 const isHighlighted = highlightedExpenseId === e.id;
 
@@ -1114,6 +1116,8 @@ export function OwnerMobileView({
                           className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all active:scale-95 ${
                             isLunas
                               ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                              : bd.isDp
+                              ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
                               : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
                           }`}
                         >
@@ -1122,9 +1126,14 @@ export function OwnerMobileView({
                               <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                               <span>Lunas</span>
                             </>
+                          ) : bd.isDp ? (
+                            <>
+                              <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span>DP {Math.round(bd.progressPct)}%</span>
+                            </>
                           ) : (
                             <>
-                              <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 animate-pulse" />
+                              <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
                               <span>Hutang</span>
                             </>
                           )}

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth, require_admin_role, get_current_role
+from app.api.deps import require_admin_role, require_roles, get_current_role
 from app.api.schemas import (
     SupplierCreate,
     SupplierUpdate,
@@ -30,7 +30,11 @@ from app.services.expense_service import (
 )
 from app.api.expenses import _to_response_dict
 
-router = APIRouter(prefix="/suppliers", tags=["suppliers"], dependencies=[Depends(require_auth)])
+router = APIRouter(
+    prefix="/suppliers",
+    tags=["suppliers"],
+    dependencies=[Depends(require_roles("admin", "purchasing", "admin_input"))],
+)
 
 
 @router.get("", response_model=SupplierListResponse)
@@ -86,7 +90,7 @@ async def create_supplier(
     return SupplierResponse(**data)
 
 
-@router.post("/sync-existing")
+@router.post("/sync-existing", dependencies=[Depends(require_admin_role)])
 async def sync_existing_expenses(
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,7 +100,7 @@ async def sync_existing_expenses(
     return result
 
 
-@router.get("/audit-duplicates", response_model=list[SupplierDuplicateGroup])
+@router.get("/audit-duplicates", response_model=list[SupplierDuplicateGroup], dependencies=[Depends(require_admin_role)])
 async def audit_duplicate_suppliers(
     threshold: float = Query(0.75, ge=0.5, le=1.0),
     db: AsyncSession = Depends(get_db),

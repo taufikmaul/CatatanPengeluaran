@@ -10,7 +10,11 @@ from app.services.job_queue import background_queue, JobStatus, JobType
 from app.api.deps import require_admin_role
 from app.database.connection import get_db
 
-router = APIRouter(prefix="/jobs", tags=["Background Jobs & Queue"])
+router = APIRouter(
+    prefix="/jobs",
+    tags=["Background Jobs & Queue"],
+    dependencies=[Depends(require_admin_role)],
+)
 
 
 class JobItemResponse(BaseModel):

@@ -1,3 +1,31 @@
+export interface ExpensePayment {
+  id: number;
+  expense_id: number;
+  payment_type: "dp" | "installment" | "settlement" | string;
+  amount: number;
+  dp_percent?: number | null;
+  payment_date: string;
+  pay_method: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string | null;
+  reference_no?: string | null;
+  notes: string;
+  actor: string;
+  created_at?: string;
+}
+
+export interface ExpensePaymentPayload {
+  amount?: number | null;
+  dp_percent?: number | null;
+  payment_date?: string;
+  pay_method?: string;
+  bank_account_id?: number | null;
+  reference_no?: string | null;
+  notes?: string;
+  due_date?: string | null;
+  settle_full?: boolean;
+}
+
 export interface Expense {
   id: number;
   created_at?: string;
@@ -16,6 +44,13 @@ export interface Expense {
   pay_method: string;
   pay_status: string;
   due_date: string;
+  paid_amount?: number;
+  remaining_amount?: number;
+  dp_type?: "percent" | "amount" | string | null;
+  dp_percent?: number | null;
+  payment_progress_pct?: number;
+  payments_count?: number;
+  payments?: ExpensePayment[];
   notes: string;
   msg_link: string;
   is_reimbursement?: boolean;
@@ -84,10 +119,15 @@ export interface UnpaidNearestDue {
   item_name: string;
   supplier: string;
   total_price: number;
+  paid_amount?: number;
+  remaining_amount?: number;
+  pay_status?: string;
   due_date: string;
-  parsed_due_date: string;
-  days_left: number;
-  urgency: "overdue" | "today" | "soon" | "upcoming" | "unknown" | string;
+  parsed_due_date: string | null;
+  days_left: number | null;
+  is_overdue?: boolean;
+  is_today?: boolean;
+  urgency: "overdue" | "today" | "soon" | "upcoming" | "none" | "unknown" | string;
 }
 
 export interface UnpaidSupplierSummary {
@@ -95,6 +135,8 @@ export interface UnpaidSupplierSummary {
   supplier_name: string;
   unpaid_count: number;
   unpaid_total: number;
+  dp_count?: number;
+  dp_paid_total?: number;
   paid_count: number;
   paid_total: number;
   total_count: number;
@@ -106,13 +148,20 @@ export interface UnpaidSupplierSummary {
 
 export interface UnpaidSummaryResponse {
   ok: boolean;
+  total_unpaid_count?: number;
+  total_unpaid_nominal?: number;
   unpaid_count: number;
   unpaid_total: number;
+  dp_count?: number;
+  dp_paid_nominal?: number;
+  dp_remaining_nominal?: number;
+  total_invoice_nominal?: number;
   paid_count: number;
   paid_total: number;
   total_count: number;
-  total_nominal: number;
+  total_nominal?: number;
   overdue_count: number;
+  overdue_nominal?: number;
   overdue_total: number;
   due_soon_count: number;
   due_today_count: number;
@@ -187,6 +236,8 @@ export interface UnpaidExpenseItem {
   barang: string;
   supplier?: string;
   nominal: number;
+  total_invoice?: number;
+  paid_amount?: number;
   tempo: string;
   tanggal?: string;
   kategori?: string;
@@ -576,7 +627,7 @@ export interface SystemConfig {
   total_expenses: number;
   unsynced_count: number;
   telegram_token_masked: string;
-  telegram_token?: string;
+  telegram_token_configured?: boolean;
   dashboard_pin_chat_id?: string;
   dashboard_pin_thread_id?: number | null;
   allowed_thread_id: number;
@@ -585,18 +636,18 @@ export interface SystemConfig {
   ongkir_thread_ids?: string;
   report_chat_id: string;
   report_thread_id: number;
-  bot_password?: string;
-  admin_input_password?: string;
-  purchasing_password?: string;
-  warehouse_password?: string;
-  staff_password?: string;
+  bot_password_configured?: boolean;
+  admin_input_password_configured?: boolean;
+  purchasing_password_configured?: boolean;
+  warehouse_password_configured?: boolean;
+  staff_password_configured?: boolean;
   request_belanja_chat_id?: string;
   request_belanja_thread_id?: number | null;
   webhook_url?: string;
   ai_provider: string;
   ai_url: string;
   ai_model: string;
-  sumopod_api_key?: string;
+  sumopod_api_key_configured?: boolean;
   ai_key_masked: string;
   system_prompt: string;
   spreadsheet_id: string;
@@ -663,6 +714,11 @@ export interface ExpenseFormData {
   pay_method: string;
   pay_status: string;
   due_date: string;
+  paid_amount?: number;
+  dp_type?: "percent" | "amount" | string | null;
+  dp_percent?: number | null;
+  dp_payment_date?: string;
+  dp_reference_no?: string;
   notes: string;
   is_reimbursement?: boolean;
   invoice_number?: string;
@@ -802,6 +858,8 @@ export interface SupplierUnpaidBillItem {
   expense_date: string;
   item_name: string;
   total_price: number;
+  paid_amount?: number;
+  remaining_amount?: number;
   due_date: string;
   invoice_number: string;
   notes: string;

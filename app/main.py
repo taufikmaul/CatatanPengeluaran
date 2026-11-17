@@ -3,10 +3,12 @@ app/main.py — FastAPI Application Entry Point
 Menggantikan seluruh Google Apps Script
 """
 from contextlib import asynccontextmanager
+import hmac
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from app.config import settings
 from app.database.connection import init_db
 from app.bot.webhook import router as webhook_router
 from app.api.router import api_router
@@ -70,9 +72,29 @@ app = FastAPI(
     description="Bot Telegram Pencatatan Pengeluaran dengan Hermes Agent — powered by Sumopod AI",
     version="2.0.0",
     lifespan=lifespan,
-    docs_url="/docs",
+    docs_url="/docs" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
     redoc_url=None,
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; "
+        "connect-src 'self';",
+    )
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 # Routers
 app.include_router(webhook_router)
@@ -135,15 +157,14 @@ async def health():
 async def setup_webhook(request: Request):
     """Set ulang webhook Telegram secara manual.
 
-    Dilindungi SECRET_KEY (header X-Admin-Token atau query ?token=) karena
-    endpoint ini memicu panggilan ke Telegram API dan terbuka ke publik.
+    Dilindungi SECRET_KEY pada header X-Admin-Token.
     """
     from fastapi import HTTPException
-    from app.config import settings
     from app.bot.telegram_client import set_webhook
 
-    token = request.headers.get("X-Admin-Token") or request.query_params.get("token")
-    if not settings.secret_key or token != settings.secret_key:
+    token = (request.headers.get("X-Admin-Token") or "").strip()
+    expected = (settings.secret_key or "").strip()
+    if not expected or expected in ("change_me", "change_this_to_a_random_secret_string") or not token or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     if not settings.webhook_url:

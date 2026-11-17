@@ -109,6 +109,8 @@ async def job_send_unpaid_reminder() -> None:
                         Expense.pay_status.ilike("%belum%"),
                         Expense.pay_status.ilike("%hutang%"),
                         Expense.pay_status.ilike("%tempo%"),
+                        Expense.pay_status.ilike("%dp%"),
+                        Expense.pay_status.ilike("%sebagian%"),
                     )
                 )
                 .order_by(Expense.expense_date.asc(), Expense.id.asc())
@@ -118,7 +120,8 @@ async def job_send_unpaid_reminder() -> None:
                 return
 
             today = datetime.now().date()
-            total_hutang = sum(float(e.total_price or 0) for e in unpaid_list)
+            from app.services.expense_service import get_expense_payment_breakdown
+            total_hutang = sum(get_expense_payment_breakdown(e)[2] for e in unpaid_list)
 
             # Prioritaskan tagihan yang sudah lewat tempo (overdue) atau hari ini / segera
             def _unpaid_sort_priority(exp):
@@ -139,7 +142,9 @@ async def job_send_unpaid_reminder() -> None:
 
             inline_rows = []
             for idx, e in enumerate(sorted_unpaid[:8], start=1):
-                nominal = fmt_rupiah(float(e.total_price or 0))
+                tot_val, paid_val, rem_val, pct_val = get_expense_payment_breakdown(e)
+                nominal = fmt_rupiah(rem_val)
+                dp_note = f" _(DP {pct_val:.0f}% dari {fmt_rupiah(tot_val)})_" if paid_val > 0 else ""
                 sup = f" ({e.supplier})" if e.supplier and e.supplier != "-" else ""
                 tempo_info = ""
                 if e.due_date and str(e.due_date).strip() != "-":
@@ -151,7 +156,7 @@ async def job_send_unpaid_reminder() -> None:
                     else:
                         tempo_info = f" _(Tempo: {e.due_date})_"
 
-                msg += f"{idx}. *#{e.id} {e.item_name}*{sup} — {nominal}{tempo_info}\n"
+                msg += f"{idx}. *#{e.id} {e.item_name}*{sup} — Sisa {nominal}{dp_note}{tempo_info}\n"
                 inline_rows.append([
                     {
                         "text": f"✅ Tandai Lunas #{e.id} ({e.item_name[:18]})",

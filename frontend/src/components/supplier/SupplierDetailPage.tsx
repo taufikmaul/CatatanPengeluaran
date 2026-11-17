@@ -937,7 +937,18 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                         : "-"}
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                      {formatRupiah(bill.total_price)}
+                      <div>
+                        {formatRupiah(
+                          bill.remaining_amount !== undefined
+                            ? bill.remaining_amount
+                            : bill.total_price
+                        )}
+                      </div>
+                      {bill.paid_amount !== undefined && bill.paid_amount > 0 && (
+                        <div className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                          DP {formatRupiah(bill.paid_amount)} / {formatRupiah(bill.total_price)}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <Badge

@@ -3,8 +3,9 @@ app/bot/webhook.py — FastAPI router untuk Telegram webhook
 Menggantikan doPost() di Google Apps Script
 """
 import asyncio
+import hmac
 import traceback
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
@@ -25,6 +26,12 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
     Entry point utama — semua update dari Telegram masuk sini.
     Port dari doPost() di GAS.
     """
+    expected_secret = (getattr(settings, "telegram_webhook_secret", "") or "").strip()
+    if expected_secret and expected_secret != "change_this_to_a_random_webhook_secret":
+        header_secret = (request.headers.get("x-telegram-bot-api-secret-token") or "").strip()
+        if not header_secret or not hmac.compare_digest(header_secret, expected_secret):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
     try:
         update = await request.json()
 
@@ -32,6 +39,18 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
         if "callback_query" in update:
             cb = update["callback_query"]
             cb_id = cb["id"]
+
+            cb_msg = cb.get("message") or {}
+            cb_chat = cb_msg.get("chat") or {}
+            cb_chat_type = cb_chat.get("type")
+            cb_thread_id = cb_msg.get("message_thread_id")
+            cb_from_id = (cb.get("from") or {}).get("id")
+
+            if cb_chat_type in ("group", "supergroup") and not settings.is_thread_allowed(cb_thread_id):
+                return {"ok": True}
+            if cb_chat_type == "private" and cb_from_id is not None:
+                if not await is_user_authenticated(db, cb_from_id):
+                    return {"ok": True}
 
             # Deduplikasi
             if cb_id in _processed_callbacks:
@@ -41,7 +60,7 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
             if len(_processed_callbacks) > 1000:
                 _processed_callbacks.clear()
 
-            asyncio.create_task(handle_callback_query(cb, db))
+            asyncio.create_task(_process_callback(cb))
             return {"ok": True}
 
         # ── Pesan Biasa ──
@@ -174,6 +193,18 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
 # ──────────────────────────────────────────────
 # Background task helpers
 # ──────────────────────────────────────────────
+
+async def _process_callback(cb: dict) -> None:
+    """Jalankan callback query dengan database session independen."""
+    from app.database.connection import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as session:
+            await handle_callback_query(cb, session)
+            await session.commit()
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[_process_callback error] {e}")
+
 
 async def _process_photo(
     file_id: str,

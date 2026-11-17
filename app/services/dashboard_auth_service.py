@@ -4,6 +4,7 @@ app/services/dashboard_auth_service.py — Service autentikasi PIN Telegram dan 
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import secrets
 import time
@@ -18,30 +19,62 @@ from app.bot import telegram_client as tg
 
 
 SESSION_COOKIE_NAME = "dashboard_session"
+CSRF_COOKIE_NAME = "catpen_csrf"
+_INSECURE_DEFAULT_SECRETS = {
+    "",
+    "change_me",
+    "change-me-use-a-long-random-string-min-32-chars",
+    "change_this_to_a_random_secret_string",
+}
+
+
+def _parse_valid_ip(raw_ip: str | None) -> str | None:
+    if not raw_ip:
+        return None
+    candidate = raw_ip.strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _is_trusted_proxy_peer(request: Request) -> bool:
+    if getattr(settings, "trusted_proxy_headers", False):
+        return True
+    if not request.client or not request.client.host:
+        # Test / ASGI transport without client socket
+        return True
+    try:
+        peer_ip = ipaddress.ip_address(request.client.host)
+        return peer_ip.is_loopback or peer_ip.is_private
+    except ValueError:
+        return False
 
 
 def get_client_ip(request: Request) -> str:
-    """Ambil IP address pengakses dengan memprioritaskan proxy headers tepercaya (Cloudflare & Nginx)."""
-    # 1. Cloudflare header
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip and cf_ip.strip():
-        return cf_ip.strip()
+    """Ambil IP address pengakses; hanya percaya proxy headers bila berasal dari reverse proxy tepercaya."""
+    if _is_trusted_proxy_peer(request):
+        # 1. Cloudflare header
+        cf_ip = _parse_valid_ip(request.headers.get("cf-connecting-ip"))
+        if cf_ip:
+            return cf_ip
 
-    # 2. X-Real-IP dari reverse proxy tepercaya (Nginx)
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip and real_ip.strip():
-        return real_ip.strip()
+        # 2. X-Real-IP dari reverse proxy tepercaya (Nginx)
+        real_ip = _parse_valid_ip(request.headers.get("x-real-ip"))
+        if real_ip:
+            return real_ip
 
-    # 3. X-Forwarded-For (ambil part pertama jika ada)
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        parts = [p.strip() for p in forwarded_for.split(",") if p.strip()]
-        if parts:
-            return parts[0]
+        # 3. X-Forwarded-For (ambil part pertama yang valid)
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            for part in forwarded_for.split(","):
+                parsed = _parse_valid_ip(part)
+                if parsed:
+                    return parsed
 
     # 4. Fallback ke host client connection
     if request.client and request.client.host:
-        return request.client.host
+        return _parse_valid_ip(request.client.host) or request.client.host
     return "127.0.0.1"
 
 
@@ -205,39 +238,44 @@ def get_token_payload(token: str, secret_key: str | None = None) -> dict | None:
 
 
 def verify_sso_jwt(token: str) -> dict | None:
-    """Verifikasi token SSO JWT dari HCTeams Auth Service (algoritma HS256)."""
+    """Verifikasi token SSO JWT dari HCTeams Auth Service (algoritma HS256 wajib + exp wajib)."""
     if not token or token.count(".") != 2:
         return None
 
-    candidate_secrets = [
-        getattr(settings, "auth_secret", None),
-        "90585c0050b1bd25cbd8e8960b1d0b40234a084eae2030bf3712bb2c5e93808d",
-        "change-me-use-a-long-random-string-min-32-chars",
-        getattr(settings, "secret_key", None),
-    ]
-    candidate_secrets = list(dict.fromkeys(s for s in candidate_secrets if s))
+    auth_secret = (getattr(settings, "auth_secret", "") or "").strip()
+    if not auth_secret or auth_secret in _INSECURE_DEFAULT_SECRETS or len(auth_secret) < 16:
+        return None
 
     try:
         header_b64, payload_b64, sig_b64 = token.split(".")
+        rem_h = len(header_b64) % 4
+        padded_header = header_b64 + ("=" * (4 - rem_h) if rem_h else "")
+        header = json.loads(base64.urlsafe_b64decode(padded_header.encode("utf-8")).decode("utf-8"))
+        if not isinstance(header, dict) or header.get("alg") != "HS256":
+            return None
+
         signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
         rem = len(sig_b64) % 4
         padded_sig = sig_b64 + ("=" * (4 - rem) if rem else "")
         actual_sig_bytes = base64.urlsafe_b64decode(padded_sig.encode("utf-8"))
 
+        expected_sig_bytes = hmac.new(auth_secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected_sig_bytes, actual_sig_bytes):
+            return None
+
         rem_p = len(payload_b64) % 4
         padded_payload = payload_b64 + ("=" * (4 - rem_p) if rem_p else "")
         payload = json.loads(base64.urlsafe_b64decode(padded_payload.encode("utf-8")).decode("utf-8"))
-        if payload.get("exp") and payload["exp"] < int(time.time()):
+        if not isinstance(payload, dict):
             return None
 
-        for secret in candidate_secrets:
-            expected_sig_bytes = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-            if hmac.compare_digest(expected_sig_bytes, actual_sig_bytes):
-                return payload
-    except Exception:
-        pass
+        exp = payload.get("exp")
+        if not isinstance(exp, (int, float)) or exp < int(time.time()):
+            return None
 
-    return None
+        return payload
+    except Exception:
+        return None
 
 
 def verify_session_token(token: str, secret_key: str | None = None) -> bool:
@@ -245,8 +283,22 @@ def verify_session_token(token: str, secret_key: str | None = None) -> bool:
     return get_token_payload(token, secret_key=secret_key) is not None
 
 
+def resolve_sso_role(sso_data: dict) -> str:
+    """Petakan role dari JWT SSO secara least-privilege."""
+    raw_role = str(sso_data.get("role", "staff") or "staff").lower().strip()
+    if raw_role in ("owner", "admin"):
+        return "admin"
+    if raw_role in ("admin_input", "admin-input", "input"):
+        return "admin_input"
+    if raw_role == "purchasing":
+        return "purchasing"
+    if raw_role in ("warehouse", "gudang"):
+        return "warehouse"
+    return "staff"
+
+
 def get_authenticated_role(request: Request) -> str | None:
-    """Ambil role user yang terautentikasi ('admin' atau 'admin_input'), atau None jika belum login."""
+    """Ambil role user yang terautentikasi ('admin', 'admin_input', 'purchasing', 'warehouse', 'staff'), atau None."""
     candidates: list[str] = []
     auth_hdr = request.headers.get("authorization", "")
     if auth_hdr.lower().startswith("bearer "):
@@ -264,12 +316,7 @@ def get_authenticated_role(request: Request) -> str | None:
         # 1. Cek apakah token adalah JWT SSO dari HCTeams Hub
         sso_data = verify_sso_jwt(token)
         if sso_data:
-            sso_role = sso_data.get("role", "staff")
-            if sso_role == "owner":
-                return "admin"
-            elif sso_role in ("purchasing", "warehouse"):
-                return sso_role
-            return "admin_input"
+            return resolve_sso_role(sso_data)
 
         # 2. Cek apakah token adalah HMAC session token internal
         payload = get_token_payload(token)

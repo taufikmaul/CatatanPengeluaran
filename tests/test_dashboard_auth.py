@@ -422,14 +422,92 @@ class TestSsoAndCandidateAuth:
         assert data["role"] == "admin"
         assert data["permissions"]["can_delete"] is True
 
-    async def test_sso_staff_authenticated_as_admin_input(self, client: AsyncClient):
+    async def test_sso_staff_authenticated_as_staff(self, client: AsyncClient):
         token = self._create_sso_jwt(role="staff")
         res = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200
         data = res.json()
         assert data["authenticated"] is True
-        assert data["role"] == "admin_input"
+        assert data["role"] == "staff"
         assert data["permissions"]["can_delete"] is False
+        assert data["permissions"]["can_edit"] is False
+
+    async def test_sso_admin_input_authenticated_as_admin_input(self, client: AsyncClient):
+        token = self._create_sso_jwt(role="admin_input")
+        res = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["authenticated"] is True
+        assert data["role"] == "admin_input"
+        assert data["permissions"]["can_edit"] is True
+        assert data["permissions"]["can_delete"] is False
+
+    async def test_sso_rejects_hardcoded_secrets_and_missing_exp(self, client: AsyncClient):
+        import base64
+        import hashlib
+        import hmac
+        import json
+        import time
+
+        def _sign(header: dict, payload: dict, secret: str) -> str:
+            h_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+            p_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+            sig = hmac.new(secret.encode(), f"{h_b64}.{p_b64}".encode(), hashlib.sha256).digest()
+            s_b64 = base64.urlsafe_b64encode(sig).decode().rstrip("=")
+            return f"{h_b64}.{p_b64}.{s_b64}"
+
+        # 1. Hardcoded legacy secrets must never authenticate
+        for leaked_secret in (
+            "90585c0050b1bd25cbd8e8960b1d0b40234a084eae2030bf3712bb2c5e93808d",
+            "change-me-use-a-long-random-string-min-32-chars",
+        ):
+            forged = _sign(
+                {"alg": "HS256", "typ": "JWT"},
+                {"sub": "1", "role": "owner", "exp": int(time.time()) + 3600},
+                leaked_secret,
+            )
+            res = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {forged}"})
+            assert res.status_code == 200
+            assert res.json()["authenticated"] is False
+
+        # 2. Missing exp must be rejected even with valid auth_secret
+        no_exp = _sign(
+            {"alg": "HS256", "typ": "JWT"},
+            {"sub": "1", "role": "owner"},
+            settings.auth_secret,
+        )
+        res_no_exp = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {no_exp}"})
+        assert res_no_exp.json()["authenticated"] is False
+
+        # 3. alg != HS256 must be rejected
+        wrong_alg = _sign(
+            {"alg": "none", "typ": "JWT"},
+            {"sub": "1", "role": "owner", "exp": int(time.time()) + 3600},
+            settings.auth_secret,
+        )
+        res_alg = await client.get("/api/v1/auth/status", headers={"Authorization": f"Bearer {wrong_alg}"})
+        assert res_alg.json()["authenticated"] is False
+
+    async def test_sso_exchange_sets_httponly_cookie_and_csrf(self, client: AsyncClient):
+        token = self._create_sso_jwt(role="owner")
+        res = await client.post("/api/v1/auth/sso-exchange", json={"token": token})
+        assert res.status_code == 200
+        assert res.json()["role"] == "admin"
+        assert SESSION_COOKIE_NAME in res.cookies
+        assert "catpen_csrf" in res.cookies
+
+        # Cookie-based mutation without X-CSRF-Token must be blocked (403) when catpen_csrf is present
+        res_no_csrf = await client.post("/api/v1/budgets/copy", json={"target_year": 2026, "target_month": 11})
+        assert res_no_csrf.status_code == 403
+
+        # With matching X-CSRF-Token header, CSRF check passes (404 means endpoint ran, not 403)
+        csrf_val = res.cookies.get("catpen_csrf")
+        res_with_csrf = await client.post(
+            "/api/v1/budgets/copy",
+            json={"target_year": 2026, "target_month": 11},
+            headers={"X-CSRF-Token": csrf_val},
+        )
+        assert res_with_csrf.status_code != 403
 
     async def test_stale_bearer_header_falls_back_to_valid_cookie(self, client: AsyncClient):
         # Cookie sesi valid
@@ -739,5 +817,145 @@ class TestAdminInputRoleRestrictions:
             cookies={SESSION_COOKIE_NAME: token_admin},
         )
         assert res_admin.status_code == 200
+
+
+@pytest.mark.asyncio
+class TestGranularDivisionRbacAndSecurity:
+    """Verifikasi penegakan RBAC per divisi di backend serta proteksi jobs, upload, dan webhook."""
+
+    async def test_jobs_endpoints_require_admin_role(self, client: AsyncClient):
+        # Unauthenticated -> 401
+        assert (await client.get("/api/v1/jobs")).status_code == 401
+        assert (
+            await client.post(
+                "/api/v1/jobs/merge/master-items",
+                json={"target_item_id": 1, "source_item_ids": [2]},
+            )
+        ).status_code == 401
+
+        # Non-admin roles -> 403
+        for role in ("staff", "warehouse", "purchasing", "admin_input"):
+            token = create_session_token(role=role)
+            res = await client.get("/api/v1/jobs", headers={"Authorization": f"Bearer {token}"})
+            assert res.status_code == 403, f"Role {role} seharusnya ditolak di /jobs"
+
+    async def test_staff_and_warehouse_blocked_from_financial_and_admin_endpoints(self, client: AsyncClient):
+        for role in ("staff", "warehouse"):
+            headers = {"Authorization": f"Bearer {create_session_token(role=role)}"}
+            assert (await client.get("/api/v1/reports/monthly", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/reports/accounting", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/reports/ai-analysis", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/expenses", headers=headers)).status_code == 403
+            assert (await client.post("/api/v1/expenses", json={"item_name": "X", "total_price": 1000}, headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/suppliers", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/menus", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/incoming-transactions", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/bank-accounts", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/bank-transfers", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/budgets", headers=headers)).status_code == 403
+            assert (await client.get("/api/v1/requests/purchasing/orders", headers=headers)).status_code == 403
+            assert (await client.post("/api/v1/master-items", json={"item_name": "X", "category": "Bahan Kue"}, headers=headers)).status_code == 403
+            assert (await client.delete("/api/v1/master-items/1", headers=headers)).status_code == 403
+
+        # Warehouse boleh baca master-items, staff tidak
+        wh_headers = {"Authorization": f"Bearer {create_session_token(role='warehouse')}"}
+        staff_headers = {"Authorization": f"Bearer {create_session_token(role='staff')}"}
+        assert (await client.get("/api/v1/master-items", headers=wh_headers)).status_code == 200
+        assert (await client.get("/api/v1/master-items", headers=staff_headers)).status_code == 403
+
+    async def test_purchasing_and_admin_input_boundaries(self, client: AsyncClient):
+        purch_headers = {"Authorization": f"Bearer {create_session_token(role='purchasing')}"}
+        input_headers = {"Authorization": f"Bearer {create_session_token(role='admin_input')}"}
+
+        # Purchasing boleh akses /requests/purchasing/orders, admin_input ditolak 403
+        assert (await client.get("/api/v1/requests/purchasing/orders", headers=purch_headers)).status_code == 200
+        assert (await client.get("/api/v1/requests/purchasing/orders", headers=input_headers)).status_code == 403
+
+        # Purchasing ditolak dari incoming-transactions, bank-transfers, accounting, ai-analysis, delete master item
+        assert (await client.get("/api/v1/incoming-transactions", headers=purch_headers)).status_code == 403
+        assert (await client.get("/api/v1/bank-transfers", headers=purch_headers)).status_code == 403
+        assert (await client.get("/api/v1/reports/accounting", headers=purch_headers)).status_code == 403
+        assert (await client.get("/api/v1/reports/ai-analysis", headers=purch_headers)).status_code == 403
+        assert (await client.delete("/api/v1/master-items/1", headers=purch_headers)).status_code == 403
+        assert (await client.post("/api/v1/menus/import-from-pos", headers=purch_headers)).status_code == 403
+
+        # Admin input ditolak dari accounting, ai-analysis, import csv, settle unpaid
+        assert (await client.get("/api/v1/reports/accounting", headers=input_headers)).status_code == 403
+        assert (await client.get("/api/v1/reports/ai-analysis", headers=input_headers)).status_code == 403
+        assert (await client.post("/api/v1/expenses/unpaid/settle", json={"expense_ids": [1], "action": "mark_paid"}, headers=input_headers)).status_code == 403
+
+    async def test_ocr_upload_rejects_invalid_extension_and_oversized_file(self, client: AsyncClient):
+        headers = {"Authorization": f"Bearer {create_session_token(role='admin')}"}
+
+        # Ekstensi tidak valid (.exe)
+        res_bad_ext = await client.post(
+            "/api/v1/expenses/ocr",
+            files={"file": ("malware.exe", b"MZ1234", "application/octet-stream")},
+            headers=headers,
+        )
+        assert res_bad_ext.status_code == 400
+
+        # Ukuran file melebihi batas max_upload_bytes
+        with patch.object(settings, "max_upload_bytes", 10):
+            res_big = await client.post(
+                "/api/v1/expenses/ocr",
+                files={"file": ("nota.jpg", b"0123456789abcdef", "image/jpeg")},
+                headers=headers,
+            )
+            assert res_big.status_code == 413
+
+    async def test_telegram_webhook_secret_and_callback_admin_guard(self, client: AsyncClient, db: AsyncSession, monkeypatch):
+        from app.bot import callbacks as cb_mod
+        from app.services import purchase_request_service
+
+        # 1. Webhook secret verification
+        with patch.object(settings, "telegram_webhook_secret", "super-secret-tg-token"):
+            res_missing = await client.post("/webhook", json={"update_id": 1})
+            assert res_missing.status_code == 403
+
+            res_wrong = await client.post(
+                "/webhook",
+                json={"update_id": 1},
+                headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
+            )
+            assert res_wrong.status_code == 403
+
+            res_ok = await client.post(
+                "/webhook",
+                json={"update_id": 1},
+                headers={"X-Telegram-Bot-Api-Secret-Token": "super-secret-tg-token"},
+            )
+            assert res_ok.status_code == 200
+
+        # 2. Non-admin Telegram user tidak boleh approve purchase request via inline callback
+        req = await purchase_request_service.create_purchase_request(
+            db, title="Tes Approve", items=[{"item_name": "Gula", "qty": 1, "unit": "Kg"}]
+        )
+        sent_msgs = []
+
+        async def fake_answer(cb_id, text=""):
+            return None
+
+        async def fake_send(chat_id, text, thread_id=None, reply_markup=None, parse_mode="Markdown"):
+            sent_msgs.append(text)
+            return {"ok": True}
+
+        monkeypatch.setattr(cb_mod.tg, "answer_callback_query", fake_answer)
+        monkeypatch.setattr(cb_mod.tg, "send_message", fake_send)
+
+        with patch.object(settings, "admin_telegram_ids", "999999"):
+            await cb_mod.handle_callback_query(
+                {
+                    "id": "cb-non-admin-app",
+                    "from": {"id": 111111, "first_name": "BukanAdmin"},
+                    "message": {"message_id": 10, "chat": {"id": -1001}},
+                    "data": f"req_app:{req.id}",
+                },
+                db,
+            )
+
+        fresh_req = await purchase_request_service.get_purchase_request_by_id(db, req.id)
+        assert fresh_req.status == "PENDING"
+        assert any("ditolak" in m.lower() for m in sent_msgs)
 
 

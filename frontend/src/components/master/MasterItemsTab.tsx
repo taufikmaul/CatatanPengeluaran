@@ -61,6 +61,8 @@ interface MasterItemsTabProps {
   categories: string[];
   units?: string[];
   onInspectItemPrice?: (itemName: string, itemId?: number) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
@@ -71,6 +73,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     "Meter", "Ikat", "Butir", "Trans", "Trip"
   ],
   onInspectItemPrice,
+  canEdit = true,
+  canDelete = false,
 }) => {
   const queryClient = useQueryClient();
 
@@ -509,39 +513,43 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   const masterColumns = useMemo<ColumnDef<DataGridFeatures, MasterItem>[]>(
     () => [
-      {
-        id: "select",
-        header: () => (
-          <div className="w-10 text-center">
-            <input
-              type="checkbox"
-              aria-label="Pilih semua item yang tampil"
-              checked={
-                filteredItems.length > 0 &&
-                filteredItems.every((i) => selectedIds.includes(i.id))
-              }
-              onChange={handleToggleSelectAllVisible}
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
-            />
-          </div>
-        ),
-        cell: ({ row }) => {
-          const item = row.original;
-          const isSelected = selectedIds.includes(item.id);
-          return (
-            <div className="w-10 text-center">
-              <input
-                type="checkbox"
-                aria-label={`Pilih ${item.item_name}`}
-                checked={isSelected}
-                onChange={() => toggleSelectItem(item.id)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
-              />
-            </div>
-          );
-        },
-        size: 50,
-      },
+      ...(canDelete
+        ? [
+            {
+              id: "select",
+              header: () => (
+                <div className="w-10 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Pilih semua item yang tampil"
+                    checked={
+                      filteredItems.length > 0 &&
+                      filteredItems.every((i) => selectedIds.includes(i.id))
+                    }
+                    onChange={handleToggleSelectAllVisible}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                  />
+                </div>
+              ),
+              cell: ({ row }: { row: { original: MasterItem } }) => {
+                const item = row.original;
+                const isSelected = selectedIds.includes(item.id);
+                return (
+                  <div className="w-10 text-center">
+                    <input
+                      type="checkbox"
+                      aria-label={`Pilih ${item.item_name}`}
+                      checked={isSelected}
+                      onChange={() => toggleSelectItem(item.id)}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer h-3.5 w-3.5"
+                    />
+                  </div>
+                );
+              },
+              size: 50,
+            } as ColumnDef<DataGridFeatures, MasterItem>,
+          ]
+        : []),
       {
         accessorKey: "item_name",
         id: "item_name",
@@ -830,47 +838,53 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           }
           return (
             <div className="flex items-center justify-end gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setSelectedIds((prev) =>
-                    prev.includes(item.id) ? prev : [...prev, item.id]
-                  );
-                  toast.info(
-                    `'${item.item_name}' ditandai. Centang item lain di tabel untuk digabungkan.`
-                  );
-                }}
-                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                title="Pilih untuk digabung"
-              >
-                <GitMerge className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => startEdit(item)}
-                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                title="Edit"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => deleteMutation.mutate(item.id)}
-                className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
-                title="Hapus"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSelectedIds((prev) =>
+                      prev.includes(item.id) ? prev : [...prev, item.id]
+                    );
+                    toast.info(
+                      `'${item.item_name}' ditandai. Centang item lain di tabel untuk digabungkan.`
+                    );
+                  }}
+                  className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+                  title="Pilih untuk digabung"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => startEdit(item)}
+                  className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+                  title="Edit"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteMutation.mutate(item.id)}
+                  className="h-7 w-7 p-0 text-slate-500 hover:text-rose-600"
+                  title="Hapus"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </div>
           );
         },
         size: 110,
       },
     ],
-    [filteredItems, selectedIds, editingId, editForm, categories, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
+    [filteredItems, selectedIds, editingId, editForm, categories, canEdit, canDelete, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
   );
 
   const masterTable = useTable({
@@ -900,57 +914,59 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={importHistoryMutation.isPending}
-              onClick={() => importHistoryMutation.mutate()}
-              className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-            >
-              <DatabaseZap className="w-3.5 h-3.5" />
-              {importHistoryMutation.isPending
-                ? "Menarik..."
-                : "⚡ Tarik dari Histori Transaksi"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowBulkBox((v) => !v)}
-              className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              {showBulkBox ? "Tutup Paste Massal" : "Paste Daftar Item Massal"}
-            </Button>
-            <Button
-              size="sm"
-              disabled={syncExistingMutation.isPending || masterItems.length === 0}
-              onClick={() => syncExistingMutation.mutate()}
-              className="rounded-xl text-xs font-semibold gap-1.5 bg-white text-blue-700 hover:bg-blue-50 shadow-xs"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
-              />
-              Cocokkan Data Lama ({masterItems.length} item)
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowAuditModal(true);
-                refetchAudit();
-              }}
-              className="rounded-xl text-xs font-semibold gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-100 border border-amber-300/30 shadow-xs"
-            >
-              <SearchCheck className="w-3.5 h-3.5 text-amber-300" />
-              Audit Item Duplikat
-            </Button>
-          </div>
+          {canDelete && (
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={importHistoryMutation.isPending}
+                onClick={() => importHistoryMutation.mutate()}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+              >
+                <DatabaseZap className="w-3.5 h-3.5" />
+                {importHistoryMutation.isPending
+                  ? "Menarik..."
+                  : "⚡ Tarik dari Histori Transaksi"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowBulkBox((v) => !v)}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {showBulkBox ? "Tutup Paste Massal" : "Paste Daftar Item Massal"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={syncExistingMutation.isPending || masterItems.length === 0}
+                onClick={() => syncExistingMutation.mutate()}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-white text-blue-700 hover:bg-blue-50 shadow-xs"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
+                />
+                Cocokkan Data Lama ({masterItems.length} item)
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setShowAuditModal(true);
+                  refetchAudit();
+                }}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-100 border border-amber-300/30 shadow-xs"
+              >
+                <SearchCheck className="w-3.5 h-3.5 text-amber-300" />
+                Audit Item Duplikat
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Bulk Paste Box */}
-      {showBulkBox && (
+      {canDelete && showBulkBox && (
         <Card className="border-blue-200 bg-blue-50/40 rounded-2xl shadow-xs">
           <CardContent className="p-5 space-y-3">
             <div className="flex items-center justify-between">
@@ -1014,7 +1030,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         </Card>
       )}
 
-      {/* Quick Add Single Item Form */}
+      {/* Quick Add Single Item Form (Owner & Purchasing only) */}
+      {canEdit && (
       <Card className="border-slate-200/90 bg-white rounded-2xl shadow-xs">
         <CardContent className="p-4">
           <form
@@ -1160,6 +1177,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           </form>
         </CardContent>
       </Card>
+      )}
 
       {/* Filter & ReUI DataGrid List */}
       <DataGrid

@@ -29,16 +29,29 @@ export const api = axios.create({
   },
 });
 
-// Request interceptor to attach SSO token if available
+function getCookieValue(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// Request interceptor to attach CSRF token for mutating requests (cookie-based auth)
 api.interceptors.request.use((config) => {
-  const token =
-    localStorage.getItem("hcteams_token") ||
-    localStorage.getItem("dashboard_session_token");
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const method = (config.method || "get").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfToken = getCookieValue("catpen_csrf");
+    if (csrfToken && config.headers) {
+      config.headers["X-CSRF-Token"] = csrfToken;
+    }
   }
   return config;
 });
+
+export async function exchangeSsoToken(token: string) {
+  const res = await api.post("/auth/sso-exchange", { token });
+  return res.data;
+}
 
 // Response interceptor to catch 401 unauthorized
 api.interceptors.response.use(
@@ -550,8 +563,35 @@ export async function settleUnpaidExpenses(payload: {
   expense_ids: number[];
   action?: "mark_paid" | "mark_unpaid";
   bank_account_id?: number | null;
+  pay_method?: string | null;
+  payment_date?: string | null;
+  reference_no?: string | null;
+  notes?: string | null;
 }): Promise<{ ok: boolean; action: string; updated_count: number; updated_ids: number[] }> {
   const res = await api.post("/expenses/unpaid/settle", payload);
+  return res.data;
+}
+
+export async function getExpensePayments(
+  expenseId: number
+): Promise<import("@/types").ExpensePayment[]> {
+  const res = await api.get(`/expenses/${expenseId}/payments`);
+  return res.data;
+}
+
+export async function recordExpensePayment(
+  expenseId: number,
+  payload: import("@/types").ExpensePaymentPayload
+): Promise<Expense> {
+  const res = await api.post(`/expenses/${expenseId}/payments`, payload);
+  return res.data;
+}
+
+export async function deleteExpensePayment(
+  expenseId: number,
+  paymentId: number
+): Promise<Expense> {
+  const res = await api.delete(`/expenses/${expenseId}/payments/${paymentId}`);
   return res.data;
 }
 

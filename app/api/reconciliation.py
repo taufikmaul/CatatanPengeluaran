@@ -7,13 +7,13 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth
+from app.api.deps import require_roles, validate_upload_file
 from app.services.reconciliation_service import preview_reconciliation, apply_reconciliation
 
 router = APIRouter(
     prefix="/reconciliation",
     tags=["reconciliation"],
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_roles("admin", "admin_input"))],
 )
 
 
@@ -30,17 +30,13 @@ async def api_preview_reconciliation(
     date_tolerance_days: int = Form(2),
     db: AsyncSession = Depends(get_db),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Harap unggah file .csv mutasi bank atau laporan settlement platform.",
-        )
     if mode not in ("mutasi_bank", "settlement_platform"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mode rekonsiliasi harus 'mutasi_bank' atau 'settlement_platform'.",
         )
     content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
     try:
         result = await preview_reconciliation(
             db,

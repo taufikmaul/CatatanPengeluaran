@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Expense, ExpenseLog } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink, copyToClipboard } from "@/lib/telegram";
+import { getExpensePaymentBreakdown } from "@/lib/paymentStatus";
 import { getExpenseLogs } from "@/lib/api";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +72,8 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
   const tgInfo = parseTelegramLink(expense.msg_link);
   const catColor = getCategoryColor(expense.category);
-  const isLunas = (expense.pay_status || "").toLowerCase().includes("lunas");
+  const bd = getExpensePaymentBreakdown(expense);
+  const isLunas = bd.isPaid;
 
   const formatActorLabel = (actor: string) => {
     if (!actor) return "Sistem";
@@ -153,6 +155,8 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
                   isLunas
                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : bd.isDp
+                    ? "bg-amber-50 text-amber-800 border-amber-300"
                     : "bg-rose-50 text-rose-700 border-rose-200"
                 }`}
               >
@@ -161,9 +165,14 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Lunas</span>
                   </>
+                ) : bd.isDp ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-amber-700" />
+                    <span>DP {Math.round(bd.progressPct)}%</span>
+                  </>
                 ) : (
                   <>
-                    <Clock className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
+                    <Clock className="w-3.5 h-3.5 text-rose-600" />
                     <span>Belum Lunas</span>
                   </>
                 )}
@@ -342,6 +351,23 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 </span>
               </div>
             </div>
+
+            {bd.isDp && (
+              <div className="mt-3 pt-3 border-t border-amber-200/80 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Sudah Dibayar (DP / Termin):</span>
+                  <span className="font-bold text-emerald-700 tabular-nums">
+                    {formatRupiah(bd.paid)} ({bd.progressPct}%)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Sisa Pelunasan:</span>
+                  <span className="font-bold text-rose-700 tabular-nums">
+                    {formatRupiah(bd.remaining)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Grid Informasi Detail */}

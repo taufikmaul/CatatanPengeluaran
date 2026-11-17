@@ -87,6 +87,7 @@ class TestSchemaConsistency:
         assert set(Base.metadata.tables) == {
             "users",
             "expenses",
+            "expense_payments",
             "sessions",
             "dashboard_pins",
             "dashboard_access_logs",

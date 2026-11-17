@@ -216,12 +216,15 @@ async def test_system_config_role_passwords_and_telegram_topic(client, auth_cook
     assert settings.request_belanja_thread_id == 99
     assert settings.request_belanja_chat_id == "-100888777"
 
-    # Verify get system config
+    # Verify get system config (secrets tidak dikembalikan dalam bentuk plaintext)
     get_res = await client.get("/api/v1/config")
     assert get_res.status_code == 200
     get_data = get_res.json()
-    assert get_data["purchasing_password"] == "new_purchasing_pw"
-    assert get_data["warehouse_password"] == "new_warehouse_pw"
-    assert get_data["staff_password"] == "new_staff_pw"
+    assert "purchasing_password" not in get_data
+    assert "warehouse_password" not in get_data
+    assert "staff_password" not in get_data
+    assert get_data["purchasing_password_configured"] is True
+    assert get_data["warehouse_password_configured"] is True
+    assert get_data["staff_password_configured"] is True
     assert get_data["request_belanja_thread_id"] == 99
     assert get_data["request_belanja_chat_id"] == "-100888777"

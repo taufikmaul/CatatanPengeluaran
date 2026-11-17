@@ -174,7 +174,13 @@ async def get_suppliers(
             func.coalesce(
                 func.sum(
                     case(
-                        (func.lower(Expense.pay_status) != "lunas", Expense.total_price),
+                        (
+                            and_(
+                                func.lower(Expense.pay_status) != "lunas",
+                                Expense.total_price - func.coalesce(Expense.paid_amount, 0) > 0,
+                            ),
+                            Expense.total_price - func.coalesce(Expense.paid_amount, 0),
+                        ),
                         else_=0,
                     )
                 ),
@@ -319,7 +325,13 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
         func.coalesce(
             func.sum(
                 case(
-                    (func.lower(Expense.pay_status) != "lunas", Expense.total_price),
+                    (
+                        and_(
+                            func.lower(Expense.pay_status) != "lunas",
+                            Expense.total_price - func.coalesce(Expense.paid_amount, 0) > 0,
+                        ),
+                        Expense.total_price - func.coalesce(Expense.paid_amount, 0),
+                    ),
                     else_=0,
                 )
             ),
@@ -352,6 +364,8 @@ async def get_supplier_by_id(db: AsyncSession, supplier_id: int) -> dict | None:
             "expense_date": str(e.expense_date),
             "item_name": e.item_name,
             "total_price": float(e.total_price or 0),
+            "paid_amount": min(float(e.total_price or 0), max(0.0, float(getattr(e, "paid_amount", 0) or 0))),
+            "remaining_amount": max(0.0, float(e.total_price or 0) - max(0.0, float(getattr(e, "paid_amount", 0) or 0))),
             "due_date": e.due_date or "-",
             "invoice_number": e.invoice_number or "-",
             "notes": e.notes or "-",

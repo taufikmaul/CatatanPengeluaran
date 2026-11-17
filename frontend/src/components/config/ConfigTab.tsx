@@ -54,11 +54,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [ongkirThreadIds, setOngkirThreadIds] = useState("");
   const [requestBelanjaThreadId, setRequestBelanjaThreadId] = useState<number | "">("");
   const [requestBelanjaChatId, setRequestBelanjaChatId] = useState("");
-  const [botPassword, setBotPassword] = useState("12345");
-  const [adminInputPassword, setAdminInputPassword] = useState("input123");
-  const [purchasingPassword, setPurchasingPassword] = useState("purchasing123");
-  const [warehousePassword, setWarehousePassword] = useState("gudang123");
-  const [staffPassword, setStaffPassword] = useState("staf123");
+  const [botPassword, setBotPassword] = useState("");
+  const [adminInputPassword, setAdminInputPassword] = useState("");
+  const [purchasingPassword, setPurchasingPassword] = useState("");
+  const [warehousePassword, setWarehousePassword] = useState("");
+  const [staffPassword, setStaffPassword] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
 
   const [sumopodApiKey, setSumopodApiKey] = useState("");
@@ -92,10 +92,10 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [aiTestResult, setAiTestResult] = useState<any | null>(null);
   const [isAiTesting, setIsAiTesting] = useState(false);
 
-  // Sync state from config
+  // Sync state from config (write-only untuk token & password; selalu kosongkan field rahasia)
   useEffect(() => {
     if (config) {
-      setTelegramToken(config.telegram_token || "");
+      setTelegramToken("");
       setPinChatId(config.dashboard_pin_chat_id || "");
       setAllowedThreadId(config.allowed_thread_id || 7);
       setAllowedThreadIds(config.allowed_thread_ids || "");
@@ -107,14 +107,14 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
           : ""
       );
       setRequestBelanjaChatId(config.request_belanja_chat_id || "");
-      setBotPassword(config.bot_password || "12345");
-      setAdminInputPassword(config.admin_input_password || "input123");
-      setPurchasingPassword(config.purchasing_password || "purchasing123");
-      setWarehousePassword(config.warehouse_password || "gudang123");
-      setStaffPassword(config.staff_password || "staf123");
+      setBotPassword("");
+      setAdminInputPassword("");
+      setPurchasingPassword("");
+      setWarehousePassword("");
+      setStaffPassword("");
       setWebhookUrl(config.webhook_url || "");
 
-      setSumopodApiKey(config.sumopod_api_key || "");
+      setSumopodApiKey("");
       setSumopodModel(config.ai_model || "seed-2-0-mini");
       setSumopodUrl(config.ai_url || "https://ai.sumopod.com/v1/chat/completions");
 
@@ -138,11 +138,6 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         sumopod_model: sumopodModel,
         sumopod_url: sumopodUrl,
         spreadsheet_id: spreadsheetId.trim(),
-        bot_password: botPassword,
-        admin_input_password: adminInputPassword.trim(),
-        purchasing_password: purchasingPassword.trim(),
-        warehouse_password: warehousePassword.trim(),
-        staff_password: staffPassword.trim(),
         request_belanja_chat_id: requestBelanjaChatId.trim(),
         request_belanja_thread_id:
           requestBelanjaThreadId !== "" ? Number(requestBelanjaThreadId) : null,
@@ -151,6 +146,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         category_budgets: categoryBudgets,
       };
 
+      if (botPassword.trim()) payload.bot_password = botPassword.trim();
+      if (adminInputPassword.trim()) payload.admin_input_password = adminInputPassword.trim();
+      if (purchasingPassword.trim()) payload.purchasing_password = purchasingPassword.trim();
+      if (warehousePassword.trim()) payload.warehouse_password = warehousePassword.trim();
+      if (staffPassword.trim()) payload.staff_password = staffPassword.trim();
       if (telegramToken.trim()) payload.telegram_token = telegramToken.trim();
       if (pinChatId.trim()) payload.dashboard_pin_chat_id = pinChatId.trim();
       if (sumopodApiKey.trim()) payload.sumopod_api_key = sumopodApiKey.trim();
@@ -534,7 +534,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     type={showRolePasswords.staff || showTokens ? "text" : "password"}
                     value={staffPassword}
                     onChange={(e) => setStaffPassword(e.target.value)}
-                    placeholder="Default: staf123"
+                    placeholder={config.staff_password_configured ? "•••••• (Isi hanya jika ingin mengubah)" : "Masukkan password baru"}
                     className="h-10 text-xs rounded-xl pr-10"
                   />
                   <button
@@ -563,7 +563,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     type={showRolePasswords.purchasing || showTokens ? "text" : "password"}
                     value={purchasingPassword}
                     onChange={(e) => setPurchasingPassword(e.target.value)}
-                    placeholder="Default: purchasing123"
+                    placeholder={config.purchasing_password_configured ? "•••••• (Isi hanya jika ingin mengubah)" : "Masukkan password baru"}
                     className="h-10 text-xs rounded-xl border-blue-200 focus-visible:ring-blue-400 pr-10"
                   />
                   <button
@@ -592,7 +592,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     type={showRolePasswords.warehouse || showTokens ? "text" : "password"}
                     value={warehousePassword}
                     onChange={(e) => setWarehousePassword(e.target.value)}
-                    placeholder="Default: gudang123"
+                    placeholder={config.warehouse_password_configured ? "•••••• (Isi hanya jika ingin mengubah)" : "Masukkan password baru"}
                     className="h-10 text-xs rounded-xl border-emerald-200 focus-visible:ring-emerald-400 pr-10"
                   />
                   <button
@@ -621,7 +621,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     type={showRolePasswords.admin_input || showTokens ? "text" : "password"}
                     value={adminInputPassword}
                     onChange={(e) => setAdminInputPassword(e.target.value)}
-                    placeholder="Default: input123"
+                    placeholder={config.admin_input_password_configured ? "•••••• (Isi hanya jika ingin mengubah)" : "Masukkan password baru"}
                     className="h-10 text-xs rounded-xl border-amber-200 focus-visible:ring-amber-400 pr-10"
                   />
                   <button
@@ -650,7 +650,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                     type={showRolePasswords.bot || showTokens ? "text" : "password"}
                     value={botPassword}
                     onChange={(e) => setBotPassword(e.target.value)}
-                    placeholder="Default: 12345"
+                    placeholder={config.bot_password_configured ? "•••••• (Isi hanya jika ingin mengubah)" : "Masukkan password baru"}
                     className="h-10 text-xs rounded-xl pr-10"
                   />
                   <button

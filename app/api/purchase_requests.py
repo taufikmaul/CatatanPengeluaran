@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth, get_current_role
+from app.api.deps import require_auth, require_roles, get_current_role
 from app.api.schemas import (
     PurchaseRequestCreate,
     PurchaseRequestUpdate,
@@ -128,7 +128,12 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     return PurchaseRequestStatsResponse(**stats)
 
 
-@router.post("", response_model=PurchaseRequestResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=PurchaseRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin", "staff", "admin_input", "purchasing"))],
+)
 async def create_purchase_request(
     payload: PurchaseRequestCreate,
     db: AsyncSession = Depends(get_db),
@@ -166,7 +171,7 @@ async def create_purchase_request(
 # Endpoints Purchasing (Pemesanan & Supplier)
 # ──────────────────────────────────────────────
 
-@router.get("/purchasing/orders")
+@router.get("/purchasing/orders", dependencies=[Depends(require_roles("admin", "purchasing"))])
 async def get_purchasing_orders(db: AsyncSession = Depends(get_db)):
     """Ambil daftar belanjaan yang sudah di-approve dan dikelompokkan per Supplier."""
     grouped = await purchase_request_service.get_purchasing_grouped_orders(db)
@@ -184,7 +189,11 @@ async def get_purchasing_orders(db: AsyncSession = Depends(get_db)):
     return res
 
 
-@router.get("/purchasing/items/{item_id}/supplier-options", response_model=PurchasingSupplierOptionsResponse)
+@router.get(
+    "/purchasing/items/{item_id}/supplier-options",
+    response_model=PurchasingSupplierOptionsResponse,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def get_purchasing_item_supplier_options(
     item_id: int,
     db: AsyncSession = Depends(get_db),
@@ -196,7 +205,11 @@ async def get_purchasing_item_supplier_options(
     return PurchasingSupplierOptionsResponse(**data)
 
 
-@router.post("/purchasing/items/{item_id}/assign-supplier", response_model=PurchaseRequestItemResponse)
+@router.post(
+    "/purchasing/items/{item_id}/assign-supplier",
+    response_model=PurchaseRequestItemResponse,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def assign_supplier_endpoint(
     item_id: int,
     payload: PurchasingAssignSupplierInput,
@@ -219,7 +232,12 @@ async def assign_supplier_endpoint(
     return PurchaseRequestItemResponse(**_item_to_dict(updated))
 
 
-@router.post("/purchasing/items", response_model=PurchaseRequestItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/purchasing/items",
+    response_model=PurchaseRequestItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def add_purchasing_item_endpoint(
     payload: PurchasingItemCreateInput,
     db: AsyncSession = Depends(get_db),
@@ -245,7 +263,11 @@ async def add_purchasing_item_endpoint(
     return PurchaseRequestItemResponse(**_item_to_dict(created))
 
 
-@router.patch("/purchasing/items/{item_id}", response_model=PurchaseRequestItemResponse)
+@router.patch(
+    "/purchasing/items/{item_id}",
+    response_model=PurchaseRequestItemResponse,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def update_purchasing_item_endpoint(
     item_id: int,
     payload: PurchasingItemUpdateInput,
@@ -270,7 +292,11 @@ async def update_purchasing_item_endpoint(
     return PurchaseRequestItemResponse(**_item_to_dict(updated))
 
 
-@router.post("/purchasing/items/{item_id}/cancel", response_model=PurchaseRequestItemResponse)
+@router.post(
+    "/purchasing/items/{item_id}/cancel",
+    response_model=PurchaseRequestItemResponse,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def cancel_purchasing_item_endpoint(
     item_id: int,
     payload: PurchasingItemCancelInput,
@@ -290,7 +316,7 @@ async def cancel_purchasing_item_endpoint(
     return PurchaseRequestItemResponse(**_item_to_dict(cancelled))
 
 
-@router.post("/purchasing/generate-whatsapp")
+@router.post("/purchasing/generate-whatsapp", dependencies=[Depends(require_roles("admin", "purchasing"))])
 async def generate_whatsapp_endpoint(
     payload: PurchasingWhatsAppTemplateInput,
     db: AsyncSession = Depends(get_db),
@@ -314,7 +340,7 @@ async def generate_whatsapp_endpoint(
     return {"ok": True, "text": text}
 
 
-@router.post("/purchasing/mark-ordered")
+@router.post("/purchasing/mark-ordered", dependencies=[Depends(require_roles("admin", "purchasing"))])
 async def mark_ordered_endpoint(
     payload: PurchasingMarkOrderedInput,
     db: AsyncSession = Depends(get_db),
@@ -401,11 +427,16 @@ async def get_purchase_request_detail(
     return PurchaseRequestResponse(**_to_response_dict(req))
 
 
-@router.patch("/{request_id}", response_model=PurchaseRequestResponse)
+@router.patch(
+    "/{request_id}",
+    response_model=PurchaseRequestResponse,
+    dependencies=[Depends(require_roles("admin", "staff", "admin_input", "purchasing"))],
+)
 async def update_purchase_request(
     request_id: int,
     payload: PurchaseRequestUpdate,
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
     """Update detail pengajuan belanja (termasuk daftar item saat masih PENDING)."""
     from app.models.purchase_request import PurchaseRequestItem
@@ -416,6 +447,11 @@ async def update_purchase_request(
     req = await purchase_request_service.get_purchase_request_by_id(db, request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
+    if role != "admin" and req.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pengajuan yang sudah diproses hanya dapat diubah oleh Owner / Manager.",
+        )
 
     if payload.title is not None:
         req.title = payload.title.strip()
@@ -526,7 +562,11 @@ async def reject_request(
     return PurchaseRequestResponse(**_to_response_dict(req))
 
 
-@router.post("/{request_id}/fulfill", response_model=PurchaseRequestResponse)
+@router.post(
+    "/{request_id}/fulfill",
+    response_model=PurchaseRequestResponse,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def fulfill_request_endpoint(
     request_id: int,
     expense_id: int | None = Query(None, description="ID expense yang merealisasikan"),
@@ -545,12 +585,25 @@ async def fulfill_request_endpoint(
     return PurchaseRequestResponse(**_to_response_dict(req))
 
 
-@router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{request_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_roles("admin", "staff", "admin_input", "purchasing"))],
+)
 async def delete_request(
     request_id: int,
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
-    """Hapus data pengajuan belanja."""
+    """Hapus data pengajuan belanja (non-Owner hanya boleh menghapus saat PENDING)."""
+    req = await purchase_request_service.get_purchase_request_by_id(db, request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
+    if role != "admin" and req.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Pengajuan yang sudah diproses hanya dapat dihapus oleh Owner / Manager.",
+        )
     success = await purchase_request_service.delete_purchase_request(db, request_id)
     if not success:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")

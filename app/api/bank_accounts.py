@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth, require_admin_role
+from app.api.deps import require_admin_role, require_roles
 from app.services.bank_account_service import (
     list_bank_accounts,
     create_bank_account,
@@ -49,7 +49,7 @@ class BankAccountUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 
-@router.get("", dependencies=[Depends(require_auth)])
+@router.get("", dependencies=[Depends(require_roles("admin", "admin_input", "purchasing"))])
 async def api_list_bank_accounts(
     active_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),

@@ -13,9 +13,53 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 from app.models.expense import Expense
+from app.models.expense_payment import ExpensePayment
 from app.models.user import User
 from app.models.expense_log import ExpenseLog
 from app.utils.formatters import parse_due_date
+
+
+def is_paid_status(status: str | None) -> bool:
+    """True hanya jika status pembayaran tepat 'Lunas'."""
+    return (status or "").strip().lower() == "lunas"
+
+
+def is_dp_status(status: str | None) -> bool:
+    """True jika status pembayaran menandakan DP / cicilan sebagian."""
+    st = (status or "").strip().lower()
+    return any(k in st for k in ("dp", "sebagian", "partial"))
+
+
+def is_unpaid_or_dp_status(status: str | None) -> bool:
+    """True jika tagihan masih memiliki kewajiban pembayaran (Belum Lunas atau DP)."""
+    st = (status or "").strip().lower()
+    if st == "lunas":
+        return False
+    return any(k in st for k in ("belum", "hutang", "tempo", "dp", "sebagian", "partial"))
+
+
+def get_expense_payment_breakdown(e: Expense) -> tuple[float, float, float, float]:
+    """Kembalikan (total_price, paid_amount, remaining_amount, progress_pct)."""
+    total = max(0.0, float(e.total_price or 0))
+    if is_paid_status(e.pay_status):
+        return total, total, 0.0, 100.0 if total > 0 else 0.0
+    raw_paid = max(0.0, float(getattr(e, "paid_amount", 0) or 0))
+    paid = min(total, raw_paid)
+    remaining = max(0.0, total - paid)
+    pct = round((paid / total) * 100, 1) if total > 0 else 0.0
+    return total, paid, remaining, pct
+
+
+def unpaid_status_clause():
+    """SQLAlchemy filter untuk seluruh status yang masih memiliki sisa tagihan."""
+    return or_(
+        Expense.pay_status.ilike("%belum%"),
+        Expense.pay_status.ilike("%hutang%"),
+        Expense.pay_status.ilike("%tempo%"),
+        Expense.pay_status.ilike("%dp%"),
+        Expense.pay_status.ilike("%sebagian%"),
+        Expense.pay_status.ilike("%partial%"),
+    )
 
 
 async def record_expense_log(
@@ -640,20 +684,27 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
 
         # Eksklusi Ongkir & Tukar Cash dari belanja toko reguler (total_lunas, list_hutang, per_kategori)
         if not is_tukar_cash and not is_ongkir:
-            if status == "lunas":
-                total_lunas += nominal
-                per_kategori[kat] = per_kategori.get(kat, 0.0) + nominal
-            elif "belum" in status or status in ("hutang", "tempo"):
-                list_hutang.append({
-                    "id": e.id,
-                    "barang": e.item_name,
-                    "supplier": e.supplier or "-",
-                    "nominal": nominal,
-                    "tempo": e.due_date or "-",
-                    "tanggal": str(e.expense_date),
-                    "kategori": e.category or "Lainnya",
-                    "status": e.pay_status or "Belum Lunas",
-                })
+            total_val, paid_val, remaining_val, _ = get_expense_payment_breakdown(e)
+            if is_paid_status(e.pay_status):
+                total_lunas += total_val
+                per_kategori[kat] = per_kategori.get(kat, 0.0) + total_val
+            elif is_unpaid_or_dp_status(e.pay_status):
+                if paid_val > 0:
+                    total_lunas += paid_val
+                    per_kategori[kat] = per_kategori.get(kat, 0.0) + paid_val
+                if remaining_val > 0 or not is_dp_status(e.pay_status):
+                    list_hutang.append({
+                        "id": e.id,
+                        "barang": e.item_name,
+                        "supplier": e.supplier or "-",
+                        "nominal": remaining_val,
+                        "total_invoice": total_val,
+                        "paid_amount": paid_val,
+                        "tempo": e.due_date or "-",
+                        "tanggal": str(e.expense_date),
+                        "kategori": e.category or "Lainnya",
+                        "status": e.pay_status or "Belum Lunas",
+                    })
 
     regular_count = len([
         e for e in expenses
@@ -1140,7 +1191,7 @@ async def get_all_expenses_paginated(
                     ~Expense.item_name.ilike("ongkir%"),
                 )
             )
-    elif special_type in ("all", "unpaid") or is_reimbursement is True or (status and ("belum" in status.lower() or "hutang" in status.lower())):
+    elif special_type in ("all", "unpaid") or is_reimbursement is True or (status and any(k in status.lower() for k in ("belum", "hutang", "dp", "sebagian", "tempo"))):
         # Tampilkan semua kategori tanpa filter exclude Ongkir/Tukar Cash
         pass
     else:
@@ -1165,7 +1216,21 @@ async def get_all_expenses_paginated(
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     if status:
-        query = query.where(Expense.pay_status.ilike(f"%{status}%"))
+        st_lower = status.strip().lower()
+        if st_lower == "lunas":
+            query = query.where(func.lower(Expense.pay_status) == "lunas")
+        elif st_lower in ("belum lunas", "unpaid", "hutang", "tempo"):
+            query = query.where(unpaid_status_clause())
+        elif st_lower in ("dp", "dp / sebagian", "sebagian", "partial"):
+            query = query.where(
+                or_(
+                    Expense.pay_status.ilike("%dp%"),
+                    Expense.pay_status.ilike("%sebagian%"),
+                    Expense.pay_status.ilike("%partial%"),
+                )
+            )
+        else:
+            query = query.where(Expense.pay_status.ilike(f"%{status}%"))
     if pay_method and pay_method.strip():
         pm_clean = pay_method.strip()
         query = query.where(
@@ -1236,7 +1301,7 @@ async def update_expense(
         if hasattr(expense, field):
             old_val = getattr(expense, field)
             # Khusus konversi jika perlu
-            if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price") and val is not None:
+            if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price", "paid_amount", "dp_percent") and val is not None:
                 val = Decimal(str(val))
             elif field == "expense_date" and isinstance(val, str):
                 try:
@@ -1255,6 +1320,60 @@ async def update_expense(
                     "new": float(val) if isinstance(val, Decimal) else str(val),
                 }
             setattr(expense, field, val)
+
+    # Sinkronisasi konsistensi paid_amount & ExpensePayment saat pay_status / total_price berubah
+    total_dec = Decimal(str(expense.total_price or 0))
+    if is_paid_status(expense.pay_status):
+        current_paid = Decimal(str(expense.paid_amount or 0))
+        if current_paid < total_dec:
+            remaining_dec = total_dec - current_paid
+            existing_payments = list(getattr(expense, "payments", None) or [])
+            if existing_payments and remaining_dec > 0:
+                db.add(
+                    ExpensePayment(
+                        expense_id=expense.id,
+                        payment_type="settlement",
+                        amount=remaining_dec,
+                        payment_date=date.today(),
+                        pay_method=expense.pay_method or "Transfer",
+                        bank_account_id=expense.bank_account_id,
+                        notes="Pelunasan via edit transaksi",
+                        actor=actor,
+                    )
+                )
+            expense.paid_amount = total_dec
+    elif is_dp_status(expense.pay_status):
+        expense.pay_status = "DP / Sebagian"
+        paid_dec = Decimal(str(expense.paid_amount or 0))
+        if expense.dp_type == "percent" and expense.dp_percent and float(expense.dp_percent) > 0 and "paid_amount" not in updates:
+            paid_dec = (total_dec * Decimal(str(expense.dp_percent)) / Decimal("100")).quantize(Decimal("0.01"))
+            expense.paid_amount = paid_dec
+        if paid_dec >= total_dec and total_dec > 0:
+            expense.pay_status = "Lunas"
+            expense.paid_amount = total_dec
+        elif paid_dec > 0:
+            if not expense.dp_percent and total_dec > 0:
+                expense.dp_percent = (paid_dec / total_dec * Decimal("100")).quantize(Decimal("0.01"))
+            existing_payments = list(getattr(expense, "payments", None) or [])
+            if not existing_payments:
+                db.add(
+                    ExpensePayment(
+                        expense_id=expense.id,
+                        payment_type="dp",
+                        amount=paid_dec,
+                        dp_percent=expense.dp_percent,
+                        payment_date=expense.expense_date or date.today(),
+                        pay_method=expense.pay_method or "Transfer",
+                        bank_account_id=expense.bank_account_id,
+                        notes="Pembayaran DP awal",
+                        actor=actor,
+                    )
+                )
+    else:
+        if "pay_status" in updates and float(expense.paid_amount or 0) > 0 and "paid_amount" not in updates:
+            expense.paid_amount = Decimal("0")
+            expense.dp_type = None
+            expense.dp_percent = None
 
     # Deteksi perubahan field
     item_name_changed = "item_name" in changes
@@ -1901,6 +2020,30 @@ async def batch_insert_expenses(
                 sup_id = s_obj.id
                 sup_name = s_obj.name
 
+        raw_pay_status = item.get("pay_status") or "Lunas"
+        dp_type_val = item.get("dp_type")
+        dp_percent_val = Decimal(str(item["dp_percent"])) if item.get("dp_percent") is not None else None
+        raw_paid_amount = Decimal(str(item.get("paid_amount") or 0))
+
+        if is_dp_status(raw_pay_status):
+            if dp_type_val == "percent" and dp_percent_val is not None and 0 < dp_percent_val < 100 and raw_paid_amount <= 0:
+                raw_paid_amount = (tot * dp_percent_val / Decimal("100")).quantize(Decimal("0.01"))
+            if raw_paid_amount >= tot:
+                raw_pay_status = "Lunas"
+                raw_paid_amount = tot
+            elif raw_paid_amount > 0:
+                raw_pay_status = "DP / Sebagian"
+                if dp_percent_val is None and tot > 0:
+                    dp_percent_val = (raw_paid_amount / tot * Decimal("100")).quantize(Decimal("0.01"))
+            else:
+                raw_pay_status = "Belum Lunas"
+                raw_paid_amount = Decimal("0")
+        elif is_paid_status(raw_pay_status):
+            raw_pay_status = "Lunas"
+            raw_paid_amount = tot
+        else:
+            raw_paid_amount = Decimal("0")
+
         expense = Expense(
             expense_date=expense_date,
             supplier=sup_name,
@@ -1916,20 +2059,40 @@ async def batch_insert_expenses(
             discount=Decimal(str(item.get("discount") or item.get("diskon") or 0)),
             total_price=tot,
             pay_method=item.get("pay_method") or "Tunai",
-            pay_status=item.get("pay_status") or "Lunas",
+            pay_status=raw_pay_status,
             due_date=item.get("due_date") or "-",
+            paid_amount=raw_paid_amount,
+            dp_type=dp_type_val if is_dp_status(raw_pay_status) else None,
+            dp_percent=dp_percent_val if is_dp_status(raw_pay_status) else None,
             notes=item.get("notes") or "-",
             is_reimbursement=bool(item.get("is_reimbursement", False)),
             invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=item.get("user_id") or user_id,
             master_item_id=item.get("master_item_id"),
+            bank_account_id=item.get("bank_account_id"),
             sheets_synced=sheets_synced,
         )
         db.add(expense)
         saved.append(expense)
 
     await db.flush()
+
+    for exp in saved:
+        if is_dp_status(exp.pay_status) and float(exp.paid_amount or 0) > 0:
+            db.add(
+                ExpensePayment(
+                    expense_id=exp.id,
+                    payment_type="dp",
+                    amount=exp.paid_amount,
+                    dp_percent=exp.dp_percent,
+                    payment_date=exp.expense_date or date.today(),
+                    pay_method=exp.pay_method or "Transfer",
+                    bank_account_id=exp.bank_account_id,
+                    notes="Pembayaran DP awal",
+                    actor=actor,
+                )
+            )
 
     for exp in saved:
         await record_expense_log(
@@ -2229,14 +2392,8 @@ async def get_unpaid_summary(
     year: int | None = None,
     supplier_id: int | None = None,
 ) -> dict:
-    """Ringkasan statistik transaksi belum lunas, tempo terdekat, dan rekap per supplier."""
-    query = select(Expense).where(
-        or_(
-            Expense.pay_status.ilike("%belum%"),
-            Expense.pay_status.ilike("%hutang%"),
-            Expense.pay_status.ilike("%tempo%"),
-        )
-    )
+    """Ringkasan statistik transaksi belum lunas & DP, tempo terdekat, dan rekap per supplier."""
+    query = select(Expense).where(unpaid_status_clause())
     if month and year:
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
@@ -2250,50 +2407,75 @@ async def get_unpaid_summary(
     today = date.today()
     total_unpaid_count = len(expenses)
     total_unpaid_nominal = 0.0
+    total_invoice_nominal = 0.0
+    dp_count = 0
+    dp_paid_nominal = 0.0
+    dp_remaining_nominal = 0.0
     overdue_count = 0
     overdue_nominal = 0.0
     due_today_count = 0
     due_today_nominal = 0.0
     due_soon_count = 0
     due_soon_nominal = 0.0
+    no_due_date_count = 0
 
     parsed_items = []
     by_supplier_dict: dict[str, dict] = {}
 
     for e in expenses:
-        nom = float(e.total_price or 0)
+        total_val, paid_val, remaining_val, _ = get_expense_payment_breakdown(e)
+        nom = remaining_val
         total_unpaid_nominal += nom
+        total_invoice_nominal += total_val
+
+        if is_dp_status(e.pay_status) or paid_val > 0:
+            dp_count += 1
+            dp_paid_nominal += paid_val
+            dp_remaining_nominal += remaining_val
 
         due_d = parse_due_date(e.due_date)
         days_left = None
         is_overdue = False
         is_today = False
+        urgency = "none"
 
         if due_d:
             days_left = (due_d - today).days
             if days_left < 0:
                 is_overdue = True
+                urgency = "overdue"
                 overdue_count += 1
                 overdue_nominal += nom
             elif days_left == 0:
                 is_today = True
+                urgency = "today"
                 due_today_count += 1
                 due_today_nominal += nom
             elif days_left <= 7:
+                urgency = "soon"
                 due_soon_count += 1
                 due_soon_nominal += nom
+            else:
+                urgency = "upcoming"
 
             parsed_items.append({
                 "expense_id": e.id,
                 "item_name": e.item_name,
                 "supplier": e.supplier or "-",
                 "due_date": str(e.due_date),
-                "total_price": nom,
+                "parsed_due_date": due_d.isoformat(),
+                "total_price": total_val,
+                "paid_amount": paid_val,
+                "remaining_amount": remaining_val,
+                "pay_status": e.pay_status or "Belum Lunas",
                 "days_left": days_left,
                 "is_overdue": is_overdue,
                 "is_today": is_today,
+                "urgency": urgency,
                 "_due_d": due_d,
             })
+        else:
+            no_due_date_count += 1
 
         # Group by supplier
         sup_name = (e.supplier or "-").strip()
@@ -2306,35 +2488,53 @@ async def get_unpaid_summary(
                 "supplier_name": sup_name,
                 "unpaid_count": 0,
                 "unpaid_total": 0.0,
+                "dp_count": 0,
+                "dp_paid_total": 0.0,
+                "paid_count": 0,
+                "paid_total": 0.0,
+                "total_count": 0,
+                "total_nominal": 0.0,
                 "nearest_due_date": None,
                 "nearest_days_left": None,
+                "has_overdue": False,
                 "_earliest_date": None,
             }
 
         g = by_supplier_dict[sup_name]
         g["unpaid_count"] += 1
         g["unpaid_total"] += nom
+        g["total_count"] += 1
+        g["total_nominal"] += total_val
+        if is_dp_status(e.pay_status) or paid_val > 0:
+            g["dp_count"] += 1
+            g["dp_paid_total"] += paid_val
+        if is_overdue:
+            g["has_overdue"] = True
         if due_d:
             if g["_earliest_date"] is None or due_d < g["_earliest_date"]:
                 g["_earliest_date"] = due_d
-                g["nearest_due_date"] = str(e.due_date)
+                g["nearest_due_date"] = due_d.isoformat()
                 g["nearest_days_left"] = (due_d - today).days
 
     # Temukan jatuh tempo terdekat
-    # Diurutkan berdasarkan tanggal tempo terkecil (overdue/hari ini/paling awal di masa depan)
     nearest_due = None
     if parsed_items:
-        parsed_items.sort(key=lambda x: (x["_due_d"], -x["total_price"]))
+        parsed_items.sort(key=lambda x: (x["_due_d"], -x["remaining_amount"]))
         top = parsed_items[0]
         nearest_due = {
             "expense_id": top["expense_id"],
             "item_name": top["item_name"],
             "supplier": top["supplier"],
             "due_date": top["due_date"],
+            "parsed_due_date": top["parsed_due_date"],
             "total_price": top["total_price"],
+            "paid_amount": top["paid_amount"],
+            "remaining_amount": top["remaining_amount"],
+            "pay_status": top["pay_status"],
             "days_left": top["days_left"],
             "is_overdue": top["is_overdue"],
             "is_today": top["is_today"],
+            "urgency": top["urgency"],
         }
 
     by_supplier = []
@@ -2348,12 +2548,23 @@ async def get_unpaid_summary(
         "ok": True,
         "total_unpaid_count": total_unpaid_count,
         "total_unpaid_nominal": total_unpaid_nominal,
+        "unpaid_count": total_unpaid_count,
+        "unpaid_total": total_unpaid_nominal,
+        "dp_count": dp_count,
+        "dp_paid_nominal": dp_paid_nominal,
+        "dp_remaining_nominal": dp_remaining_nominal,
+        "total_invoice_nominal": total_invoice_nominal,
+        "paid_count": 0,
+        "paid_total": 0.0,
+        "total_count": total_unpaid_count,
         "overdue_count": overdue_count,
         "overdue_nominal": overdue_nominal,
+        "overdue_total": overdue_nominal,
         "due_today_count": due_today_count,
         "due_today_nominal": due_today_nominal,
         "due_soon_count": due_soon_count,
         "due_soon_nominal": due_soon_nominal,
+        "no_due_date_count": no_due_date_count,
         "nearest_due": nearest_due,
         "by_supplier": by_supplier,
     }
@@ -2365,8 +2576,12 @@ async def settle_unpaid_expenses(
     action: str = "mark_paid",
     actor: str = "system",
     bank_account_id: int | None = None,
+    pay_method: str | None = None,
+    payment_date: date | None = None,
+    reference_no: str | None = None,
+    notes: str | None = None,
 ) -> list[Expense]:
-    """Tandai transaksi belum lunas menjadi lunas atau sebaliknya."""
+    """Tandai transaksi belum lunas / DP menjadi lunas (catat pelunasan) atau batalkan pelunasan."""
     if not expense_ids:
         return []
 
@@ -2374,13 +2589,34 @@ async def settle_unpaid_expenses(
     items = list(res.scalars().all())
     updated = []
 
-    target_status = "Lunas" if action == "mark_paid" else "Belum Lunas"
+    pay_dt = payment_date or date.today()
     for e in items:
         old_status = e.pay_status
-        if old_status != target_status:
-            e.pay_status = target_status
-            if action == "mark_paid" and bank_account_id is not None:
+        total_val, paid_val, remaining_val, _ = get_expense_payment_breakdown(e)
+
+        if action == "mark_paid":
+            if is_paid_status(old_status):
+                continue
+            if remaining_val > 0:
+                db.add(
+                    ExpensePayment(
+                        expense_id=e.id,
+                        payment_type="settlement",
+                        amount=Decimal(str(round(remaining_val, 2))),
+                        payment_date=pay_dt,
+                        pay_method=pay_method or e.pay_method or "Transfer",
+                        bank_account_id=bank_account_id if bank_account_id is not None else e.bank_account_id,
+                        reference_no=reference_no,
+                        notes=notes or "Pelunasan tagihan",
+                        actor=actor,
+                    )
+                )
+            e.pay_status = "Lunas"
+            e.paid_amount = e.total_price
+            if bank_account_id is not None:
                 e.bank_account_id = bank_account_id
+            if pay_method:
+                e.pay_method = pay_method
             e.sheets_synced = False
             await record_expense_log(
                 db,
@@ -2389,18 +2625,277 @@ async def settle_unpaid_expenses(
                 actor=actor,
                 details={
                     "item_name": e.item_name,
+                    "settled_amount": remaining_val,
                     "changes": {
                         "pay_status": {
                             "old": old_status,
-                            "new": target_status,
+                            "new": "Lunas",
                         }
                     },
                 },
             )
             updated.append(e)
+        else:
+            # Batalkan status Lunas: hapus pembayaran bertipe 'settlement' jika ada,
+            # pertahankan DP sebelumnya bila ada.
+            existing_payments = list(getattr(e, "payments", None) or [])
+            kept_payments = [p for p in existing_payments if p.payment_type != "settlement"]
+            for p in existing_payments:
+                if p.payment_type == "settlement":
+                    await db.delete(p)
+            kept_total = sum(float(p.amount or 0) for p in kept_payments)
+            if kept_total > 0 and kept_total < total_val:
+                target_status = "DP / Sebagian"
+                e.paid_amount = Decimal(str(round(kept_total, 2)))
+            else:
+                target_status = "Belum Lunas"
+                e.paid_amount = Decimal("0")
+                e.dp_type = None
+                e.dp_percent = None
+            if old_status != target_status:
+                e.pay_status = target_status
+                e.sheets_synced = False
+                await record_expense_log(
+                    db,
+                    expense_id=e.id,
+                    action="STATUS_CHANGE",
+                    actor=actor,
+                    details={
+                        "item_name": e.item_name,
+                        "changes": {
+                            "pay_status": {
+                                "old": old_status,
+                                "new": target_status,
+                            }
+                        },
+                    },
+                )
+                updated.append(e)
 
     await db.flush()
     return updated
+
+
+async def get_expense_payments(
+    db: AsyncSession,
+    expense_id: int,
+) -> list[ExpensePayment]:
+    """Ambil riwayat pembayaran DP, termin, dan pelunasan untuk satu expense."""
+    res = await db.execute(
+        select(ExpensePayment)
+        .where(ExpensePayment.expense_id == expense_id)
+        .order_by(ExpensePayment.payment_date.asc(), ExpensePayment.id.asc())
+    )
+    return list(res.scalars().all())
+
+
+async def record_expense_payment(
+    db: AsyncSession,
+    expense_id: int,
+    *,
+    amount: float | None = None,
+    dp_percent: float | None = None,
+    payment_date: date | None = None,
+    pay_method: str = "Transfer",
+    bank_account_id: int | None = None,
+    reference_no: str | None = None,
+    notes: str = "-",
+    due_date: str | None = None,
+    settle_full: bool = False,
+    actor: str = "system",
+) -> tuple[Expense, ExpensePayment]:
+    """Catat pembayaran DP, termin/cicilan, atau pelunasan sisa untuk suatu tagihan."""
+    from fastapi import HTTPException, status as http_status
+
+    expense = await get_expense_by_id(db, expense_id)
+    if not expense:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Data tagihan tidak ditemukan.",
+        )
+
+    total_val, old_paid, remaining_val, _ = get_expense_payment_breakdown(expense)
+    if is_paid_status(expense.pay_status) or remaining_val <= 0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Tagihan ini sudah berstatus Lunas dan tidak memiliki sisa pembayaran.",
+        )
+
+    if settle_full:
+        pay_amt = remaining_val
+    elif dp_percent is not None:
+        pay_amt = round(total_val * (float(dp_percent) / 100.0), 2)
+        if abs(pay_amt - remaining_val) <= 1.0 or pay_amt > remaining_val:
+            pay_amt = remaining_val
+    elif amount is not None:
+        pay_amt = round(float(amount), 2)
+    else:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Nominal pembayaran atau persentase DP harus diisi.",
+        )
+
+    if pay_amt <= 0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Nominal pembayaran harus lebih dari Rp 0.",
+        )
+
+    if pay_amt > remaining_val + 1.0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Nominal pembayaran (Rp {pay_amt:,.0f}) melebihi sisa tagihan (Rp {remaining_val:,.0f}).",
+        )
+
+    # Snap jika mendekati pelunasan penuh
+    if abs(pay_amt - remaining_val) <= 1.0:
+        pay_amt = remaining_val
+
+    new_paid = round(old_paid + pay_amt, 2)
+    is_now_full = new_paid >= total_val - 0.01
+
+    if is_now_full:
+        payment_type = "settlement"
+        new_paid = total_val
+    elif old_paid <= 0:
+        payment_type = "dp"
+    else:
+        payment_type = "installment"
+
+    computed_pct = dp_percent if dp_percent is not None else (
+        round((pay_amt / total_val) * 100.0, 2) if total_val > 0 else None
+    )
+
+    payment = ExpensePayment(
+        expense_id=expense.id,
+        payment_type=payment_type,
+        amount=Decimal(str(round(pay_amt, 2))),
+        dp_percent=Decimal(str(round(computed_pct, 2))) if computed_pct is not None else None,
+        payment_date=payment_date or date.today(),
+        pay_method=pay_method or expense.pay_method or "Transfer",
+        bank_account_id=bank_account_id,
+        reference_no=reference_no.strip() if reference_no and reference_no.strip() else None,
+        notes=(notes or "-").strip() or "-",
+        actor=actor,
+    )
+    db.add(payment)
+
+    old_status = expense.pay_status
+    expense.paid_amount = Decimal(str(round(new_paid, 2)))
+    if is_now_full:
+        expense.pay_status = "Lunas"
+        expense.paid_amount = expense.total_price
+        if bank_account_id is not None:
+            expense.bank_account_id = bank_account_id
+        if pay_method:
+            expense.pay_method = pay_method
+    else:
+        expense.pay_status = "DP / Sebagian"
+        if old_paid <= 0:
+            expense.dp_type = "percent" if dp_percent is not None else "amount"
+            expense.dp_percent = Decimal(str(round(computed_pct, 2))) if computed_pct is not None else None
+        if due_date is not None and due_date.strip() and due_date.strip() != "-":
+            parsed_d = parse_due_date(due_date.strip())
+            expense.due_date = parsed_d.isoformat() if parsed_d else due_date.strip()
+
+    expense.sheets_synced = False
+
+    log_action = (
+        "STATUS_CHANGE" if is_now_full else ("PAYMENT_DP" if payment_type == "dp" else "PAYMENT_INSTALLMENT")
+    )
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action=log_action,
+        actor=actor,
+        details={
+            "item_name": expense.item_name,
+            "payment_type": payment_type,
+            "payment_amount": pay_amt,
+            "paid_amount": new_paid,
+            "remaining_amount": max(0.0, total_val - new_paid),
+            "changes": {
+                "pay_status": {"old": old_status, "new": expense.pay_status},
+                "paid_amount": {"old": old_paid, "new": new_paid},
+            },
+        },
+    )
+
+    await db.flush()
+    await db.refresh(expense)
+    await db.refresh(payment)
+    return expense, payment
+
+
+async def delete_expense_payment(
+    db: AsyncSession,
+    expense_id: int,
+    payment_id: int,
+    actor: str = "system",
+) -> Expense:
+    """Hapus satu record pembayaran DP/termin/pelunasan dan hitung ulang sisa tagihan."""
+    from fastapi import HTTPException, status as http_status
+
+    expense = await get_expense_by_id(db, expense_id)
+    if not expense:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Data tagihan tidak ditemukan.",
+        )
+
+    payment = await db.get(ExpensePayment, payment_id)
+    if not payment or payment.expense_id != expense_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Riwayat pembayaran tidak ditemukan.",
+        )
+
+    deleted_amount = float(payment.amount or 0)
+    deleted_type = payment.payment_type
+    old_status = expense.pay_status
+    old_paid = float(expense.paid_amount or 0)
+
+    await db.delete(payment)
+    await db.flush()
+
+    remaining_payments = await get_expense_payments(db, expense_id)
+    new_paid = round(sum(float(p.amount or 0) for p in remaining_payments), 2)
+    total_val = float(expense.total_price or 0)
+
+    if new_paid <= 0:
+        expense.paid_amount = Decimal("0")
+        expense.pay_status = "Belum Lunas"
+        expense.dp_type = None
+        expense.dp_percent = None
+    elif new_paid >= total_val - 0.01:
+        expense.paid_amount = expense.total_price
+        expense.pay_status = "Lunas"
+    else:
+        expense.paid_amount = Decimal(str(new_paid))
+        expense.pay_status = "DP / Sebagian"
+        if total_val > 0:
+            expense.dp_percent = Decimal(str(round((new_paid / total_val) * 100.0, 2)))
+
+    expense.sheets_synced = False
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action="PAYMENT_DELETE",
+        actor=actor,
+        details={
+            "item_name": expense.item_name,
+            "deleted_payment_type": deleted_type,
+            "deleted_amount": deleted_amount,
+            "changes": {
+                "pay_status": {"old": old_status, "new": expense.pay_status},
+                "paid_amount": {"old": old_paid, "new": new_paid},
+            },
+        },
+    )
+
+    await db.flush()
+    await db.refresh(expense)
+    return expense
 
 
 async def get_expense_logs(

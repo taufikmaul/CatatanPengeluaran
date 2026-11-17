@@ -164,13 +164,17 @@ async def get_file_base64(file_id: str) -> str | None:
 
 
 async def set_webhook(url: str) -> dict:
-    """Set webhook URL ke Telegram."""
+    """Set webhook URL ke Telegram (beserta secret_token bila dikonfigurasi)."""
     base_url = _get_base_url()
+    payload: dict[str, Any] = {
+        "url": url,
+        "allowed_updates": ["message", "callback_query"],
+    }
+    secret = (getattr(settings, "telegram_webhook_secret", "") or "").strip()
+    if secret and secret != "change_this_to_a_random_webhook_secret":
+        payload["secret_token"] = secret
     async with httpx.AsyncClient(timeout=15) as client:
-        res = await client.post(
-            f"{base_url}/setWebhook",
-            json={"url": url, "allowed_updates": ["message", "callback_query"]},
-        )
+        res = await client.post(f"{base_url}/setWebhook", json=payload)
         return res.json()
 
 

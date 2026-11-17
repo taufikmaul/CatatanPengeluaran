@@ -579,17 +579,19 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </Button>
           )}
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isLockedReadOnly}
-            onClick={() => setAnonymizeDialogOpen(true)}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Atur Kode Anonim</span>
-          </Button>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLockedReadOnly}
+              onClick={() => setAnonymizeDialogOpen(true)}
+              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Atur Kode Anonim</span>
+            </Button>
+          )}
 
           <Button
             type="button"
@@ -610,31 +612,35 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             <span>{quickEditMode ? "Keluar Quick-Edit" : "Quick-Edit Massal"}</span>
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => posImportMutation.mutate()}
-            disabled={posImportMutation.isPending || isLockedReadOnly}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${posImportMutation.isPending ? "animate-spin" : ""}`}
-            />
-            <span>Tarik dari POS</span>
-          </Button>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => posImportMutation.mutate()}
+              disabled={posImportMutation.isPending || isLockedReadOnly}
+              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${posImportMutation.isPending ? "animate-spin" : ""}`}
+              />
+              <span>Tarik dari POS</span>
+            </Button>
+          )}
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={isLockedReadOnly}
-            onClick={() => setImportCsvOpen(true)}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Import CSV</span>
-          </Button>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLockedReadOnly}
+              onClick={() => setImportCsvOpen(true)}
+              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import CSV</span>
+            </Button>
+          )}
 
           <Button
             type="button"

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 from app.database.connection import get_db
-from app.api.deps import require_auth
+from app.api.deps import require_auth, require_admin_role, require_roles
 from app.models.master_item import MasterItem
 from app.models.expense import Expense
 from app.api.schemas import (
@@ -39,7 +39,7 @@ router = APIRouter(
 )
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_roles("admin", "purchasing", "warehouse", "admin_input"))])
 async def get_master_items(db: AsyncSession = Depends(get_db)):
     """Ambil semua daftar Master Item beserta statistik histori harga & transaksi."""
     items = await list_master_items(db)
@@ -103,7 +103,12 @@ async def get_suggestions(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("", response_model=MasterItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=MasterItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin", "purchasing"))],
+)
 async def add_master_item(
     payload: MasterItemCreate,
     db: AsyncSession = Depends(get_db),
@@ -156,7 +161,7 @@ async def add_master_item(
     )
 
 
-@router.post("/bulk")
+@router.post("/bulk", dependencies=[Depends(require_admin_role)])
 async def bulk_add_master_items(
     payload: MasterItemBulkRequest,
     db: AsyncSession = Depends(get_db),
@@ -177,7 +182,7 @@ async def bulk_add_master_items(
     }
 
 
-@router.post("/sync-existing")
+@router.post("/sync-existing", dependencies=[Depends(require_admin_role)])
 async def sync_existing_expenses(db: AsyncSession = Depends(get_db)):
     """Cocokkan dan rapikan data pengeluaran yang sudah ada di DB ke Master Item baku."""
     try:
@@ -196,7 +201,7 @@ async def sync_existing_expenses(db: AsyncSession = Depends(get_db)):
         )
 
 
-@router.post("/import-from-history")
+@router.post("/import-from-history", dependencies=[Depends(require_admin_role)])
 async def seed_master_items_from_history(db: AsyncSession = Depends(get_db)):
     """Tarik otomatis nama item unik dari histori transaksi pengeluaran menjadi Master Item."""
     try:
@@ -215,7 +220,7 @@ async def seed_master_items_from_history(db: AsyncSession = Depends(get_db)):
         )
 
 
-@router.get("/audit-duplicates", response_model=MasterItemAuditResponse)
+@router.get("/audit-duplicates", response_model=MasterItemAuditResponse, dependencies=[Depends(require_admin_role)])
 async def audit_duplicates(
     min_score: float = 0.70,
     limit: int = 150,
@@ -240,7 +245,7 @@ async def audit_duplicates(
     return result
 
 
-@router.post("/merge", response_model=MasterItemMergeResponse)
+@router.post("/merge", response_model=MasterItemMergeResponse, dependencies=[Depends(require_admin_role)])
 async def merge_items(
     payload: MasterItemMergeRequest,
     db: AsyncSession = Depends(get_db),
@@ -274,7 +279,7 @@ async def merge_items(
         raise HTTPException(status_code=500, detail=f"Gagal menggabungkan item: {str(e)}")
 
 
-@router.put("/{item_id}", response_model=MasterItemResponse)
+@router.put("/{item_id}", response_model=MasterItemResponse, dependencies=[Depends(require_roles("admin", "purchasing"))])
 async def update_master_item(
     item_id: int,
     payload: MasterItemUpdate,
@@ -378,7 +383,7 @@ async def update_master_item(
     )
 
 
-@router.delete("/{item_id}")
+@router.delete("/{item_id}", dependencies=[Depends(require_admin_role)])
 async def delete_master_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),

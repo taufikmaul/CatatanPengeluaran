@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createExpenseBatch, getExpenseUsers, getPurchaseRequestStats } from "@/lib/api";
+import { api, createExpenseBatch, exchangeSsoToken, getExpenseUsers, getPurchaseRequestStats } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
@@ -57,16 +57,17 @@ import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import confetti from "canvas-confetti";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
+import { isPaidStatus, getTempoQuickDate } from "@/lib/paymentStatus";
 import { Plus, ReceiptText, ArrowRight } from "lucide-react";
 
-// Tangani SSO token dari URL (dikirim oleh HCTeams Hub) secara langsung sebelum render
+// Ambil dan hapus SSO token dari URL segera sebelum render agar tidak bertahan di history
+let initialPendingSsoToken: string | null = null;
 try {
   const isSharedRoute = window.location.pathname.includes("/shared/");
   const initParams = new URLSearchParams(window.location.search);
   const initUrlToken = isSharedRoute ? null : initParams.get("token");
   if (initUrlToken) {
-    localStorage.setItem("hcteams_token", initUrlToken);
-    localStorage.setItem("dashboard_session_token", initUrlToken);
+    initialPendingSsoToken = initUrlToken;
     initParams.delete("token");
     const initNewQuery = initParams.toString() ? `?${initParams.toString()}` : "";
     window.history.replaceState({}, "", `${window.location.pathname}${initNewQuery}`);
@@ -220,17 +221,25 @@ function MainDashboardApp() {
     }
   }, [isDarkMode]);
 
-  // Tangani SSO token dari URL (dikirim oleh HCTeams Hub)
+  // Tukar SSO token dari HCTeams Hub menjadi cookie sesi HttpOnly
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-    if (urlToken) {
-      localStorage.setItem("hcteams_token", urlToken);
-      localStorage.setItem("dashboard_session_token", urlToken);
+    const tokenFromUrl = params.get("token") || initialPendingSsoToken;
+    if (params.get("token")) {
       params.delete("token");
       const newQuery = params.toString() ? `?${params.toString()}` : "";
       window.history.replaceState({}, "", `${window.location.pathname}${newQuery}`);
-      queryClient.invalidateQueries({ queryKey: ["auth-status"] });
+    }
+    initialPendingSsoToken = null;
+
+    if (tokenFromUrl) {
+      exchangeSsoToken(tokenFromUrl)
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["auth-status"] });
+        })
+        .catch(() => {
+          setIsLoginOpen(true);
+        });
     }
   }, [queryClient]);
 
@@ -249,15 +258,13 @@ function MainDashboardApp() {
       if (authData.authenticated) {
         setIsLoginOpen(false);
       } else {
-        localStorage.removeItem("hcteams_token");
-        localStorage.removeItem("dashboard_session_token");
         setIsLoginOpen(true);
       }
     }
   }, [authData]);
 
   // Perizinan & Peran Pengguna (Owner, Purchasing, Gudang, Staf Dapur, Admin Input)
-  const userRole = authData?.role || "admin";
+  const userRole = authData?.role || "staff";
   const isOwner = userRole === "admin";
   const isStaff = userRole === "staff";
   const isWarehouse = userRole === "warehouse";
@@ -268,6 +275,7 @@ function MainDashboardApp() {
   const canViewCharts = authData?.permissions?.can_view_charts ?? isOwner;
   const canManageConfig = authData?.permissions?.can_manage_config ?? isOwner;
   const canSettleTalangan = (authData?.permissions?.can_settle_talangan ?? isOwner) && !isAdminInput;
+  const canViewFinancialData = isOwner || isAdminInput || isPurchasing;
 
   // Proteksi navigasi & pembatasan menu sesuai role -> arahkan ke halaman khusus tiap user
   useEffect(() => {
@@ -294,7 +302,11 @@ function MainDashboardApp() {
         activeTab === "accounting" ||
         activeTab === "approval" ||
         activeTab === "purchasing" ||
-        activeTab === "gudang")
+        activeTab === "gudang" ||
+        activeTab === "suppliers" ||
+        activeTab === "supplier-detail" ||
+        activeTab === "master" ||
+        activeTab === "unpaid")
     ) {
       navigate("/");
     }
@@ -303,8 +315,6 @@ function MainDashboardApp() {
   // Listen for 401 unauthorized event
   useEffect(() => {
     const handleUnauthorized = () => {
-      localStorage.removeItem("hcteams_token");
-      localStorage.removeItem("dashboard_session_token");
       setIsLoginOpen(true);
     };
     window.addEventListener("catpen:unauthorized", handleUnauthorized);
@@ -318,7 +328,7 @@ function MainDashboardApp() {
       const res = await api.get(`/reports/monthly?month=${month}&year=${year}`);
       return res.data;
     },
-    enabled: !!authData?.authenticated,
+    enabled: !!authData?.authenticated && canViewFinancialData,
   });
 
   // 2b. Purchase Request Stats for Sidebar Badges
@@ -353,14 +363,14 @@ function MainDashboardApp() {
       const res = await api.get(`/expenses?${params.toString()}`);
       return res.data;
     },
-    enabled: !!authData?.authenticated,
+    enabled: !!authData?.authenticated && canViewFinancialData,
   });
 
   // 3b. Expense Users Query
   const { data: usersData = [] } = useQuery<ExpenseUser[]>({
     queryKey: ["expense-users"],
     queryFn: async () => getExpenseUsers(),
-    enabled: !!authData?.authenticated,
+    enabled: !!authData?.authenticated && canViewFinancialData,
   });
 
   // 4. System Config Query
@@ -467,6 +477,8 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["supplier-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran");
@@ -491,6 +503,8 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["supplier-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengeluaran batch");
@@ -540,6 +554,8 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
     },
     onError: (_err, _vars, context) => {
       if (context?.previousExpenses) {
@@ -570,6 +586,8 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || err.message || "Gagal menghapus pengeluaran");
@@ -577,7 +595,7 @@ function MainDashboardApp() {
   });
 
   const handleToggleStatus = (item: Expense) => {
-    const isLunas = (item.pay_status || "").toLowerCase().includes("lunas");
+    const isLunas = isPaidStatus(item.pay_status);
     const newStatus = isLunas ? "Belum Lunas" : "Lunas";
     toggleStatusMutation.mutate({ id: item.id, newStatus });
   };
@@ -587,8 +605,6 @@ function MainDashboardApp() {
   };
 
   const handleLogout = async () => {
-    localStorage.removeItem("hcteams_token");
-    localStorage.removeItem("dashboard_session_token");
     try {
       await api.post("/auth/logout");
       toast.success("Anda telah keluar akun");
@@ -1472,6 +1488,8 @@ function MainDashboardApp() {
                   categories={categories}
                   units={activeUnits}
                   onInspectItemPrice={handleInspectItemPrice}
+                  canEdit={isOwner || isPurchasing}
+                  canDelete={isOwner}
                 />
               )}
 
@@ -1603,7 +1621,7 @@ function MainDashboardApp() {
                   onDeleteExpense={(id) => deleteMutation.mutate(id)}
                   onAddNewUnpaid={() => {
                     setEditingExpense(null);
-                    const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                    const in7Days = getTempoQuickDate(7);
                     setRepeatingExpense({
                       id: 0,
                       created_at: new Date().toISOString(),
@@ -1622,6 +1640,37 @@ function MainDashboardApp() {
                       pay_method: "Tempo / Tagihan",
                       pay_status: "Belum Lunas",
                       due_date: in7Days,
+                      notes: "-",
+                      msg_link: "Web Dashboard",
+                      is_reimbursement: false,
+                      invoice_number: "-",
+                    } as Expense);
+                    setIsFormOpen(true);
+                  }}
+                  onAddNewDp={() => {
+                    setEditingExpense(null);
+                    const in14Days = getTempoQuickDate(14);
+                    setRepeatingExpense({
+                      id: 0,
+                      created_at: new Date().toISOString(),
+                      expense_date: new Date().toISOString().split("T")[0],
+                      category: category || categories[0] || "Bahan Kue",
+                      item_name: "",
+                      supplier: "",
+                      qty: 1,
+                      unit: "Pcs",
+                      unit_price: 0,
+                      shipping_fee: 0,
+                      tax: 0,
+                      other_fee: 0,
+                      discount: 0,
+                      total_price: 0,
+                      pay_method: "Transfer",
+                      pay_status: "DP / Sebagian",
+                      due_date: in14Days,
+                      paid_amount: 0,
+                      dp_type: "percent",
+                      dp_percent: 50,
                       notes: "-",
                       msg_link: "Web Dashboard",
                       is_reimbursement: false,

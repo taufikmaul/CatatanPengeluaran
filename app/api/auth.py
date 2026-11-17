@@ -1,21 +1,24 @@
 """
 app/api/auth.py — REST API Authentication Endpoints
 """
+import secrets
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.services.dashboard_auth_service import (
-    is_authenticated_request,
     get_authenticated_role,
     get_client_ip,
     generate_and_send_pin,
     verify_pin,
     verify_admin_input_password,
     verify_role_password,
+    verify_sso_jwt,
+    resolve_sso_role,
     create_session_token,
     SESSION_COOKIE_NAME,
+    CSRF_COOKIE_NAME,
 )
 from app.api.schemas import (
     AuthStatusResponse,
@@ -23,6 +26,7 @@ from app.api.schemas import (
     PinVerifyRequest,
     AdminInputLoginRequest,
     RoleLoginRequest,
+    SsoExchangeRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -111,12 +115,49 @@ def _is_secure_request(request: Request) -> bool:
     return proto == "https"
 
 
+def _set_session_cookies(response: Response, request: Request, token: str) -> None:
+    secure = _is_secure_request(request)
+    samesite = getattr(settings, "cookie_samesite", "strict") or "strict"
+    max_age = settings.dashboard_session_expire_hours * 3600
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=max_age,
+        httponly=True,
+        samesite=samesite,
+        secure=secure,
+        path="/",
+    )
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=secrets.token_urlsafe(24),
+        max_age=max_age,
+        httponly=False,
+        samesite=samesite,
+        secure=secure,
+        path="/",
+    )
+
+
 @router.get("/status", response_model=AuthStatusResponse)
-async def get_auth_status(request: Request):
+async def get_auth_status(request: Request, response: Response):
     role = get_authenticated_role(request)
     is_auth = role is not None
     user_label = ROLE_LABELS.get(role, "User") if role else None
     permissions = get_role_permissions(role) if is_auth and role else None
+
+    if is_auth and request.cookies.get(SESSION_COOKIE_NAME) and not request.cookies.get(CSRF_COOKIE_NAME):
+        secure = _is_secure_request(request)
+        samesite = getattr(settings, "cookie_samesite", "strict") or "strict"
+        response.set_cookie(
+            key=CSRF_COOKIE_NAME,
+            value=secrets.token_urlsafe(24),
+            max_age=settings.dashboard_session_expire_hours * 3600,
+            httponly=False,
+            samesite=samesite,
+            secure=secure,
+            path="/",
+        )
 
     return AuthStatusResponse(
         authenticated=is_auth,
@@ -152,16 +193,7 @@ async def api_verify_pin(
 
     if success:
         token = create_session_token(role="admin")
-        secure = _is_secure_request(request)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=token,
-            max_age=settings.dashboard_session_expire_hours * 3600,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
+        _set_session_cookies(response, request, token)
         return {
             "ok": True,
             "token": token,
@@ -194,16 +226,7 @@ async def api_login_admin_input(
 
     if success:
         token = create_session_token(role="admin_input")
-        secure = _is_secure_request(request)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=token,
-            max_age=settings.dashboard_session_expire_hours * 3600,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
+        _set_session_cookies(response, request, token)
         return {
             "ok": True,
             "token": token,
@@ -239,16 +262,7 @@ async def api_login_role(
 
     if success:
         token = create_session_token(role=norm_role)
-        secure = _is_secure_request(request)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=token,
-            max_age=settings.dashboard_session_expire_hours * 3600,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
+        _set_session_cookies(response, request, token)
         return {
             "ok": True,
             "token": token,
@@ -268,7 +282,32 @@ async def api_login_role(
     return JSONResponse({"ok": False, "error": reason}, status_code=status_code)
 
 
+@router.post("/sso-exchange")
+async def api_sso_exchange(
+    request: Request,
+    payload: SsoExchangeRequest,
+    response: Response,
+):
+    """Tukarkan token SSO JWT dari HCTeams Hub menjadi cookie sesi HttpOnly."""
+    sso_data = verify_sso_jwt(payload.token.strip())
+    if not sso_data:
+        return JSONResponse(
+            {"ok": False, "error": "Token SSO tidak valid atau sudah kedaluwarsa."},
+            status_code=401,
+        )
+
+    role = resolve_sso_role(sso_data)
+    session_token = create_session_token(role=role)
+    _set_session_cookies(response, request, session_token)
+    return {
+        "ok": True,
+        "role": role,
+        "user": ROLE_LABELS.get(role, role),
+    }
+
+
 @router.post("/logout")
 async def api_logout(response: Response):
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(key=CSRF_COOKIE_NAME, path="/")
     return {"ok": True, "message": "Berhasil logout"}

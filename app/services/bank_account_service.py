@@ -3,12 +3,13 @@ app/services/bank_account_service.py — Layanan CRUD & Mapping Rekening Penerim
 """
 import json
 from typing import Any
-from sqlalchemy import select, func
+from sqlalchemy import select, func, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
 from app.models.bank_transfer import BankTransfer
 from app.models.expense import Expense
+from app.models.expense_payment import ExpensePayment
 
 
 def _parse_mappings(raw: str | None) -> list[str]:
@@ -94,6 +95,9 @@ async def list_bank_accounts(
         for row in agg_res.fetchall()
     }
 
+    has_payment_subq = exists(
+        select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
+    )
     exp_res = await db.execute(
         select(
             Expense.bank_account_id,
@@ -102,10 +106,22 @@ async def list_bank_accounts(
         .where(
             Expense.bank_account_id.is_not(None),
             Expense.pay_status == "Lunas",
+            ~has_payment_subq,
         )
         .group_by(Expense.bank_account_id)
     )
     exp_map = {int(r[0]): float(r[1] or 0.0) for r in exp_res.fetchall()}
+
+    ep_res = await db.execute(
+        select(
+            ExpensePayment.bank_account_id,
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .where(ExpensePayment.bank_account_id.is_not(None))
+        .group_by(ExpensePayment.bank_account_id)
+    )
+    for aid, amt in ep_res.fetchall():
+        exp_map[int(aid)] = exp_map.get(int(aid), 0.0) + float(amt or 0.0)
 
     tr_in_res = await db.execute(
         select(

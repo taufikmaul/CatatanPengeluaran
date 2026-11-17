@@ -5,9 +5,10 @@ Menyajikan laporan Laba Rugi, Posisi Keuangan (Neraca), Arus Kas, dan Analisis R
 from datetime import datetime, date
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, exists
 
 from app.models.expense import Expense
+from app.models.expense_payment import ExpensePayment
 from app.models.master_data import MasterDataOption
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
@@ -414,7 +415,11 @@ async def get_accounting_report(
             if key and key not in method_to_acc_id:
                 method_to_acc_id[key] = acc.id
 
-    # Pengeluaran bulan ini yang sudah memilih bank_account_id langsung
+    has_payment_subq = exists(
+        select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
+    )
+
+    # Pengeluaran bulan ini yang sudah memilih bank_account_id langsung (tanpa ExpensePayment)
     exp_direct_res = await db.execute(
         select(
             Expense.bank_account_id,
@@ -426,11 +431,30 @@ async def get_accounting_report(
                 Expense.expense_date < end_date,
                 Expense.pay_status == "Lunas",
                 Expense.bank_account_id.is_not(None),
+                ~has_payment_subq,
             )
         )
         .group_by(Expense.bank_account_id)
     )
     out_month_map: dict[int, float] = {int(r[0]): float(r[1] or 0.0) for r in exp_direct_res.fetchall()}
+
+    # Pembayaran DP/termin/pelunasan bulan ini per rekening langsung
+    ep_month_res = await db.execute(
+        select(
+            ExpensePayment.bank_account_id,
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .where(
+            and_(
+                ExpensePayment.payment_date >= start_date,
+                ExpensePayment.payment_date < end_date,
+                ExpensePayment.bank_account_id.is_not(None),
+            )
+        )
+        .group_by(ExpensePayment.bank_account_id)
+    )
+    for aid, amt in ep_month_res.fetchall():
+        out_month_map[int(aid)] = out_month_map.get(int(aid), 0.0) + float(amt or 0.0)
 
     # Pengeluaran bulan ini yang belum punya bank_account_id -> fallback mapping pay_method
     exp_unassigned_res = await db.execute(
@@ -444,6 +468,7 @@ async def get_accounting_report(
                 Expense.expense_date < end_date,
                 Expense.pay_status == "Lunas",
                 Expense.bank_account_id.is_(None),
+                ~has_payment_subq,
             )
         )
         .group_by(Expense.pay_method)
@@ -484,11 +509,23 @@ async def get_accounting_report(
             and_(
                 Expense.bank_account_id.is_not(None),
                 Expense.pay_status == "Lunas",
+                ~has_payment_subq,
             )
         )
         .group_by(Expense.bank_account_id)
     )
     exp_all_map = {int(r[0]): float(r[1] or 0.0) for r in exp_all_res.fetchall()}
+
+    ep_all_res = await db.execute(
+        select(
+            ExpensePayment.bank_account_id,
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .where(ExpensePayment.bank_account_id.is_not(None))
+        .group_by(ExpensePayment.bank_account_id)
+    )
+    for aid, amt in ep_all_res.fetchall():
+        exp_all_map[int(aid)] = exp_all_map.get(int(aid), 0.0) + float(amt or 0.0)
 
     rekening_positions: list[dict[str, Any]] = []
     for acc in bank_accounts:

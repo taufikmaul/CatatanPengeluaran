@@ -478,15 +478,11 @@ class HermesAgent:
         from sqlalchemy import select, or_
         from app.models.expense import Expense
 
+        from app.services.expense_service import get_expense_payment_breakdown, unpaid_status_clause
+
         result = await self.db.execute(
             select(Expense)
-            .where(
-                or_(
-                    Expense.pay_status.ilike("%belum%"),
-                    Expense.pay_status.ilike("%hutang%"),
-                    Expense.pay_status.ilike("%tempo%"),
-                )
-            )
+            .where(unpaid_status_clause())
             .order_by(Expense.expense_date.asc(), Expense.id.asc())
         )
         unpaid_list = list(result.scalars().all())
@@ -498,23 +494,25 @@ class HermesAgent:
             )
             return
 
-        total_hutang = sum(float(e.total_price or 0) for e in unpaid_list)
+        total_hutang = sum(get_expense_payment_breakdown(e)[2] for e in unpaid_list)
         today_str = datetime.now().date().isoformat()
         msg = (
             f"💳 *DAFTAR TAGIHAN BELUM LUNAS*\n"
-            f"Total: *{len(unpaid_list)} tagihan ({fmt_rupiah(total_hutang)})*\n\n"
+            f"Total Sisa: *{len(unpaid_list)} tagihan ({fmt_rupiah(total_hutang)})*\n\n"
         )
 
         inline_rows = []
         for idx, e in enumerate(unpaid_list[:8], start=1):
-            nominal = fmt_rupiah(float(e.total_price or 0))
+            tot_val, paid_val, rem_val, pct_val = get_expense_payment_breakdown(e)
+            nominal = fmt_rupiah(rem_val)
+            dp_note = f" _(DP {pct_val:.0f}% dari {fmt_rupiah(tot_val)})_" if paid_val > 0 else ""
             sup = f" ({escape_markdown(e.supplier)})" if e.supplier and e.supplier != "-" else ""
             tempo = ""
             if "cod" in (e.pay_method or "").lower() or "cod" in (e.notes or "").lower():
                 tempo = " 📦 _(COD Kasir)_"
             elif e.due_date and e.due_date != "-":
                 tempo = f" 🚨 *Tempo: {e.due_date}*" if e.due_date <= today_str else f" _(Tempo: {e.due_date})_"
-            msg += f"{idx}. *#{e.id} {escape_markdown(e.item_name)}*{sup} — {nominal}{tempo}\n"
+            msg += f"{idx}. *#{e.id} {escape_markdown(e.item_name)}*{sup} — Sisa {nominal}{dp_note}{tempo}\n"
             inline_rows.append([
                 {
                     "text": f"✅ Tandai Lunas #{e.id} ({e.item_name[:18]})",

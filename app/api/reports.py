@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
-from app.api.deps import require_auth
+from app.api.deps import require_admin_role, require_roles
 from app.api.schemas import MonthlyReportResponse, AiAnalysisResponse, AccountingReportResponse
 from app.services.expense_service import (
     get_monthly_report,
@@ -19,7 +19,11 @@ from app.services.accounting_service import get_accounting_report
 from app.services.budget_service import get_effective_budget
 from app.services.master_data_service import get_valid_units
 
-router = APIRouter(prefix="/reports", tags=["reports"], dependencies=[Depends(require_auth)])
+router = APIRouter(
+    prefix="/reports",
+    tags=["reports"],
+    dependencies=[Depends(require_roles("admin", "admin_input", "purchasing"))],
+)
 
 MONTH_NAMES = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -246,7 +250,7 @@ async def get_leaderboard_endpoint(
     }
 
 
-@router.get("/ai-analysis", response_model=AiAnalysisResponse)
+@router.get("/ai-analysis", response_model=AiAnalysisResponse, dependencies=[Depends(require_admin_role)])
 async def get_ai_analysis_endpoint(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
@@ -262,7 +266,7 @@ async def get_ai_analysis_endpoint(
     return AiAnalysisResponse(**analysis)
 
 
-@router.get("/accounting", response_model=AccountingReportResponse)
+@router.get("/accounting", response_model=AccountingReportResponse, dependencies=[Depends(require_admin_role)])
 async def get_accounting_analytics(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),

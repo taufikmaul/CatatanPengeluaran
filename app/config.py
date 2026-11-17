@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Telegram
     telegram_token: str = Field(..., validation_alias="TELEGRAM_TOKEN")
+    telegram_webhook_secret: str = Field("", validation_alias="TELEGRAM_WEBHOOK_SECRET")
     bot_password: str = Field("12345", validation_alias="BOT_PASSWORD")
     allowed_thread_id: int = Field(7, validation_alias="ALLOWED_THREAD_ID")
     allowed_thread_ids: str = Field("", validation_alias="ALLOWED_THREAD_IDS")  # e.g. "7, 12, 15"
@@ -55,6 +56,10 @@ class Settings(BaseSettings):
     # Skema database dikelola Alembic. Set AUTO_CREATE_TABLES=true hanya untuk
     # development cepat / SQLite lokal; jangan diaktifkan di produksi.
     auto_create_tables: bool = Field(False, validation_alias="AUTO_CREATE_TABLES")
+    enable_api_docs: bool = Field(False, validation_alias="ENABLE_API_DOCS")
+    trusted_proxy_headers: bool = Field(False, validation_alias="TRUSTED_PROXY_HEADERS")
+    max_upload_bytes: int = Field(10 * 1024 * 1024, validation_alias="MAX_UPLOAD_BYTES")
+    cookie_samesite: str = Field("strict", validation_alias="COOKIE_SAMESITE")
 
     # Scheduler & Budget
     auto_report_time: str = Field("08:00", validation_alias="AUTO_REPORT_TIME")

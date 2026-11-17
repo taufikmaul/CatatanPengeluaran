@@ -9,7 +9,7 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_auth, require_admin_role
+from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_account import BankAccount
 from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
@@ -18,7 +18,7 @@ from app.services.sales_import_service import parse_sales_csv
 router = APIRouter(
     prefix="/incoming-transactions",
     tags=["incoming-transactions"],
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_roles("admin", "admin_input"))],
 )
 
 
@@ -420,12 +420,8 @@ async def api_preview_sales_import(
     source_type: str = Form("auto"),
     db: AsyncSession = Depends(get_db),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Format file tidak valid. Harap unggah file .csv",
-        )
     content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
     try:
         parsed = parse_sales_csv(content, source_type=source_type)
     except ValueError as e:
@@ -513,12 +509,8 @@ async def api_commit_sales_import(
     include_void: bool = Form(True),
     db: AsyncSession = Depends(get_db),
 ):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Format file tidak valid. Harap unggah file .csv",
-        )
     content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
     try:
         parsed = parse_sales_csv(content, source_type=source_type)
     except ValueError as e:

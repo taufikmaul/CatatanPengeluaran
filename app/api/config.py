@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.models.expense import Expense
-from app.api.deps import require_admin_role, require_auth
+from app.api.deps import require_admin_role, require_auth, validate_upload_file
 from app.api.schemas import (
     SystemConfigUpdate,
     MasterDataOptionCreate,
@@ -34,6 +34,16 @@ from app.services.sheets_service import (
 )
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+_SECRET_CONFIG_FIELDS = {
+    "telegram_token",
+    "sumopod_api_key",
+    "bot_password",
+    "admin_input_password",
+    "purchasing_password",
+    "warehouse_password",
+    "staff_password",
+}
 
 ENV_MAP = {
     "telegram_token": "TELEGRAM_TOKEN",
@@ -147,11 +157,11 @@ async def get_system_config(
         "ok": True,
         "total_expenses": total_expenses,
         "unsynced_count": unsynced_count,
-        # Display masked
+        # Display masked (write-only untuk token & password; tidak pernah kirim plaintext ke client)
         "telegram_token_masked": tg_masked,
+        "telegram_token_configured": bool(tg_token and tg_token != "123456:TEST_BOT_TOKEN"),
         "ai_key_masked": ai_masked,
-        # Editable raw values
-        "telegram_token": tg_token if tg_token != "123456:TEST_BOT_TOKEN" else "",
+        "sumopod_api_key_configured": bool(ai_key and ai_key != "sk-test-sumopod-key"),
         "dashboard_pin_chat_id": settings.dashboard_pin_chat_id or "",
         "dashboard_pin_thread_id": settings.dashboard_pin_thread_id,
         "allowed_thread_id": settings.allowed_thread_id,
@@ -160,11 +170,11 @@ async def get_system_config(
         "ongkir_thread_ids": settings.ongkir_thread_ids or "",
         "report_chat_id": settings.report_chat_id or "",
         "report_thread_id": settings.report_thread_id,
-        "bot_password": settings.bot_password,
-        "admin_input_password": settings.admin_input_password,
-        "purchasing_password": settings.purchasing_password,
-        "warehouse_password": settings.warehouse_password,
-        "staff_password": settings.staff_password,
+        "bot_password_configured": bool(settings.bot_password),
+        "admin_input_password_configured": bool(settings.admin_input_password),
+        "purchasing_password_configured": bool(settings.purchasing_password),
+        "warehouse_password_configured": bool(settings.warehouse_password),
+        "staff_password_configured": bool(settings.staff_password),
         "request_belanja_chat_id": settings.request_belanja_chat_id or "",
         "request_belanja_thread_id": settings.request_belanja_thread_id,
         "webhook_url": settings.webhook_url or "",
@@ -172,7 +182,6 @@ async def get_system_config(
         "ai_provider": "Sumopod AI",
         "ai_url": settings.sumopod_url,
         "ai_model": settings.sumopod_model,
-        "sumopod_api_key": ai_key if ai_key != "sk-test-sumopod-key" else "",
         "system_prompt": get_system_prompt(),
         # Sheets
         "spreadsheet_id": settings.spreadsheet_id or "",
@@ -213,8 +222,10 @@ async def update_system_config(
 
     for attr, val in updates.items():
         if val is not None and attr in ENV_MAP:
-            env_key = ENV_MAP[attr]
             str_val = str(val).strip()
+            if attr in _SECRET_CONFIG_FIELDS and not str_val:
+                continue
+            env_key = ENV_MAP[attr]
             if attr == "spreadsheet_id":
                 str_val = extract_spreadsheet_id(str_val)
             env_updates[env_key] = str_val
@@ -270,15 +281,12 @@ async def upload_google_credentials(
     db: AsyncSession = Depends(get_db),
 ):
     """Unggah file Google Service Account JSON (credentials.json) untuk Google Sheets sync."""
-    if not file.filename or not file.filename.lower().endswith(".json"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Format file tidak valid. Harap unggah file kredensial berformat .json",
-        )
-
     try:
         content = await file.read()
+        validate_upload_file(content, file.filename, allowed_extensions=(".json",))
         creds_data = json.loads(content.decode("utf-8"))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import require_admin_role, require_auth
+from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.database.connection import get_db
 from app.models.master_item import MasterItem
 from app.models.menu_product import MenuIngredient, MenuProduct
@@ -37,7 +37,7 @@ from app.services.menu_product_service import (
 router = APIRouter(
     prefix="/menus",
     tags=["menus"],
-    dependencies=[Depends(require_auth)],
+    dependencies=[Depends(require_roles("admin", "purchasing", "admin_input"))],
 )
 
 # Public read-only router khusus link share ter-anonim bertoken HMAC
@@ -627,7 +627,7 @@ async def api_delete_menu(
     return {"ok": True}
 
 
-@router.post("/import-from-pos")
+@router.post("/import-from-pos", dependencies=[Depends(require_admin_role)])
 async def api_import_menus_from_pos(db: AsyncSession = Depends(get_db)):
     await _ensure_not_anonymize_locked(db)
     result = await import_menus_from_pos_history(db)
@@ -635,16 +635,15 @@ async def api_import_menus_from_pos(db: AsyncSession = Depends(get_db)):
     return {"ok": True, **result}
 
 
-@router.post("/import-csv")
+@router.post("/import-csv", dependencies=[Depends(require_admin_role)])
 async def api_import_menus_csv(
     file: UploadFile = File(...),
     update_existing: bool = Form(True),
     db: AsyncSession = Depends(get_db),
 ):
     await _ensure_not_anonymize_locked(db)
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Format file harus .csv")
     content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
     try:
         result = await import_menus_from_csv(db, content, update_existing=update_existing)
     except ValueError as e:
@@ -653,7 +652,7 @@ async def api_import_menus_csv(
     return {"ok": True, **result}
 
 
-@router.post("/anonymize-all")
+@router.post("/anonymize-all", dependencies=[Depends(require_admin_role)])
 async def api_anonymize_all_menus(
     payload: AnonymizeBatchRequest,
     db: AsyncSession = Depends(get_db),

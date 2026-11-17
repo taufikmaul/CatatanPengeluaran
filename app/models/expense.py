@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.user import User
     from app.models.master_item import MasterItem
     from app.models.supplier import Supplier
+    from app.models.expense_payment import ExpensePayment
 
 
 class Expense(Base):
@@ -42,6 +43,9 @@ class Expense(Base):
     pay_method: Mapped[str] = mapped_column(String(50), default="Tunai")
     pay_status: Mapped[str] = mapped_column(String(50), default="Lunas", index=True)
     due_date: Mapped[str] = mapped_column(String(50), default="-")
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0, server_default=text("0"))
+    dp_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
+    dp_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True, default=None)
     notes: Mapped[str] = mapped_column(Text, default="-")
     msg_link: Mapped[str] = mapped_column(Text, default="Private Chat")
 
@@ -78,3 +82,12 @@ class Expense(Base):
     
     # Untuk Google Sheets sync
     sheets_synced: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Riwayat pembayaran DP / cicilan / pelunasan
+    payments: Mapped[list["ExpensePayment"]] = relationship(
+        "ExpensePayment",
+        back_populates="expense",
+        cascade="all, delete-orphan",
+        order_by="ExpensePayment.payment_date.asc(), ExpensePayment.id.asc()",
+        lazy="selectin",
+    )
