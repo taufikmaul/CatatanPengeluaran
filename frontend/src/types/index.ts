@@ -1012,7 +1012,7 @@ export interface PurchaseRequest {
   estimated_price?: number | null;
   urgency: "NORMAL" | "URGENT";
   notes: string;
-  status: "PENDING" | "APPROVED" | "PARTIAL_ORDERED" | "ORDERED" | "RECEIVED" | "REJECTED" | "FULFILLED" | "CANCELLED";
+  status: "DRAFT" | "PENDING" | "APPROVED" | "PARTIAL_ORDERED" | "ORDERED" | "RECEIVED" | "REJECTED" | "FULFILLED" | "CANCELLED";
   reviewed_by_id?: number | null;
   reviewer_name?: string | null;
   reviewed_at?: string | null;
@@ -1046,6 +1046,7 @@ export interface PurchaseRequestFormData {
   notes?: string;
   requester_name?: string;
   request_date?: string;
+  status?: "DRAFT" | "PENDING";
   items?: PurchaseRequestItemFormData[];
 }
 
@@ -1107,6 +1108,7 @@ export interface WarehouseReceiveItemInput {
 
 export interface PurchaseRequestStats {
   total: number;
+  draft: number;
   pending: number;
   approved: number;
   ordered: number;

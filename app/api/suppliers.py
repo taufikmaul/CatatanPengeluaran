@@ -3,12 +3,13 @@ app/api/suppliers.py — REST API untuk Master Toko / Supplier
 CRUD, statistik belanja, top item, item termahal, audit duplikat & merge.
 """
 from datetime import date
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
+from fastapi import APIRouter, Depends, File, Form, Query, HTTPException, Response, UploadFile, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_admin_role, require_roles, get_current_role
+from app.api.deps import require_admin_role, require_roles, get_current_role, validate_upload_file
 from app.api.schemas import (
+    SupplierBulkCreateRequest,
     SupplierCreate,
     SupplierUpdate,
     SupplierResponse,
@@ -107,6 +108,53 @@ async def migrate_legacy_ongkir_endpoint(
     result = await supplier_service.migrate_legacy_ongkir_expenses(db, actor=actor, dry_run=dry_run)
     if not dry_run:
         await db.commit()
+    return result
+
+
+@router.get("/template-csv")
+async def download_supplier_csv_template():
+    """Unduh template CSV siap isi untuk import Master Supplier & Kurir."""
+    csv_text = supplier_service.generate_supplier_csv_template()
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template_import_supplier.csv"'},
+    )
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+async def bulk_create_suppliers_endpoint(
+    payload: SupplierBulkCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah atau perbarui banyak supplier/kurir sekaligus via form masal."""
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Daftar supplier tidak boleh kosong.")
+    result = await supplier_service.bulk_upsert_suppliers(
+        db,
+        [it.model_dump() for it in payload.items],
+        update_existing=payload.update_existing,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/import-csv", dependencies=[Depends(require_admin_role)])
+async def import_suppliers_csv_endpoint(
+    file: UploadFile = File(...),
+    update_existing: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import banyak supplier/kurir dari file CSV."""
+    content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    try:
+        result = await supplier_service.import_suppliers_from_csv(
+            db, content, update_existing=update_existing
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
     return result
 
 

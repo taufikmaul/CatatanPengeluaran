@@ -74,7 +74,7 @@ export const ApprovalBelanjaPage: React.FC<ApprovalBelanjaPageProps> = ({
     const base =
       viewMode === "PENDING"
         ? requests.filter((r) => r.status === "PENDING")
-        : requests.filter((r) => r.status !== "PENDING");
+        : requests.filter((r) => r.status !== "PENDING" && r.status !== "DRAFT");
 
     // Prioritaskan URGENT di antrean approval
     if (viewMode === "PENDING") {

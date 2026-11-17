@@ -3,13 +3,13 @@ app/api/master_items.py — REST API untuk Katalog Nama Item Baku (Master Item)
 & Saran Autocomplete Form Pengeluaran.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from sqlalchemy import select, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 from app.database.connection import get_db
-from app.api.deps import require_auth, require_admin_role, require_roles
+from app.api.deps import require_auth, require_admin_role, require_roles, validate_upload_file
 from app.models.master_item import MasterItem
 from app.models.expense import Expense
 from app.api.schemas import (
@@ -25,6 +25,9 @@ from app.services.master_item_service import (
     list_master_items,
     create_master_item,
     bulk_Import_master_items,
+    bulk_upsert_master_items,
+    generate_master_item_csv_template,
+    import_master_items_from_csv,
     sync_existing_expenses_to_master,
     import_master_items_from_history,
     get_item_and_supplier_suggestions,
@@ -161,20 +164,62 @@ async def add_master_item(
     )
 
 
+@router.get("/template-csv")
+async def download_master_item_csv_template():
+    """Unduh template CSV siap isi untuk import Katalog Master Item."""
+    csv_text = generate_master_item_csv_template()
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template_import_master_item.csv"'},
+    )
+
+
+@router.post("/import-csv", dependencies=[Depends(require_admin_role)])
+async def import_master_items_csv_endpoint(
+    file: UploadFile = File(...),
+    default_category: str = Form("Bahan Kue"),
+    update_existing: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import banyak Master Item dari file CSV."""
+    content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    try:
+        result = await import_master_items_from_csv(
+            db,
+            content,
+            default_category=default_category,
+            update_existing=update_existing,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    return result
+
+
 @router.post("/bulk", dependencies=[Depends(require_admin_role)])
 async def bulk_add_master_items(
     payload: MasterItemBulkRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Tambah daftar nama item baku sekaligus (baris per baris)."""
-    if not payload.raw_text or not payload.raw_text.strip():
-        raise HTTPException(status_code=400, detail="Daftar teks item tidak boleh kosong")
+    """Tambah banyak item baku sekaligus (baik via daftar terstruktur form masal maupun teks per baris)."""
+    if payload.items:
+        result = await bulk_upsert_master_items(
+            db,
+            [it.model_dump() for it in payload.items],
+            default_category=payload.default_category,
+            update_existing=payload.update_existing,
+        )
+    elif payload.raw_text and payload.raw_text.strip():
+        result = await bulk_Import_master_items(
+            db,
+            raw_text=payload.raw_text,
+            default_category=payload.default_category,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Daftar item tidak boleh kosong")
 
-    result = await bulk_Import_master_items(
-        db,
-        raw_text=payload.raw_text,
-        default_category=payload.default_category,
-    )
     await db.commit()
     return {
         "ok": True,

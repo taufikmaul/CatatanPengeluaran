@@ -19,6 +19,8 @@ import {
   Truck,
   PackageCheck,
   XCircle,
+  FileText,
+  Send,
 } from "lucide-react";
 
 interface RequestCardProps {
@@ -27,8 +29,10 @@ interface RequestCardProps {
   onToggleExpand: () => void;
   showApprovalActions?: boolean;
   isApproving?: boolean;
+  isSubmittingDraft?: boolean;
   onApprove?: (req: PurchaseRequest) => void;
   onReject?: (req: PurchaseRequest) => void;
+  onSubmitDraft?: (req: PurchaseRequest) => void;
   onEdit?: (req: PurchaseRequest) => void;
   onDelete?: (req: PurchaseRequest) => void;
   onDuplicate?: (req: PurchaseRequest) => void;
@@ -38,6 +42,15 @@ export const RequestStatusBadge: React.FC<{ status: PurchaseRequest["status"] }>
   status,
 }) => {
   switch (status) {
+    case "DRAFT":
+      return (
+        <Badge
+          variant="outline"
+          className="text-zinc-700 border-zinc-400 border-dashed bg-zinc-100 dark:text-zinc-200 dark:border-zinc-600 dark:bg-zinc-800/80 text-[11px] inline-flex items-center gap-1"
+        >
+          <FileText className="w-3 h-3" aria-hidden="true" /> Draft
+        </Badge>
+      );
     case "PENDING":
       return (
         <Badge
@@ -98,15 +111,20 @@ export const RequestCard: React.FC<RequestCardProps> = ({
   onToggleExpand,
   showApprovalActions = false,
   isApproving = false,
+  isSubmittingDraft = false,
   onApprove,
   onReject,
+  onSubmitDraft,
   onEdit,
   onDelete,
   onDuplicate,
 }) => {
+  const isDraft = req.status === "DRAFT";
   const isPending = req.status === "PENDING";
+  const isEditable = isDraft || isPending;
   const isRejected = req.status === "REJECTED";
   const isUrgent = req.urgency === "URGENT";
+  const itemCount = req.items?.length || 0;
 
   const totalEstimated = (req.items || []).reduce(
     (sum, it) =>
@@ -153,7 +171,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
             </span>
             <span className="inline-flex items-center gap-1 font-semibold text-zinc-800 dark:text-zinc-200">
               <Layers className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" aria-hidden="true" />
-              {req.items?.length || 1} Item
+              {isDraft ? `${itemCount} Item` : `${itemCount || 1} Item`}
             </span>
             {totalEstimated > 0 && (
               <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
@@ -186,7 +204,19 @@ export const RequestCard: React.FC<RequestCardProps> = ({
             </>
           )}
 
-          {onDuplicate && (
+          {isDraft && onSubmitDraft && itemCount > 0 && (
+            <Button
+              size="sm"
+              onClick={() => onSubmitDraft(req)}
+              disabled={isSubmittingDraft}
+              className="h-10 sm:h-9 px-3.5 text-xs bg-amber-700 hover:bg-amber-800 text-white rounded-xl inline-flex items-center gap-1.5 font-semibold"
+            >
+              <Send className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{isSubmittingDraft ? "Mengirim..." : "Ajukan"}</span>
+            </Button>
+          )}
+
+          {!isDraft && onDuplicate && (
             <Button
               size="sm"
               variant="ghost"
@@ -199,7 +229,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
             </Button>
           )}
 
-          {isPending && onEdit && (
+          {isEditable && onEdit && (
             <Button
               size="sm"
               variant="ghost"
@@ -211,7 +241,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
             </Button>
           )}
 
-          {isPending && onDelete && (
+          {isEditable && onDelete && (
             <Button
               size="sm"
               variant="ghost"
@@ -354,6 +384,10 @@ export const RequestCard: React.FC<RequestCardProps> = ({
                   </div>
                 );
               })
+            ) : isDraft ? (
+              <div className="p-3 text-xs text-zinc-600 dark:text-zinc-400">
+                Belum ada barang di draft ini. Klik ikon Ubah untuk menambahkan daftar belanja.
+              </div>
             ) : (
               <div className="p-3 text-xs text-zinc-600 dark:text-zinc-400">
                 {req.item_name} - {req.qty} {req.unit}

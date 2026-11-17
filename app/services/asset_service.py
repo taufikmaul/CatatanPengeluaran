@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, inspect as sa_inspect, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -674,7 +674,11 @@ def serialize_asset(
     m = as_of_month or today.month
     dep = calculate_asset_depreciation(asset, y, m)
 
-    maintenances = list(getattr(asset, "maintenances", None) or [])
+    state = sa_inspect(asset)
+    if "maintenances" in state.unloaded:
+        maintenances = []
+    else:
+        maintenances = list(getattr(asset, "maintenances", None) or [])
     total_maintenance_cost = sum(float(mt.cost or 0) for mt in maintenances)
     last_maintenance = maintenances[0] if maintenances else None
 
@@ -1181,3 +1185,134 @@ async def add_asset_maintenance(
     )
     await db.flush()
     return mt
+
+
+async def bulk_create_assets(
+    db: AsyncSession,
+    items: list[dict[str, Any]],
+    actor: str = "admin",
+) -> dict[str, Any]:
+    """Tambah beberapa unit aset inventaris sekaligus dari form masal."""
+    created: list[dict[str, Any]] = []
+    skipped = 0
+    errors: list[str] = []
+
+    for idx, item in enumerate(items, start=1):
+        name = str(item.get("name") or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        try:
+            ast = await create_manual_asset(db, item, actor=actor)
+            created.append(serialize_asset(ast, include_financial=True))
+        except HTTPException as exc:
+            skipped += 1
+            errors.append(f"Baris {idx} ({name}): {exc.detail}")
+
+    return {
+        "ok": True,
+        "added": len(created),
+        "skipped": skipped,
+        "errors": errors[:10],
+        "items": created,
+        "message": f"Berhasil menambahkan {len(created)} aset ke inventaris" + (f" ({skipped} dilewati)." if skipped else "."),
+    }
+
+
+def generate_asset_csv_template() -> str:
+    """Bangun template CSV siap isi untuk import Inventaris Aset Tetap."""
+    from app.utils.csv_helpers import build_csv_template
+
+    return build_csv_template([
+        "Nama Aset",
+        "Kelompok Aset",
+        "Merk / Model",
+        "Nomor Seri",
+        "Tanggal Perolehan",
+        "Harga Perolehan",
+        "Nilai Residu",
+        "Masa Manfaat (Bulan)",
+        "Lokasi",
+        "PIC",
+        "Vendor / Toko",
+        "Garansi (Bulan)",
+        "Kondisi",
+        "Status",
+        "Catatan",
+    ])
+
+
+async def import_assets_from_csv(
+    db: AsyncSession,
+    content: bytes,
+    actor: str = "admin",
+) -> dict[str, Any]:
+    """Import banyak aset inventaris dari file CSV."""
+    from app.utils.csv_helpers import (
+        col_lookup,
+        find_header_row,
+        get_cell,
+        parse_csv_table,
+        parse_date_cell,
+        parse_number_cell,
+    )
+
+    first_row, rest_rows = parse_csv_table(content)
+    all_rows = [first_row, *rest_rows]
+    hdr_idx, headers = find_header_row(all_rows, ("nama aset", "asset_name", "nama barang", "name"))
+
+    idx_name = col_lookup(headers, "nama aset", "asset_name", "nama barang", "name", "nama")
+    idx_group = col_lookup(headers, "kelompok aset", "kelompok", "asset_group", "group")
+    idx_brand = col_lookup(headers, "merk / model", "merk", "brand", "model", "brand_model")
+    idx_sn = col_lookup(headers, "nomor seri", "no seri", "serial_number", "sn", "serial")
+    idx_date = col_lookup(headers, "tanggal perolehan", "tgl perolehan", "tanggal beli", "purchase_date", "tanggal")
+    idx_cost = col_lookup(headers, "harga perolehan", "nilai perolehan", "acquisition_cost", "harga", "nominal")
+    idx_salvage = col_lookup(headers, "nilai residu", "salvage_value", "residu")
+    idx_life = col_lookup(headers, "masa manfaat", "useful_life_months", "umur ekonomis", "manfaat")
+    idx_loc = col_lookup(headers, "lokasi", "location", "penempatan")
+    idx_pic = col_lookup(headers, "pic", "penanggung jawab", "pic_name")
+    idx_vendor = col_lookup(headers, "vendor / toko", "vendor", "toko", "supplier", "vendor_name")
+    idx_warranty = col_lookup(headers, "garansi (bulan)", "garansi", "warranty_months")
+    idx_cond = col_lookup(headers, "kondisi", "condition")
+    idx_status = col_lookup(headers, "status")
+    idx_notes = col_lookup(headers, "catatan", "notes", "keterangan")
+
+    if idx_name is None:
+        raise ValueError("Kolom 'Nama Aset' tidak ditemukan di file CSV.")
+
+    items_payload: list[dict[str, Any]] = []
+    for row in all_rows[hdr_idx + 1:]:
+        if not any(c.strip() for c in row):
+            continue
+        name = get_cell(row, idx_name)
+        if not name or name.upper() == "TOTAL":
+            continue
+
+        p_date = parse_date_cell(get_cell(row, idx_date), default=date.today()) or date.today()
+        acq_cost = max(0.0, parse_number_cell(get_cell(row, idx_cost), default=0.0))
+        salvage = max(0.0, parse_number_cell(get_cell(row, idx_salvage), default=0.0))
+        life_raw = int(parse_number_cell(get_cell(row, idx_life), default=0.0))
+        warranty_m = max(0, int(parse_number_cell(get_cell(row, idx_warranty), default=0.0)))
+
+        items_payload.append({
+            "name": name,
+            "asset_group": get_cell(row, idx_group) or None,
+            "brand_model": get_cell(row, idx_brand),
+            "serial_number": get_cell(row, idx_sn),
+            "purchase_date": p_date,
+            "acquisition_cost": acq_cost,
+            "salvage_value": salvage,
+            "useful_life_months": life_raw if life_raw > 0 else None,
+            "location": get_cell(row, idx_loc) or "Dapur Produksi",
+            "pic_name": get_cell(row, idx_pic) or "-",
+            "vendor_name": get_cell(row, idx_vendor) or "-",
+            "warranty_months": warranty_m,
+            "condition": get_cell(row, idx_cond) or "Baik",
+            "status": get_cell(row, idx_status) or "Aktif",
+            "notes": get_cell(row, idx_notes),
+        })
+
+    if not items_payload:
+        raise ValueError("Tidak ada baris aset valid di dalam file CSV.")
+
+    return await bulk_create_assets(db, items_payload, actor=actor)

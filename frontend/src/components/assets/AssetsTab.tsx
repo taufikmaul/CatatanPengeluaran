@@ -5,7 +5,16 @@ import {
   createAsset,
   syncExistingAssets,
   reanalyzeAssets,
+  downloadAssetCsvTemplate,
+  bulkCreateAssets,
+  importAssetsCsv,
 } from "@/lib/api";
+import {
+  BulkRowImportDialog,
+  type BulkRowColumn,
+} from "@/components/common/BulkRowImportDialog";
+import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
+import { Table2, FileSpreadsheet } from "lucide-react";
 import { FixedAsset, AssetReanalyzeResult } from "@/types";
 import { formatDateId, formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,6 +62,148 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [detailAssetId, setDetailAssetId] = useState<number | null>(null);
   const [printAssets, setPrintAssets] = useState<FixedAsset[] | null>(null);
+  const [isBulkFormOpen, setIsBulkFormOpen] = useState(false);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
+
+  type BulkAssetRow = {
+    name: string;
+    asset_group: string;
+    brand_model: string;
+    serial_number: string;
+    purchase_date: string;
+    acquisition_cost: number;
+    salvage_value: number;
+    useful_life_months: number;
+    location: string;
+    pic_name: string;
+    vendor_name: string;
+    warranty_months: number;
+    condition: string;
+    status: string;
+    notes: string;
+  };
+
+  const assetBulkColumns: BulkRowColumn<BulkAssetRow>[] = [
+    { key: "name", label: "Nama Aset *", type: "text", required: true, placeholder: "Oven Deck 2 Loyang", widthClass: "min-w-[180px]" },
+    {
+      key: "asset_group",
+      label: "Kelompok",
+      type: "select",
+      widthClass: "min-w-[165px]",
+      options: [
+        { value: "Mesin & Peralatan Dapur", label: "Mesin & Peralatan Dapur" },
+        { value: "Pendingin & Showcase", label: "Pendingin & Showcase" },
+        { value: "Elektronik & POS", label: "Elektronik & POS" },
+        { value: "Furnitur & Rak", label: "Furnitur & Rak" },
+        { value: "Kendaraan Operasional", label: "Kendaraan Operasional" },
+        { value: "Peralatan Lainnya", label: "Peralatan Lainnya" },
+      ],
+    },
+    { key: "brand_model", label: "Merk / Model", type: "text", placeholder: "Getra RFL-24", widthClass: "min-w-[130px]" },
+    { key: "serial_number", label: "No. Seri", type: "text", placeholder: "SN-...", widthClass: "min-w-[120px]" },
+    { key: "purchase_date", label: "Tgl Perolehan", type: "date", widthClass: "min-w-[135px]" },
+    { key: "acquisition_cost", label: "Harga (Rp) *", type: "number", required: true, min: 0, widthClass: "min-w-[130px]" },
+    { key: "salvage_value", label: "Residu (Rp)", type: "number", min: 0, widthClass: "min-w-[115px]" },
+    { key: "useful_life_months", label: "Umur (Bln)", type: "number", min: 1, widthClass: "min-w-[95px]" },
+    { key: "location", label: "Lokasi", type: "text", placeholder: "Dapur Produksi", widthClass: "min-w-[130px]" },
+    { key: "pic_name", label: "PIC", type: "text", placeholder: "Nama PIC", widthClass: "min-w-[110px]" },
+    { key: "vendor_name", label: "Vendor / Toko", type: "text", placeholder: "Toko Mesin", widthClass: "min-w-[130px]" },
+    { key: "warranty_months", label: "Garansi (Bln)", type: "number", min: 0, widthClass: "min-w-[95px]" },
+    {
+      key: "condition",
+      label: "Kondisi",
+      type: "select",
+      widthClass: "min-w-[120px]",
+      options: [
+        { value: "Baik", label: "Baik" },
+        { value: "Perlu Servis", label: "Perlu Servis" },
+        { value: "Rusak Ringan", label: "Rusak Ringan" },
+        { value: "Rusak Berat", label: "Rusak Berat" },
+      ],
+    },
+    {
+      key: "status",
+      label: "Status",
+      type: "select",
+      widthClass: "min-w-[130px]",
+      options: [
+        { value: "Aktif", label: "Aktif" },
+        { value: "Dalam Perawatan", label: "Dalam Perawatan" },
+        { value: "Tidak Digunakan", label: "Tidak Digunakan" },
+      ],
+    },
+    { key: "notes", label: "Catatan", type: "text", placeholder: "Opsional", widthClass: "min-w-[140px]" },
+  ];
+
+  const createEmptyAssetRow = (): BulkAssetRow => ({
+    name: "",
+    asset_group: "Mesin & Peralatan Dapur",
+    brand_model: "",
+    serial_number: "",
+    purchase_date: new Date().toISOString().split("T")[0],
+    acquisition_cost: 0,
+    salvage_value: 0,
+    useful_life_months: activeDefaultLife || 48,
+    location: "Dapur Produksi",
+    pic_name: "-",
+    vendor_name: "-",
+    warranty_months: 12,
+    condition: "Baik",
+    status: "Aktif",
+    notes: "",
+  });
+
+  const bulkFormMutation = useMutation({
+    mutationFn: (rows: BulkAssetRow[]) =>
+      bulkCreateAssets(
+        rows.map((r) => ({
+          name: r.name.trim(),
+          asset_group: r.asset_group || undefined,
+          brand_model: r.brand_model.trim() || undefined,
+          serial_number: r.serial_number.trim() || undefined,
+          purchase_date: r.purchase_date || new Date().toISOString().split("T")[0],
+          acquisition_cost: Number(r.acquisition_cost) || 0,
+          salvage_value: Number(r.salvage_value) || 0,
+          useful_life_months:
+            Number(r.useful_life_months) > 0 ? Number(r.useful_life_months) : undefined,
+          location: r.location.trim() || "Dapur Produksi",
+          pic_name: r.pic_name.trim() || "-",
+          vendor_name: r.vendor_name.trim() || "-",
+          warranty_months: Math.max(0, Number(r.warranty_months) || 0),
+          condition: r.condition || "Baik",
+          status: r.status || "Aktif",
+          notes: r.notes.trim() || undefined,
+        }))
+      ),
+    onSuccess: (res) => {
+      toast.success(res.message || `${res.added} aset berhasil ditambahkan.`);
+      if (res.errors && res.errors.length > 0) {
+        toast.warning(`Catatan: ${res.errors.slice(0, 3).join("; ")}`);
+      }
+      setIsBulkFormOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan aset masal.");
+    },
+  });
+
+  const csvImportMutation = useMutation({
+    mutationFn: (file: File) => importAssetsCsv(file),
+    onSuccess: (res) => {
+      toast.success(res.message || `${res.added} aset berhasil diimpor dari CSV.`);
+      if (res.errors && res.errors.length > 0) {
+        toast.warning(`Catatan: ${res.errors.slice(0, 3).join("; ")}`);
+      }
+      setIsCsvImportOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal mengimpor file CSV aset.");
+    },
+  });
 
   // Analisa Ulang Modal
   const [isReanalyzeOpen, setIsReanalyzeOpen] = useState(false);
@@ -220,6 +371,26 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
           >
             <QrCode className="w-3.5 h-3.5" />
             Cetak Label QR {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCsvImportOpen(true)}
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Import CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsBulkFormOpen(true)}
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            Tambah Masal
           </Button>
           <Button
             type="button"
@@ -658,6 +829,52 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
         isOpen={printAssets !== null}
         onClose={() => setPrintAssets(null)}
         assets={printAssets || []}
+      />
+
+      <BulkRowImportDialog<BulkAssetRow>
+        isOpen={isBulkFormOpen}
+        onClose={() => setIsBulkFormOpen(false)}
+        title="Tambah Aset Inventaris Masal (Form Tabel)"
+        description="Input banyak aset sekaligus atau tempel (paste) langsung dari Excel/Google Sheets. Kapitalisasi dan penyusutan SAK EMKM otomatis dihitung sesuai threshold aktif."
+        columns={assetBulkColumns}
+        createEmptyRow={createEmptyAssetRow}
+        requiredKey="name"
+        showUpdateExistingToggle={false}
+        isSubmitting={bulkFormMutation.isPending}
+        submitLabel="Simpan Semua Aset"
+        onSubmit={async (rows) => {
+          await bulkFormMutation.mutateAsync(rows);
+        }}
+      />
+
+      <CsvTemplateImportDialog
+        isOpen={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+        title="Import Aset Inventaris via Template CSV"
+        description="Unduh template CSV resmi agar struktur kolom sesuai, isi data aset (separator koma atau titik koma didukung), lalu unggah kembali."
+        templateColumns={[
+          "Nama Aset",
+          "Kelompok Aset",
+          "Merk / Model",
+          "Nomor Seri",
+          "Tanggal Perolehan",
+          "Harga Perolehan",
+          "Nilai Residu",
+          "Masa Manfaat (Bulan)",
+          "Lokasi",
+          "PIC",
+          "Vendor / Toko",
+          "Garansi (Bulan)",
+          "Kondisi",
+          "Status",
+          "Catatan",
+        ]}
+        showUpdateExistingToggle={false}
+        isImporting={csvImportMutation.isPending}
+        onDownloadTemplate={downloadAssetCsvTemplate}
+        onImportCsv={async (file) => {
+          await csvImportMutation.mutateAsync(file);
+        }}
       />
     </div>
   );

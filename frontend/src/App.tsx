@@ -2,26 +2,28 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, createExpenseBatch, exchangeSsoToken, getExpenseUsers, getPurchaseRequestStats } from "@/lib/api";
 import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
-import { StatCards } from "@/components/dashboard/StatCards";
-import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
-import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
-import { PaymentMethodChart } from "@/components/dashboard/PaymentMethodChart";
-import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
-import { DailyTrendChart } from "@/components/dashboard/DailyTrendChart";
-import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
-import { FilterBar } from "@/components/dashboard/FilterBar";
-import { ExpenseTable } from "@/components/dashboard/ExpenseTable";
-import { ExpenseDetailModal } from "@/components/dashboard/ExpenseDetailModal";
-import { PriceHistoryModal } from "@/components/dashboard/PriceHistoryModal";
-import { BudgetSetupDialog } from "@/components/dashboard/BudgetSetupDialog";
-import { ExpenseActivityLogModal } from "@/components/dashboard/ExpenseActivityLogModal";
-import { AuditDuplicatesModal } from "@/components/dashboard/AuditDuplicatesModal";
-import { DataHygieneModal } from "@/components/dashboard/DataHygieneModal";
-import { ExpenseFormDrawer } from "@/components/forms/ExpenseFormDrawer";
-import { LoginModal } from "@/components/auth/LoginModal";
 import { Spinner } from "@/components/ui/spinner";
+import { useIsMobile } from "@/hooks/use-mobile";
 
-// Lazy-loaded tabs & heavy modals untuk optimasi bundle size dan fast initial paint
+// Lazy-loaded dashboard sections, tabs & heavy modals untuk optimasi chunk size & fast initial paint
+const StatCards = React.lazy(() => import("@/components/dashboard/StatCards").then(m => ({ default: m.StatCards })));
+const AiAnalysisCard = React.lazy(() => import("@/components/dashboard/AiAnalysisCard").then(m => ({ default: m.AiAnalysisCard })));
+const CategoryDonutChart = React.lazy(() => import("@/components/dashboard/CategoryDonutChart").then(m => ({ default: m.CategoryDonutChart })));
+const PaymentMethodChart = React.lazy(() => import("@/components/dashboard/PaymentMethodChart").then(m => ({ default: m.PaymentMethodChart })));
+const UnpaidOrdersCard = React.lazy(() => import("@/components/dashboard/UnpaidOrdersCard").then(m => ({ default: m.UnpaidOrdersCard })));
+const DailyTrendChart = React.lazy(() => import("@/components/dashboard/DailyTrendChart").then(m => ({ default: m.DailyTrendChart })));
+const LeaderboardCards = React.lazy(() => import("@/components/dashboard/LeaderboardCards").then(m => ({ default: m.LeaderboardCards })));
+const FilterBar = React.lazy(() => import("@/components/dashboard/FilterBar").then(m => ({ default: m.FilterBar })));
+const ExpenseTable = React.lazy(() => import("@/components/dashboard/ExpenseTable").then(m => ({ default: m.ExpenseTable })));
+const OwnerMobileView = React.lazy(() => import("@/components/dashboard/OwnerMobileView").then(m => ({ default: m.OwnerMobileView })));
+const ExpenseDetailModal = React.lazy(() => import("@/components/dashboard/ExpenseDetailModal").then(m => ({ default: m.ExpenseDetailModal })));
+const PriceHistoryModal = React.lazy(() => import("@/components/dashboard/PriceHistoryModal").then(m => ({ default: m.PriceHistoryModal })));
+const BudgetSetupDialog = React.lazy(() => import("@/components/dashboard/BudgetSetupDialog").then(m => ({ default: m.BudgetSetupDialog })));
+const ExpenseActivityLogModal = React.lazy(() => import("@/components/dashboard/ExpenseActivityLogModal").then(m => ({ default: m.ExpenseActivityLogModal })));
+const AuditDuplicatesModal = React.lazy(() => import("@/components/dashboard/AuditDuplicatesModal").then(m => ({ default: m.AuditDuplicatesModal })));
+const DataHygieneModal = React.lazy(() => import("@/components/dashboard/DataHygieneModal").then(m => ({ default: m.DataHygieneModal })));
+const ExpenseFormDrawer = React.lazy(() => import("@/components/forms/ExpenseFormDrawer").then(m => ({ default: m.ExpenseFormDrawer })));
+const LoginModal = React.lazy(() => import("@/components/auth/LoginModal").then(m => ({ default: m.LoginModal })));
 const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(m => ({ default: m.ConfigTab })));
 const IncomingTransactionsTab = React.lazy(() => import("@/components/incoming/IncomingTransactionsTab").then(m => ({ default: m.IncomingTransactionsTab })));
 const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsTab").then(m => ({ default: m.MasterItemsTab })));
@@ -50,14 +52,12 @@ function TabLoadingFallback() {
   );
 }
 import { useLocation, useNavigate } from "react-router-dom";
-import { OwnerMobileView } from "@/components/dashboard/OwnerMobileView";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/dashboard-01/dashboard-sidebar";
 import { DashboardHeader } from "@/components/dashboard-01/dashboard-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
-import confetti from "canvas-confetti";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { isPaidStatus, getTempoQuickDate } from "@/lib/paymentStatus";
 import { Plus, ReceiptText, ArrowRight } from "lucide-react";
@@ -125,6 +125,7 @@ function MainDashboardApp() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   // Parse path to activeTab & selectedSupplierId
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
@@ -570,12 +571,16 @@ function MainDashboardApp() {
       const isLunas = updated.pay_status === "Lunas";
       if (isLunas) {
         toast.success(`Transaksi #${updated.id} ditandai Lunas`);
-        confetti({
-          particleCount: 30,
-          spread: 45,
-          origin: { y: 0.8 },
-          colors: ["#10b981", "#3b82f6", "#f59e0b"],
-        });
+        import("canvas-confetti")
+          .then(({ default: confetti }) =>
+            confetti({
+              particleCount: 30,
+              spread: 45,
+              origin: { y: 0.8 },
+              colors: ["#10b981", "#3b82f6", "#f59e0b"],
+            })
+          )
+          .catch(() => {});
       } else {
         toast.info(`Transaksi #${updated.id} diubah ke Belum Lunas`);
       }
@@ -742,10 +747,11 @@ function MainDashboardApp() {
               <>
                 {/* Tampilan Header & Statistik Sesuai Role Pengguna */}
                 {canViewCharts ? (
-                  <>
-                    {/* 1. Tampilan Khusus Mobile Owner (Simple, Ergonomis & Cepat) */}
-                    <div className="block md:hidden">
-                      <OwnerMobileView
+                  isMobile ? (
+                    /* 1. Tampilan Khusus Mobile Owner (Simple, Ergonomis & Cepat) */
+                    <div>
+                      <React.Suspense fallback={<TabLoadingFallback />}>
+                        <OwnerMobileView
                         activeTab="overview"
                         onNavigateTab={(t) => handleTabChange(t)}
                         reportData={reportData}
@@ -828,10 +834,12 @@ function MainDashboardApp() {
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                         onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       />
+                      </React.Suspense>
                     </div>
-
-                    {/* 2. Tampilan Desktop (md: ke atas) Tetap Lengkap & Kaya Data */}
-                    <div className="hidden md:block space-y-6">
+                  ) : (
+                    /* 2. Tampilan Desktop (md: ke atas) Tetap Lengkap & Kaya Data */
+                    <React.Suspense fallback={<TabLoadingFallback />}>
+                    <div className="space-y-6">
                       {/* Stat Cards Lengkap untuk Owner */}
                       <StatCards
                         totalLunas={reportData?.total_lunas || 0}
@@ -944,7 +952,8 @@ function MainDashboardApp() {
                         </Button>
                       </div>
                     </div>
-                  </>
+                    </React.Suspense>
+                  )
                 ) : (
                   /* Tampilan Ringkas & Cepat Khusus Admin Input */
                   <div className="space-y-4">
@@ -1010,7 +1019,8 @@ function MainDashboardApp() {
                       </div>
                     </div>
 
-                    {/* Admin Input Filter Bar */}
+                    {/* Admin Input Filter Bar & Expense Table */}
+                    <React.Suspense fallback={<TabLoadingFallback />}>
                     <FilterBar
                       month={month}
                       year={year}
@@ -1103,6 +1113,7 @@ function MainDashboardApp() {
                       categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
                     />
+                    </React.Suspense>
                   </div>
                 )}
               </>
@@ -1117,9 +1128,10 @@ function MainDashboardApp() {
             {activeTab === "transactions" && (
               <>
                 {canViewCharts ? (
-                  <>
-                    {/* 1. Tampilan Khusus Mobile Owner untuk Halaman Transaksi */}
-                    <div className="block md:hidden">
+                  isMobile ? (
+                    /* 1. Tampilan Khusus Mobile Owner untuk Halaman Transaksi */
+                    <div>
+                      <React.Suspense fallback={<TabLoadingFallback />}>
                       <OwnerMobileView
                         activeTab="transactions"
                         onNavigateTab={(t) => handleTabChange(t)}
@@ -1204,10 +1216,12 @@ function MainDashboardApp() {
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                         onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                       />
+                      </React.Suspense>
                     </div>
-
-                    {/* 2. Tampilan Desktop Halaman Daftar Transaksi */}
-                    <div className="hidden md:block space-y-6">
+                  ) : (
+                    /* 2. Tampilan Desktop Halaman Daftar Transaksi */
+                    <React.Suspense fallback={<TabLoadingFallback />}>
+                    <div className="space-y-6">
                       {/* Header Halaman Transaksi */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
                         <div className="flex items-center gap-3.5">
@@ -1339,7 +1353,8 @@ function MainDashboardApp() {
                         highlightedExpenseId={highlightedExpenseId}
                       />
                     </div>
-                  </>
+                    </React.Suspense>
+                  )
                 ) : (
                   /* Admin Input View pada Halaman Transaksi */
                   <div className="space-y-4">
@@ -1405,7 +1420,8 @@ function MainDashboardApp() {
                       </div>
                     </div>
 
-                    {/* Admin Input Filter Bar */}
+                    {/* Admin Input Filter Bar & Expense Table */}
+                    <React.Suspense fallback={<TabLoadingFallback />}>
                     <FilterBar
                       month={month}
                       year={year}
@@ -1498,6 +1514,7 @@ function MainDashboardApp() {
                       categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
                     />
+                    </React.Suspense>
                   </div>
                 )}
               </>
@@ -1760,104 +1777,120 @@ function MainDashboardApp() {
         </SidebarInset>
 
         {/* Monthly Budget Setup Modal (Persentase per Kategori & Preview Rupiah) */}
-        <BudgetSetupDialog
-          isOpen={isBudgetDialogOpen}
-          onClose={() => setIsBudgetDialogOpen(false)}
-          initialYear={year}
-          initialMonth={month}
-          onBudgetUpdated={() => {
-            queryClient.invalidateQueries({ queryKey: ["monthly-report"] });
-            queryClient.invalidateQueries({ queryKey: ["system-config"] });
-          }}
-          currentSpending={reportData?.per_kategori || {}}
-        />
+        {isBudgetDialogOpen && (
+          <React.Suspense fallback={null}>
+            <BudgetSetupDialog
+              isOpen={isBudgetDialogOpen}
+              onClose={() => setIsBudgetDialogOpen(false)}
+              initialYear={year}
+              initialMonth={month}
+              onBudgetUpdated={() => {
+                queryClient.invalidateQueries({ queryKey: ["monthly-report"] });
+                queryClient.invalidateQueries({ queryKey: ["system-config"] });
+              }}
+              currentSpending={reportData?.per_kategori || {}}
+            />
+          </React.Suspense>
+        )}
 
         {/* Expense Form Drawer / Modal */}
-        <ExpenseFormDrawer
-          isOpen={isFormOpen}
-          onClose={() => {
-            setIsFormOpen(false);
-            setRepeatingExpense(null);
-          }}
-          onSubmit={handleFormSubmit}
-          onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
-          categories={categories}
-          defaultCategory={category || undefined}
-          paymentMethods={activePayMethods}
-          units={activeUnits}
-          initialData={editingExpense}
-          repeatData={repeatingExpense}
-          isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}
-          itemSuggestions={suggestionsData?.items || []}
-          supplierSuggestions={suggestionsData?.suppliers || []}
-        />
+        {isFormOpen && (
+          <React.Suspense fallback={null}>
+            <ExpenseFormDrawer
+              isOpen={isFormOpen}
+              onClose={() => {
+                setIsFormOpen(false);
+                setRepeatingExpense(null);
+              }}
+              onSubmit={handleFormSubmit}
+              onBatchSubmit={(items) => batchSaveMutation.mutate(items)}
+              categories={categories}
+              defaultCategory={category || undefined}
+              paymentMethods={activePayMethods}
+              units={activeUnits}
+              initialData={editingExpense}
+              repeatData={repeatingExpense}
+              isSubmitting={saveMutation.isPending || batchSaveMutation.isPending}
+              itemSuggestions={suggestionsData?.items || []}
+              supplierSuggestions={suggestionsData?.suppliers || []}
+            />
+          </React.Suspense>
+        )}
 
         {/* Expense Detail Modal with Telegram Cross-Check */}
-        <ExpenseDetailModal
-          isOpen={!!viewingExpense}
-          onClose={() => setViewingExpense(null)}
-          expense={viewingExpense}
-          onEditExpense={(expense) => {
-            setViewingExpense(null);
-            setRepeatingExpense(null);
-            setEditingExpense(expense);
-            setIsFormOpen(true);
-          }}
-          onInspectItemPrice={(name, id) => {
-            setViewingExpense(null);
-            handleInspectItemPrice(name, id);
-          }}
-        />
+        {!!viewingExpense && (
+          <React.Suspense fallback={null}>
+            <ExpenseDetailModal
+              isOpen={!!viewingExpense}
+              onClose={() => setViewingExpense(null)}
+              expense={viewingExpense}
+              onEditExpense={(expense) => {
+                setViewingExpense(null);
+                setRepeatingExpense(null);
+                setEditingExpense(expense);
+                setIsFormOpen(true);
+              }}
+              onInspectItemPrice={(name, id) => {
+                setViewingExpense(null);
+                handleInspectItemPrice(name, id);
+              }}
+            />
+          </React.Suspense>
+        )}
 
         {/* Price History & Supplier Comparison Modal */}
-        <PriceHistoryModal
-          itemName={inspectedItemName}
-          itemId={inspectedItemId}
-          onClose={() => {
-            setInspectedItemName(null);
-            setInspectedItemId(null);
-          }}
-          onNavigateToExpense={(record) => {
-            // 1. Tutup modal riwayat harga & modal detail jika sedang terbuka
-            setInspectedItemName(null);
-            setInspectedItemId(null);
-            setViewingExpense(null);
+        {!!(inspectedItemName || inspectedItemId) && (
+          <React.Suspense fallback={null}>
+            <PriceHistoryModal
+              itemName={inspectedItemName}
+              itemId={inspectedItemId}
+              onClose={() => {
+                setInspectedItemName(null);
+                setInspectedItemId(null);
+              }}
+              onNavigateToExpense={(record) => {
+                // 1. Tutup modal riwayat harga & modal detail jika sedang terbuka
+                setInspectedItemName(null);
+                setInspectedItemId(null);
+                setViewingExpense(null);
 
-            // 2. Sesuaikan filter bulan & tahun sesuai tanggal transaksi riwayat terpilih
-            if (record.expense_date) {
-              const parts = record.expense_date.split("-");
-              if (parts.length >= 2) {
-                const y = parseInt(parts[0], 10);
-                const m = parseInt(parts[1], 10);
-                if (!isNaN(y) && !isNaN(m)) {
-                  setYear(y);
-                  setMonth(m);
+                // 2. Sesuaikan filter bulan & tahun sesuai tanggal transaksi riwayat terpilih
+                if (record.expense_date) {
+                  const parts = record.expense_date.split("-");
+                  if (parts.length >= 2) {
+                    const y = parseInt(parts[0], 10);
+                    const m = parseInt(parts[1], 10);
+                    if (!isNaN(y) && !isNaN(m)) {
+                      setYear(y);
+                      setMonth(m);
+                    }
+                  }
                 }
-              }
-            }
 
-            // 3. Reset filter yang berpotensi menyembunyikan transaksi
-            setCategory("");
-            setStatus("");
-            setIsReimbursement(null);
-            setSelectedUserId(null);
+                // 3. Reset filter yang berpotensi menyembunyikan transaksi
+                setCategory("");
+                setStatus("");
+                setIsReimbursement(null);
+                setSelectedUserId(null);
 
-            // 4. Set kata kunci pencarian agar langsung menyaring ke barang tersebut
-            setSearch(record.item_name);
-            setPage(1);
+                // 4. Set kata kunci pencarian agar langsung menyaring ke barang tersebut
+                setSearch(record.item_name);
+                setPage(1);
 
-            // 5. Tandai ID transaksi untuk highlight di tabel / list
-            setHighlightedExpenseId(record.id);
+                // 5. Tandai ID transaksi untuk highlight di tabel / list
+                setHighlightedExpenseId(record.id);
 
-            // 6. Alihkan navigasi ke Daftar Transaksi
-            navigate("/transactions");
+                // 6. Alihkan navigasi ke Daftar Transaksi
+                navigate("/transactions");
 
-            toast.info(`Membuka transaksi: ${record.item_name}`, {
-              description: `Menampilkan data tanggal ${formatDateId(record.expense_date)} pada Daftar Transaksi.`,
-              duration: 3500,
-            });
-          }}
-        />
+                toast.info(`Membuka transaksi: ${record.item_name}`, {
+                  description: `Menampilkan data tanggal ${formatDateId(record.expense_date)} pada Daftar Transaksi.`,
+                  duration: 3500,
+                });
+              }}
+            />
+          </React.Suspense>
+        )}
 
         {/* CSV Import Modal */}
         {isImportOpen && (
@@ -1874,45 +1907,61 @@ function MainDashboardApp() {
         )}
 
         {/* Expense Activity Log Modal (Log Aksi Perubahan Belanja) */}
-        <ExpenseActivityLogModal
-          isOpen={isActivityLogOpen}
-          onClose={() => setIsActivityLogOpen(false)}
-          onSelectExpense={(id) => {
-            setIsActivityLogOpen(false);
-          }}
-          onExpenseRestored={() => {
-            refetchExpenses();
-            refetchReport();
-          }}
-        />
+        {isActivityLogOpen && (
+          <React.Suspense fallback={null}>
+            <ExpenseActivityLogModal
+              isOpen={isActivityLogOpen}
+              onClose={() => setIsActivityLogOpen(false)}
+              onSelectExpense={(id) => {
+                setIsActivityLogOpen(false);
+              }}
+              onExpenseRestored={() => {
+                refetchExpenses();
+                refetchReport();
+              }}
+            />
+          </React.Suspense>
+        )}
 
         {/* Data Hygiene & Normalizer Modal */}
-        <DataHygieneModal
-          isOpen={isDataHygieneModalOpen}
-          onClose={() => setIsDataHygieneModalOpen(false)}
-          canClean={canDelete}
-        />
+        {isDataHygieneModalOpen && (
+          <React.Suspense fallback={null}>
+            <DataHygieneModal
+              isOpen={isDataHygieneModalOpen}
+              onClose={() => setIsDataHygieneModalOpen(false)}
+              canClean={canDelete}
+            />
+          </React.Suspense>
+        )}
 
         {/* Audit Duplikat Modal (Nama Mirip >=90% + Tanggal Sama + Nominal Sama) */}
-        <AuditDuplicatesModal
-          isOpen={isAuditModalOpen}
-          onClose={() => setIsAuditModalOpen(false)}
-          currentMonth={month}
-          currentYear={year}
-          onDeleteExpense={(id) => deleteMutation.mutate(id)}
-          canDelete={canDelete}
-        />
+        {isAuditModalOpen && (
+          <React.Suspense fallback={null}>
+            <AuditDuplicatesModal
+              isOpen={isAuditModalOpen}
+              onClose={() => setIsAuditModalOpen(false)}
+              currentMonth={month}
+              currentYear={year}
+              onDeleteExpense={(id) => deleteMutation.mutate(id)}
+              canDelete={canDelete}
+            />
+          </React.Suspense>
+        )}
 
         {/* Telegram PIN Login Modal */}
-        <LoginModal
-          isOpen={isLoginOpen}
-          onSuccess={() => {
-            setIsLoginOpen(false);
-            refetchAuth();
-            refetchReport();
-            refetchExpenses();
-          }}
-        />
+        {isLoginOpen && (
+          <React.Suspense fallback={null}>
+            <LoginModal
+              isOpen={isLoginOpen}
+              onSuccess={() => {
+                setIsLoginOpen(false);
+                refetchAuth();
+                refetchReport();
+                refetchExpenses();
+              }}
+            />
+          </React.Suspense>
+        )}
       </div>
     </SidebarProvider>
   );

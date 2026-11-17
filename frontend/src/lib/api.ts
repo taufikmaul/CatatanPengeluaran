@@ -673,6 +673,13 @@ export async function updatePurchaseRequest(
   return res.data;
 }
 
+export async function submitPurchaseRequest(
+  id: number
+): Promise<import("@/types").PurchaseRequest> {
+  const res = await api.post(`/requests/${id}/submit`);
+  return res.data;
+}
+
 export async function approvePurchaseRequest(
   id: number
 ): Promise<import("@/types").PurchaseRequest> {
@@ -1242,6 +1249,119 @@ export async function reanalyzeAssets(payload?: {
   asset_default_useful_life_months?: number;
 }): Promise<import("@/types").AssetReanalyzeResult> {
   const res = await api.post("/assets/reanalyze", payload || {});
+  return res.data;
+}
+
+// ──────────────────────────────────────────────
+// Bulk Form & Import CSV Template (Asset, Supplier, Item, Menu)
+// ──────────────────────────────────────────────
+
+async function triggerCsvDownload(endpoint: string, filename: string): Promise<void> {
+  const res = await api.get(endpoint, { responseType: "blob" });
+  const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadAssetCsvTemplate(): Promise<void> {
+  return triggerCsvDownload("/assets/template-csv", "template_import_aset.csv");
+}
+
+export async function bulkCreateAssets(
+  items: Array<Partial<import("@/types").FixedAsset>>
+): Promise<{ ok: boolean; added: number; skipped: number; errors?: string[]; message: string }> {
+  const res = await api.post("/assets/bulk", { items });
+  return res.data;
+}
+
+export async function importAssetsCsv(
+  file: File
+): Promise<{ ok: boolean; added: number; skipped: number; errors?: string[]; message: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await api.post("/assets/import-csv", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export async function downloadSupplierCsvTemplate(): Promise<void> {
+  return triggerCsvDownload("/suppliers/template-csv", "template_import_supplier.csv");
+}
+
+export async function bulkCreateSuppliers(
+  items: SupplierFormData[],
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const res = await api.post("/suppliers/bulk", { items, update_existing: updateExisting });
+  return res.data;
+}
+
+export async function importSuppliersCsv(
+  file: File,
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("update_existing", String(updateExisting));
+  const res = await api.post("/suppliers/import-csv", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export async function downloadMasterItemCsvTemplate(): Promise<void> {
+  return triggerCsvDownload("/master-items/template-csv", "template_import_master_item.csv");
+}
+
+export async function bulkCreateMasterItemsStructured(
+  items: Array<{
+    item_name: string;
+    category: string;
+    default_supplier?: string;
+    aliases?: string;
+    satuan_beli?: string;
+    tipe_satuan?: string;
+    isi_paket?: string;
+    satuan_ecer?: string;
+  }>,
+  defaultCategory = "Bahan Kue",
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message?: string }> {
+  const res = await api.post("/master-items/bulk", {
+    items,
+    default_category: defaultCategory,
+    update_existing: updateExisting,
+  });
+  return res.data;
+}
+
+export async function importMasterItemsCsv(
+  file: File,
+  defaultCategory = "Bahan Kue",
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("default_category", defaultCategory);
+  form.append("update_existing", String(updateExisting));
+  const res = await api.post("/master-items/import-csv", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
+export async function bulkCreateMenus(
+  items: import("@/types").MenuProductPayload[],
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const res = await api.post("/menus/bulk", { items, update_existing: updateExisting });
   return res.data;
 }
 

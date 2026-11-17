@@ -7,7 +7,16 @@ import {
   deleteSupplier,
   syncSupplierExpenses,
   migrateLegacyOngkir,
+  downloadSupplierCsvTemplate,
+  bulkCreateSuppliers,
+  importSuppliersCsv,
 } from "@/lib/api";
+import {
+  BulkRowImportDialog,
+  type BulkRowColumn,
+} from "@/components/common/BulkRowImportDialog";
+import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
+import { Table2, FileSpreadsheet } from "lucide-react";
 import { Supplier, SupplierFormData } from "@/types";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -90,6 +99,104 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isBulkFormOpen, setIsBulkFormOpen] = useState(false);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
+
+  type BulkSupplierRow = {
+    name: string;
+    supplier_type: "toko" | "kurir";
+    courier_category: string;
+    is_subscribed: boolean;
+    phone: string;
+    address: string;
+    aliases: string;
+    notes: string;
+    is_active: boolean;
+  };
+
+  const supplierBulkColumns: BulkRowColumn<BulkSupplierRow>[] = [
+    { key: "name", label: "Nama Toko / Kurir *", type: "text", required: true, placeholder: "Toko Bahan Jaya / Lalamove", widthClass: "min-w-[180px]" },
+    {
+      key: "supplier_type",
+      label: "Tipe",
+      type: "select",
+      widthClass: "min-w-[130px]",
+      options: [
+        { value: "toko", label: "Toko / Vendor" },
+        { value: "kurir", label: "Kurir" },
+      ],
+    },
+    {
+      key: "courier_category",
+      label: "Kategori Kurir",
+      type: "select",
+      widthClass: "min-w-[140px]",
+      options: [
+        { value: "", label: "-" },
+        { value: "Instan / Same Day", label: "Instan / Same Day" },
+        { value: "Ekspedisi Reguler", label: "Ekspedisi Reguler" },
+        { value: "Kurir Langganan", label: "Kurir Langganan" },
+        { value: "Lainnya", label: "Lainnya" },
+      ],
+    },
+    { key: "is_subscribed", label: "Langganan", type: "checkbox", widthClass: "w-[85px]" },
+    { key: "phone", label: "No. Telp / WA", type: "text", placeholder: "08...", widthClass: "min-w-[130px]" },
+    { key: "address", label: "Alamat", type: "text", placeholder: "Jl. ...", widthClass: "min-w-[160px]" },
+    { key: "aliases", label: "Alias", type: "text", placeholder: "nama lain1, nama lain2", widthClass: "min-w-[150px]" },
+    { key: "notes", label: "Catatan", type: "text", placeholder: "Opsional", widthClass: "min-w-[140px]" },
+    { key: "is_active", label: "Aktif", type: "checkbox", widthClass: "w-[70px]" },
+  ];
+
+  const createEmptySupplierRow = (): BulkSupplierRow => ({
+    name: "",
+    supplier_type: supplierTypeFilter === "kurir" ? "kurir" : "toko",
+    courier_category: supplierTypeFilter === "kurir" ? "Kurir Langganan" : "",
+    is_subscribed: false,
+    phone: "",
+    address: "",
+    aliases: "",
+    notes: "",
+    is_active: true,
+  });
+
+  const bulkFormMutation = useMutation({
+    mutationFn: ({ rows, updateExisting }: { rows: BulkSupplierRow[]; updateExisting: boolean }) =>
+      bulkCreateSuppliers(
+        rows.map((r) => ({
+          name: r.name.trim(),
+          supplier_type: r.supplier_type,
+          courier_category: r.courier_category || undefined,
+          is_subscribed: Boolean(r.is_subscribed),
+          phone: r.phone.trim(),
+          address: r.address.trim(),
+          aliases: r.aliases.trim(),
+          notes: r.notes.trim(),
+          is_active: Boolean(r.is_active),
+        })),
+        updateExisting
+      ),
+    onSuccess: (res) => {
+      toast.success(res.message || `${res.added} ditambahkan, ${res.updated} diperbarui.`);
+      setIsBulkFormOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan supplier masal.");
+    },
+  });
+
+  const csvImportMutation = useMutation({
+    mutationFn: ({ file, updateExisting }: { file: File; updateExisting: boolean }) =>
+      importSuppliersCsv(file, updateExisting),
+    onSuccess: (res) => {
+      toast.success(res.message || `${res.added} ditambahkan, ${res.updated} diperbarui.`);
+      setIsCsvImportOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal mengimpor CSV supplier.");
+    },
+  });
 
   // Form State
   const [formName, setFormName] = useState("");
@@ -669,6 +776,27 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             Migrasi Ongkir
           </Button>
 
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsCsvImportOpen(true)}
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Import CSV
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setIsBulkFormOpen(true)}
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+          >
+            <Table2 className="w-3.5 h-3.5" />
+            Tambah Masal
+          </Button>
+
           {/* Tombol Tambah Supplier */}
           <Button
             size="sm"
@@ -1235,6 +1363,46 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
         canDelete={canDelete}
+      />
+
+      <BulkRowImportDialog<BulkSupplierRow>
+        isOpen={isBulkFormOpen}
+        onClose={() => setIsBulkFormOpen(false)}
+        title="Tambah Toko & Kurir Masal (Form Tabel)"
+        description="Input banyak data toko atau kurir pengiriman sekaligus, atau salin-tempel langsung dari Excel/Google Sheets."
+        columns={supplierBulkColumns}
+        createEmptyRow={createEmptySupplierRow}
+        requiredKey="name"
+        showUpdateExistingToggle={true}
+        isSubmitting={bulkFormMutation.isPending}
+        submitLabel="Simpan Semua Supplier"
+        onSubmit={async (rows, updateExisting) => {
+          await bulkFormMutation.mutateAsync({ rows, updateExisting });
+        }}
+      />
+
+      <CsvTemplateImportDialog
+        isOpen={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+        title="Import Supplier & Kurir via Template CSV"
+        description="Unduh template CSV resmi, isi data toko atau kurir (kolom Tipe: toko/kurir), lalu unggah kembali ke sistem."
+        templateColumns={[
+          "Nama Supplier",
+          "Tipe (toko/kurir)",
+          "Kategori Kurir",
+          "Kurir Langganan (ya/tidak)",
+          "No Telp",
+          "Alamat",
+          "Alias",
+          "Catatan",
+          "Aktif (ya/tidak)",
+        ]}
+        showUpdateExistingToggle={true}
+        isImporting={csvImportMutation.isPending}
+        onDownloadTemplate={downloadSupplierCsvTemplate}
+        onImportCsv={async (file, updateExisting) => {
+          await csvImportMutation.mutateAsync({ file, updateExisting });
+        }}
       />
     </div>
   );

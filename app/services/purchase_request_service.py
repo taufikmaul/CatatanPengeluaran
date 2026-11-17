@@ -42,11 +42,18 @@ async def create_purchase_request(
     request_date: date | None = None,
     title: str = "Request Belanja",
     items: list[dict] | None = None,
+    status: str = "PENDING",
 ) -> PurchaseRequest:
     """
     Buat data pengajuan belanja baru.
-    Mendukung pembuatan multi-item (jika items diberikan) atau single item (fallback).
+    Mendukung pembuatan multi-item (jika items diberikan) atau single item (fallback),
+    serta penyimpanan sebagai DRAFT sebelum diajukan untuk approval.
     """
+    raw_status = (status or "PENDING").strip().upper()
+    if raw_status not in ("DRAFT", "PENDING"):
+        raise ValueError("Status awal pengajuan hanya boleh DRAFT atau PENDING.")
+    clean_status = raw_status
+
     clean_urgency = "URGENT" if str(urgency).upper() in ("URGENT", "MENDESAK", "DARURAT") else "NORMAL"
     req_date = request_date or date.today()
 
@@ -58,6 +65,8 @@ async def create_purchase_request(
         if user_obj and user_obj.name:
             req_name = user_obj.name
 
+    fallback_item_name = "Draft Belanja" if clean_status == "DRAFT" else "Item Belanja"
+
     # Header pengajuan
     req = PurchaseRequest(
         title=title.strip() if title else "Request Belanja",
@@ -66,9 +75,9 @@ async def create_purchase_request(
         requester_name=req_name or "Staf Toko",
         urgency=clean_urgency,
         notes=notes.strip() if notes else "-",
-        status="PENDING",
+        status=clean_status,
         # Simpan ringkasan single-item untuk backward compatibility jika ada
-        item_name=item_name.strip() if item_name else (items[0].get("item_name") if items else "Item Belanja"),
+        item_name=item_name.strip() if item_name else (items[0].get("item_name") if items else fallback_item_name),
         qty=Decimal(str(qty)) if qty else Decimal("1"),
         unit=unit.strip() if unit else "Pcs",
         category=category,
@@ -155,14 +164,15 @@ async def create_purchase_request(
 
     await db.commit()
     
-    # Ambil data lengkap beserta items & relasi untuk notifikasi Telegram
+    # Ambil data lengkap beserta items & relasi untuk notifikasi Telegram (hanya jika bukan DRAFT)
     fresh_req = await get_purchase_request_by_id(db, req.id)
     if fresh_req:
-        try:
-            from app.services.purchase_request_alert_service import notify_new_purchase_request
-            await notify_new_purchase_request(fresh_req)
-        except Exception as alert_err:
-            logger.warning("Gagal mengirim notifikasi request belanja baru: %s", alert_err)
+        if clean_status == "PENDING":
+            try:
+                from app.services.purchase_request_alert_service import notify_new_purchase_request
+                await notify_new_purchase_request(fresh_req)
+            except Exception as alert_err:
+                logger.warning("Gagal mengirim notifikasi request belanja baru: %s", alert_err)
         return fresh_req
 
     await db.refresh(req)
@@ -244,6 +254,34 @@ async def get_purchase_request_by_id(
     return res.scalar_one_or_none()
 
 
+async def submit_purchase_request(
+    db: AsyncSession,
+    request_id: int,
+) -> PurchaseRequest | None:
+    """Ajukan draft pengajuan belanja (DRAFT -> PENDING) agar masuk antrean approval."""
+    req = await get_purchase_request_by_id(db, request_id)
+    if not req:
+        return None
+    if req.status != "DRAFT":
+        raise ValueError("Hanya pengajuan berstatus Draft yang dapat diajukan untuk approval.")
+
+    has_items = bool(req.items and len(req.items) > 0) or bool(
+        req.item_name and req.item_name.strip() and req.item_name.strip() != "Draft Belanja"
+    )
+    if not has_items:
+        raise ValueError("Tambahkan minimal 1 barang sebelum mengirim pengajuan.")
+
+    req.status = "PENDING"
+    await db.commit()
+    fresh_req = await get_purchase_request_by_id(db, req.id) or req
+    try:
+        from app.services.purchase_request_alert_service import notify_new_purchase_request
+        await notify_new_purchase_request(fresh_req)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi pengajuan draft: %s", alert_err)
+    return fresh_req
+
+
 async def approve_purchase_request(
     db: AsyncSession,
     request_id: int,
@@ -254,6 +292,8 @@ async def approve_purchase_request(
     req = await get_purchase_request_by_id(db, request_id)
     if not req:
         return None
+    if req.status == "DRAFT":
+        raise ValueError("Pengajuan masih berstatus Draft dan belum dikirim untuk approval.")
 
     req.status = "APPROVED"
     req.reviewed_by_id = reviewer_id
@@ -282,6 +322,8 @@ async def reject_purchase_request(
     req = await get_purchase_request_by_id(db, request_id)
     if not req:
         return None
+    if req.status == "DRAFT":
+        raise ValueError("Pengajuan masih berstatus Draft dan belum dikirim untuk approval.")
 
     req.status = "REJECTED"
     req.reviewed_by_id = reviewer_id
@@ -969,6 +1011,7 @@ async def delete_purchase_request(
     if not req:
         return False
 
+    was_draft = req.status == "DRAFT"
     req_number = req.request_number or f"REQ-{req.id}"
     title = req.title or "Request Belanja"
     requester_name = req.requester_name or "-"
@@ -980,17 +1023,18 @@ async def delete_purchase_request(
     await db.delete(req)
     await db.commit()
 
-    try:
-        from app.services.purchase_request_alert_service import notify_purchase_request_deleted
-        await notify_purchase_request_deleted(
-            req_number=req_number,
-            title=title,
-            requester_name=requester_name,
-            items_summary=items_summary,
-            actor=actor,
-        )
-    except Exception as alert_err:
-        logger.warning("Gagal mengirim notifikasi penghapusan request belanja: %s", alert_err)
+    if not was_draft:
+        try:
+            from app.services.purchase_request_alert_service import notify_purchase_request_deleted
+            await notify_purchase_request_deleted(
+                req_number=req_number,
+                title=title,
+                requester_name=requester_name,
+                items_summary=items_summary,
+                actor=actor,
+            )
+        except Exception as alert_err:
+            logger.warning("Gagal mengirim notifikasi penghapusan request belanja: %s", alert_err)
     return True
 
 
@@ -1004,6 +1048,8 @@ async def fulfill_purchase_request(
     req = await get_purchase_request_by_id(db, request_id)
     if not req:
         return None
+    if req.status == "DRAFT":
+        raise ValueError("Pengajuan masih berstatus Draft dan belum diproses.")
 
     req.status = "FULFILLED"
     req.expense_id = expense_id
@@ -1024,6 +1070,7 @@ async def get_purchase_request_stats(db: AsyncSession) -> dict:
     """Statistik ringkas pengajuan belanja untuk dashboard & bot."""
     q = select(
         func.count(PurchaseRequest.id).label("total"),
+        func.count(func.nullif(PurchaseRequest.status != "DRAFT", True)).label("draft"),
         func.count(func.nullif(PurchaseRequest.status != "PENDING", True)).label("pending"),
         func.count(func.nullif(PurchaseRequest.status != "APPROVED", True)).label("approved"),
         func.count(func.nullif(PurchaseRequest.status != "ORDERED", True)).label("ordered"),
@@ -1042,6 +1089,7 @@ async def get_purchase_request_stats(db: AsyncSession) -> dict:
     if not row:
         return {
             "total": 0,
+            "draft": 0,
             "pending": 0,
             "approved": 0,
             "ordered": 0,
@@ -1053,6 +1101,7 @@ async def get_purchase_request_stats(db: AsyncSession) -> dict:
 
     return {
         "total": row.total or 0,
+        "draft": getattr(row, "draft", 0) or 0,
         "pending": row.pending or 0,
         "approved": row.approved or 0,
         "ordered": getattr(row, "ordered", 0) or 0,

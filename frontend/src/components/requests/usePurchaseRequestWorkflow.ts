@@ -5,6 +5,7 @@ import {
   getPurchaseRequestStats,
   createPurchaseRequest,
   updatePurchaseRequest,
+  submitPurchaseRequest,
   approvePurchaseRequest,
   rejectPurchaseRequest,
   fulfillPurchaseRequest,
@@ -104,9 +105,13 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
 
   const createMutation = useMutation({
     mutationFn: (data: PurchaseRequestFormData) => createPurchaseRequest(data),
-    onSuccess: () => {
+    onSuccess: (created, variables) => {
       invalidateAll();
-      toast.success("Pengajuan belanja berhasil dikirim!");
+      if ((created?.status || variables?.status) === "DRAFT") {
+        toast.success("Daftar belanja disimpan sebagai draft.");
+      } else {
+        toast.success("Pengajuan belanja berhasil dikirim!");
+      }
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Gagal membuat pengajuan belanja");
@@ -116,12 +121,29 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: PurchaseRequestFormData }) =>
       updatePurchaseRequest(id, data),
-    onSuccess: () => {
+    onSuccess: (updated, variables) => {
       invalidateAll();
-      toast.success("Pengajuan belanja berhasil diperbarui!");
+      if (updated?.status === "DRAFT") {
+        toast.success("Draft belanja berhasil diperbarui.");
+      } else if (variables?.data?.status === "PENDING") {
+        toast.success("Pengajuan belanja berhasil dikirim!");
+      } else {
+        toast.success("Pengajuan belanja berhasil diperbarui!");
+      }
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Gagal memperbarui pengajuan");
+    },
+  });
+
+  const submitDraftMutation = useMutation({
+    mutationFn: (id: number) => submitPurchaseRequest(id),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Draft belanja berhasil diajukan untuk approval!");
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal mengajukan draft belanja");
     },
   });
 
@@ -262,6 +284,7 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
 
   const stats = statsQuery.data || requestsQuery.data?.stats || {
     total: 0,
+    draft: 0,
     pending: 0,
     approved: 0,
     ordered: 0,
@@ -288,6 +311,7 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
     suppliers: suppliersQuery.data?.items || [],
     createMutation,
     updateMutation,
+    submitDraftMutation,
     approveMutation,
     rejectMutation,
     fulfillMutation,

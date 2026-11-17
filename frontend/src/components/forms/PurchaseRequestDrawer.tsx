@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   RotateCcw,
   Store,
+  Save,
 } from "lucide-react";
 
 interface PurchaseRequestDrawerProps {
@@ -369,7 +370,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
             notes: i.notes === "-" ? "" : i.notes,
           }))
         );
-      } else if (initialData.item_name) {
+      } else if (initialData.item_name && initialData.item_name !== "Draft Belanja") {
         setItems([
           {
             item_name: initialData.item_name,
@@ -429,7 +430,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   const usableRecentRequests = useMemo(
     () =>
       recentRequests
-        .filter((r) => (r.items && r.items.length > 0) || Boolean(r.item_name))
+        .filter((r) => r.status !== "DRAFT" && ((r.items && r.items.length > 0) || Boolean(r.item_name)))
         .slice(0, 3),
     [recentRequests]
   );
@@ -590,28 +591,39 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     focusQuickInput();
   };
 
-  const submitCurrentRequest = () => {
+  const submitCurrentRequest = (targetStatus: "DRAFT" | "PENDING" = "PENDING") => {
     if (isSubmitting) return;
 
     const validItems = items.filter((i) => i.item_name.trim().length > 0);
-    if (validItems.length === 0) {
+    if (targetStatus === "PENDING" && validItems.length === 0) {
       setValidationError("Tambahkan minimal 1 barang ke daftar belanja sebelum mengirim.");
       focusQuickInput();
       return;
     }
 
+    const hasDraftMetadata =
+      (title.trim().length > 0 && title.trim() !== "Request Belanja") ||
+      generalNotes.trim().length > 0;
+    if (targetStatus === "DRAFT" && validItems.length === 0 && !hasDraftMetadata) {
+      setValidationError("Isi judul khusus, catatan, atau tambahkan minimal 1 barang untuk menyimpan draft.");
+      focusQuickInput();
+      return;
+    }
+
+    const firstItem = validItems[0];
     const payload: PurchaseRequestFormData = {
       title: title.trim() || "Request Belanja",
       urgency,
       requester_name: requesterName.trim() || "Staf Toko",
       notes: generalNotes.trim() || "-",
       request_date: requestDate,
+      status: targetStatus,
       items: validItems,
       // Fallback ringkasan single-item untuk kompatibilitas
-      item_name: validItems[0].item_name,
-      qty: validItems[0].qty,
-      unit: validItems[0].unit,
-      category: validItems[0].category,
+      item_name: firstItem ? firstItem.item_name : "Draft Belanja",
+      qty: firstItem ? firstItem.qty : 1,
+      unit: firstItem ? firstItem.unit : "Pcs",
+      category: firstItem ? firstItem.category : undefined,
     };
 
     onSubmit(payload, initialData?.id && initialData.id > 0 ? initialData.id : undefined);
@@ -709,10 +721,14 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    submitCurrentRequest();
+    submitCurrentRequest("PENDING");
   };
 
   const isEditingExisting = Boolean(initialData?.id && initialData.id > 0);
+  const isEditingDraft = isEditingExisting && initialData?.status === "DRAFT";
+  const canSaveAsDraft = !isEditingExisting || isEditingDraft;
+  const primarySubmitLabel =
+    isEditingExisting && !isEditingDraft ? "Simpan Perubahan" : "Kirim Daftar Belanja";
   const showQuickDropdown =
     isQuickDropdownOpen &&
     (matchedSuggestions.length > 0 || parsedQuickInput.itemQuery.length > 0);
@@ -734,11 +750,25 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <DialogTitle className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                {isEditingExisting ? "Edit Daftar Belanja" : "Listing Request Belanja"}
-              </DialogTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <DialogTitle className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                  {isEditingDraft
+                    ? "Edit Draft Belanja"
+                    : isEditingExisting
+                    ? "Edit Daftar Belanja"
+                    : "Listing Request Belanja"}
+                </DialogTitle>
+                {isEditingDraft && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] border-dashed border-zinc-400 text-zinc-700 bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:bg-zinc-800"
+                  >
+                    Draft
+                  </Badge>
+                )}
+              </div>
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                Catat beberapa barang kebutuhan dapur atau toko dalam 1 pengajuan untuk diteruskan ke Purchasing.
+                Catat beberapa barang kebutuhan dapur atau toko dalam 1 pengajuan untuk diteruskan ke Purchasing, atau simpan sebagai draft terlebih dahulu.
               </p>
             </div>
           </div>
@@ -1318,7 +1348,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                 </span>
               )}
             </div>
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -1328,12 +1358,24 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               >
                 Batal
               </Button>
+              {canSaveAsDraft && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => submitCurrentRequest("DRAFT")}
+                  disabled={isSubmitting}
+                  className="h-11 sm:h-10 px-4 text-xs font-semibold rounded-xl border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Simpan Draft</span>
+                </Button>
+              )}
               <Button
                 type="submit"
                 disabled={isSubmitting}
                 className="h-11 sm:h-10 px-5 text-xs font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-xl shadow-xs flex items-center gap-2"
               >
-                <span>{isSubmitting ? "Menyimpan..." : "Kirim Daftar Belanja"}</span>
+                <span>{isSubmitting ? "Menyimpan..." : primarySubmitLabel}</span>
                 {!isSubmitting && (
                   <kbd className="hidden sm:inline-block text-[10px] font-mono bg-amber-800/80 text-amber-50 px-1.5 py-0.5 rounded">
                     Ctrl/⌘+↵

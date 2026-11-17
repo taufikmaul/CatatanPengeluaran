@@ -44,13 +44,13 @@ import {
   BookOpen,
 } from "lucide-react";
 
-// Sub-components untuk tab Analisis & Grafik
-import { AiAnalysisCard } from "@/components/dashboard/AiAnalysisCard";
-import { CategoryDonutChart } from "@/components/dashboard/CategoryDonutChart";
-import { PaymentMethodChart } from "@/components/dashboard/PaymentMethodChart";
-import { DailyTrendChart } from "@/components/dashboard/DailyTrendChart";
-import { UnpaidOrdersCard } from "@/components/dashboard/UnpaidOrdersCard";
-import { LeaderboardCards } from "@/components/dashboard/LeaderboardCards";
+// Sub-components untuk tab Analisis & Grafik (lazy-loaded agar mobile ringkasan tetap ringan)
+const AiAnalysisCard = React.lazy(() => import("@/components/dashboard/AiAnalysisCard").then(m => ({ default: m.AiAnalysisCard })));
+const CategoryDonutChart = React.lazy(() => import("@/components/dashboard/CategoryDonutChart").then(m => ({ default: m.CategoryDonutChart })));
+const PaymentMethodChart = React.lazy(() => import("@/components/dashboard/PaymentMethodChart").then(m => ({ default: m.PaymentMethodChart })));
+const DailyTrendChart = React.lazy(() => import("@/components/dashboard/DailyTrendChart").then(m => ({ default: m.DailyTrendChart })));
+const UnpaidOrdersCard = React.lazy(() => import("@/components/dashboard/UnpaidOrdersCard").then(m => ({ default: m.UnpaidOrdersCard })));
+const LeaderboardCards = React.lazy(() => import("@/components/dashboard/LeaderboardCards").then(m => ({ default: m.LeaderboardCards })));
 
 export interface OwnerMobileViewProps {
   activeTab?: string;
@@ -752,16 +752,18 @@ export function OwnerMobileView({
       {mobileTab === "transaksi" && (
         <div className="space-y-4">
           {/* Leaderboard & Top Stats Section */}
-          <LeaderboardCards
-            topFrequentItems={reportData?.top_frequent_items || []}
-            topExpensiveItems={reportData?.top_expensive_items || []}
-            topUnitPriceItems={reportData?.top_unit_price_items || []}
-            topPriceSpikes={reportData?.top_price_spikes || []}
-            topSuppliers={reportData?.top_suppliers || []}
-            summaryMetrics={reportData?.summary_metrics}
-            monthName={reportData?.month_name || "Bulan Ini"}
-            year={year}
-          />
+          <React.Suspense fallback={null}>
+            <LeaderboardCards
+              topFrequentItems={reportData?.top_frequent_items || []}
+              topExpensiveItems={reportData?.top_expensive_items || []}
+              topUnitPriceItems={reportData?.top_unit_price_items || []}
+              topPriceSpikes={reportData?.top_price_spikes || []}
+              topSuppliers={reportData?.top_suppliers || []}
+              summaryMetrics={reportData?.summary_metrics}
+              monthName={reportData?.month_name || "Bulan Ini"}
+              year={year}
+            />
+          </React.Suspense>
 
           {/* Search Bar Mobile */}
           <div className="relative">
@@ -1252,38 +1254,40 @@ export function OwnerMobileView({
 
       {/* Tab: Analisis & Grafik */}
       {mobileTab === "analisis" && (
-        <div className="space-y-5">
-          {/* AI Financial Analysis Card */}
-          <AiAnalysisCard
-            month={month}
-            year={year}
-            monthName={reportData?.month_name || "Bulan Ini"}
-          />
+        <React.Suspense fallback={<div className="py-10 text-center text-xs text-muted-foreground animate-pulse">Memuat grafik analisis...</div>}>
+          <div className="space-y-5">
+            {/* AI Financial Analysis Card */}
+            <AiAnalysisCard
+              month={month}
+              year={year}
+              monthName={reportData?.month_name || "Bulan Ini"}
+            />
 
-          {/* Donut Chart Kategori */}
-          <CategoryDonutChart
-            categoryData={reportData?.per_kategori || {}}
-            totalAmount={reportData?.total_lunas || 0}
-            perAccountGroup={reportData?.per_account_group}
-            accountingBreakdown={reportData?.accounting_breakdown}
-          />
+            {/* Donut Chart Kategori */}
+            <CategoryDonutChart
+              categoryData={reportData?.per_kategori || {}}
+              totalAmount={reportData?.total_lunas || 0}
+              perAccountGroup={reportData?.per_account_group}
+              accountingBreakdown={reportData?.accounting_breakdown}
+            />
 
-          {/* Chart Metode Pembayaran */}
-          <PaymentMethodChart
-            paymentData={reportData?.per_metode_bayar || {}}
-            totalAmount={reportData?.total_pengeluaran || 0}
-          />
+            {/* Chart Metode Pembayaran */}
+            <PaymentMethodChart
+              paymentData={reportData?.per_metode_bayar || {}}
+              totalAmount={reportData?.total_pengeluaran || 0}
+            />
 
-          {/* Daily Trend Chart */}
-          <DailyTrendChart data={reportData?.daily_chart || []} />
+            {/* Daily Trend Chart */}
+            <DailyTrendChart data={reportData?.daily_chart || []} />
 
-          {/* Unpaid Orders Card */}
-          <UnpaidOrdersCard
-            unpaidList={reportData?.list_hutang || []}
-            onMarkPaid={onMarkPaidById}
-            onViewAll={handleJumpToUnpaid}
-          />
-        </div>
+            {/* Unpaid Orders Card */}
+            <UnpaidOrdersCard
+              unpaidList={reportData?.list_hutang || []}
+              onMarkPaid={onMarkPaidById}
+              onViewAll={handleJumpToUnpaid}
+            />
+          </div>
+        </React.Suspense>
       )}
 
       {/* Tombol Tambah Transaksi (FAB) */}

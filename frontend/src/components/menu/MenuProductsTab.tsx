@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   anonymizeAllMenus,
   api,
+  bulkCreateMenus,
   bulkUpdateMenus,
   createMenu,
   createMenuShareToken,
@@ -26,6 +27,10 @@ import {
   MenuProductPayload,
 } from "@/types";
 import { MenuFormDialog } from "./MenuFormDialog";
+import {
+  BulkRowImportDialog,
+  type BulkRowColumn,
+} from "@/components/common/BulkRowImportDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +67,7 @@ import {
   Save,
   Search,
   Shield,
+  Table2,
   Trash2,
   TrendingUp,
   Unlock,
@@ -144,7 +150,60 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<MenuProduct | null>(null);
 
   const [importCsvOpen, setImportCsvOpen] = useState(false);
+  const [bulkFormOpen, setBulkFormOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  type BulkMenuRow = {
+    name: string;
+    sku: string;
+    category: string;
+    product_group: string;
+    unit: string;
+    selling_price: number;
+    hpp_manual: number;
+    hpp_mode: MenuHppMode;
+    notes: string;
+    is_active: boolean;
+  };
+
+  const menuUnitOptions = Array.from(
+    new Set(["Porsi", "Cup", "Box", "Pcs", "Pack", ...units])
+  ).map((u) => ({ value: u, label: u }));
+
+  const menuBulkColumns: BulkRowColumn<BulkMenuRow>[] = [
+    { key: "name", label: "Nama Menu *", type: "text", required: true, placeholder: "Kopi Susu Gula Aren", widthClass: "min-w-[180px]" },
+    { key: "sku", label: "SKU / Kode", type: "text", placeholder: "KSGA-01", widthClass: "min-w-[110px]" },
+    { key: "category", label: "Kategori", type: "text", placeholder: "Minuman / Kue", widthClass: "min-w-[130px]" },
+    { key: "product_group", label: "Grup Produk", type: "text", placeholder: "Signature", widthClass: "min-w-[120px]" },
+    { key: "unit", label: "Satuan", type: "select", widthClass: "min-w-[100px]", options: menuUnitOptions },
+    { key: "selling_price", label: "Harga Jual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
+    { key: "hpp_manual", label: "HPP Manual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
+    {
+      key: "hpp_mode",
+      label: "Mode HPP",
+      type: "select",
+      widthClass: "min-w-[110px]",
+      options: [
+        { value: "manual", label: "Manual" },
+        { value: "recipe", label: "Resep" },
+      ],
+    },
+    { key: "notes", label: "Catatan", type: "text", placeholder: "Opsional", widthClass: "min-w-[130px]" },
+    { key: "is_active", label: "Aktif", type: "checkbox", widthClass: "w-[70px]" },
+  ];
+
+  const createEmptyMenuRow = (): BulkMenuRow => ({
+    name: "",
+    sku: "",
+    category: "Lainnya",
+    product_group: "",
+    unit: "Porsi",
+    selling_price: 0,
+    hpp_manual: 0,
+    hpp_mode: "manual",
+    notes: "",
+    is_active: true,
+  });
   const [updateExistingCsv, setUpdateExistingCsv] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -268,6 +327,34 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menyimpan quick-edit massal.");
+    },
+  });
+
+  const bulkFormCreateMutation = useMutation({
+    mutationFn: ({ rows, updateExisting }: { rows: BulkMenuRow[]; updateExisting: boolean }) =>
+      bulkCreateMenus(
+        rows.map((r) => ({
+          name: r.name.trim(),
+          sku: r.sku.trim() || undefined,
+          category: r.category.trim() || "Lainnya",
+          product_group: r.product_group.trim() || undefined,
+          unit: r.unit || "Porsi",
+          selling_price: Math.max(0, Number(r.selling_price) || 0),
+          hpp_manual: Math.max(0, Number(r.hpp_manual) || 0),
+          hpp_mode: r.hpp_mode || "manual",
+          notes: r.notes.trim() || undefined,
+          is_active: Boolean(r.is_active),
+          ingredients: [],
+        })),
+        updateExisting
+      ),
+    onSuccess: (res) => {
+      toast.success(res.message || `+${res.added} menu ditambahkan, ${res.updated} diperbarui.`);
+      setBulkFormOpen(false);
+      invalidateMenus();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan menu masal.");
     },
   });
 
@@ -625,6 +712,20 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 className={`w-3.5 h-3.5 ${posImportMutation.isPending ? "animate-spin" : ""}`}
               />
               <span>Tarik dari POS</span>
+            </Button>
+          )}
+
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={effectiveAnonymized || isLockedReadOnly}
+              onClick={() => setBulkFormOpen(true)}
+              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            >
+              <Table2 className="w-3.5 h-3.5" />
+              <span>Tambah Masal</span>
             </Button>
           )}
 
@@ -1765,6 +1866,22 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkRowImportDialog<BulkMenuRow>
+        isOpen={bulkFormOpen}
+        onClose={() => setBulkFormOpen(false)}
+        title="Tambah Menu Produk Masal (Form Tabel)"
+        description="Input banyak menu sekaligus atau tempel (paste) baris data dari Excel/Google Sheets. Resep bahan bisa dilengkapi kemudian pada masing-masing menu."
+        columns={menuBulkColumns}
+        createEmptyRow={createEmptyMenuRow}
+        requiredKey="name"
+        showUpdateExistingToggle={true}
+        isSubmitting={bulkFormCreateMutation.isPending}
+        submitLabel="Simpan Semua Menu"
+        onSubmit={async (rows, updateExisting) => {
+          await bulkFormCreateMutation.mutateAsync({ rows, updateExisting });
+        }}
+      />
     </div>
   );
 };

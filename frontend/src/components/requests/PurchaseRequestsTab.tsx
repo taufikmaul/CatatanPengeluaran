@@ -252,6 +252,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   const requests = requestData?.items || [];
   const stats = statsData || requestData?.stats || {
     total: 0,
+    draft: 0,
     pending: 0,
     approved: 0,
     ordered: 0,
@@ -280,9 +281,13 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
   const createMutation = useMutation({
     mutationFn: (data: PurchaseRequestFormData) => createPurchaseRequest(data),
-    onSuccess: () => {
+    onSuccess: (created, variables) => {
       invalidateAll();
-      toast.success("Pengajuan belanja berhasil dikirim!");
+      if ((created?.status || variables?.status) === "DRAFT") {
+        toast.success("Daftar belanja disimpan sebagai draft.");
+      } else {
+        toast.success("Pengajuan belanja berhasil dikirim!");
+      }
       setIsDrawerOpen(false);
     },
     onError: (err: any) => {
@@ -293,9 +298,15 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: PurchaseRequestFormData }) =>
       updatePurchaseRequest(id, data),
-    onSuccess: () => {
+    onSuccess: (updated, variables) => {
       invalidateAll();
-      toast.success("Pengajuan belanja berhasil diperbarui!");
+      if (updated?.status === "DRAFT") {
+        toast.success("Draft belanja berhasil diperbarui.");
+      } else if (variables?.data?.status === "PENDING") {
+        toast.success("Pengajuan belanja berhasil dikirim!");
+      } else {
+        toast.success("Pengajuan belanja berhasil diperbarui!");
+      }
       setIsDrawerOpen(false);
       setEditingRequest(null);
     },
@@ -825,6 +836,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
               {[
                 { id: "ALL", label: "Semua" },
+                { id: "DRAFT", label: stats.draft > 0 ? `Draft (${stats.draft})` : "Draft" },
                 { id: "PENDING", label: "Menunggu" },
                 { id: "APPROVED", label: "Siap Beli" },
                 { id: "ORDERED", label: "Dipesan" },
@@ -892,6 +904,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
               </div>
             ) : (
               requests.map((req) => {
+                const isDraft = req.status === "DRAFT";
                 const isPending = req.status === "PENDING";
                 const isApproved = req.status === "APPROVED";
                 const isOrdered = req.status === "ORDERED" || req.status === "PARTIAL_ORDERED";
@@ -935,6 +948,11 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                           )}
 
                           {/* Status Badge */}
+                          {isDraft && (
+                            <Badge variant="outline" className="text-zinc-600 border-zinc-400 border-dashed text-[10px]">
+                              Draft
+                            </Badge>
+                          )}
                           {isPending && (
                             <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px]">
                               ⏳ Menunggu Approval
@@ -1026,8 +1044,8 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                           </Button>
                         )}
 
-                        {/* Edit & Delete for Pending */}
-                        {isPending && (
+                        {/* Edit & Delete for Draft / Pending */}
+                        {(isDraft || isPending) && (
                           <Button
                             size="sm"
                             variant="ghost"

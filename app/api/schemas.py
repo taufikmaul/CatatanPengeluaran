@@ -506,8 +506,10 @@ class MasterItemUpdate(BaseModel):
 
 
 class MasterItemBulkRequest(BaseModel):
-    raw_text: str
+    raw_text: str = ""
     default_category: str = "Bahan Kue"
+    items: list[MasterItemCreate] | None = None
+    update_existing: bool = True
 
 
 class MasterItemResponse(BaseModel):
@@ -825,6 +827,11 @@ class SupplierMergeRequest(BaseModel):
     source_supplier_ids: list[int]
 
 
+class SupplierBulkCreateRequest(BaseModel):
+    items: list[SupplierCreate]
+    update_existing: bool = True
+
+
 # ──────────────────────────────────────────────
 # Purchase Request Schemas (Multi-Item & 3 Roles)
 # ──────────────────────────────────────────────
@@ -876,6 +883,7 @@ class PurchaseRequestBase(BaseModel):
 
 class PurchaseRequestCreate(PurchaseRequestBase):
     user_id: int | None = None
+    status: str = "PENDING"
     items: list[PurchaseRequestItemCreate] = []
 
 
@@ -889,6 +897,8 @@ class PurchaseRequestUpdate(BaseModel):
     urgency: str | None = None
     notes: str | None = None
     requester_name: str | None = None
+    request_date: str | None = None
+    status: str | None = None
     items: list[PurchaseRequestItemCreate] | None = None
 
 
@@ -983,6 +993,7 @@ class PurchaseRequestResponse(PurchaseRequestBase):
 
 class PurchaseRequestStatsResponse(BaseModel):
     total: int = 0
+    draft: int = 0
     pending: int = 0
     approved: int = 0
     ordered: int = 0
@@ -1077,6 +1088,10 @@ class AssetMaintenanceCreate(BaseModel):
 class AssetReanalyzeRequest(BaseModel):
     asset_capitalization_threshold: int | None = Field(None, ge=0)
     asset_default_useful_life_months: int | None = Field(None, ge=1)
+
+
+class FixedAssetBulkCreateRequest(BaseModel):
+    items: list[FixedAssetCreate]
 
 
 

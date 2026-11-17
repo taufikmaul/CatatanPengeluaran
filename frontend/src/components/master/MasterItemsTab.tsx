@@ -1,6 +1,18 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, enqueueMergeMasterItems, enqueueBatchMergeMasterItems } from "@/lib/api";
+import {
+  api,
+  enqueueMergeMasterItems,
+  enqueueBatchMergeMasterItems,
+  downloadMasterItemCsvTemplate,
+  bulkCreateMasterItemsStructured,
+  importMasterItemsCsv,
+} from "@/lib/api";
+import {
+  BulkRowImportDialog,
+  type BulkRowColumn,
+} from "@/components/common/BulkRowImportDialog";
+import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import {
   MasterItem,
   DuplicatePair,
@@ -55,6 +67,8 @@ import {
   ArrowRight,
   ShieldCheck,
   SlidersHorizontal,
+  Table2,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface MasterItemsTabProps {
@@ -92,6 +106,69 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [showBulkBox, setShowBulkBox] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [bulkCategory, setBulkCategory] = useState(categories[0] || "Bahan Kue");
+  const [isBulkFormOpen, setIsBulkFormOpen] = useState(false);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
+
+  type BulkMasterItemRow = {
+    item_name: string;
+    category: string;
+    satuan_beli: string;
+    tipe_satuan: "keduanya" | "paket" | "ecer";
+    isi_paket: string;
+    satuan_ecer: string;
+    default_supplier: string;
+    aliases: string;
+  };
+
+  const masterItemBulkColumns: BulkRowColumn<BulkMasterItemRow>[] = [
+    { key: "item_name", label: "Nama Item Baku *", type: "text", required: true, placeholder: "Susu Carnation", widthClass: "min-w-[180px]" },
+    {
+      key: "category",
+      label: "Kategori",
+      type: "select",
+      widthClass: "min-w-[140px]",
+      options: (categories.length ? categories : ["Bahan Kue"]).map((c) => ({ value: c, label: c })),
+    },
+    {
+      key: "satuan_beli",
+      label: "Satuan Beli",
+      type: "select",
+      widthClass: "min-w-[115px]",
+      options: units.map((u) => ({ value: u, label: u })),
+    },
+    {
+      key: "tipe_satuan",
+      label: "Tipe Satuan",
+      type: "select",
+      widthClass: "min-w-[130px]",
+      options: [
+        { value: "keduanya", label: "Paket & Ecer" },
+        { value: "paket", label: "Hanya Paket" },
+        { value: "ecer", label: "Hanya Ecer" },
+      ],
+    },
+    { key: "isi_paket", label: "Isi Paket", type: "text", placeholder: "12 pcs", widthClass: "min-w-[110px]" },
+    {
+      key: "satuan_ecer",
+      label: "Satuan Ecer",
+      type: "select",
+      widthClass: "min-w-[115px]",
+      options: units.map((u) => ({ value: u, label: u })),
+    },
+    { key: "default_supplier", label: "Supplier Default", type: "text", placeholder: "Toko Makmur", widthClass: "min-w-[140px]" },
+    { key: "aliases", label: "Alias", type: "text", placeholder: "alias1, alias2", widthClass: "min-w-[150px]" },
+  ];
+
+  const createEmptyMasterItemRow = (): BulkMasterItemRow => ({
+    item_name: "",
+    category: categories[0] || "Bahan Kue",
+    satuan_beli: units[0] || "Pcs",
+    tipe_satuan: "keduanya",
+    isi_paket: "",
+    satuan_ecer: units[0] || "Pcs",
+    default_supplier: "-",
+    aliases: "",
+  });
 
   // Search & filter
   const [search, setSearch] = useState("");
@@ -213,6 +290,47 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal mengimpor daftar item");
+    },
+  });
+
+  const bulkFormMutation = useMutation({
+    mutationFn: ({ rows, updateExisting }: { rows: BulkMasterItemRow[]; updateExisting: boolean }) =>
+      bulkCreateMasterItemsStructured(
+        rows.map((r) => ({
+          item_name: r.item_name.trim(),
+          category: r.category || categories[0] || "Bahan Kue",
+          satuan_beli: r.satuan_beli || "Pcs",
+          tipe_satuan: r.tipe_satuan || "keduanya",
+          isi_paket: r.isi_paket.trim(),
+          satuan_ecer: r.satuan_ecer || "Pcs",
+          default_supplier: r.default_supplier.trim() || "-",
+          aliases: r.aliases.trim(),
+        })),
+        categories[0] || "Bahan Kue",
+        updateExisting
+      ),
+    onSuccess: (res) => {
+      toast.success(
+        res.message || `Berhasil memproses katalog (+${res.added} baru, ${res.updated} diperbarui).`
+      );
+      setIsBulkFormOpen(false);
+      invalidateAll();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal menyimpan katalog item masal.");
+    },
+  });
+
+  const csvImportMutation = useMutation({
+    mutationFn: ({ file, updateExisting }: { file: File; updateExisting: boolean }) =>
+      importMasterItemsCsv(file, categories[0] || "Bahan Kue", updateExisting),
+    onSuccess: (res) => {
+      toast.success(res.message || `+${res.added} item diimpor, ${res.updated} diperbarui.`);
+      setIsCsvImportOpen(false);
+      invalidateAll();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal mengimpor CSV master item.");
     },
   });
 
@@ -936,6 +1054,24 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               >
                 <FileText className="w-3.5 h-3.5" />
                 {showBulkBox ? "Tutup Paste Massal" : "Paste Daftar Item Massal"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsBulkFormOpen(true)}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+              >
+                <Table2 className="w-3.5 h-3.5" />
+                Form Masal
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsCsvImportOpen(true)}
+                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Import CSV
               </Button>
               <Button
                 size="sm"
@@ -1749,6 +1885,45 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkRowImportDialog<BulkMasterItemRow>
+        isOpen={isBulkFormOpen}
+        onClose={() => setIsBulkFormOpen(false)}
+        title="Tambah Master Item Masal (Form Tabel)"
+        description="Input banyak item bahan baku/kemasan sekaligus atau tempel (paste) baris data langsung dari Excel/Google Sheets."
+        columns={masterItemBulkColumns}
+        createEmptyRow={createEmptyMasterItemRow}
+        requiredKey="item_name"
+        showUpdateExistingToggle={true}
+        isSubmitting={bulkFormMutation.isPending}
+        submitLabel="Simpan Semua Item"
+        onSubmit={async (rows, updateExisting) => {
+          await bulkFormMutation.mutateAsync({ rows, updateExisting });
+        }}
+      />
+
+      <CsvTemplateImportDialog
+        isOpen={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+        title="Import Master Item via Template CSV"
+        description="Unduh template CSV resmi untuk Katalog Master Item, isi data item & satuan, lalu unggah kembali ke sistem."
+        templateColumns={[
+          "Nama Item",
+          "Kategori",
+          "Satuan Beli",
+          "Tipe Satuan (paket/ecer/keduanya)",
+          "Isi Paket",
+          "Satuan Ecer",
+          "Supplier Default",
+          "Alias",
+        ]}
+        showUpdateExistingToggle={true}
+        isImporting={csvImportMutation.isPending}
+        onDownloadTemplate={downloadMasterItemCsvTemplate}
+        onImportCsv={async (file, updateExisting) => {
+          await csvImportMutation.mutateAsync({ file, updateExisting });
+        }}
+      />
     </div>
   );
 };

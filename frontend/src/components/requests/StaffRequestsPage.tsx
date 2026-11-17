@@ -44,6 +44,7 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
     stats,
     createMutation,
     updateMutation,
+    submitDraftMutation,
     deleteMutation,
   } = usePurchaseRequestWorkflow({
     enableRequests: true,
@@ -220,6 +221,7 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
           {[
             { id: "ALL", label: "Semua" },
+            { id: "DRAFT", label: stats.draft > 0 ? `Draft (${stats.draft})` : "Draft" },
             { id: "PENDING", label: "Menunggu" },
             { id: "APPROVED", label: "Disetujui" },
             { id: "ORDERED", label: "Dipesan" },
@@ -289,10 +291,14 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                Belum Ada Pengajuan Belanja
+                {activeStatusTab === "DRAFT"
+                  ? "Belum Ada Draft Belanja"
+                  : "Belum Ada Pengajuan Belanja"}
               </h3>
               <p className="text-xs text-zinc-600 dark:text-zinc-400 max-w-sm mx-auto mt-1">
-                {activeStatusTab !== "ALL" || searchQuery
+                {activeStatusTab === "DRAFT" && !searchQuery
+                  ? "Daftar belanja yang disimpan sebagai draft akan tampil di sini sebelum dikirim untuk approval."
+                  : activeStatusTab !== "ALL" || searchQuery
                   ? "Tidak ada pengajuan yang cocok dengan filter saat ini."
                   : "Mulai catat kebutuhan bahan dapur atau toko dengan tombol Ajukan Belanja Baru."}
               </p>
@@ -316,6 +322,8 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
                   [req.id]: !(prev[req.id] ?? true),
                 }))
               }
+              isSubmittingDraft={submitDraftMutation.isPending}
+              onSubmitDraft={(r) => submitDraftMutation.mutate(r.id)}
               onEdit={(r) => {
                 setEditingRequest(r);
                 setIsDrawerOpen(true);

@@ -1273,3 +1273,153 @@ async def migrate_legacy_ongkir_expenses(
             else f"Berhasil memigrasi {migrated_count} transaksi ongkir ({reclassified_from_operasional} direklasifikasi ke kategori Ongkir, {created_couriers} kurir baru ditambahkan)."
         ),
     }
+
+
+async def bulk_upsert_suppliers(
+    db: AsyncSession,
+    items: list[dict[str, Any]],
+    update_existing: bool = True,
+) -> dict[str, Any]:
+    """Tambah atau perbarui banyak supplier/kurir sekaligus secara masal."""
+    existing_res = await db.execute(select(Supplier))
+    by_lower = {s.name.strip().lower(): s for s in existing_res.scalars().all()}
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for raw in items:
+        name = str(raw.get("name") or "").strip()
+        if not name or name == "-":
+            skipped += 1
+            continue
+
+        key = name.lower()
+        sup_type = "kurir" if str(raw.get("supplier_type") or "toko").strip().lower() == "kurir" else "toko"
+        courier_cat = raw.get("courier_category")
+        if sup_type == "kurir" and not courier_cat:
+            courier_cat = "Langganan"
+        elif sup_type != "kurir":
+            courier_cat = None
+        is_sub = bool(raw.get("is_subscribed", False)) if sup_type == "kurir" else False
+        is_active = bool(raw.get("is_active", True))
+
+        existing = by_lower.get(key)
+        if existing:
+            if not update_existing:
+                skipped += 1
+                continue
+            if raw.get("phone"):
+                existing.phone = str(raw["phone"]).strip()
+            if raw.get("address"):
+                existing.address = str(raw["address"]).strip()
+            if raw.get("aliases"):
+                existing.aliases = str(raw["aliases"]).strip()
+            if raw.get("notes"):
+                existing.notes = str(raw["notes"]).strip()
+            existing.supplier_type = sup_type
+            if courier_cat is not None:
+                existing.courier_category = str(courier_cat).strip()
+            if sup_type == "kurir":
+                existing.is_subscribed = is_sub
+            existing.is_active = is_active
+            updated += 1
+        else:
+            supp = Supplier(
+                name=name,
+                phone=str(raw.get("phone") or "").strip(),
+                address=str(raw.get("address") or "").strip(),
+                aliases=str(raw.get("aliases") or "").strip(),
+                notes=str(raw.get("notes") or "").strip(),
+                supplier_type=sup_type,
+                courier_category=str(courier_cat).strip() if courier_cat else None,
+                is_subscribed=is_sub,
+                is_active=is_active,
+            )
+            db.add(supp)
+            by_lower[key] = supp
+            added += 1
+
+    await db.flush()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Import supplier selesai: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati.",
+    }
+
+
+def generate_supplier_csv_template() -> str:
+    """Bangun template CSV siap isi untuk import Master Supplier & Kurir."""
+    from app.utils.csv_helpers import build_csv_template
+
+    return build_csv_template([
+        "Nama Supplier",
+        "Tipe (toko/kurir)",
+        "Kategori Kurir",
+        "Kurir Langganan (ya/tidak)",
+        "No Telp",
+        "Alamat",
+        "Alias",
+        "Catatan",
+        "Aktif (ya/tidak)",
+    ])
+
+
+async def import_suppliers_from_csv(
+    db: AsyncSession,
+    content: bytes,
+    update_existing: bool = True,
+) -> dict[str, Any]:
+    """Import banyak supplier/kurir dari file CSV."""
+    from app.utils.csv_helpers import (
+        col_lookup,
+        find_header_row,
+        get_cell,
+        parse_bool_cell,
+        parse_csv_table,
+    )
+
+    first_row, rest_rows = parse_csv_table(content)
+    all_rows = [first_row, *rest_rows]
+    hdr_idx, headers = find_header_row(all_rows, ("nama supplier", "nama toko", "supplier", "name"))
+
+    idx_name = col_lookup(headers, "nama supplier", "nama toko", "supplier", "name", "nama")
+    idx_type = col_lookup(headers, "tipe", "supplier_type", "jenis")
+    idx_ccat = col_lookup(headers, "kategori kurir", "courier_category")
+    idx_sub = col_lookup(headers, "kurir langganan", "langganan", "is_subscribed")
+    idx_phone = col_lookup(headers, "no telp", "telepon", "telp", "hp", "wa", "phone")
+    idx_addr = col_lookup(headers, "alamat", "address")
+    idx_alias = col_lookup(headers, "alias", "aliases")
+    idx_notes = col_lookup(headers, "catatan", "notes", "keterangan")
+    idx_active = col_lookup(headers, "aktif", "is_active", "status")
+
+    if idx_name is None:
+        raise ValueError("Kolom 'Nama Supplier' tidak ditemukan di file CSV.")
+
+    items_payload: list[dict[str, Any]] = []
+    for row in all_rows[hdr_idx + 1:]:
+        if not any(c.strip() for c in row):
+            continue
+        name = get_cell(row, idx_name)
+        if not name or name == "-":
+            continue
+        raw_type = get_cell(row, idx_type).lower()
+        sup_type = "kurir" if "kurir" in raw_type or "courier" in raw_type else "toko"
+        items_payload.append({
+            "name": name,
+            "supplier_type": sup_type,
+            "courier_category": get_cell(row, idx_ccat) or None,
+            "is_subscribed": parse_bool_cell(get_cell(row, idx_sub), default=False),
+            "phone": get_cell(row, idx_phone),
+            "address": get_cell(row, idx_addr),
+            "aliases": get_cell(row, idx_alias),
+            "notes": get_cell(row, idx_notes),
+            "is_active": parse_bool_cell(get_cell(row, idx_active), default=True),
+        })
+
+    if not items_payload:
+        raise ValueError("Tidak ada baris supplier valid di dalam file CSV.")
+
+    return await bulk_upsert_suppliers(db, items_payload, update_existing=update_existing)

@@ -1,7 +1,7 @@
 """
 app/api/assets.py — REST API Inventaris Aset Tetap, Label QR, Maintenance & Analisa Ulang (SAK EMKM)
 """
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -9,10 +9,12 @@ from app.api.deps import (
     require_admin_role,
     require_auth,
     require_roles,
+    validate_upload_file,
 )
 from app.api.schemas import (
     AssetMaintenanceCreate,
     AssetReanalyzeRequest,
+    FixedAssetBulkCreateRequest,
     FixedAssetCreate,
     FixedAssetDisposeRequest,
     FixedAssetUpdate,
@@ -99,6 +101,54 @@ async def reanalyze_assets_endpoint(
         new_default_life_months=payload.asset_default_useful_life_months if payload else None,
         actor=actor,
     )
+    await db.commit()
+    return res
+
+
+@router.get("/template-csv", dependencies=[Depends(require_roles("admin", "admin_input", "warehouse"))])
+async def download_asset_csv_template():
+    """Unduh template CSV siap isi untuk import Inventaris Aset Tetap."""
+    csv_text = asset_service.generate_asset_csv_template()
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template_import_aset.csv"'},
+    )
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_roles("admin", "admin_input"))])
+async def bulk_create_assets_endpoint(
+    payload: FixedAssetBulkCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah banyak unit aset inventaris sekaligus via form masal."""
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Daftar aset tidak boleh kosong.")
+    actor = f"dashboard:{get_current_role(request)}"
+    res = await asset_service.bulk_create_assets(
+        db,
+        [it.model_dump() for it in payload.items],
+        actor=actor,
+    )
+    await db.commit()
+    return res
+
+
+@router.post("/import-csv", dependencies=[Depends(require_roles("admin", "admin_input"))])
+async def import_assets_csv_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import banyak aset inventaris dari file CSV sesuai template."""
+    content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    actor = f"dashboard:{get_current_role(request)}"
+    try:
+        res = await asset_service.import_assets_from_csv(db, content, actor=actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     await db.commit()
     return res
 

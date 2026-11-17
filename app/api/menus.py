@@ -627,6 +627,93 @@ async def api_delete_menu(
     return {"ok": True}
 
 
+class MenuBulkCreateRequest(BaseModel):
+    items: list[MenuProductCreate]
+    update_existing: bool = True
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_role)])
+async def api_bulk_create_menus(
+    payload: MenuBulkCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah atau perbarui banyak Menu / Produk & HPP sekaligus via form masal."""
+    await _ensure_not_anonymize_locked(db)
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Daftar menu tidak boleh kosong.")
+
+    existing_menus = list((await db.execute(select(MenuProduct))).scalars().all())
+    by_name = {m.name.strip().lower(): m for m in existing_menus}
+    existing_codes = {m.anonymous_name for m in existing_menus if m.anonymous_name}
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for it in payload.items:
+        clean_name = it.name.strip()
+        if not clean_name:
+            skipped += 1
+            continue
+        key = clean_name.lower()
+        existing = by_name.get(key)
+        if existing:
+            if not payload.update_existing:
+                skipped += 1
+                continue
+            existing.category = it.category.strip() or existing.category
+            if it.product_group is not None:
+                existing.product_group = it.product_group.strip() or None
+            if it.sku is not None:
+                existing.sku = it.sku.strip() or None
+            existing.unit = it.unit.strip() or existing.unit
+            existing.selling_price = it.selling_price
+            existing.hpp_manual = it.hpp_manual
+            existing.hpp_mode = it.hpp_mode
+            if it.notes is not None:
+                existing.notes = it.notes
+            existing.is_active = it.is_active
+            if it.ingredients:
+                await sync_menu_ingredients(db, existing.id, [ing.model_dump() for ing in it.ingredients])
+            updated += 1
+        else:
+            clean_anon = (it.anonymous_name or "").strip()
+            if clean_anon and clean_anon.lower() not in {c.lower() for c in existing_codes}:
+                anon_code = clean_anon
+            else:
+                anon_code = generate_next_anonymous_code(existing_codes)
+            existing_codes.add(anon_code)
+
+            new_menu = MenuProduct(
+                name=clean_name,
+                anonymous_name=anon_code,
+                sku=it.sku.strip() if it.sku else None,
+                category=it.category.strip() or "Lainnya",
+                product_group=it.product_group.strip() if it.product_group else None,
+                unit=it.unit.strip() or "Porsi",
+                selling_price=it.selling_price,
+                hpp_manual=it.hpp_manual,
+                hpp_mode=it.hpp_mode,
+                notes=it.notes,
+                is_active=it.is_active,
+            )
+            db.add(new_menu)
+            await db.flush()
+            if it.ingredients:
+                await sync_menu_ingredients(db, new_menu.id, [ing.model_dump() for ing in it.ingredients])
+            by_name[key] = new_menu
+            added += 1
+
+    await db.commit()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Tambah masal menu selesai: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati.",
+    }
+
+
 @router.post("/import-from-pos", dependencies=[Depends(require_admin_role)])
 async def api_import_menus_from_pos(db: AsyncSession = Depends(get_db)):
     await _ensure_not_anonymize_locked(db)

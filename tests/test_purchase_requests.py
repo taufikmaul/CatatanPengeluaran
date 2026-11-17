@@ -378,4 +378,174 @@ async def test_purchasing_registered_suppliers_and_item_corrections(db, client, 
     assert "Gula Halus" not in all_order_items
 
 
+@pytest.mark.asyncio
+async def test_purchase_request_draft_lifecycle_via_api(client, auth_cookies):
+    from unittest.mock import AsyncMock, patch
+
+    client.cookies.update(auth_cookies)
+
+    mock_new = AsyncMock()
+    mock_upd = AsyncMock()
+    mock_del = AsyncMock()
+
+    with patch("app.services.purchase_request_alert_service.notify_new_purchase_request", mock_new), \
+         patch("app.services.purchase_request_alert_service.notify_purchase_request_updated", mock_upd), \
+         patch("app.services.purchase_request_alert_service.notify_purchase_request_deleted", mock_del):
+
+        # 1. Buat draft tanpa item (hanya judul & catatan) -> berhasil, tidak kirim alert
+        empty_draft_res = await client.post(
+            "/api/v1/requests",
+            json={
+                "title": "Draft Belanja Akhir Pekan",
+                "urgency": "NORMAL",
+                "notes": "Masih cek stok kulkas",
+                "requester_name": "Staf Dapur",
+                "status": "DRAFT",
+                "items": [],
+            },
+        )
+        assert empty_draft_res.status_code == 201
+        draft_data = empty_draft_res.json()
+        draft_id = draft_data["id"]
+        assert draft_data["status"] == "DRAFT"
+        assert draft_data["items"] == []
+        assert not mock_new.called
+
+        # 2. Pastikan PENDING tanpa item ditolak
+        bad_pending = await client.post(
+            "/api/v1/requests",
+            json={"title": "Kosong", "urgency": "NORMAL", "status": "PENDING", "items": []},
+        )
+        assert bad_pending.status_code == 400
+
+        # 3. Draft tidak boleh langsung di-approve/reject/fulfill maupun di-submit saat 0 item
+        assert (await client.post(f"/api/v1/requests/{draft_id}/approve")).status_code == 400
+        assert (await client.post(f"/api/v1/requests/{draft_id}/reject", json={"reason": "test"})).status_code == 400
+        assert (await client.post(f"/api/v1/requests/{draft_id}/fulfill")).status_code == 400
+        assert (await client.post(f"/api/v1/requests/{draft_id}/submit")).status_code == 400
+
+        # 4. Filter status=DRAFT & cek stats.draft
+        list_draft = await client.get("/api/v1/requests?status=DRAFT")
+        assert list_draft.status_code == 200
+        assert any(it["id"] == draft_id for it in list_draft.json()["items"])
+        assert list_draft.json()["stats"]["draft"] >= 1
+
+        # 5. Update draft dengan menambahkan item, tetap berstatus DRAFT -> tidak kirim alert
+        patch_draft = await client.patch(
+            f"/api/v1/requests/{draft_id}",
+            json={
+                "status": "DRAFT",
+                "items": [
+                    {"item_name": "Gula Pasir", "qty": 4, "unit": "Kg"},
+                    {"item_name": "Susu UHT", "qty": 6, "unit": "Liter"},
+                ],
+            },
+        )
+        assert patch_draft.status_code == 200
+        assert patch_draft.json()["status"] == "DRAFT"
+        assert len(patch_draft.json()["items"]) == 2
+        assert not mock_new.called
+        assert not mock_upd.called
+
+        # 6. Submit draft via endpoint /submit -> menjadi PENDING dan kirim notifikasi baru
+        submit_res = await client.post(f"/api/v1/requests/{draft_id}/submit")
+        assert submit_res.status_code == 200
+        assert submit_res.json()["status"] == "PENDING"
+        assert mock_new.call_count == 1
+
+        # 7. Request yang sudah PENDING tidak boleh dikembalikan ke DRAFT
+        downgrade_res = await client.patch(
+            f"/api/v1/requests/{draft_id}",
+            json={"status": "DRAFT"},
+        )
+        assert downgrade_res.status_code == 400
+
+        # 8. Buat draft kedua dengan item, lalu ajukan lewat PATCH status=PENDING
+        draft2_res = await client.post(
+            "/api/v1/requests",
+            json={
+                "title": "Draft Kemasan",
+                "urgency": "URGENT",
+                "status": "DRAFT",
+                "items": [{"item_name": "Box Kue 20x20", "qty": 50, "unit": "Pcs"}],
+            },
+        )
+        assert draft2_res.status_code == 201
+        draft2_id = draft2_res.json()["id"]
+        assert mock_new.call_count == 1
+
+        submit_via_patch = await client.patch(
+            f"/api/v1/requests/{draft2_id}",
+            json={"status": "PENDING"},
+        )
+        assert submit_via_patch.status_code == 200
+        assert submit_via_patch.json()["status"] == "PENDING"
+        assert mock_new.call_count == 2
+
+        # 9. Hapus draft ke-3 -> sukses tanpa kirim notifikasi hapus Telegram
+        draft3_res = await client.post(
+            "/api/v1/requests",
+            json={
+                "title": "Draft Batal",
+                "urgency": "NORMAL",
+                "status": "DRAFT",
+                "items": [{"item_name": "Coklat Batang", "qty": 2, "unit": "Kg"}],
+            },
+        )
+        assert draft3_res.status_code == 201
+        draft3_id = draft3_res.json()["id"]
+
+        del_res = await client.delete(f"/api/v1/requests/{draft3_id}")
+        assert del_res.status_code == 204
+        assert not mock_del.called
+
+
+@pytest.mark.asyncio
+async def test_staff_role_can_manage_draft_requests(client):
+    from app.services.dashboard_auth_service import SESSION_COOKIE_NAME, create_session_token
+
+    client.cookies.set(SESSION_COOKIE_NAME, create_session_token(role="staff"))
+
+    # Staff membuat draft -> edit -> submit -> buat draft lagi lalu hapus
+    res = await client.post(
+        "/api/v1/requests",
+        json={
+            "title": "Draft Staf",
+            "urgency": "NORMAL",
+            "status": "DRAFT",
+            "items": [{"item_name": "Tepung Maizena", "qty": 2, "unit": "Kg"}],
+        },
+    )
+    assert res.status_code == 201
+    req_id = res.json()["id"]
+    assert res.json()["status"] == "DRAFT"
+
+    upd = await client.patch(
+        f"/api/v1/requests/{req_id}",
+        json={
+            "title": "Draft Staf Revisi",
+            "status": "DRAFT",
+            "items": [{"item_name": "Tepung Maizena", "qty": 3, "unit": "Kg"}],
+        },
+    )
+    assert upd.status_code == 200
+    assert upd.json()["status"] == "DRAFT"
+    assert upd.json()["items"][0]["qty"] == 3.0
+
+    sub = await client.post(f"/api/v1/requests/{req_id}/submit")
+    assert sub.status_code == 200
+    assert sub.json()["status"] == "PENDING"
+
+    # Staff juga bisa menghapus draft miliknya sendiri
+    res2 = await client.post(
+        "/api/v1/requests",
+        json={"title": "Draft Dihapus", "urgency": "NORMAL", "status": "DRAFT", "items": []},
+    )
+    assert res2.status_code == 201
+    del_res = await client.delete(f"/api/v1/requests/{res2.json()['id']}")
+    assert del_res.status_code == 204
+
+
+
+
 

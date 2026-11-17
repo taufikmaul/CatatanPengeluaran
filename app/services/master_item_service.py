@@ -4,6 +4,7 @@ app/services/master_item_service.py — Layanan Katalog Nama Item Baku (Master I
 """
 import asyncio
 import re
+from typing import Any
 from uuid import uuid4
 from difflib import SequenceMatcher
 from sqlalchemy import select, func, or_
@@ -1492,3 +1493,154 @@ async def merge_master_items(
         "expenses_reassigned_count": reassigned_count,
         "aliases_added": aliases_added,
     }
+
+
+async def bulk_upsert_master_items(
+    db: AsyncSession,
+    items: list[dict[str, Any]],
+    default_category: str = "Bahan Kue",
+    update_existing: bool = True,
+) -> dict[str, Any]:
+    """Tambah atau perbarui banyak Master Item terstruktur sekaligus."""
+    existing_items = await list_master_items(db)
+    existing_map = {m.item_name.strip().lower(): m for m in existing_items}
+    valid_cats = {c.lower(): c for c in settings.valid_categories}
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for raw in items:
+        name = str(raw.get("item_name") or "").strip()
+        if not name:
+            skipped += 1
+            continue
+
+        raw_cat = str(raw.get("category") or default_category).strip()
+        cat = valid_cats.get(raw_cat.lower(), default_category)
+        raw_beli = str(raw.get("satuan_beli") or "Pcs").strip() or "Pcs"
+        satuan_beli = (await normalize_unit_to_master(db, raw_beli)) or "Pcs"
+        raw_ecer = str(raw.get("satuan_ecer") or "Pcs").strip() or "Pcs"
+        satuan_ecer = (await normalize_unit_to_master(db, raw_ecer)) or "Pcs"
+        raw_tipe = str(raw.get("tipe_satuan") or "keduanya").strip().lower()
+        tipe_satuan = raw_tipe if raw_tipe in ("paket", "ecer", "keduanya") else "keduanya"
+        isi_paket = str(raw.get("isi_paket") or "").strip()
+        default_supplier = str(raw.get("default_supplier") or "-").strip() or "-"
+        aliases = str(raw.get("aliases") or "").strip()
+
+        key = name.lower()
+        if key in existing_map:
+            if not update_existing:
+                skipped += 1
+                continue
+            m = existing_map[key]
+            m.category = cat
+            m.satuan_beli = satuan_beli
+            m.satuan_ecer = satuan_ecer
+            m.tipe_satuan = tipe_satuan
+            if isi_paket:
+                m.isi_paket = isi_paket
+            if default_supplier and default_supplier != "-":
+                m.default_supplier = default_supplier
+            if aliases:
+                m.aliases = aliases
+            updated += 1
+        else:
+            new_m = MasterItem(
+                item_name=name,
+                category=cat,
+                default_supplier=default_supplier,
+                aliases=aliases,
+                satuan_beli=satuan_beli,
+                tipe_satuan=tipe_satuan,
+                isi_paket=isi_paket,
+                satuan_ecer=satuan_ecer,
+            )
+            db.add(new_m)
+            existing_map[key] = new_m
+            added += 1
+
+    await db.flush()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "total": len(existing_map),
+        "message": f"Import Master Item selesai: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati.",
+    }
+
+
+def generate_master_item_csv_template() -> str:
+    """Bangun template CSV siap isi untuk import Katalog Master Item."""
+    from app.utils.csv_helpers import build_csv_template
+
+    return build_csv_template([
+        "Nama Item",
+        "Kategori",
+        "Satuan Beli",
+        "Tipe Satuan (paket/ecer/keduanya)",
+        "Isi Paket",
+        "Satuan Ecer",
+        "Supplier Default",
+        "Alias",
+    ])
+
+
+async def import_master_items_from_csv(
+    db: AsyncSession,
+    content: bytes,
+    default_category: str = "Bahan Kue",
+    update_existing: bool = True,
+) -> dict[str, Any]:
+    """Import banyak Master Item dari file CSV."""
+    from app.utils.csv_helpers import (
+        col_lookup,
+        find_header_row,
+        get_cell,
+        parse_csv_table,
+    )
+
+    first_row, rest_rows = parse_csv_table(content)
+    all_rows = [first_row, *rest_rows]
+    hdr_idx, headers = find_header_row(all_rows, ("nama item", "item_name", "nama barang", "item"))
+
+    idx_name = col_lookup(headers, "nama item", "item_name", "nama barang", "item", "nama")
+    idx_cat = col_lookup(headers, "kategori", "category")
+    idx_beli = col_lookup(headers, "satuan beli", "satuan_beli", "satuan")
+    idx_tipe = col_lookup(headers, "tipe satuan", "tipe_satuan", "tipe")
+    idx_isi = col_lookup(headers, "isi paket", "isi_paket", "isi")
+    idx_ecer = col_lookup(headers, "satuan ecer", "satuan_ecer", "ecer")
+    idx_sup = col_lookup(headers, "supplier default", "default_supplier", "supplier", "toko")
+    idx_alias = col_lookup(headers, "alias", "aliases")
+
+    if idx_name is None:
+        raise ValueError("Kolom 'Nama Item' tidak ditemukan di file CSV.")
+
+    items_payload: list[dict[str, Any]] = []
+    for row in all_rows[hdr_idx + 1:]:
+        if not any(c.strip() for c in row):
+            continue
+        name = get_cell(row, idx_name)
+        if not name:
+            continue
+        items_payload.append({
+            "item_name": name,
+            "category": get_cell(row, idx_cat) or default_category,
+            "satuan_beli": get_cell(row, idx_beli) or "Pcs",
+            "tipe_satuan": get_cell(row, idx_tipe) or "keduanya",
+            "isi_paket": get_cell(row, idx_isi),
+            "satuan_ecer": get_cell(row, idx_ecer) or "Pcs",
+            "default_supplier": get_cell(row, idx_sup) or "-",
+            "aliases": get_cell(row, idx_alias),
+        })
+
+    if not items_payload:
+        raise ValueError("Tidak ada baris Master Item valid di dalam file CSV.")
+
+    return await bulk_upsert_master_items(
+        db,
+        items_payload,
+        default_category=default_category,
+        update_existing=update_existing,
+    )

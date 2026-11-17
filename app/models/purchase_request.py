@@ -47,7 +47,7 @@ class PurchaseRequest(Base):
     urgency: Mapped[str] = mapped_column(String(20), default="NORMAL", server_default=text("'NORMAL'"), index=True)
     notes: Mapped[str] = mapped_column(Text, default="-", server_default=text("'-'"))
 
-    # Status Keseluruhan: PENDING / APPROVED / PARTIAL_ORDERED / ORDERED / RECEIVED / REJECTED / CANCELLED
+    # Status Keseluruhan: DRAFT / PENDING / APPROVED / PARTIAL_ORDERED / ORDERED / RECEIVED / REJECTED / CANCELLED
     status: Mapped[str] = mapped_column(String(30), default="PENDING", server_default=text("'PENDING'"), index=True)
 
     # Reviewer
