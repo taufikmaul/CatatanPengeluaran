@@ -214,6 +214,7 @@ async def assign_supplier_endpoint(
     item_id: int,
     payload: PurchasingAssignSupplierInput,
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
     """Purchasing mengaitkan item belanjaan dengan supplier terdaftar."""
     try:
@@ -224,6 +225,7 @@ async def assign_supplier_endpoint(
             supplier_name=payload.supplier_name,
             estimated_price=payload.estimated_price,
             require_registered=True,
+            actor=f"Purchasing ({role})",
         )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
@@ -272,6 +274,7 @@ async def update_purchasing_item_endpoint(
     item_id: int,
     payload: PurchasingItemUpdateInput,
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
     """Koreksi detail item belanja (qty, satuan, nama, harga, catatan) dari halaman Purchasing."""
     try:
@@ -284,6 +287,7 @@ async def update_purchasing_item_endpoint(
             category=payload.category,
             estimated_price=payload.estimated_price,
             notes=payload.notes,
+            actor=f"Purchasing ({role})",
         )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
@@ -301,6 +305,7 @@ async def cancel_purchasing_item_endpoint(
     item_id: int,
     payload: PurchasingItemCancelInput,
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
     """Tandai item tidak tersedia / batalkan dari daftar pesanan Purchasing."""
     try:
@@ -308,6 +313,7 @@ async def cancel_purchasing_item_endpoint(
             db,
             item_id=item_id,
             reason=payload.reason,
+            actor=f"Purchasing ({role})",
         )
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
@@ -516,6 +522,13 @@ async def update_purchase_request(
 
     await db.commit()
     fresh = await purchase_request_service.get_purchase_request_by_id(db, req.id)
+    if fresh:
+        try:
+            from app.services.purchase_request_alert_service import notify_purchase_request_updated
+            actor = "Owner / Manager" if role == "admin" else f"Staf ({role})"
+            await notify_purchase_request_updated(fresh, actor=actor)
+        except Exception:
+            pass
     return PurchaseRequestResponse(**_to_response_dict(fresh))
 
 
@@ -571,17 +584,15 @@ async def fulfill_request_endpoint(
     request_id: int,
     expense_id: int | None = Query(None, description="ID expense yang merealisasikan"),
     db: AsyncSession = Depends(get_db),
+    role: str = Depends(get_current_role),
 ):
     """Tandai pengajuan belanja sudah dibeli/terpenuhi."""
-    from datetime import datetime
-    req = await purchase_request_service.get_purchase_request_by_id(db, request_id)
+    actor = "Owner / Manager" if role == "admin" else f"Purchasing ({role})"
+    req = await purchase_request_service.fulfill_purchase_request(
+        db, request_id, expense_id=expense_id, actor=actor
+    )
     if not req:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
-    req.status = "FULFILLED"
-    req.expense_id = expense_id
-    req.fulfilled_at = datetime.utcnow()
-    await db.commit()
-    await db.refresh(req)
     return PurchaseRequestResponse(**_to_response_dict(req))
 
 
@@ -604,7 +615,8 @@ async def delete_request(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Pengajuan yang sudah diproses hanya dapat dihapus oleh Owner / Manager.",
         )
-    success = await purchase_request_service.delete_purchase_request(db, request_id)
+    actor = "Owner / Manager" if role == "admin" else f"Staf ({role})"
+    success = await purchase_request_service.delete_purchase_request(db, request_id, actor=actor)
     if not success:
         raise HTTPException(status_code=404, detail="Request belanja tidak ditemukan")
     return None

@@ -262,8 +262,13 @@ async def approve_purchase_request(
     req.reject_reason = None
 
     await db.commit()
-    await db.refresh(req)
-    return req
+    fresh_req = await get_purchase_request_by_id(db, req.id) or req
+    try:
+        from app.services.purchase_request_alert_service import notify_purchase_request_approved
+        await notify_purchase_request_approved(fresh_req, actor=fresh_req.reviewer_name or "Owner / Manager")
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi approval belanja disetujui: %s", alert_err)
+    return fresh_req
 
 
 async def reject_purchase_request(
@@ -285,8 +290,13 @@ async def reject_purchase_request(
     req.reject_reason = reason or "Ditolak oleh admin"
 
     await db.commit()
-    await db.refresh(req)
-    return req
+    fresh_req = await get_purchase_request_by_id(db, req.id) or req
+    try:
+        from app.services.purchase_request_alert_service import notify_purchase_request_rejected
+        await notify_purchase_request_rejected(fresh_req, actor=fresh_req.reviewer_name or "Owner / Manager")
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi approval belanja ditolak: %s", alert_err)
+    return fresh_req
 
 
 # ──────────────────────────────────────────────
@@ -457,6 +467,21 @@ async def get_supplier_options_for_item(
     }
 
 
+async def _get_item_with_request(
+    db: AsyncSession, item_id: int
+) -> PurchaseRequestItem | None:
+    """Ambil PurchaseRequestItem beserta relasi request dan supplier."""
+    res = await db.execute(
+        select(PurchaseRequestItem)
+        .options(
+            selectinload(PurchaseRequestItem.request),
+            selectinload(PurchaseRequestItem.supplier),
+        )
+        .where(PurchaseRequestItem.id == item_id)
+    )
+    return res.scalar_one_or_none()
+
+
 async def update_item_supplier(
     db: AsyncSession,
     item_id: int,
@@ -464,14 +489,12 @@ async def update_item_supplier(
     supplier_name: str | None = None,
     estimated_price: Decimal | float | None = None,
     require_registered: bool = False,
+    actor: str = "Purchasing",
 ) -> PurchaseRequestItem | None:
     """Purchasing mengaitkan item belanjaan dengan supplier terdaftar."""
     from app.services.supplier_service import find_best_supplier_match
 
-    res = await db.execute(
-        select(PurchaseRequestItem).where(PurchaseRequestItem.id == item_id)
-    )
-    item = res.scalar_one_or_none()
+    item = await _get_item_with_request(db, item_id)
     if not item:
         return None
 
@@ -499,7 +522,12 @@ async def update_item_supplier(
         item.estimated_price = Decimal(str(estimated_price))
 
     await db.commit()
-    await db.refresh(item)
+    item = await _get_item_with_request(db, item.id) or item
+    try:
+        from app.services.purchase_request_alert_service import notify_purchasing_supplier_assigned
+        await notify_purchasing_supplier_assigned(item, actor=actor)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi penetapan supplier: %s", alert_err)
     return item
 
 
@@ -512,9 +540,10 @@ async def update_purchasing_item(
     category: str | None = None,
     estimated_price: Decimal | float | None = None,
     notes: str | None = None,
+    actor: str = "Purchasing",
 ) -> PurchaseRequestItem | None:
     """Koreksi detail item belanja (qty kurang/berubah, nama, satuan, harga, catatan) di halaman Purchasing."""
-    item = await db.get(PurchaseRequestItem, item_id)
+    item = await _get_item_with_request(db, item_id)
     if not item:
         return None
     if item.receiving_status and item.receiving_status != "PENDING":
@@ -542,7 +571,12 @@ async def update_purchasing_item(
         item.notes = notes.strip() or "-"
 
     await db.commit()
-    await db.refresh(item)
+    item = await _get_item_with_request(db, item.id) or item
+    try:
+        from app.services.purchase_request_alert_service import notify_purchasing_item_updated
+        await notify_purchasing_item_updated(item, actor=actor)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi koreksi item purchasing: %s", alert_err)
     return item
 
 
@@ -550,9 +584,10 @@ async def cancel_purchasing_item(
     db: AsyncSession,
     item_id: int,
     reason: str = "Barang tidak tersedia di supplier",
+    actor: str = "Purchasing",
 ) -> PurchaseRequestItem | None:
     """Tandai item belanja tidak ada / dibatalkan dari antrean Purchasing."""
-    item = await db.get(PurchaseRequestItem, item_id)
+    item = await _get_item_with_request(db, item_id)
     if not item:
         return None
     if item.receiving_status and item.receiving_status != "PENDING":
@@ -569,7 +604,12 @@ async def cancel_purchasing_item(
     await db.flush()
     await _sync_parent_request_order_status(db, item.request_id)
     await db.commit()
-    await db.refresh(item)
+    item = await _get_item_with_request(db, item.id) or item
+    try:
+        from app.services.purchase_request_alert_service import notify_purchasing_item_cancelled
+        await notify_purchasing_item_cancelled(item, reason=clean_reason, actor=actor)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi pembatalan item purchasing: %s", alert_err)
     return item
 
 
@@ -678,8 +718,13 @@ async def add_purchasing_item(
     await db.flush()
     await _sync_parent_request_order_status(db, target_req.id)
     await db.commit()
-    await db.refresh(new_item)
-    return new_item
+    loaded_item = await _get_item_with_request(db, new_item.id) or new_item
+    try:
+        from app.services.purchase_request_alert_service import notify_purchasing_item_added
+        await notify_purchasing_item_added(loaded_item, actor=actor)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi item tambahan purchasing: %s", alert_err)
+    return loaded_item
 
 
 async def get_purchasing_grouped_orders(
@@ -895,18 +940,19 @@ async def receive_warehouse_item(
 
     # Periksa apakah seluruh item dalam PurchaseRequest sudah diterima
     req = await get_purchase_request_by_id(db, item.request_id)
+    all_received = False
     if req and req.items:
         all_received = all(i.receiving_status != "PENDING" for i in req.items)
         if all_received:
             req.status = "RECEIVED"
 
     await db.commit()
-    await db.refresh(item)
+    item = await _get_item_with_request(db, item.id) or item
 
     # Kirim notifikasi Telegram ke Topic Request Belanja
     try:
         from app.services.purchase_request_alert_service import notify_warehouse_received
-        await notify_warehouse_received(item, actor=received_by)
+        await notify_warehouse_received(item, actor=received_by, all_received=all_received)
     except Exception as alert_err:
         logger.warning("Gagal mengirim notifikasi penerimaan barang ke Telegram: %s", alert_err)
 
@@ -914,16 +960,64 @@ async def receive_warehouse_item(
 
 
 async def delete_purchase_request(
-    db: AsyncSession, request_id: int
+    db: AsyncSession,
+    request_id: int,
+    actor: str = "Admin / Staf",
 ) -> bool:
     """Hapus pengajuan belanja."""
     req = await get_purchase_request_by_id(db, request_id)
     if not req:
         return False
 
+    req_number = req.request_number or f"REQ-{req.id}"
+    title = req.title or "Request Belanja"
+    requester_name = req.requester_name or "-"
+    items_summary = [
+        f"{it.item_name} ({float(it.qty):g} {it.unit})"
+        for it in (req.items or [])
+    ] or ([f"{req.item_name} ({float(req.qty):g} {req.unit})"] if req.item_name else [])
+
     await db.delete(req)
     await db.commit()
+
+    try:
+        from app.services.purchase_request_alert_service import notify_purchase_request_deleted
+        await notify_purchase_request_deleted(
+            req_number=req_number,
+            title=title,
+            requester_name=requester_name,
+            items_summary=items_summary,
+            actor=actor,
+        )
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi penghapusan request belanja: %s", alert_err)
     return True
+
+
+async def fulfill_purchase_request(
+    db: AsyncSession,
+    request_id: int,
+    expense_id: int | None = None,
+    actor: str = "Purchasing / Admin",
+) -> PurchaseRequest | None:
+    """Tandai pengajuan belanja telah terpenuhi/selesai (FULFILLED)."""
+    req = await get_purchase_request_by_id(db, request_id)
+    if not req:
+        return None
+
+    req.status = "FULFILLED"
+    req.expense_id = expense_id
+    req.fulfilled_at = datetime.utcnow()
+    await db.commit()
+
+    fresh_req = await get_purchase_request_by_id(db, req.id) or req
+    try:
+        from app.services.purchase_request_alert_service import notify_purchase_request_fulfilled
+        source_note = f"Tertaut dengan pengeluaran ID #{expense_id}" if expense_id else None
+        await notify_purchase_request_fulfilled(fresh_req, actor=actor, source_note=source_note)
+    except Exception as alert_err:
+        logger.warning("Gagal mengirim notifikasi request belanja terpenuhi: %s", alert_err)
+    return fresh_req
 
 
 async def get_purchase_request_stats(db: AsyncSession) -> dict:
@@ -1014,5 +1108,15 @@ async def auto_match_and_fulfill(
 
     if matched:
         await db.commit()
+        try:
+            from app.services.purchase_request_alert_service import notify_purchase_request_fulfilled
+            for req in matched:
+                await notify_purchase_request_fulfilled(
+                    req,
+                    actor="Sistem (Otomatis dari Pengeluaran)",
+                    source_note=f"Cocok dengan pencatatan: {expense.item_name}",
+                )
+        except Exception as alert_err:
+            logger.warning("Gagal mengirim notifikasi auto-fulfill request belanja: %s", alert_err)
 
     return matched

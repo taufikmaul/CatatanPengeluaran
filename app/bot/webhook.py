@@ -42,12 +42,19 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
             cb_msg = cb.get("message") or {}
             cb_chat = cb_msg.get("chat") or {}
+            cb_chat_id = cb_chat.get("id")
             cb_chat_type = cb_chat.get("type")
             cb_thread_id = cb_msg.get("message_thread_id")
             cb_from_id = (cb.get("from") or {}).get("id")
+            cb_data = cb.get("data", "")
 
-            if cb_chat_type in ("group", "supergroup") and not settings.is_thread_allowed(cb_thread_id):
-                return {"ok": True}
+            if cb_chat_type in ("group", "supergroup"):
+                if settings.is_request_belanja_thread(cb_chat_id, cb_thread_id):
+                    # Topic Khusus Request Belanja hanya untuk aktivitas request belanja, bukan pencatatan
+                    if not cb_data.startswith(("req_app:", "req_rej:", "req_view:")):
+                        return {"ok": True}
+                elif not settings.is_thread_allowed(cb_thread_id):
+                    return {"ok": True}
             if cb_chat_type == "private" and cb_from_id is not None:
                 if not await is_user_authenticated(db, cb_from_id):
                     return {"ok": True}
@@ -102,6 +109,9 @@ async def webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     return {"ok": True}
 
         elif chat_type in ("group", "supergroup"):
+            # Topic Khusus Request Belanja hanya menampilkan feed aktivitas, tidak ada pencatatan pesan
+            if settings.is_request_belanja_thread(chat_id, thread_id):
+                return {"ok": True}
             if settings.is_thread_allowed(thread_id):
                 is_authorized = True
 

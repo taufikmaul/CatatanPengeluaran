@@ -31,11 +31,14 @@ def test_settings_multi_thread_ids_parsing():
     assert 10 in allowed
     assert 12 in allowed
     assert 15 in allowed
-    assert 4947 in allowed
+    assert 4947 not in allowed
 
     assert s.is_thread_allowed(7) is True
     assert s.is_thread_allowed(12) is True
     assert s.is_thread_allowed(15) is True
+    assert s.is_thread_allowed(4947) is False
+    assert s.is_request_belanja_thread(None, 4947) is True
+    assert s.is_request_belanja_thread(None, 7) is False
     assert s.is_thread_allowed(999) is False
     assert s.is_thread_allowed(None) is True  # pesan direct/main chat
 

@@ -228,3 +228,197 @@ async def test_system_config_role_passwords_and_telegram_topic(client, auth_cook
     assert get_data["staff_password_configured"] is True
     assert get_data["request_belanja_thread_id"] == 99
     assert get_data["request_belanja_chat_id"] == "-100888777"
+
+
+@pytest.mark.asyncio
+async def test_notify_approval_and_rejection():
+    mock_send = AsyncMock(return_value={"ok": True})
+    with patch("app.bot.telegram_client.send_message", mock_send), \
+         patch.object(settings, "request_belanja_chat_id", "-100123456"), \
+         patch.object(settings, "request_belanja_thread_id", 42):
+
+        req = PurchaseRequest(
+            id=15,
+            request_number="REQ-20261117-015",
+            title="Belanja Harian",
+            requester_name="Sari",
+            urgency="URGENT",
+            reject_reason="Stok di gudang masih cukup",
+            items=[
+                PurchaseRequestItem(
+                    id=21,
+                    item_name="Coklat Bubuk",
+                    qty=Decimal("3"),
+                    unit="Kg",
+                )
+            ],
+        )
+
+        await alert_svc.notify_purchase_request_approved(req, actor="Owner")
+        approved_text = mock_send.call_args.kwargs["text"]
+        assert mock_send.call_args.kwargs["thread_id"] == 42
+        assert "APPROVAL BELANJA: DISETUJUI" in approved_text
+        assert "REQ-20261117-015" in approved_text
+        assert "Owner" in approved_text
+        assert "Coklat Bubuk" in approved_text
+
+        await alert_svc.notify_purchase_request_rejected(req, actor="Owner")
+        rejected_text = mock_send.call_args.kwargs["text"]
+        assert "APPROVAL BELANJA: DITOLAK" in rejected_text
+        assert "Stok di gudang masih cukup" in rejected_text
+
+
+@pytest.mark.asyncio
+async def test_notify_purchasing_and_fulfill_activities():
+    mock_send = AsyncMock(return_value={"ok": True})
+    with patch("app.bot.telegram_client.send_message", mock_send), \
+         patch.object(settings, "request_belanja_chat_id", "-100123456"), \
+         patch.object(settings, "request_belanja_thread_id", 42):
+
+        req = PurchaseRequest(
+            id=18,
+            request_number="REQ-20261117-018",
+            title="Belanja Dapur",
+            requester_name="Rina",
+            items=[
+                PurchaseRequestItem(
+                    id=31,
+                    request_id=18,
+                    item_name="Keju Cheddar",
+                    qty=Decimal("4"),
+                    unit="Block",
+                    supplier_name="Toko Bahan Kue Jaya",
+                    estimated_price=Decimal("45000"),
+                )
+            ],
+        )
+        item = req.items[0]
+        item.request = req
+
+        await alert_svc.notify_purchasing_supplier_assigned(item, actor="Dewi Purchasing")
+        assert "SUPPLIER DITETAPKAN" in mock_send.call_args.kwargs["text"]
+        assert "Toko Bahan Kue Jaya" in mock_send.call_args.kwargs["text"]
+
+        await alert_svc.notify_purchasing_item_updated(item, actor="Dewi Purchasing")
+        assert "KOREKSI ITEM BELANJA" in mock_send.call_args.kwargs["text"]
+
+        await alert_svc.notify_purchasing_item_added(item, actor="Dewi Purchasing")
+        assert "ITEM SUSULAN / TAMBAHAN" in mock_send.call_args.kwargs["text"]
+
+        await alert_svc.notify_purchasing_item_cancelled(item, reason="Kosong", actor="Dewi Purchasing")
+        assert "ITEM DIBATALKAN" in mock_send.call_args.kwargs["text"]
+        assert "Kosong" in mock_send.call_args.kwargs["text"]
+
+        await alert_svc.notify_purchase_request_fulfilled(req, actor="Purchasing", source_note="Selesai")
+        assert "REQUEST BELANJA TERPENUHI" in mock_send.call_args.kwargs["text"]
+        assert "REQ-20261117-018" in mock_send.call_args.kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_full_purchase_request_lifecycle_alerts_via_api(client, auth_cookies, db):
+    from app.models.supplier import Supplier
+
+    client.cookies.update(auth_cookies)
+    sup = Supplier(name="Toko Supplier Resmi", is_active=True)
+    db.add(sup)
+    await db.commit()
+    await db.refresh(sup)
+
+    sent_messages: list[dict] = []
+
+    async def fake_send_message(chat_id, text, thread_id=None, reply_markup=None, parse_mode="Markdown"):
+        sent_messages.append({"chat_id": chat_id, "thread_id": thread_id, "text": text})
+        return {"ok": True, "result": {"message_id": len(sent_messages)}}
+
+    with patch("app.bot.telegram_client.send_message", fake_send_message), \
+         patch.object(settings, "request_belanja_chat_id", "-100123456"), \
+         patch.object(settings, "request_belanja_thread_id", 4947):
+
+        # 1. Pengajuan belanja
+        create_res = await client.post(
+            "/api/v1/requests",
+            json={
+                "title": "Belanja Mingguan",
+                "urgency": "URGENT",
+                "requester_name": "Chef Budi",
+                "items": [
+                    {"item_name": "Tepung Terigu", "qty": 5, "unit": "Kg", "estimated_price": 15000}
+                ],
+            },
+        )
+        assert create_res.status_code == 201
+        req_id = create_res.json()["id"]
+        item_id = create_res.json()["items"][0]["id"]
+
+        # 2. Edit pengajuan
+        patch_res = await client.patch(
+            f"/api/v1/requests/{req_id}",
+            json={"notes": "Untuk produksi weekend"},
+        )
+        assert patch_res.status_code == 200
+
+        # 3. Approval belanja
+        app_res = await client.post(f"/api/v1/requests/{req_id}/approve")
+        assert app_res.status_code == 200
+
+        # 4. Purchasing: assign supplier, koreksi item, tambah susulan, order
+        assign_res = await client.post(
+            f"/api/v1/requests/purchasing/items/{item_id}/assign-supplier",
+            json={"supplier_id": sup.id, "supplier_name": sup.name},
+        )
+        assert assign_res.status_code == 200
+
+        upd_item_res = await client.patch(
+            f"/api/v1/requests/purchasing/items/{item_id}",
+            json={"qty": 6},
+        )
+        assert upd_item_res.status_code == 200
+
+        add_item_res = await client.post(
+            "/api/v1/requests/purchasing/items",
+            json={
+                "item_name": "Gula Halus",
+                "qty": 2,
+                "unit": "Kg",
+                "supplier_id": sup.id,
+                "request_id": req_id,
+            },
+        )
+        assert add_item_res.status_code == 201
+        added_item_id = add_item_res.json()["id"]
+
+        cancel_res = await client.post(
+            f"/api/v1/requests/purchasing/items/{added_item_id}/cancel",
+            json={"reason": "Stok supplier habis"},
+        )
+        assert cancel_res.status_code == 200
+
+        order_res = await client.post(
+            "/api/v1/requests/purchasing/mark-ordered",
+            json={"item_ids": [item_id]},
+        )
+        assert order_res.status_code == 200
+
+        # 5. Gudang & penerimaan + fulfill
+        recv_res = await client.post(
+            f"/api/v1/requests/warehouse/items/{item_id}/receive",
+            json={"qty_received": 6, "received_by": "Agus Gudang", "receiving_notes": "Aman"},
+        )
+        assert recv_res.status_code == 200
+
+        fulfill_res = await client.post(f"/api/v1/requests/{req_id}/fulfill")
+        assert fulfill_res.status_code == 200
+
+    assert len(sent_messages) == 10
+    assert all(m["thread_id"] == 4947 and m["chat_id"] == -100123456 for m in sent_messages)
+    combined = "\n".join(m["text"] for m in sent_messages)
+    assert "REQUEST BELANJA BARU" in combined
+    assert "PENGAJUAN BELANJA DIPERBARUI" in combined
+    assert "APPROVAL BELANJA: DISETUJUI" in combined
+    assert "PURCHASING: SUPPLIER DITETAPKAN" in combined
+    assert "PURCHASING: KOREKSI ITEM BELANJA" in combined
+    assert "PURCHASING: ITEM SUSULAN / TAMBAHAN" in combined
+    assert "PURCHASING: ITEM DIBATALKAN" in combined
+    assert "PESANAN BELANJA TELAH DIBELI / DIORDER" in combined
+    assert "BARANG DITERIMA DI GUDANG" in combined
+    assert "REQUEST BELANJA TERPENUHI" in combined

@@ -169,6 +169,106 @@ class TestGroupAuthorization:
         )
         assert calls == ["/rekap"]
 
+    async def test_request_belanja_topic_ignores_all_messages_and_media(
+        self, client, db, telegram_spy, monkeypatch
+    ):
+        from app.config import settings
+
+        agent_calls: list[str] = []
+        photo_calls: list[dict] = []
+        voice_calls: list[dict] = []
+
+        async def fake_process(self, text="", **kwargs):
+            agent_calls.append(text)
+
+        async def fake_process_photo(**kwargs):
+            photo_calls.append(kwargs)
+
+        async def fake_process_voice(**kwargs):
+            voice_calls.append(kwargs)
+
+        monkeypatch.setattr("app.agent.hermes.HermesAgent.process", fake_process)
+        monkeypatch.setattr(webhook_module, "_process_photo", fake_process_photo)
+        monkeypatch.setattr(webhook_module, "_process_voice", fake_process_voice)
+        monkeypatch.setattr(settings, "request_belanja_thread_id", 4947)
+        monkeypatch.setattr(settings, "request_belanja_chat_id", None)
+        # Sekalipun admin sempat menambahkan 4947 ke allowed_thread_ids, Topic Request Belanja tetap tidak mencatat pesan
+        monkeypatch.setattr(settings, "allowed_thread_ids", "4947")
+
+        # 1. Teks biasa & command /catat
+        await client.post("/webhook", json=_group_message("beli tepung 5kg 60000", 4947))
+        await client.post("/webhook", json=_group_message("/catat gula 20000", 4947))
+        await client.post("/webhook", json=_group_message("/rekap", 4947))
+
+        # 2. Foto struk
+        photo_update = _group_message("", 4947)
+        photo_update["message"].pop("text")
+        photo_update["message"]["photo"] = [{"file_id": "foto-1", "file_size": 100}]
+        photo_update["message"]["caption"] = "struk belanja"
+        await client.post("/webhook", json=photo_update)
+
+        # 3. Voice note
+        voice_update = _group_message("", 4947)
+        voice_update["message"].pop("text")
+        voice_update["message"]["voice"] = {"file_id": "voice-1"}
+        await client.post("/webhook", json=voice_update)
+        await asyncio.sleep(0)
+
+        assert agent_calls == []
+        assert photo_calls == []
+        assert voice_calls == []
+        assert telegram_spy == []
+
+    async def test_request_belanja_topic_callback_filtering(
+        self, client, db, telegram_spy, monkeypatch
+    ):
+        from app.config import settings
+
+        handled: list[str] = []
+
+        async def fake_handle_callback(cb, session):
+            handled.append(cb["id"])
+
+        monkeypatch.setattr(webhook_module, "handle_callback_query", fake_handle_callback)
+        monkeypatch.setattr(settings, "request_belanja_thread_id", 4947)
+        monkeypatch.setattr(settings, "request_belanja_chat_id", "-1001234567890")
+
+        # Callback non-request (mis. undo_save) di Topic Request Belanja diabaikan
+        await client.post(
+            "/webhook",
+            json={
+                "callback_query": {
+                    "id": "cb-exp-1",
+                    "from": {"id": 777},
+                    "message": {
+                        "message_id": 11,
+                        "message_thread_id": 4947,
+                        "chat": {"id": -1001234567890, "type": "supergroup"},
+                    },
+                    "data": "undo_save:1",
+                }
+            },
+        )
+        # Callback request belanja (req_app:) tetap diizinkan
+        await client.post(
+            "/webhook",
+            json={
+                "callback_query": {
+                    "id": "cb-req-1",
+                    "from": {"id": 777},
+                    "message": {
+                        "message_id": 12,
+                        "message_thread_id": 4947,
+                        "chat": {"id": -1001234567890, "type": "supergroup"},
+                    },
+                    "data": "req_app:5",
+                }
+            },
+        )
+        await asyncio.sleep(0)
+
+        assert handled == ["cb-req-1"]
+
 
 class TestMediaRouting:
     async def test_photo_is_processed_in_background(

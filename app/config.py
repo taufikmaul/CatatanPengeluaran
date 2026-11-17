@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     high_value_alert_threshold: float = Field(500000.0, validation_alias="HIGH_VALUE_ALERT_THRESHOLD")
     monthly_budget_limit: int = Field(0, validation_alias="MONTHLY_BUDGET_LIMIT")
     category_budgets_json: str = Field("{}", validation_alias="CATEGORY_BUDGETS_JSON")
+    asset_capitalization_threshold: int = Field(500000, validation_alias="ASSET_CAPITALIZATION_THRESHOLD")
+    asset_default_useful_life_months: int = Field(48, validation_alias="ASSET_DEFAULT_USEFUL_LIFE_MONTHS")
 
     @property
     def category_budgets(self) -> dict[str, float]:
@@ -108,14 +110,13 @@ class Settings(BaseSettings):
     admin_telegram_ids: str = Field("", validation_alias="ADMIN_TELEGRAM_IDS")
 
     def get_allowed_thread_ids(self) -> set[int]:
-        """Ambil kumpulan thread/topic ID yang diizinkan di grup toko."""
+        """Ambil kumpulan thread/topic ID yang diizinkan untuk pencatatan bot di grup toko."""
         ids: set[int] = set()
-        for single_id in (self.allowed_thread_id, self.request_belanja_thread_id):
-            if single_id is not None:
-                try:
-                    ids.add(int(single_id))
-                except (ValueError, TypeError):
-                    pass
+        if self.allowed_thread_id is not None:
+            try:
+                ids.add(int(self.allowed_thread_id))
+            except (ValueError, TypeError):
+                pass
         if self.allowed_thread_ids:
             for part in str(self.allowed_thread_ids).split(","):
                 part = part.strip()
@@ -128,6 +129,24 @@ class Settings(BaseSettings):
                     if part.isdigit():
                         ids.add(int(part))
         return ids
+
+    def is_request_belanja_thread(
+        self, chat_id: int | str | None, thread_id: int | None
+    ) -> bool:
+        """Cek apakah pesan berasal dari Topic Khusus Request Belanja (khusus feed aktivitas, bukan pencatatan)."""
+        if thread_id is None or self.request_belanja_thread_id is None:
+            return False
+        if int(thread_id) != int(self.request_belanja_thread_id):
+            return False
+        if self.request_belanja_chat_id:
+            allowed_chats = {
+                p.strip()
+                for p in str(self.request_belanja_chat_id).split(",")
+                if p.strip()
+            }
+            if allowed_chats and chat_id is not None and str(chat_id).strip() not in allowed_chats:
+                return False
+        return True
 
     def is_thread_allowed(self, thread_id: int | None) -> bool:
         """Cek apakah topic thread ID diizinkan (atau True jika grup tanpa topic forum)."""
