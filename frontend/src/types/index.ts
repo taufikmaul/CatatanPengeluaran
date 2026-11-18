@@ -1193,6 +1193,40 @@ export interface IncomingTransaction {
   items: IncomingTransactionItem[];
 }
 
+export interface ManualIncomingTxFormData {
+  transaction_date: string;
+  transaction_time?: string;
+  receipt_no?: string;
+  order_no?: string;
+  order_type: string;
+  payment_method: string;
+  bank_account_id?: number | null;
+  customer_name?: string;
+  cashier_name?: string;
+  gross_sales: number;
+  discount_amount: number;
+  platform_fee: number;
+  status: "paid" | "void";
+  notes?: string;
+}
+
+export interface BulkIncomingTxRow {
+  transaction_date: string;
+  transaction_time: string;
+  receipt_no: string;
+  order_no: string;
+  order_type: string;
+  payment_method: string;
+  bank_account_name: string;
+  customer_name: string;
+  cashier_name?: string;
+  gross_sales: number;
+  discount_amount: number;
+  platform_fee: number;
+  status: "paid" | "void";
+  notes: string;
+}
+
 export interface BankTransfer {
   id: number;
   transfer_date: string;

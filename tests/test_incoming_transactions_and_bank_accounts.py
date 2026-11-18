@@ -187,3 +187,183 @@ async def test_bank_account_and_incoming_tx_flow(client: AsyncSession, auth_cook
     assert pos_by_id[bca_id]["estimated_balance"] == 1175000.0
     assert pos_by_id[gobiz_id]["account_code"] == "1-1130"
     assert pos_by_id[gobiz_id]["incoming_month"] == 57420.0
+
+
+@pytest.mark.asyncio
+async def test_incoming_template_and_export_csv(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # 1. Unduh Template CSV
+    res_tpl = await client.get("/api/v1/incoming-transactions/template-csv")
+    assert res_tpl.status_code == 200
+    assert "text/csv" in res_tpl.headers["content-type"]
+    text_tpl = res_tpl.text
+    assert "No Receipt" in text_tpl
+    assert "Penjualan Kotor" in text_tpl
+    assert "template_import_transaksi_masuk.csv" in res_tpl.headers.get("content-disposition", "")
+
+    # 2. Export CSV (kosong atau filter aktif)
+    res_exp = await client.get("/api/v1/incoming-transactions/export?order_type=all")
+    assert res_exp.status_code == 200
+    assert "text/csv" in res_exp.headers["content-type"]
+    text_exp = res_exp.text
+    assert "ID,No Receipt,No Order" in text_exp
+    assert "Bersih Diterima" in text_exp
+
+
+@pytest.mark.asyncio
+async def test_incoming_single_crud_and_update(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # 1. Create single manual transaction
+    res_create = await client.post(
+        "/api/v1/incoming-transactions",
+        json={
+            "transaction_date": "2026-11-17",
+            "transaction_time": "14:20",
+            "receipt_no": "MAN-001",
+            "order_no": "ORD-MAN-001",
+            "order_type": "Take Away",
+            "payment_method": "Tunai",
+            "customer_name": "Ibu Dewi",
+            "cashier_name": "Kasir Ana",
+            "gross_sales": 200000.0,
+            "discount_amount": 20000.0,
+            "platform_fee": 0.0,
+            "status": "paid",
+            "notes": "Pesanan kue ulang tahun",
+        },
+    )
+    assert res_create.status_code == 201
+    created = res_create.json()["transaction"]
+    tx_id = created["id"]
+    assert created["receipt_no"] == "MAN-001"
+    assert created["gross_sales"] == 200000.0
+    assert created["net_sales"] == 180000.0
+    assert created["net_received"] == 180000.0
+
+    # 2. Update existing single transaction (ganti nominal & diskon)
+    res_update = await client.put(
+        f"/api/v1/incoming-transactions/{tx_id}",
+        json={
+            "gross_sales": 250000.0,
+            "discount_amount": 25000.0,
+            "platform_fee": 5000.0,
+            "notes": "Pesanan kue diupdate",
+        },
+    )
+    assert res_update.status_code == 200
+    updated = res_update.json()["transaction"]
+    assert updated["gross_sales"] == 250000.0
+    assert updated["discount_amount"] == 25000.0
+    assert updated["net_sales"] == 225000.0
+    assert updated["net_received"] == 220000.0
+    assert updated["notes"] == "Pesanan kue diupdate"
+
+    # 3. Update status jadi void
+    res_void = await client.put(
+        f"/api/v1/incoming-transactions/{tx_id}",
+        json={"status": "void"},
+    )
+    assert res_void.status_code == 200
+    voided = res_void.json()["transaction"]
+    assert voided["status"] == "void"
+    assert voided["net_sales"] == 0.0
+    assert voided["net_received"] == 0.0
+    assert voided["cancellation_total"] == 225000.0
+
+    # 4. Duplicate receipt_no validation on create
+    res_dup = await client.post(
+        "/api/v1/incoming-transactions",
+        json={
+            "transaction_date": "2026-11-17",
+            "receipt_no": "MAN-001",
+            "order_type": "Dine In",
+            "payment_method": "Tunai",
+            "gross_sales": 50000.0,
+        },
+    )
+    assert res_dup.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_incoming_bulk_and_csv_import_with_update(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # 1. Bulk create 2 transaksi
+    bulk_payload = {
+        "items": [
+            {
+                "transaction_date": "2026-11-18",
+                "transaction_time": "09:00",
+                "receipt_no": "BLK-101",
+                "order_no": "O-101",
+                "order_type": "Take Away",
+                "payment_method": "Tunai",
+                "customer_name": "Pak Joko",
+                "gross_sales": 100000.0,
+                "discount_amount": 0.0,
+                "platform_fee": 0.0,
+                "status": "paid",
+            },
+            {
+                "transaction_date": "2026-11-18",
+                "transaction_time": "09:30",
+                "receipt_no": "BLK-102",
+                "order_no": "O-102",
+                "order_type": "GoFood",
+                "payment_method": "GoFood Integrasi",
+                "customer_name": "Mbak Maya",
+                "gross_sales": 150000.0,
+                "discount_amount": 10000.0,
+                "platform_fee": 25000.0,
+                "status": "paid",
+            },
+        ],
+        "update_existing": True,
+    }
+    res_bulk = await client.post("/api/v1/incoming-transactions/bulk", json=bulk_payload)
+    assert res_bulk.status_code == 201
+    assert res_bulk.json()["added"] == 2
+    assert res_bulk.json()["updated"] == 0
+
+    # 2. Bulk update (kirim BLK-101 dengan harga baru dan update_existing=True)
+    bulk_update_payload = {
+        "items": [
+            {
+                "transaction_date": "2026-11-18",
+                "transaction_time": "09:15",
+                "receipt_no": "BLK-101",
+                "order_no": "O-101-UPD",
+                "order_type": "Take Away",
+                "payment_method": "Tunai",
+                "customer_name": "Pak Joko Updated",
+                "gross_sales": 120000.0,
+                "discount_amount": 10000.0,
+                "platform_fee": 0.0,
+                "status": "paid",
+            }
+        ],
+        "update_existing": True,
+    }
+    res_bulk_upd = await client.post("/api/v1/incoming-transactions/bulk", json=bulk_update_payload)
+    assert res_bulk_upd.status_code == 201
+    assert res_bulk_upd.json()["updated"] == 1
+    assert res_bulk_upd.json()["added"] == 0
+
+    # 3. Import CSV dengan data baru & data lama (update_existing=True)
+    sample_csv = (
+        "No Receipt,No Order,Tanggal,Jam,Tipe Order,Metode Bayar,Rekening Tujuan,Nama Pelanggan,Penjualan Kotor,Diskon,Fee Platform,Status,Catatan\n"
+        "BLK-102,O-102,2026-11-18,09:30,GoFood,GoFood Integrasi,,Mbak Maya Updated,160000,10000,26000,paid,Updated via CSV\n"
+        "CSV-201,O-201,2026-11-18,10:00,Take Away,QRIS,,Rian,85000,0,0,paid,Baru via CSV\n"
+    ).encode("utf-8")
+
+    res_csv = await client.post(
+        "/api/v1/incoming-transactions/import-csv",
+        files={"file": ("transaksi.csv", sample_csv, "text/csv")},
+        data={"update_existing": "true"},
+    )
+    assert res_csv.status_code == 200
+    res_csv_json = res_csv.json()
+    assert res_csv_json["updated"] == 1  # BLK-102 terupdate
+    assert res_csv_json["added"] == 1    # CSV-201 tertambah

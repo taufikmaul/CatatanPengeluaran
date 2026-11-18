@@ -829,21 +829,18 @@ export async function getIncomingTransactions(params: {
   return res.data;
 }
 
-export async function createManualIncomingTransaction(data: {
-  transaction_date: string;
-  transaction_time?: string;
-  order_type: string;
-  payment_method: string;
-  bank_account_id?: number | null;
-  receipt_no?: string;
-  order_no?: string;
-  customer_name?: string;
-  gross_sales: number;
-  discount_amount?: number;
-  platform_fee?: number;
-  notes?: string;
-}): Promise<import("@/types").IncomingTransaction> {
+export async function createManualIncomingTransaction(
+  data: import("@/types").ManualIncomingTxFormData
+): Promise<import("@/types").IncomingTransaction> {
   const res = await api.post("/incoming-transactions", data);
+  return res.data.transaction;
+}
+
+export async function updateIncomingTransaction(
+  txId: number,
+  data: Partial<import("@/types").ManualIncomingTxFormData>
+): Promise<import("@/types").IncomingTransaction> {
+  const res = await api.put(`/incoming-transactions/${txId}`, data);
   return res.data.transaction;
 }
 
@@ -1362,6 +1359,63 @@ export async function bulkCreateMenus(
   updateExisting = true
 ): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
   const res = await api.post("/menus/bulk", { items, update_existing: updateExisting });
+  return res.data;
+}
+
+export async function downloadIncomingTxTemplateCsv(): Promise<void> {
+  return triggerCsvDownload(
+    "/incoming-transactions/template-csv",
+    "template_import_transaksi_masuk.csv"
+  );
+}
+
+export async function exportIncomingTransactionsCsv(params?: {
+  start_date?: string;
+  end_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  status?: string;
+  bank_account_id?: number;
+  search?: string;
+}): Promise<void> {
+  const searchParams = new URLSearchParams();
+  if (params?.start_date) searchParams.set("start_date", params.start_date);
+  if (params?.end_date) searchParams.set("end_date", params.end_date);
+  if (params?.order_type && params.order_type !== "all") searchParams.set("order_type", params.order_type);
+  if (params?.payment_method && params.payment_method !== "all") searchParams.set("payment_method", params.payment_method);
+  if (params?.status && params.status !== "all") searchParams.set("status", params.status);
+  if (params?.bank_account_id !== undefined && params.bank_account_id !== null) {
+    searchParams.set("bank_account_id", String(params.bank_account_id));
+  }
+  if (params?.search) searchParams.set("search", params.search);
+
+  const qs = searchParams.toString();
+  const endpoint = qs ? `/incoming-transactions/export?${qs}` : "/incoming-transactions/export";
+  const today = new Date().toISOString().split("T")[0];
+  return triggerCsvDownload(endpoint, `transaksi_masuk_${today}.csv`);
+}
+
+export async function bulkCreateIncomingTransactions(
+  items: import("@/types").BulkIncomingTxRow[],
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const res = await api.post("/incoming-transactions/bulk", {
+    items,
+    update_existing: updateExisting,
+  });
+  return res.data;
+}
+
+export async function importIncomingTransactionsCsv(
+  file: File,
+  updateExisting = true
+): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("update_existing", String(updateExisting));
+  const res = await api.post("/incoming-transactions/import-csv", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
   return res.data;
 }
 

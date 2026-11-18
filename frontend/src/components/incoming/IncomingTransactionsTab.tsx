@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getIncomingTransactions,
   getBankAccounts,
   reassignIncomingTxBankAccount,
   deleteIncomingTransaction,
+  downloadIncomingTxTemplateCsv,
+  exportIncomingTransactionsCsv,
+  bulkCreateIncomingTransactions,
+  importIncomingTransactionsCsv,
 } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,6 +19,12 @@ import { SalesImportModal } from "./SalesImportModal";
 import { IncomingAnalyticsPanel } from "./IncomingAnalyticsPanel";
 import { BankTransferPanel } from "./BankTransferPanel";
 import { ReconciliationPanel } from "./ReconciliationPanel";
+import { IncomingTransactionFormModal } from "./IncomingTransactionFormModal";
+import {
+  BulkRowImportDialog,
+  type BulkRowColumn,
+} from "@/components/common/BulkRowImportDialog";
+import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
@@ -31,7 +41,13 @@ import {
   TrendingUp,
   ArrowRightLeft,
   GitCompareArrows,
+  Plus,
+  Table2,
+  FileSpreadsheet,
+  Download,
+  Pencil,
 } from "lucide-react";
+import type { IncomingTransaction, BulkIncomingTxRow } from "@/types";
 
 interface IncomingTransactionsTabProps {
   isAdmin: boolean;
@@ -42,6 +58,11 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
 }) => {
   const queryClient = useQueryClient();
   const [importOpen, setImportOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingTx, setEditingTx] = useState<IncomingTransaction | null>(null);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [csvTemplateOpen, setCsvTemplateOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [subTab, setSubTab] = useState<string>("list");
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
 
@@ -97,6 +118,74 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     onError: () => toast.error("Gagal menghapus transaksi"),
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: ({
+      rows,
+      updateExisting,
+    }: {
+      rows: BulkIncomingTxRow[];
+      updateExisting: boolean;
+    }) => bulkCreateIncomingTransactions(rows, updateExisting),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      toast.success(res.message || "Transaksi masal berhasil diproses");
+      setBulkDialogOpen(false);
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal menyimpan transaksi masal");
+    },
+  });
+
+  const csvImportMutation = useMutation({
+    mutationFn: ({
+      file,
+      updateExisting,
+    }: {
+      file: File;
+      updateExisting: boolean;
+    }) => importIncomingTransactionsCsv(file, updateExisting),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      toast.success(res.message || "Import CSV selesai");
+      setCsvTemplateOpen(false);
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal mengimpor file CSV");
+    },
+  });
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      await exportIncomingTransactionsCsv({
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+        order_type: orderType !== "all" ? orderType : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        bank_account_id:
+          bankAccountId !== "all" ? Number(bankAccountId) : undefined,
+        search: search.trim() || undefined,
+      });
+      toast.success("File CSV transaksi masuk berhasil diunduh.");
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Gagal mengekspor file CSV.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleEditTx = (tx: IncomingTransaction) => {
+    setEditingTx(tx);
+    setFormOpen(true);
+  };
+
+  const handleAddSingleTx = () => {
+    setEditingTx(null);
+    setFormOpen(true);
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -104,6 +193,138 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
   const transactions = data?.transactions || [];
   const summary = data?.summary;
   const orderTypes = data?.facets?.order_types || [];
+  const paymentMethods = data?.facets?.payment_methods || [];
+
+  const incomingBulkColumns: BulkRowColumn<BulkIncomingTxRow>[] = useMemo(
+    () => [
+      {
+        key: "transaction_date",
+        label: "Tanggal *",
+        type: "date",
+        required: true,
+        widthClass: "w-32",
+      },
+      {
+        key: "transaction_time",
+        label: "Jam",
+        type: "text",
+        placeholder: "12:30",
+        widthClass: "w-24",
+      },
+      {
+        key: "receipt_no",
+        label: "No Struk",
+        type: "text",
+        placeholder: "POS-001",
+        widthClass: "w-32",
+      },
+      {
+        key: "order_no",
+        label: "No Order",
+        type: "text",
+        placeholder: "ORD-001",
+        widthClass: "w-32",
+      },
+      {
+        key: "order_type",
+        label: "Tipe Order *",
+        type: "select",
+        options: [
+          { value: "Take Away", label: "Take Away" },
+          { value: "Dine In", label: "Dine In" },
+          { value: "Delivery Toko", label: "Delivery Toko" },
+          { value: "GoFood", label: "GoFood" },
+          { value: "GoFood Integrasi", label: "GoFood Integrasi" },
+          { value: "GrabFood", label: "GrabFood" },
+          { value: "ShopeeFood", label: "ShopeeFood" },
+          { value: "WhatsApp / Titip", label: "WhatsApp / Titip" },
+          { value: "Lainnya", label: "Lainnya" },
+        ],
+        widthClass: "w-36",
+      },
+      {
+        key: "payment_method",
+        label: "Metode Bayar *",
+        type: "select",
+        options: [
+          { value: "Tunai", label: "Tunai" },
+          { value: "QRIS", label: "QRIS" },
+          { value: "BCA Transfer", label: "BCA Transfer" },
+          { value: "Mandiri", label: "Mandiri" },
+          { value: "EDC", label: "EDC" },
+          { value: "GoFood Integrasi", label: "GoFood Integrasi" },
+          { value: "GrabFood", label: "GrabFood" },
+          { value: "ShopeeFood", label: "ShopeeFood" },
+          { value: "ShopeePay", label: "ShopeePay" },
+          { value: "Lainnya", label: "Lainnya" },
+        ],
+        widthClass: "w-36",
+      },
+      {
+        key: "bank_account_name",
+        label: "Rekening Tujuan",
+        type: "select",
+        options: [
+          { value: "", label: "-- Otomatis --" },
+          ...accounts.map((a) => ({ value: a.name, label: a.name })),
+        ],
+        widthClass: "w-40",
+      },
+      { key: "customer_name", label: "Pelanggan", type: "text", widthClass: "w-32" },
+      { key: "cashier_name", label: "Kasir", type: "text", widthClass: "w-28" },
+      {
+        key: "gross_sales",
+        label: "Kotor (Rp) *",
+        type: "number",
+        required: true,
+        min: 0,
+        widthClass: "w-28",
+      },
+      {
+        key: "discount_amount",
+        label: "Diskon (Rp)",
+        type: "number",
+        min: 0,
+        widthClass: "w-24",
+      },
+      {
+        key: "platform_fee",
+        label: "Fee Platform (Rp)",
+        type: "number",
+        min: 0,
+        widthClass: "w-28",
+      },
+      {
+        key: "status",
+        label: "Status",
+        type: "select",
+        options: [
+          { value: "paid", label: "Dibayar (Paid)" },
+          { value: "void", label: "Void / Batal" },
+        ],
+        widthClass: "w-32",
+      },
+      { key: "notes", label: "Catatan", type: "text", widthClass: "w-36" },
+    ],
+    [accounts]
+  );
+
+  const createEmptyIncomingRow = (): BulkIncomingTxRow => ({
+    transaction_date: new Date().toISOString().split("T")[0],
+    transaction_time: "",
+    receipt_no: "",
+    order_no: "",
+    order_type: "Take Away",
+    payment_method: "Tunai",
+    bank_account_name: "",
+    customer_name: "",
+    cashier_name: "",
+    gross_sales: 0,
+    discount_amount: 0,
+    platform_fee: 0,
+    status: "paid",
+    notes: "",
+  });
 
   return (
     <div className="space-y-4">
@@ -112,13 +333,64 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Daftar Transaksi Masuk</h2>
           <p className="text-xs text-slate-500">
-            Pantau omzet penjualan dari POS, GoFood, GrabFood, ShopeeFood, dan rekening tujuan.
+            Pantau omzet penjualan dari POS, GoFood, GrabFood, ShopeeFood, input manual satuan &amp; masal, serta ekspor/impor CSV.
           </p>
         </div>
-        <Button onClick={() => setImportOpen(true)} size="sm" className="gap-1.5 self-start sm:self-auto">
-          <Upload className="w-4 h-4" />
-          Import Laporan POS / Platform
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            title="Download CSV transaksi sesuai filter yang aktif"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-500" />
+            {isExporting ? "Mengekspor..." : "Export CSV"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCsvTemplateOpen(true)}
+            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            title="Import file CSV dengan opsi perbarui data yang sudah ada"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            Import CSV
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImportOpen(true)}
+            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            title="Import laporan riwayat penjualan POS Moka / Olsera multi-baris"
+          >
+            <Upload className="w-3.5 h-3.5 text-blue-600" />
+            Import POS
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkDialogOpen(true)}
+            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            title="Input banyak transaksi sekaligus atau paste dari Excel/Sheets"
+          >
+            <Table2 className="w-3.5 h-3.5 text-indigo-600" />
+            Input Masal
+          </Button>
+
+          <Button
+            onClick={handleAddSingleTx}
+            size="sm"
+            className="gap-1.5 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Tambah Satuan
+          </Button>
+        </div>
       </div>
 
       <Tabs value={subTab} onValueChange={setSubTab} className="w-full space-y-4">
@@ -303,7 +575,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                   <th className="text-right px-3 py-2.5 font-medium">Diskon / Fee</th>
                   <th className="text-right px-3 py-2.5 font-medium">Bersih Diterima</th>
                   <th className="text-center px-3 py-2.5 font-medium">Status</th>
-                  {isAdmin && <th className="w-10 px-2 py-2.5" />}
+                  <th className="w-16 px-2 py-2.5 text-center font-medium">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -402,27 +674,39 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                             </div>
                           )}
                         </td>
-                        {isAdmin && (
-                          <td className="px-2 py-2.5 text-center">
+                        <td className="px-2 py-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
-                              onClick={() => {
-                                if (confirm(`Hapus transaksi ${tx.receipt_no || tx.id}?`)) {
-                                  deleteMutation.mutate(tx.id);
-                                }
-                              }}
-                              className="p-1 text-slate-400 hover:text-rose-600"
-                              aria-label="Hapus transaksi"
+                              onClick={() => handleEditTx(tx)}
+                              className="p-1 text-slate-400 hover:text-blue-600 transition-colors rounded hover:bg-slate-100"
+                              aria-label={`Edit transaksi ${tx.receipt_no || tx.id}`}
+                              title="Edit Transaksi"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
-                          </td>
-                        )}
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Hapus transaksi ${tx.receipt_no || tx.id}?`)) {
+                                    deleteMutation.mutate(tx.id);
+                                  }
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 transition-colors rounded hover:bg-slate-100"
+                                aria-label="Hapus transaksi"
+                                title="Hapus Transaksi"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
 
                       {isExpanded && tx.items.length > 0 && (
                         <tr className="bg-slate-50/80">
-                          <td colSpan={isAdmin ? 9 : 8} className="px-6 py-2.5">
+                          <td colSpan={9} className="px-6 py-2.5">
                             <div className="text-[11px] font-medium text-slate-600 mb-1.5">
                               Rincian Produk ({tx.items.length} item)
                             </div>
@@ -491,6 +775,67 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         onImportSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
           queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+        }}
+      />
+
+      <IncomingTransactionFormModal
+        isOpen={formOpen}
+        onClose={() => {
+          setFormOpen(false);
+          setEditingTx(null);
+        }}
+        initialData={editingTx}
+        accounts={accounts}
+        orderTypeOptions={orderTypes}
+        paymentMethodOptions={paymentMethods}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+        }}
+      />
+
+      <BulkRowImportDialog<BulkIncomingTxRow>
+        isOpen={bulkDialogOpen}
+        onClose={() => setBulkDialogOpen(false)}
+        title="Input Transaksi Masuk Masal (Form Tabel)"
+        description="Input banyak transaksi sekaligus atau tempel (paste) langsung dari Excel / Google Sheets. Aktifkan opsi 'Perbarui jika data sudah ada' untuk menimpa data no receipt yang cocok."
+        columns={incomingBulkColumns}
+        createEmptyRow={createEmptyIncomingRow}
+        requiredKey="gross_sales"
+        showUpdateExistingToggle={true}
+        isSubmitting={bulkMutation.isPending}
+        submitLabel="Simpan Semua Transaksi"
+        onSubmit={async (rows, updateExisting) => {
+          await bulkMutation.mutateAsync({ rows, updateExisting });
+        }}
+      />
+
+      <CsvTemplateImportDialog
+        isOpen={csvTemplateOpen}
+        onClose={() => setCsvTemplateOpen(false)}
+        title="Import Transaksi Masuk via Template CSV"
+        description="Unduh template CSV resmi, isi data transaksi masuk (separator koma atau titik koma didukung), lalu unggah kembali. Opsi perbarui data akan menimpa data transaksi yang nomor struk/receipt-nya sama."
+        templateColumns={[
+          "No Receipt",
+          "No Order",
+          "Tanggal",
+          "Jam",
+          "Tipe Order",
+          "Metode Bayar",
+          "Rekening Tujuan",
+          "Nama Pelanggan",
+          "Nama Kasir",
+          "Penjualan Kotor",
+          "Diskon",
+          "Fee Platform",
+          "Status",
+          "Catatan",
+        ]}
+        showUpdateExistingToggle={true}
+        isImporting={csvImportMutation.isPending}
+        onDownloadTemplate={downloadIncomingTxTemplateCsv}
+        onImportCsv={async (file, updateExisting) => {
+          await csvImportMutation.mutateAsync({ file, updateExisting });
         }}
       />
     </div>

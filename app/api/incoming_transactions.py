@@ -3,7 +3,7 @@ app/api/incoming_transactions.py — REST API for Daftar Transaksi Masuk & Impor
 """
 from datetime import date
 from typing import Any, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, status
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,14 @@ from app.models.incoming_transaction import IncomingTransaction, IncomingTransac
 from app.models.bank_account import BankAccount
 from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
 from app.services.sales_import_service import parse_sales_csv
+from app.utils.csv_helpers import (
+    build_csv_template,
+    col_lookup,
+    get_cell,
+    parse_csv_table,
+    parse_date_cell,
+    parse_number_cell,
+)
 
 router = APIRouter(
     prefix="/incoming-transactions",
@@ -77,28 +85,66 @@ class ManualIncomingTxCreate(BaseModel):
     receipt_no: Optional[str] = Field(None, max_length=80)
     order_no: Optional[str] = Field(None, max_length=120)
     customer_name: Optional[str] = Field(None, max_length=120)
+    cashier_name: Optional[str] = Field(None, max_length=80)
     gross_sales: float = Field(..., ge=0)
     discount_amount: float = Field(0.0, ge=0)
     platform_fee: float = Field(0.0, ge=0)
+    status: Optional[str] = Field("paid", max_length=20)
     notes: Optional[str] = None
+
+
+class ManualIncomingTxUpdate(BaseModel):
+    transaction_date: Optional[date] = None
+    transaction_time: Optional[str] = None
+    order_type: Optional[str] = Field(None, min_length=1, max_length=60)
+    payment_method: Optional[str] = Field(None, min_length=1, max_length=60)
+    bank_account_id: Optional[int] = None
+    receipt_no: Optional[str] = Field(None, max_length=80)
+    order_no: Optional[str] = Field(None, max_length=120)
+    customer_name: Optional[str] = Field(None, max_length=120)
+    cashier_name: Optional[str] = Field(None, max_length=80)
+    gross_sales: Optional[float] = Field(None, ge=0)
+    discount_amount: Optional[float] = Field(None, ge=0)
+    platform_fee: Optional[float] = Field(None, ge=0)
+    status: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = None
+
+
+class IncomingTxBulkItem(BaseModel):
+    transaction_date: date
+    transaction_time: Optional[str] = None
+    receipt_no: Optional[str] = None
+    order_no: Optional[str] = None
+    order_type: str = "Take Away"
+    payment_method: str = "Tunai"
+    bank_account_id: Optional[int] = None
+    bank_account_name: Optional[str] = None
+    customer_name: Optional[str] = None
+    cashier_name: Optional[str] = None
+    gross_sales: float = Field(0.0, ge=0)
+    discount_amount: float = Field(0.0, ge=0)
+    platform_fee: float = Field(0.0, ge=0)
+    status: str = "paid"
+    notes: Optional[str] = None
+
+
+class IncomingTxBulkRequest(BaseModel):
+    items: list[IncomingTxBulkItem]
+    update_existing: bool = True
 
 
 class ReassignBankAccountPayload(BaseModel):
     bank_account_id: Optional[int] = None
 
 
-@router.get("")
-async def api_list_incoming_transactions(
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    order_type: Optional[str] = Query(None),
-    payment_method: Optional[str] = Query(None),
-    status_filter: Optional[str] = Query(None, alias="status"),
-    bank_account_id: Optional[int] = Query(None),
-    search: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
+def _build_incoming_tx_filter(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    order_type: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    bank_account_id: Optional[int] = None,
+    search: Optional[str] = None,
 ):
     conditions = []
     if start_date:
@@ -126,8 +172,31 @@ async def api_list_incoming_transactions(
                 IncomingTransaction.promo_name.ilike(q),
             )
         )
+    return and_(*conditions) if conditions else True
 
-    where_clause = and_(*conditions) if conditions else True
+
+@router.get("")
+async def api_list_incoming_transactions(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    order_type: Optional[str] = Query(None),
+    payment_method: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    bank_account_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    where_clause = _build_incoming_tx_filter(
+        start_date=start_date,
+        end_date=end_date,
+        order_type=order_type,
+        payment_method=payment_method,
+        status_filter=status_filter,
+        bank_account_id=bank_account_id,
+        search=search,
+    )
 
     # Paginated rows
     stmt = (
@@ -144,7 +213,7 @@ async def api_list_incoming_transactions(
     total_count = int(total_count_res.scalar() or 0)
 
     # Summary aggregation (paid vs void)
-    paid_cond = and_(where_clause, IncomingTransaction.status == "paid") if conditions else (IncomingTransaction.status == "paid")
+    paid_cond = and_(where_clause, IncomingTransaction.status == "paid")
     paid_agg_res = await db.execute(
         select(
             func.count(IncomingTransaction.id),
@@ -157,7 +226,7 @@ async def api_list_incoming_transactions(
     )
     p_row = paid_agg_res.fetchone()
 
-    void_cond = and_(where_clause, IncomingTransaction.status != "paid") if conditions else (IncomingTransaction.status != "paid")
+    void_cond = and_(where_clause, IncomingTransaction.status != "paid")
     void_agg_res = await db.execute(
         select(
             func.count(IncomingTransaction.id),
@@ -327,13 +396,434 @@ async def api_incoming_analytics(
     }
 
 
+@router.get("/template-csv")
+async def api_download_incoming_csv_template():
+    """Unduh template CSV siap isi untuk import Transaksi Masuk."""
+    headers = [
+        "No Receipt",
+        "No Order",
+        "Tanggal",
+        "Jam",
+        "Tipe Order",
+        "Metode Bayar",
+        "Rekening Tujuan",
+        "Nama Pelanggan",
+        "Nama Kasir",
+        "Penjualan Kotor",
+        "Diskon",
+        "Fee Platform",
+        "Status",
+        "Catatan",
+    ]
+    sample_rows = [
+        [
+            "POS-001",
+            "ORD-001",
+            date.today().isoformat(),
+            "10:15",
+            "Take Away",
+            "QRIS",
+            "BCA Operasional",
+            "Budi Santoso",
+            "Kasir 1",
+            150000,
+            0,
+            0,
+            "paid",
+            "Pembelian offline di kasir",
+        ],
+        [
+            "GF-002",
+            "F-3429057006",
+            date.today().isoformat(),
+            "12:30",
+            "GoFood Integrasi",
+            "GoFood Integrasi",
+            "GoBiz",
+            "Siti Rahma",
+            "-",
+            120000,
+            15000,
+            21000,
+            "paid",
+            "Order via GoFood",
+        ],
+    ]
+    csv_text = build_csv_template(headers, sample_rows)
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="template_import_transaksi_masuk.csv"'},
+    )
+
+
+@router.get("/export")
+async def api_export_incoming_transactions_csv(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    order_type: Optional[str] = Query(None),
+    payment_method: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    bank_account_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export daftar transaksi masuk sesuai filter aktif ke CSV."""
+    where_clause = _build_incoming_tx_filter(
+        start_date=start_date,
+        end_date=end_date,
+        order_type=order_type,
+        payment_method=payment_method,
+        status_filter=status_filter,
+        bank_account_id=bank_account_id,
+        search=search,
+    )
+    stmt = (
+        select(IncomingTransaction)
+        .where(where_clause)
+        .order_by(
+            IncomingTransaction.transaction_date.desc(),
+            IncomingTransaction.transaction_time.desc(),
+            IncomingTransaction.id.desc(),
+        )
+    )
+    res = await db.execute(stmt)
+    rows = res.scalars().all()
+
+    headers = [
+        "ID",
+        "No Receipt",
+        "No Order",
+        "Tanggal",
+        "Jam",
+        "Tipe Order",
+        "Metode Bayar",
+        "Rekening Tujuan",
+        "Nama Pelanggan",
+        "Nama Kasir",
+        "Penjualan Kotor",
+        "Diskon",
+        "Penjualan Bersih",
+        "Fee Platform",
+        "Bersih Diterima",
+        "Nilai Batal",
+        "Status",
+        "Catatan",
+        "Rekonsiliasi",
+    ]
+    data_rows = []
+    for tx in rows:
+        data_rows.append(
+            [
+                tx.id,
+                tx.receipt_no or "",
+                tx.order_no or "",
+                tx.transaction_date.isoformat() if tx.transaction_date else "",
+                tx.transaction_time or "",
+                tx.order_type or "",
+                tx.payment_method or "",
+                tx.bank_account.name if tx.bank_account else "",
+                tx.customer_name or "",
+                tx.cashier_name or "",
+                float(tx.gross_sales or 0.0),
+                float(tx.discount_amount or 0.0),
+                float(tx.net_sales or 0.0),
+                float(tx.platform_fee or 0.0),
+                float(tx.net_received or 0.0),
+                float(tx.cancellation_total or 0.0),
+                tx.status or "paid",
+                tx.notes or "",
+                "Ya" if tx.reconciled_at else "Tidak",
+            ]
+        )
+
+    csv_text = build_csv_template(headers, data_rows)
+    filename = f"transaksi_masuk_{date.today().isoformat()}.csv"
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/bulk", status_code=status.HTTP_201_CREATED)
+async def api_bulk_incoming_transactions(
+    payload: IncomingTxBulkRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah atau perbarui banyak transaksi masuk sekaligus via form masal."""
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Daftar transaksi tidak boleh kosong.")
+
+    # Bank account lookup cache
+    acc_res = await db.execute(select(BankAccount))
+    all_accounts = acc_res.scalars().all()
+    acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
+    acc_by_id = {a.id: a.id for a in all_accounts}
+    channel_map, default_acc = await build_channel_account_map(db)
+
+    # Existing transactions lookup
+    receipt_nos = [it.receipt_no.strip() for it in payload.items if it.receipt_no and it.receipt_no.strip()]
+    existing_by_receipt: dict[str, IncomingTransaction] = {}
+    if receipt_nos:
+        res = await db.execute(
+            select(IncomingTransaction).where(
+                IncomingTransaction.receipt_no.in_(receipt_nos)
+            )
+        )
+        for tx in res.scalars().all():
+            if tx.receipt_no:
+                existing_by_receipt[tx.receipt_no.strip()] = tx
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for it in payload.items:
+        rno = (it.receipt_no or "").strip() or None
+        ono = (it.order_no or "").strip() or None
+
+        # Resolve bank account
+        acc_id = None
+        if it.bank_account_id and it.bank_account_id in acc_by_id:
+            acc_id = it.bank_account_id
+        elif it.bank_account_name and it.bank_account_name.strip().lower() in acc_by_name:
+            acc_id = acc_by_name[it.bank_account_name.strip().lower()]
+        else:
+            acc_id, _ = resolve_bank_account_for_tx(
+                it.payment_method, it.order_type, channel_map, default_acc
+            )
+
+        is_paid = (it.status or "paid").lower() in ("paid", "dibayar", "sukses")
+        gross = max(0.0, float(it.gross_sales or 0.0))
+        disc = max(0.0, float(it.discount_amount or 0.0))
+        fee = max(0.0, float(it.platform_fee or 0.0))
+        net_s = max(0.0, gross - disc) if is_paid else 0.0
+        net_r = max(0.0, net_s - fee) if is_paid else 0.0
+        canc_tot = max(0.0, gross - disc) if not is_paid else 0.0
+        st = "paid" if is_paid else "void"
+
+        existing = existing_by_receipt.get(rno) if rno else None
+        if existing:
+            if not payload.update_existing:
+                skipped += 1
+                continue
+            existing.transaction_date = it.transaction_date
+            if it.transaction_time:
+                existing.transaction_time = it.transaction_time.strip()
+            if ono:
+                existing.order_no = ono
+            existing.order_type = it.order_type.strip()
+            existing.payment_method = it.payment_method.strip()
+            existing.bank_account_id = acc_id
+            if it.customer_name:
+                existing.customer_name = it.customer_name.strip()
+            if it.cashier_name:
+                existing.cashier_name = it.cashier_name.strip()
+            existing.gross_sales = gross
+            existing.discount_amount = disc
+            existing.net_sales = net_s
+            existing.platform_fee = fee
+            existing.net_received = net_r
+            existing.cancellation_total = canc_tot
+            existing.status = st
+            if it.notes:
+                existing.notes = it.notes.strip()
+            updated += 1
+        else:
+            new_tx = IncomingTransaction(
+                source_type="manual",
+                receipt_no=rno,
+                order_no=ono,
+                transaction_date=it.transaction_date,
+                transaction_time=(it.transaction_time or "").strip() or None,
+                order_type=it.order_type.strip(),
+                payment_method=it.payment_method.strip(),
+                bank_account_id=acc_id,
+                customer_name=(it.customer_name or "").strip() or None,
+                cashier_name=(it.cashier_name or "").strip() or None,
+                gross_sales=gross,
+                discount_amount=disc,
+                net_sales=net_s,
+                platform_fee=fee,
+                net_received=net_r,
+                cancellation_total=canc_tot,
+                status=st,
+                notes=(it.notes or "").strip() or None,
+            )
+            db.add(new_tx)
+            if rno:
+                existing_by_receipt[rno] = new_tx
+            added += 1
+
+    await db.commit()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Berhasil memproses transaksi masuk: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati.",
+    }
+
+
+@router.post("/import-csv", dependencies=[Depends(require_roles("admin", "admin_input"))])
+async def api_import_incoming_csv(
+    file: UploadFile = File(...),
+    update_existing: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import banyak transaksi masuk dari file CSV (didukung update jika nomor struk sudah ada)."""
+    content = await file.read()
+    validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    first_row, data_rows = parse_csv_table(content)
+
+    idx_rno = col_lookup(first_row, "receipt_no", "no receipt", "no struk", "receipt", "struk")
+    idx_ono = col_lookup(first_row, "order_no", "no order", "no penjualan", "order id")
+    idx_date = col_lookup(first_row, "transaction_date", "tanggal", "tanggal transaksi", "tanggal penjualan", "date")
+    idx_time = col_lookup(first_row, "transaction_time", "waktu", "jam", "waktu penjualan", "time")
+    idx_type = col_lookup(first_row, "order_type", "tipe order", "channel", "saluran")
+    idx_pay = col_lookup(first_row, "payment_method", "metode bayar", "metode pembayaran", "jenis pembayaran", "payment")
+    idx_acc = col_lookup(first_row, "bank_account", "rekening", "rekening tujuan", "nama rekening", "bank")
+    idx_cust = col_lookup(first_row, "customer_name", "nama pelanggan", "pelanggan", "customer")
+    idx_cashier = col_lookup(first_row, "cashier_name", "nama kasir", "kasir", "cashier")
+    idx_gross = col_lookup(first_row, "gross_sales", "penjualan kotor", "total kotor", "gross", "harga")
+    idx_disc = col_lookup(first_row, "discount_amount", "diskon", "total diskon", "discount")
+    idx_fee = col_lookup(first_row, "platform_fee", "fee platform", "biaya platform", "biaya pembayaran", "platform fee", "komisi")
+    idx_status = col_lookup(first_row, "status", "status transaksi")
+    idx_notes = col_lookup(first_row, "notes", "catatan", "keterangan")
+
+    if idx_date is None:
+        raise HTTPException(status_code=400, detail="Kolom tanggal transaksi ('Tanggal' atau 'transaction_date') wajib ada pada file CSV.")
+
+    # Cache accounts
+    acc_res = await db.execute(select(BankAccount))
+    all_accounts = acc_res.scalars().all()
+    acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
+    channel_map, default_acc = await build_channel_account_map(db)
+
+    # Existing transactions lookup
+    csv_receipt_nos = [
+        get_cell(r, idx_rno).strip() for r in data_rows if idx_rno is not None and get_cell(r, idx_rno).strip()
+    ]
+    existing_by_receipt: dict[str, IncomingTransaction] = {}
+    if csv_receipt_nos:
+        res = await db.execute(
+            select(IncomingTransaction).where(
+                IncomingTransaction.receipt_no.in_(csv_receipt_nos)
+            )
+        )
+        for tx in res.scalars().all():
+            if tx.receipt_no:
+                existing_by_receipt[tx.receipt_no.strip()] = tx
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for r in data_rows:
+        tx_date = parse_date_cell(get_cell(r, idx_date))
+        if not tx_date:
+            skipped += 1
+            continue
+
+        rno = get_cell(r, idx_rno).strip() or None
+        ono = get_cell(r, idx_ono).strip() or None
+        order_type = get_cell(r, idx_type).strip() or "Take Away"
+        pay_method = get_cell(r, idx_pay).strip() or "Tunai"
+
+        acc_name_raw = get_cell(r, idx_acc).strip().lower()
+        if acc_name_raw and acc_name_raw in acc_by_name:
+            acc_id = acc_by_name[acc_name_raw]
+        else:
+            acc_id, _ = resolve_bank_account_for_tx(pay_method, order_type, channel_map, default_acc)
+
+        raw_status = get_cell(r, idx_status).lower()
+        is_paid = raw_status not in ("void", "batal", "cancelled", "cancel")
+        st = "paid" if is_paid else "void"
+
+        gross = max(0.0, parse_number_cell(get_cell(r, idx_gross)))
+        disc = max(0.0, parse_number_cell(get_cell(r, idx_disc)))
+        fee = max(0.0, parse_number_cell(get_cell(r, idx_fee)))
+        net_s = max(0.0, gross - disc) if is_paid else 0.0
+        net_r = max(0.0, net_s - fee) if is_paid else 0.0
+        canc_tot = max(0.0, gross - disc) if not is_paid else 0.0
+
+        existing = existing_by_receipt.get(rno) if rno else None
+        if existing:
+            if not update_existing:
+                skipped += 1
+                continue
+            existing.transaction_date = tx_date
+            time_str = get_cell(r, idx_time).strip()
+            if time_str:
+                existing.transaction_time = time_str
+            if ono:
+                existing.order_no = ono
+            existing.order_type = order_type
+            existing.payment_method = pay_method
+            existing.bank_account_id = acc_id
+            cust = get_cell(r, idx_cust).strip()
+            if cust:
+                existing.customer_name = cust
+            cashier = get_cell(r, idx_cashier).strip()
+            if cashier:
+                existing.cashier_name = cashier
+            existing.gross_sales = gross
+            existing.discount_amount = disc
+            existing.net_sales = net_s
+            existing.platform_fee = fee
+            existing.net_received = net_r
+            existing.cancellation_total = canc_tot
+            existing.status = st
+            notes = get_cell(r, idx_notes).strip()
+            if notes:
+                existing.notes = notes
+            updated += 1
+        else:
+            new_tx = IncomingTransaction(
+                source_type="manual",
+                receipt_no=rno,
+                order_no=ono,
+                transaction_date=tx_date,
+                transaction_time=get_cell(r, idx_time).strip() or None,
+                order_type=order_type,
+                payment_method=pay_method,
+                bank_account_id=acc_id,
+                customer_name=get_cell(r, idx_cust).strip() or None,
+                cashier_name=get_cell(r, idx_cashier).strip() or None,
+                gross_sales=gross,
+                discount_amount=disc,
+                net_sales=net_s,
+                platform_fee=fee,
+                net_received=net_r,
+                cancellation_total=canc_tot,
+                status=st,
+                notes=get_cell(r, idx_notes).strip() or None,
+            )
+            db.add(new_tx)
+            if rno:
+                existing_by_receipt[rno] = new_tx
+            added += 1
+
+    await db.commit()
+    return {
+        "ok": True,
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Import CSV transaksi selesai: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati.",
+    }
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def api_create_incoming_transaction(
     payload: ManualIncomingTxCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    net_sales = max(0.0, payload.gross_sales - payload.discount_amount)
-    net_received = max(0.0, net_sales - payload.platform_fee)
+    is_paid = (payload.status or "paid").lower() in ("paid", "dibayar", "sukses")
+    net_sales = max(0.0, payload.gross_sales - payload.discount_amount) if is_paid else 0.0
+    net_received = max(0.0, net_sales - payload.platform_fee) if is_paid else 0.0
+    cancellation_total = max(0.0, payload.gross_sales - payload.discount_amount) if not is_paid else 0.0
 
     bank_account_id = payload.bank_account_id
     if bank_account_id is None:
@@ -342,9 +832,23 @@ async def api_create_incoming_transaction(
             payload.payment_method, payload.order_type, channel_map, default_acc
         )
 
+    r_no = (payload.receipt_no or "").strip() or None
+    if r_no:
+        existing = await db.execute(
+            select(IncomingTransaction).where(
+                IncomingTransaction.source_type == "manual",
+                IncomingTransaction.receipt_no == r_no,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No Receipt '{r_no}' sudah terdaftar.",
+            )
+
     tx = IncomingTransaction(
         source_type="manual",
-        receipt_no=(payload.receipt_no or "").strip() or None,
+        receipt_no=r_no,
         order_no=(payload.order_no or "").strip() or None,
         transaction_date=payload.transaction_date,
         transaction_time=(payload.transaction_time or "").strip() or None,
@@ -352,15 +856,88 @@ async def api_create_incoming_transaction(
         payment_method=payload.payment_method.strip(),
         bank_account_id=bank_account_id,
         customer_name=(payload.customer_name or "").strip() or None,
+        cashier_name=(payload.cashier_name or "").strip() or None,
         gross_sales=payload.gross_sales,
         discount_amount=payload.discount_amount,
         net_sales=net_sales,
         platform_fee=payload.platform_fee,
         net_received=net_received,
-        status="paid",
+        cancellation_total=cancellation_total,
+        status="paid" if is_paid else "void",
         notes=(payload.notes or "").strip() or None,
     )
     db.add(tx)
+    await db.commit()
+    await db.refresh(tx)
+    return {"ok": True, "transaction": _serialize_tx(tx)}
+
+
+@router.put("/{tx_id}")
+async def api_update_incoming_transaction(
+    tx_id: int,
+    payload: ManualIncomingTxUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update field transaksi masuk satuan."""
+    tx = await db.get(IncomingTransaction, tx_id)
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaksi tidak ditemukan.")
+
+    if payload.receipt_no is not None:
+        rno_clean = payload.receipt_no.strip() or None
+        if rno_clean and rno_clean != tx.receipt_no:
+            existing = await db.execute(
+                select(IncomingTransaction).where(
+                    IncomingTransaction.source_type == tx.source_type,
+                    IncomingTransaction.receipt_no == rno_clean,
+                    IncomingTransaction.id != tx.id,
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"No Receipt '{rno_clean}' sudah digunakan pada transaksi lain.",
+                )
+        tx.receipt_no = rno_clean
+
+    if payload.transaction_date is not None:
+        tx.transaction_date = payload.transaction_date
+    if payload.transaction_time is not None:
+        tx.transaction_time = payload.transaction_time.strip() or None
+    if payload.order_type is not None:
+        tx.order_type = payload.order_type.strip()
+    if payload.payment_method is not None:
+        tx.payment_method = payload.payment_method.strip()
+    if payload.bank_account_id is not None:
+        if payload.bank_account_id == 0:
+            tx.bank_account_id = None
+        else:
+            acc = await db.get(BankAccount, payload.bank_account_id)
+            if not acc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rekening tidak ditemukan.")
+            tx.bank_account_id = payload.bank_account_id
+    if payload.order_no is not None:
+        tx.order_no = payload.order_no.strip() or None
+    if payload.customer_name is not None:
+        tx.customer_name = payload.customer_name.strip() or None
+    if payload.cashier_name is not None:
+        tx.cashier_name = payload.cashier_name.strip() or None
+    if payload.gross_sales is not None:
+        tx.gross_sales = payload.gross_sales
+    if payload.discount_amount is not None:
+        tx.discount_amount = payload.discount_amount
+    if payload.platform_fee is not None:
+        tx.platform_fee = payload.platform_fee
+    if payload.status is not None:
+        tx.status = payload.status.strip().lower()
+    if payload.notes is not None:
+        tx.notes = payload.notes.strip() or None
+
+    is_paid = tx.status in ("paid", "dibayar", "sukses")
+    tx.net_sales = max(0.0, tx.gross_sales - tx.discount_amount) if is_paid else 0.0
+    tx.net_received = max(0.0, tx.net_sales - tx.platform_fee) if is_paid else 0.0
+    tx.cancellation_total = max(0.0, tx.gross_sales - tx.discount_amount) if not is_paid else 0.0
+
     await db.commit()
     await db.refresh(tx)
     return {"ok": True, "transaction": _serialize_tx(tx)}
