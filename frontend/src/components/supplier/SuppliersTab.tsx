@@ -53,6 +53,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
   Store,
   Plus,
   Search,
@@ -70,6 +78,9 @@ import {
   FileCheck,
   CreditCard,
   AlertCircle,
+  Truck,
+  ChevronDown,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AuditSupplierDuplicatesModal } from "./AuditSupplierDuplicatesModal";
@@ -725,86 +736,151 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              Master Supplier / Toko
+            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              Master Supplier &amp; Toko
             </h2>
             <Badge variant="outline" className="text-xs">
               {total} Toko Terdaftar
             </Badge>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Kelola data vendor, histori belanja, analisis barang favorit, serta audit toko ganda.
+            Direktori vendor, histori transaksi belanja, dan audit akun toko.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Tombol Sync */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="h-9 rounded-xl text-xs gap-1.5"
-            title="Hubungkan transaksi belanja lama yang belum memiliki relasi supplier"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`}
-            />
-            Sync Data Lama
-          </Button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+          {/* Dropdown: Alat & Sync */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl text-xs gap-1.5"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${
+                    syncMutation.isPending || migrateOngkirMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                <span>Alat &amp; Sync</span>
+                <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+            >
+              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                Pemeliharaan &amp; Audit
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={syncMutation.isPending}
+                onClick={() => syncMutation.mutate()}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 text-blue-500 ${
+                    syncMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                <div>
+                  <div className="font-medium">
+                    {syncMutation.isPending ? "Sinkronisasi..." : "Sync Data Lama"}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Hubungkan transaksi belanja lama ke supplier
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setIsAuditModalOpen(true)}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-amber-500" />
+                <div>
+                  <div className="font-medium">Audit Toko Ganda</div>
+                  <div className="text-[10px] text-slate-400">
+                    Deteksi &amp; gabungkan toko kembar
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+              <DropdownMenuItem
+                disabled={migrateOngkirMutation.isPending}
+                onClick={() => migrateOngkirMutation.mutate()}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <Truck
+                  className={`w-3.5 h-3.5 text-indigo-500 ${
+                    migrateOngkirMutation.isPending ? "animate-spin" : ""
+                  }`}
+                />
+                <div>
+                  <div className="font-medium">
+                    {migrateOngkirMutation.isPending ? "Memigrasi..." : "Migrasi Ongkir"}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Alihkan data ongkir ke Master Kurir
+                  </div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {/* Tombol Audit Duplikat */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsAuditModalOpen(true)}
-            className="h-9 rounded-xl text-xs gap-1.5"
-          >
-            <GitMerge className="w-3.5 h-3.5 text-amber-500" />
-            Audit Toko Ganda
-          </Button>
+          {/* Dropdown: Import / Masal */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl text-xs font-medium gap-1.5 border-slate-200 dark:border-slate-800"
+              >
+                <Table2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                <span>Import / Masal</span>
+                <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+            >
+              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                Pilihan Input Massal
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => setIsBulkFormOpen(true)}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                <div>
+                  <div className="font-medium">Tambah Masal</div>
+                  <div className="text-[10px] text-slate-400">
+                    Spreadsheet input multi-supplier
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setIsCsvImportOpen(true)}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                <div>
+                  <div className="font-medium">Import CSV</div>
+                  <div className="text-[10px] text-slate-400">Upload template file CSV</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => migrateOngkirMutation.mutate()}
-            disabled={migrateOngkirMutation.isPending}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
-            title="Migrasi ongkir lama (Operasional -> Ongkir) & tautkan ke Master Kurir"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${migrateOngkirMutation.isPending ? "animate-spin" : ""}`} />
-            Migrasi Ongkir
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsCsvImportOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Import CSV
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsBulkFormOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
-          >
-            <Table2 className="w-3.5 h-3.5" />
-            Tambah Masal
-          </Button>
-
-          {/* Tombol Tambah Supplier */}
+          {/* Tombol Tambah Supplier / Kurir (Primary) */}
           <Button
             size="sm"
             onClick={openAddModal}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
           >
             <Plus className="w-4 h-4" />
-            {supplierTypeFilter === "kurir" ? "Tambah Kurir" : "Tambah Toko"}
+            <span>{supplierTypeFilter === "kurir" ? "Tambah Kurir" : "Tambah Toko"}</span>
           </Button>
         </div>
       </div>

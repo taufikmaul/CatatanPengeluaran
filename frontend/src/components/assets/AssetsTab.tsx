@@ -30,6 +30,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
   Boxes,
   Plus,
   QrCode,
@@ -42,6 +50,7 @@ import {
   Calculator,
   AlertCircle,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssetDetailModal } from "./AssetDetailModal";
@@ -325,42 +334,79 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Boxes className="w-5 h-5 text-blue-600" />
-            Inventaris Aset Tetap &amp; Penyusutan (SAK EMKM)
-          </h2>
-          <p className="text-xs text-slate-600 mt-0.5">
-            Pengeluaran kategori <strong>Asset</strong> otomatis masuk inventaris. Batas kapitalisasi aktif:{" "}
-            <strong className="text-slate-900">{formatRupiah(activeThreshold)}</strong>/unit ({activeDefaultLife} bln).
+          <div className="flex items-center gap-2">
+            <Boxes className="w-5 h-5 text-blue-600 shrink-0" />
+            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              Inventaris Aset Tetap
+            </h2>
+            <Badge variant="outline" className="text-xs">
+              {assets.length} Aset
+            </Badge>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Pencatatan inventaris aset, pencetakan label QR, dan kalkulasi penyusutan SAK EMKM.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+          {/* Dropdown: Alat & Analisa (Khusus Owner) */}
           {isOwner && (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={openReanalyzeDialog}
-                className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300"
+                >
+                  <Calculator className="w-3.5 h-3.5" />
+                  <span>Alat &amp; Audit</span>
+                  <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
               >
-                <Calculator className="w-3.5 h-3.5" />
-                Analisa Ulang Aset
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
-                className="h-9 rounded-xl text-xs font-semibold gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                Sinkron Data Asset
-              </Button>
-            </>
+                <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                  Audit &amp; Sinkronisasi
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={openReanalyzeDialog}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <Calculator className="w-3.5 h-3.5 text-blue-500" />
+                  <div>
+                    <div className="font-medium">Analisa Ulang Aset</div>
+                    <div className="text-[10px] text-slate-400">
+                      Evaluasi threshold &amp; umur manfaat
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={syncMutation.isPending}
+                  onClick={() => syncMutation.mutate()}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 text-indigo-500 ${
+                      syncMutation.isPending ? "animate-spin" : ""
+                    }`}
+                  />
+                  <div>
+                    <div className="font-medium">
+                      {syncMutation.isPending ? "Sinkronisasi..." : "Sinkron Data Asset"}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Tarik belanja kategori Asset ke inventaris
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
+
+          {/* Cetak Label QR */}
           <Button
             type="button"
             variant="outline"
@@ -370,36 +416,64 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             className="h-9 rounded-xl text-xs font-semibold gap-1.5"
           >
             <QrCode className="w-3.5 h-3.5" />
-            Cetak Label QR {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}
+            <span>Cetak Label QR {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}</span>
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsCsvImportOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            Import CSV
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setIsBulkFormOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
-          >
-            <Table2 className="w-3.5 h-3.5" />
-            Tambah Masal
-          </Button>
+
+          {/* Dropdown: Import / Masal */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+              >
+                <Table2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                <span>Import / Masal</span>
+                <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+            >
+              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                Pilihan Input Massal
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => setIsBulkFormOpen(true)}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                <div>
+                  <div className="font-medium">Tambah Masal</div>
+                  <div className="text-[10px] text-slate-400">
+                    Spreadsheet input multi-aset
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setIsCsvImportOpen(true)}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                <div>
+                  <div className="font-medium">Import CSV</div>
+                  <div className="text-[10px] text-slate-400">Upload template file CSV</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Tambah Aset (Primary) */}
           <Button
             type="button"
             size="sm"
             onClick={() => setIsAddOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
           >
             <Plus className="w-4 h-4" />
-            Tambah Aset
+            <span>Tambah Aset</span>
           </Button>
         </div>
       </div>

@@ -319,7 +319,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Kelola pengeluaran yang ditalangi karyawan / tim, verifikasi nota, dan konfirmasi penggantian dana kas toko.
+              Kelola nota talangan tim dan verifikasi penggantian kas toko.
             </p>
           </div>
         </div>

@@ -36,6 +36,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -569,7 +577,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-              Database Menu / Produk &amp; HPP
+              Database Menu &amp; HPP
             </h2>
             <Badge
               variant="outline"
@@ -580,106 +588,137 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             {effectiveAnonymized && (
               <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-semibold gap-1">
                 {isLockedReadOnly && <Lock className="w-3 h-3" />}
-                {isLockedReadOnly ? "Mode Anonim Terkunci (Read-Only)" : "Mode Anonim Aktif"}
+                {isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim"}
               </Badge>
             )}
           </div>
-          <p className="text-xs text-slate-600 dark:text-slate-400">
-            Kelola menu jual, HPP / Food Cost (manual atau resep bahan dengan konversi satuan otomatis), deteksi kenaikan harga bahan, quick-edit massal, dan proteksi Mode Anonim.
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Kelola harga jual, resep bahan baku, kalkulasi HPP, dan proteksi privasi menu.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={effectiveAnonymized ? "default" : "outline"}
-            size="sm"
-            disabled={isLockedReadOnly}
-            onClick={() => {
-              const next = !anonymizeMode;
-              setAnonymizeMode(next);
-              if (next) {
-                setQuickEditMode(false);
-                setQuickEdits({});
-              }
-            }}
-            className={`min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 ${
-              effectiveAnonymized
-                ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
-                : ""
-            }`}
-            aria-pressed={effectiveAnonymized}
-          >
-            {effectiveAnonymized ? (
-              <>
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>{isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim: Aktif"}</span>
-              </>
-            ) : (
-              <>
-                <Eye className="w-3.5 h-3.5" />
-                <span>Tampilkan Nama Anonim</span>
-              </>
-            )}
-          </Button>
+        <div className="flex flex-wrap items-center gap-2 self-start xl:self-center">
+          {/* 1. Mode Anonim & Proteksi */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant={effectiveAnonymized ? "default" : "outline"}
+                size="sm"
+                className={`h-9 rounded-xl text-xs gap-1.5 ${
+                  effectiveAnonymized
+                    ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
+                    : ""
+                }`}
+                aria-pressed={effectiveAnonymized}
+              >
+                {effectiveAnonymized ? (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5" />
+                    <span>{isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim: Aktif"}</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Mode Anonim</span>
+                  </>
+                )}
+                <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                Privasi &amp; Proteksi Menu
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={isLockedReadOnly}
+                onClick={() => {
+                  const next = !anonymizeMode;
+                  setAnonymizeMode(next);
+                  if (next) {
+                    setQuickEditMode(false);
+                    setQuickEdits({});
+                  }
+                }}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                {effectiveAnonymized ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-blue-500" />
+                    <div>
+                      <div className="font-medium">Tampilkan Nama Asli</div>
+                      <div className="text-[10px] text-slate-400">Nonaktifkan samaran menu</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                    <div>
+                      <div className="font-medium">Aktifkan Nama Anonim</div>
+                      <div className="text-[10px] text-slate-400">Samarkan nama produk &amp; resep</div>
+                    </div>
+                  </>
+                )}
+              </DropdownMenuItem>
 
-          {isAdmin && (
-            <Button
-              type="button"
-              variant={isLockedReadOnly ? "default" : "outline"}
-              size="sm"
-              disabled={lockMutation.isPending}
-              onClick={() => lockMutation.mutate(!isLockedReadOnly)}
-              className={`min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 ${
-                isLockedReadOnly
-                  ? "bg-amber-700 hover:bg-amber-800 text-white"
-                  : ""
-              }`}
-            >
-              {isLockedReadOnly ? (
+              {isAdmin && (
                 <>
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>Buka Kunci Read-Only</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Kunci Read-Only</span>
+                  <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setGeneratedShareUrl("");
+                      setShareDialogOpen(true);
+                    }}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <Link2 className="w-3.5 h-3.5 text-indigo-500" />
+                    <div>
+                      <div className="font-medium">Link Berbagi Anonim</div>
+                      <div className="text-[10px] text-slate-400">Bagi link baca tanpa login</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isLockedReadOnly}
+                    onClick={() => setAnonymizeDialogOpen(true)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-emerald-500" />
+                    <div>
+                      <div className="font-medium">Atur Format Kode</div>
+                      <div className="text-[10px] text-slate-400">Prefix MENU-001 &amp; garam acak</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={lockMutation.isPending}
+                    onClick={() => lockMutation.mutate(!isLockedReadOnly)}
+                    className={`text-xs gap-2 py-2 cursor-pointer rounded-lg ${
+                      isLockedReadOnly ? "text-amber-600 focus:text-amber-700" : ""
+                    }`}
+                  >
+                    {isLockedReadOnly ? (
+                      <>
+                        <Unlock className="w-3.5 h-3.5 text-amber-600" />
+                        <div>
+                          <div className="font-medium text-amber-600 dark:text-amber-400">Buka Kunci Read-Only</div>
+                          <div className="text-[10px] text-slate-400">Izinkan pengeditan menu kembali</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-amber-600" />
+                        <div>
+                          <div className="font-medium">Kunci Read-Only Global</div>
+                          <div className="text-[10px] text-slate-400">Bekukan data agar tidak bisa diedit</div>
+                        </div>
+                      </>
+                    )}
+                  </DropdownMenuItem>
                 </>
               )}
-            </Button>
-          )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {isAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setGeneratedShareUrl("");
-                setShareDialogOpen(true);
-              }}
-              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              <span>Link Anonim</span>
-            </Button>
-          )}
-
-          {isAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isLockedReadOnly}
-              onClick={() => setAnonymizeDialogOpen(true)}
-              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Atur Kode Anonim</span>
-            </Button>
-          )}
-
+          {/* 2. Quick-Edit Mode */}
           <Button
             type="button"
             variant={quickEditMode ? "default" : "outline"}
@@ -693,98 +732,132 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 setQuickEditMode(true);
               }
             }}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
+            className="h-9 rounded-xl text-xs gap-1.5"
           >
             <PencilLine className="w-3.5 h-3.5" />
             <span>{quickEditMode ? "Keluar Quick-Edit" : "Quick-Edit Massal"}</span>
           </Button>
 
+          {/* 3. Input & POS Masal */}
           {isAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => posImportMutation.mutate()}
-              disabled={posImportMutation.isPending || isLockedReadOnly}
-              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${posImportMutation.isPending ? "animate-spin" : ""}`}
-              />
-              <span>Tarik dari POS</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={effectiveAnonymized || isLockedReadOnly}
+                  className="h-9 rounded-xl text-xs gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Input &amp; POS</span>
+                  <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+                <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                  Input Masal &amp; Integrasi
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => setBulkFormOpen(true)}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                  <div>
+                    <div className="font-medium">Tambah Masal</div>
+                    <div className="text-[10px] text-slate-400">Spreadsheet input multi-menu</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setImportCsvOpen(true)}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                  <div>
+                    <div className="font-medium">Import CSV</div>
+                    <div className="text-[10px] text-slate-400">Unggah file template CSV</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+                <DropdownMenuItem
+                  disabled={posImportMutation.isPending}
+                  onClick={() => posImportMutation.mutate()}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 text-indigo-500 ${posImportMutation.isPending ? "animate-spin" : ""}`}
+                  />
+                  <div>
+                    <div className="font-medium">
+                      {posImportMutation.isPending ? "Mengambil..." : "Tarik dari POS"}
+                    </div>
+                    <div className="text-[10px] text-slate-400">Sinkron menu dari mesin kasir</div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
-          {isAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={effectiveAnonymized || isLockedReadOnly}
-              onClick={() => setBulkFormOpen(true)}
-              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-            >
-              <Table2 className="w-3.5 h-3.5" />
-              <span>Tambah Masal</span>
-            </Button>
-          )}
+          {/* 4. Export Data */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={items.length === 0}
+                className="h-9 rounded-xl text-xs gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export</span>
+                <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                Format Unduhan
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={handleExportCsv}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                <div>
+                  <div className="font-medium">{effectiveAnonymized ? "Export CSV (Anonim)" : "Export CSV"}</div>
+                  <div className="text-[10px] text-slate-400">Tabel Excel / Spreadsheet</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleExportJson}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <FileJson className="w-3.5 h-3.5 text-amber-500" />
+                <div>
+                  <div className="font-medium">{effectiveAnonymized ? "Export JSON (Anonim)" : "Export JSON"}</div>
+                  <div className="text-[10px] text-slate-400">File JSON terstruktur</div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+              <DropdownMenuItem
+                onClick={handleCopyJson}
+                className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+              >
+                <Copy className="w-3.5 h-3.5 text-blue-500" />
+                <div>
+                  <div className="font-medium">Salin JSON ke Clipboard</div>
+                  <div className="text-[10px] text-slate-400">Copy data mentah ke clipboard</div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {isAdmin && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isLockedReadOnly}
-              onClick={() => setImportCsvOpen(true)}
-              className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import CSV</span>
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleExportCsv}
-            disabled={items.length === 0}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{effectiveAnonymized ? "CSV Anonim" : "Export CSV"}</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleExportJson}
-            disabled={items.length === 0}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <FileJson className="w-3.5 h-3.5" />
-            <span>{effectiveAnonymized ? "JSON Anonim" : "Export JSON"}</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopyJson}
-            disabled={items.length === 0}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>Salin JSON</span>
-          </Button>
-
+          {/* 5. Primary Action: Tambah Menu */}
           <Button
             type="button"
             size="sm"
             onClick={openCreateModal}
             disabled={effectiveAnonymized}
-            className="min-h-[44px] sm:min-h-[36px] text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Tambah Menu</span>

@@ -44,6 +44,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { formatRupiah } from "@/lib/formatters";
 import { toast } from "sonner";
 import {
@@ -69,6 +77,7 @@ import {
   SlidersHorizontal,
   Table2,
   FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 
 interface MasterItemsTabProps {
@@ -1021,58 +1030,122 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     <div className="space-y-6">
       {/* Header Banner */}
       <Card className="border-slate-200/90 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-3xl shadow-sm overflow-hidden">
-        <CardContent className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <PackageCheck className="w-5 h-5 text-blue-200" />
-              <h2 className="text-lg font-bold">Katalog Nama Item Baku (Master Item)</h2>
+        <CardContent className="p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <PackageCheck className="w-5 h-5 text-blue-200 shrink-0" />
+              <h2 className="text-base sm:text-lg font-bold">Katalog Master Item</h2>
+              <Badge variant="outline" className="text-[11px] font-semibold border-white/30 text-white bg-white/10">
+                {masterItems.length} Item
+              </Badge>
             </div>
-            <p className="text-xs text-blue-100 max-w-2xl leading-relaxed">
-              Setiap pengeluaran baru dari <strong>Scan Struk, Voice Note, /catat, maupun Web</strong> otomatis dicocokkan ke nama baku di bawah ini. Jika nama di struk agak berbeda (mis. <em>"Terigu Cakra 1kg"</em>), sistem akan menyamakannya ke nama baku dan mencatat nama asli struk di kolom Keterangan.
+            <p className="text-xs text-blue-100 max-w-xl leading-relaxed">
+              Standarisasi nama item untuk pencocokan otomatis transaksi dari scan struk, voice note, &amp; input web.
             </p>
           </div>
 
           {canDelete && (
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={importHistoryMutation.isPending}
-                onClick={() => importHistoryMutation.mutate()}
-                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-              >
-                <DatabaseZap className="w-3.5 h-3.5" />
-                {importHistoryMutation.isPending
-                  ? "Menarik..."
-                  : "⚡ Tarik dari Histori Transaksi"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowBulkBox((v) => !v)}
-                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                {showBulkBox ? "Tutup Paste Massal" : "Paste Daftar Item Massal"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsBulkFormOpen(true)}
-                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-              >
-                <Table2 className="w-3.5 h-3.5" />
-                Form Masal
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsCsvImportOpen(true)}
-                className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Import CSV
-              </Button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-start md:self-center">
+              {/* Dropdown: Alat & Audit */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+                  >
+                    <DatabaseZap className="w-3.5 h-3.5" />
+                    <span>Alat &amp; Audit</span>
+                    <ChevronDown className="w-3 h-3 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+                  <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                    Pemeliharaan &amp; Deteksi
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    disabled={importHistoryMutation.isPending}
+                    onClick={() => importHistoryMutation.mutate()}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <DatabaseZap className="w-3.5 h-3.5 text-blue-500" />
+                    <div>
+                      <div className="font-medium">
+                        {importHistoryMutation.isPending ? "Menarik data..." : "Tarik dari Histori Transaksi"}
+                      </div>
+                      <div className="text-[10px] text-slate-400">Ekstrak item dari struk belanja lama</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setShowAuditModal(true);
+                      refetchAudit();
+                    }}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <SearchCheck className="w-3.5 h-3.5 text-amber-500" />
+                    <div>
+                      <div className="font-medium">Audit Item Duplikat</div>
+                      <div className="text-[10px] text-slate-400">Deteksi kesamaan &amp; gabungkan item</div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Dropdown: Input & Import Masal */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-xl text-xs font-semibold gap-1.5 bg-white/15 hover:bg-white/25 text-white border border-white/20"
+                  >
+                    <Table2 className="w-3.5 h-3.5" />
+                    <span>Import &amp; Masal</span>
+                    <ChevronDown className="w-3 h-3 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+                  <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                    Pilihan Input Massal
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => setIsBulkFormOpen(true)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                    <div>
+                      <div className="font-medium">Form Input Masal</div>
+                      <div className="text-[10px] text-slate-400">Input spreadsheet interaktif</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setIsCsvImportOpen(true)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                    <div>
+                      <div className="font-medium">Import dari CSV</div>
+                      <div className="text-[10px] text-slate-400">Upload template file CSV</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+                  <DropdownMenuItem
+                    onClick={() => setShowBulkBox((v) => !v)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    <div>
+                      <div className="font-medium">
+                        {showBulkBox ? "Tutup Form Paste" : "Paste Teks Sekaligus"}
+                      </div>
+                      <div className="text-[10px] text-slate-400">1 baris = 1 item nama baku</div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Cocokkan Data Lama */}
               <Button
                 size="sm"
                 disabled={syncExistingMutation.isPending || masterItems.length === 0}
@@ -1082,19 +1155,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
                 />
-                Cocokkan Data Lama ({masterItems.length} item)
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setShowAuditModal(true);
-                  refetchAudit();
-                }}
-                className="rounded-xl text-xs font-semibold gap-1.5 bg-amber-400/20 hover:bg-amber-400/30 text-amber-100 border border-amber-300/30 shadow-xs"
-              >
-                <SearchCheck className="w-3.5 h-3.5 text-amber-300" />
-                Audit Item Duplikat
+                <span>Cocokkan Data Lama ({masterItems.length})</span>
               </Button>
             </div>
           )}

@@ -357,8 +357,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-              Catat invoice dengan DP (persentase atau nominal), pantau tempo pelunasan, dan catat termin hingga lunas.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Pantau invoice tempo, uang muka (DP), dan histori termin pelunasan.
             </p>
           </div>
         </div>

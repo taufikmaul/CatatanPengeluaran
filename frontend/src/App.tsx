@@ -936,10 +936,10 @@ function MainDashboardApp() {
                           </div>
                           <div>
                             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              Daftar Transaksi & Peringkat Belanja
+                              Transaksi &amp; Peringkat Belanja
                             </h3>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              Lihat rincian transaksi belanja, filter pengeluaran, serta peringkat item sering dibeli dan lonjakan harga.
+                              Rincian nota transaksi belanja operasional dan analitika peringkat belanja.
                             </p>
                           </div>
                         </div>
@@ -1231,14 +1231,14 @@ function MainDashboardApp() {
                           <div>
                             <div className="flex items-center gap-2">
                               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                                Daftar Transaksi & Peringkat Belanja
+                                Transaksi &amp; Peringkat Belanja
                               </h2>
                               <Badge variant="outline" className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40">
                                 {expensesData?.total || 0} Total Transaksi
                               </Badge>
                             </div>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              Rincian nota transaksi operasional periode {reportData?.month_name || "Bulan Ini"} {year} dan analitika leaderboard belanja
+                              Rincian nota belanja operasional dan analitika peringkat belanja periode {reportData?.month_name || "Bulan Ini"} {year}.
                             </p>
                           </div>
                         </div>
