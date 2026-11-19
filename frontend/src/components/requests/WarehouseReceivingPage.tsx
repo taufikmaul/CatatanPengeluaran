@@ -114,28 +114,23 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
   };
 
   return (
-    <div className="space-y-5 max-w-6xl mx-auto pb-16">
-      {/* Header Gudang */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600/15 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <PackageCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-              Gudang & Penerimaan Barang
-            </h2>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
-              Periksa barang yang datang dari supplier, catat jumlah fisik (sesuai, kurang, atau lebih), dan input tanggal kedaluwarsa (Exp Date).
-            </p>
-          </div>
+    <div className="space-y-4 max-w-6xl mx-auto pb-16">
+      {/* Action Toolbar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+            {filteredItems.length} Item Kedatangan
+          </Badge>
+          <span className="text-xs text-zinc-500">
+            Pemeriksaan fisik barang &amp; tanggal kadaluarsa
+          </span>
         </div>
 
         <Button
           variant="outline"
           size="sm"
           onClick={() => queryClient.invalidateQueries({ queryKey: ["warehouse-incoming"] })}
-          className="h-10 sm:h-9 text-xs rounded-xl self-start sm:self-auto shrink-0"
+          className="h-9 px-3.5 text-xs font-semibold rounded-xl border-zinc-200 dark:border-zinc-800"
         >
           Refresh Daftar
         </Button>

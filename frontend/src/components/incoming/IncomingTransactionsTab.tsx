@@ -328,13 +328,15 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
 
   return (
     <div className="space-y-4">
-      {/* Header & Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Daftar Transaksi Masuk</h2>
-          <p className="text-xs text-slate-500">
-            Pantau omzet penjualan dari POS, GoFood, GrabFood, ShopeeFood, input manual satuan &amp; masal, serta ekspor/impor CSV.
-          </p>
+      {/* Compact Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            {summary?.paid_count || 0} Transaksi Masuk
+          </Badge>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Total Bersih: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{formatRupiah(summary?.net_received || 0)}</strong>
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
           <Button
@@ -342,7 +344,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             size="sm"
             onClick={handleExportCsv}
             disabled={isExporting}
-            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
             title="Download CSV transaksi sesuai filter yang aktif"
           >
             <Download className="w-3.5 h-3.5 text-slate-500" />
@@ -353,7 +355,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             variant="outline"
             size="sm"
             onClick={() => setCsvTemplateOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
             title="Import file CSV dengan opsi perbarui data yang sudah ada"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
@@ -364,7 +366,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             variant="outline"
             size="sm"
             onClick={() => setImportOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
             title="Import laporan riwayat penjualan POS Moka / Olsera multi-baris"
           >
             <Upload className="w-3.5 h-3.5 text-blue-600" />
@@ -375,7 +377,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             variant="outline"
             size="sm"
             onClick={() => setBulkDialogOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white text-slate-700 hover:text-slate-900 shadow-2xs"
+            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
             title="Input banyak transaksi sekaligus atau paste dari Excel/Sheets"
           >
             <Table2 className="w-3.5 h-3.5 text-indigo-600" />
@@ -385,7 +387,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           <Button
             onClick={handleAddSingleTx}
             size="sm"
-            className="gap-1.5 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+            className="gap-1.5 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-2xs font-semibold"
           >
             <Plus className="w-3.5 h-3.5" />
             Tambah Satuan

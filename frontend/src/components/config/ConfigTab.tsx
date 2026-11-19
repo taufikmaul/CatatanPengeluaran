@@ -259,35 +259,29 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Top Banner Status */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Database className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900 leading-tight">
-              Status Basis Data & Sinkronisasi
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Total {config.total_expenses} transaksi tersimpan di PostgreSQL
-            </p>
-          </div>
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs"
+          >
+            <Database className="w-3 h-3 mr-1.5 text-blue-600 inline" />
+            {config.total_expenses} Transaksi PostgreSQL
+          </Badge>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={handleSyncTelegramUsers}
-            disabled={isSyncingTelegram}
-            className="rounded-xl text-xs border-sky-300 text-sky-700 hover:bg-sky-50 gap-2 font-medium h-9 w-full md:w-auto"
-          >
-            <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
-            {isSyncingTelegram ? "Menyinkronkan User..." : "Sync User dari Link Telegram"}
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={handleSyncTelegramUsers}
+          disabled={isSyncingTelegram}
+          className="rounded-xl text-xs border-sky-300 text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40 gap-1.5 font-medium h-8 w-fit self-start sm:self-center"
+        >
+          <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
+          {isSyncingTelegram ? "Menyinkronkan..." : "Sync User Telegram"}
+        </Button>
       </div>
 
       <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full space-y-5">

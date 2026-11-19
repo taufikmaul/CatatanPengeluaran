@@ -331,22 +331,14 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
 
   return (
     <div className="space-y-5 pb-10">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <Boxes className="w-5 h-5 text-blue-600 shrink-0" />
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Inventaris Aset Tetap
-            </h2>
-            <Badge variant="outline" className="text-xs">
-              {assets.length} Aset
-            </Badge>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Pencatatan inventaris aset, pencetakan label QR, dan kalkulasi penyusutan SAK EMKM.
-          </p>
-        </div>
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+        <Badge
+          variant="outline"
+          className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs w-fit"
+        >
+          {assets.length} Aset Terdaftar
+        </Badge>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
           {/* Dropdown: Alat & Analisa (Khusus Owner) */}

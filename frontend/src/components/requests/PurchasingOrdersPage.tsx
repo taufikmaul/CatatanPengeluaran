@@ -252,35 +252,31 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
 
   return (
     <div className="space-y-5 max-w-6xl mx-auto pb-16">
-      {/* Header Panel Purchasing */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <ShoppingBasket className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-              Panel Pemesanan Purchasing
-            </h2>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
-              Tentukan supplier terdaftar yang memiliki barang, koreksi ketersediaan atau qty, kirim order WhatsApp, lalu tandai sudah dipesan.
-            </p>
-          </div>
+      {/* Action Toolbar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+            {filteredGroups.length} Grup Supplier
+          </Badge>
+          <span className="text-xs text-zinc-500">
+            Estimasi Belanja: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{formatRupiah(summary.totalEstimated)}</strong>
+          </span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Button
             size="sm"
             onClick={() => openAddPurchasingModal(null)}
-            className="h-10 sm:h-9 px-3.5 text-xs font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-xl flex items-center gap-1.5"
+            className="h-9 px-3.5 text-xs font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-xl flex items-center gap-1.5 shadow-xs"
           >
-            <Plus className="w-4 h-4" /> Tambah Barang Susulan
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Barang Susulan</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => queryClient.invalidateQueries({ queryKey: ["purchasing-orders"] })}
-            className="h-10 sm:h-9 text-xs rounded-xl"
+            className="h-9 text-xs rounded-xl border-zinc-200 dark:border-zinc-800"
           >
             Refresh Order
           </Button>

@@ -732,21 +732,14 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-              Master Supplier &amp; Toko
-            </h2>
-            <Badge variant="outline" className="text-xs">
-              {total} Toko Terdaftar
-            </Badge>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Direktori vendor, histori transaksi belanja, dan audit akun toko.
-          </p>
-        </div>
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+        <Badge
+          variant="outline"
+          className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs w-fit"
+        >
+          {total} Toko Terdaftar
+        </Badge>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
           {/* Dropdown: Alat & Sync */}

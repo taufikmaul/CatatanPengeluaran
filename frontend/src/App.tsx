@@ -64,7 +64,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { isPaidStatus, getTempoQuickDate } from "@/lib/paymentStatus";
-import { Plus, ReceiptText, ArrowRight } from "lucide-react";
+import { Plus } from "lucide-react";
 
 // Ambil dan hapus SSO token dari URL segera sebelum render agar tidak bertahan di history
 let initialPendingSsoToken: string | null = null;
@@ -995,55 +995,18 @@ function MainDashboardApp() {
                           />
                         </div>
                       </div>
-
-                      {/* Banner Akses Halaman Baru Daftar Transaksi & Peringkat Belanja */}
-                      <div className="bg-gradient-to-r from-blue-50/80 via-white to-slate-50 dark:from-slate-900/90 dark:via-slate-900/60 dark:to-slate-900 border border-blue-200/80 dark:border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <ReceiptText className="w-6 h-6" />
-                          </div>
-                          <div>
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              Transaksi &amp; Peringkat Belanja
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              Rincian nota transaksi belanja operasional dan analitika peringkat belanja.
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => navigate("/transactions")}
-                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 px-5 gap-2 shrink-0 shadow-xs"
-                        >
-                          <span>Buka Halaman Transaksi</span>
-                          <ArrowRight className="w-4 h-4" />
-                        </Button>
-                      </div>
                     </div>
                     </React.Suspense>
                   )
                 ) : (
                   /* Tampilan Ringkas & Cepat Khusus Admin Input */
                   <div className="space-y-4">
-                    {/* Banner Status Admin Input */}
-                    <div className="bg-amber-500/10 border border-amber-200/90 dark:border-amber-800/80 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xl shrink-0">
-                          ✍️
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100">
-                              Workspace Admin Input Historycake
-                            </h2>
-                            <Badge variant="outline" className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
-                              Input & Koreksi
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                            Pencatatan pengeluaran harian dan koreksi transaksi operasional.
-                          </p>
-                        </div>
+                    {/* Action Toolbar Admin Input */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1 rounded-lg text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 shadow-xs">
+                          ✍️ Workspace Admin Input
+                        </Badge>
                       </div>
                       <Button
                         onClick={() => {
@@ -1052,9 +1015,9 @@ function MainDashboardApp() {
                           setIsFormOpen(true);
                         }}
                         size="sm"
-                        className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0 w-full md:w-auto"
+                        className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-8 px-3 shrink-0 self-start sm:self-center"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                         <span>Catat Pengeluaran Baru</span>
                       </Button>
                     </div>

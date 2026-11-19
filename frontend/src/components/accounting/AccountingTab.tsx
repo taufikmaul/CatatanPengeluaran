@@ -195,61 +195,27 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER & CONTROLS
       ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
-        <div className="flex items-start gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
-            <Scale className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100">
-                Laporan & Analisis Akuntansi
-              </h1>
-              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-medium">
-                SAK EMKM
-              </Badge>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Klasifikasi Chart of Accounts (COA): Laba Rugi, Posisi Keuangan, Arus Kas, dan Analisis Rasio Biaya
-            </p>
-          </div>
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5 print:hidden">
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg border-blue-200 bg-blue-50/50 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 shadow-xs"
+          >
+            Standar SAK EMKM
+          </Badge>
+          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            Periode {MONTH_NAMES[currentMonth - 1]} {currentYear}
+          </span>
         </div>
 
-        {/* Filter Bulan/Tahun & Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap print:hidden">
-          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg p-1">
-            <Calendar className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
-            <select
-              value={currentMonth}
-              onChange={(e) => onMonthChange(Number(e.target.value))}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-hidden py-1 px-1 cursor-pointer"
-            >
-              {MONTH_NAMES.map((name, idx) => (
-                <option key={idx} value={idx + 1} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                  {name}
-                </option>
-              ))}
-            </select>
-            <span className="text-slate-300 dark:text-slate-600">/</span>
-            <select
-              value={currentYear}
-              onChange={(e) => onYearChange(Number(e.target.value))}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-hidden py-1 px-1 cursor-pointer"
-            >
-              {[2024, 2025, 2026, 2027, 2028].map((y) => (
-                <option key={y} value={y} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                  {y}
-                </option>
-              ))}
-            </select>
-          </div>
-
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300"
+            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
             title="Refresh Data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
@@ -261,7 +227,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             size="sm"
             onClick={handleExportCsv}
             disabled={!accountingData}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300"
+            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
             title="Export CSV"
           >
             <Download className="w-3.5 h-3.5" />
@@ -272,13 +238,23 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             variant="outline"
             size="sm"
             onClick={handlePrint}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300"
+            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
             title="Cetak Laporan"
           >
             <Printer className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Cetak</span>
           </Button>
         </div>
+      </div>
+
+      {/* Print Document Title Header */}
+      <div className="hidden print:block pb-4 mb-2 border-b">
+        <h1 className="text-xl font-bold text-slate-900">
+          Laporan &amp; Analisis Akuntansi (SAK EMKM)
+        </h1>
+        <p className="text-xs text-slate-500 mt-1">
+          Periode: {MONTH_NAMES[currentMonth - 1]} {currentYear}
+        </p>
       </div>
 
       {/* ─────────────────────────────────────────────────────────────

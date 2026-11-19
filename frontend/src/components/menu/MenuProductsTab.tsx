@@ -572,32 +572,24 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Header & Primary Controls */}
-      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-              Database Menu &amp; HPP
-            </h2>
-            <Badge
-              variant="outline"
-              className="text-[11px] font-semibold border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-300"
-            >
-              {displayedTotal} Menu
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs"
+          >
+            {displayedTotal} Menu Terdaftar
+          </Badge>
+          {effectiveAnonymized && (
+            <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold gap-1 px-2.5 py-1 rounded-lg">
+              {isLockedReadOnly && <Lock className="w-3 h-3" />}
+              {isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim"}
             </Badge>
-            {effectiveAnonymized && (
-              <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[11px] font-semibold gap-1">
-                {isLockedReadOnly && <Lock className="w-3 h-3" />}
-                {isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim"}
-              </Badge>
-            )}
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Kelola harga jual, resep bahan baku, kalkulasi HPP, dan proteksi privasi menu.
-          </p>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start xl:self-center">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
           {/* 1. Mode Anonim & Proteksi */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

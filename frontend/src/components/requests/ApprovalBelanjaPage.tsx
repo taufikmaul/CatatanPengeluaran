@@ -131,24 +131,7 @@ export const ApprovalBelanjaPage: React.FC<ApprovalBelanjaPageProps> = ({
   };
 
   return (
-    <div className="space-y-5 max-w-6xl mx-auto pb-16">
-      {/* Header Manager / Owner Approval */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-600/15 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-              Approval Belanja (Manager / Owner)
-            </h2>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
-              Tinjau pengajuan belanja dari tim, koreksi bila perlu, lalu setujui untuk diteruskan ke Purchasing atau tolak dengan alasan.
-            </p>
-          </div>
-        </div>
-      </div>
-
+    <div className="space-y-4 max-w-6xl mx-auto pb-16">
       {/* Ringkasan Keputusan */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/15">
