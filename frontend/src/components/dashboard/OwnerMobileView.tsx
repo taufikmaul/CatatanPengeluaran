@@ -3,7 +3,12 @@ import { cn } from "@/lib/utils";
 import { Expense, MonthlyReport, ExpenseUser, UnpaidExpenseItem } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
-import { getExpensePaymentBreakdown } from "@/lib/paymentStatus";
+import {
+  getExpensePaymentBreakdown,
+  isCodExpense,
+  isReimbursementExpense,
+  hasInstallmentHistory,
+} from "@/lib/paymentStatus";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +36,7 @@ import {
   User as UserIcon,
   Tag,
   Briefcase,
+  History,
   LineChart,
   Store,
   Calendar,
@@ -42,6 +48,7 @@ import {
   Sparkles,
   ShieldAlert,
   BookOpen,
+  Package,
 } from "lucide-react";
 
 // Sub-components untuk tab Analisis & Grafik (lazy-loaded agar mobile ringkasan tetap ringan)
@@ -69,6 +76,7 @@ export interface OwnerMobileViewProps {
   onInspectItemPrice?: (itemName: string, itemId?: number | null) => void;
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
+  onOpenPaymentModal?: (expense: Expense, mode?: "full" | "percent" | "amount") => void;
   canDelete?: boolean;
 
   // Filter states & handlers
@@ -116,6 +124,7 @@ export function OwnerMobileView({
   onInspectItemPrice,
   onDeleteExpense,
   onViewExpense,
+  onOpenPaymentModal,
   canDelete = true,
   highlightedExpenseId,
   month,
@@ -1112,39 +1121,111 @@ export function OwnerMobileView({
                     <div className="flex items-center justify-between gap-2 pt-1">
                       {/* Toggle Status Lunas / Hutang & Metode Bayar */}
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => onToggleStatus(e)}
-                          className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all active:scale-95 ${
-                            isLunas
-                              ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                              : bd.isDp
-                              ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                              : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
-                          }`}
-                        >
-                          {isLunas ? (
+                        {(() => {
+                          const isCod = isCodExpense(e);
+                          const isReimb = isReimbursementExpense(e);
+                          const hasInst = hasInstallmentHistory(e);
+                          const hasDpSettled = isLunas && ((e.payments_count || 0) > 1 || (e.payments && e.payments.some((p) => p.payment_type === "dp")));
+                          const hasInstSettled = isLunas && hasInst;
+
+                          return (
                             <>
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>Lunas</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if ((bd.isDp || isCod) && onOpenPaymentModal) {
+                                    onOpenPaymentModal(e, isCod ? "full" : "full");
+                                  } else {
+                                    onToggleStatus(e);
+                                  }
+                                }}
+                                className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-2 transition-all active:scale-95 ${
+                                  isLunas
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                                    : isCod
+                                    ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                                    : hasInst
+                                    ? "bg-blue-50 text-blue-900 border-blue-300 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
+                                    : bd.isDp
+                                    ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                                    : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800"
+                                }`}
+                              >
+                                {isLunas ? (
+                                  <>
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <span>Lunas</span>
+                                  </>
+                                ) : isCod ? (
+                                  <>
+                                    <Package className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <span>COD Belum Bayar</span>
+                                  </>
+                                ) : hasInst ? (
+                                  <>
+                                    <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                                    <span>Termin {Math.round(bd.progressPct)}%</span>
+                                  </>
+                                ) : bd.isDp ? (
+                                  <>
+                                    <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <span>DP {Math.round(bd.progressPct)}%</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                                    <span>Hutang</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {isLunas && isCod && (
+                                <span className="min-h-[44px] px-2.5 rounded-xl text-xs font-bold bg-emerald-100/90 text-emerald-800 border border-emerald-300 flex items-center gap-1 shrink-0">
+                                  <Package className="w-3.5 h-3.5 shrink-0" />
+                                  <span>COD Dilunasi</span>
+                                </span>
+                              )}
+
+                              {hasInstSettled && !isCod && (
+                                <span className="min-h-[44px] px-2.5 rounded-xl text-xs font-bold bg-blue-100/90 text-blue-800 border border-blue-300 flex items-center gap-1 shrink-0">
+                                  <History className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Termin Lunas</span>
+                                </span>
+                              )}
+
+                              {hasDpSettled && !isCod && !hasInstSettled && (
+                                <button
+                                  type="button"
+                                  onClick={() => (onOpenPaymentModal ? onOpenPaymentModal(e, "full") : onViewExpense?.(e))}
+                                  className="min-h-[44px] px-2.5 rounded-xl text-xs font-bold bg-emerald-100/90 text-emerald-800 border border-emerald-300 flex items-center gap-1 shrink-0"
+                                  title="Lihat track record pelunasan"
+                                >
+                                  <History className="w-3.5 h-3.5 shrink-0" />
+                                  <span>DP Dilunasi</span>
+                                </button>
+                              )}
+
+                              {isReimb && (
+                                <span
+                                  className={`min-h-[44px] px-2.5 rounded-xl text-xs font-bold border flex items-center gap-1 shrink-0 ${
+                                    e.reimbursed_at
+                                      ? "bg-purple-100/90 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300"
+                                      : "bg-amber-100/90 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300"
+                                  }`}
+                                >
+                                  <Briefcase className="w-3.5 h-3.5 shrink-0" />
+                                  <span>{e.reimbursed_at ? "Talangan Diganti" : "Ditalangi"}</span>
+                                </span>
+                              )}
+
+                              {e.pay_method && !isCod && (
+                                <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg shrink-0">
+                                  {e.pay_method}
+                                </span>
+                              )}
                             </>
-                          ) : bd.isDp ? (
-                            <>
-                              <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                              <span>DP {Math.round(bd.progressPct)}%</span>
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                              <span>Hutang</span>
-                            </>
-                          )}
-                        </button>
-                        {e.pay_method && (
-                          <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg shrink-0">
-                            {e.pay_method}
-                          </span>
-                        )}
+                          );
+                        })()}
                       </div>
 
                       {/* Tombol Aksi Tambahan: Telegram, Detail, Beli Lagi, Edit, Delete */}

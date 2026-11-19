@@ -1,4 +1,4 @@
-import { Expense } from "@/types";
+import { Expense, ExpensePayment } from "@/types";
 
 export function isPaidStatus(status?: string | null): boolean {
   return (status || "").trim().toLowerCase() === "lunas";
@@ -7,6 +7,27 @@ export function isPaidStatus(status?: string | null): boolean {
 export function isDpStatus(status?: string | null): boolean {
   const st = (status || "").trim().toLowerCase();
   return st.includes("dp") || st.includes("sebagian") || st.includes("partial");
+}
+
+export function isCodExpense(expense?: { pay_method?: string | null; notes?: string | null } | null): boolean {
+  if (!expense) return false;
+  const pm = (expense.pay_method || "").trim().toUpperCase();
+  const notes = (expense.notes || "").toLowerCase();
+  return pm === "COD" || notes.includes("cod");
+}
+
+export function isReimbursementExpense(expense?: { is_reimbursement?: boolean } | null): boolean {
+  return Boolean(expense?.is_reimbursement);
+}
+
+export function hasInstallmentHistory(expense?: { payments?: ExpensePayment[]; payments_count?: number } | null): boolean {
+  if (!expense) return false;
+  return Boolean(expense.payments?.some((p) => p.payment_type === "installment"));
+}
+
+export function hasReimbursementHistory(expense?: { payments?: ExpensePayment[]; reimbursed_at?: string | null; is_reimbursement?: boolean } | null): boolean {
+  if (!expense || !expense.is_reimbursement) return false;
+  return Boolean(expense.reimbursed_at || expense.payments?.some((p) => p.payment_type === "reimbursement"));
 }
 
 export function isUnpaidOrDpStatus(status?: string | null): boolean {

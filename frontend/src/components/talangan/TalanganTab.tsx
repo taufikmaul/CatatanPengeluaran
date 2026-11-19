@@ -179,6 +179,8 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
       queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["accounting-report"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["auth-status"] });
 

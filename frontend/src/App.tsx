@@ -23,6 +23,7 @@ const ExpenseActivityLogModal = React.lazy(() => import("@/components/dashboard/
 const AuditDuplicatesModal = React.lazy(() => import("@/components/dashboard/AuditDuplicatesModal").then(m => ({ default: m.AuditDuplicatesModal })));
 const DataHygieneModal = React.lazy(() => import("@/components/dashboard/DataHygieneModal").then(m => ({ default: m.DataHygieneModal })));
 const ExpenseFormDrawer = React.lazy(() => import("@/components/forms/ExpenseFormDrawer").then(m => ({ default: m.ExpenseFormDrawer })));
+const DpPaymentModal = React.lazy(() => import("@/components/unpaid/DpPaymentModal").then(m => ({ default: m.DpPaymentModal })));
 const LoginModal = React.lazy(() => import("@/components/auth/LoginModal").then(m => ({ default: m.LoginModal })));
 const ConfigTab = React.lazy(() => import("@/components/config/ConfigTab").then(m => ({ default: m.ConfigTab })));
 const IncomingTransactionsTab = React.lazy(() => import("@/components/incoming/IncomingTransactionsTab").then(m => ({ default: m.IncomingTransactionsTab })));
@@ -63,7 +64,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
-import { isPaidStatus, getTempoQuickDate } from "@/lib/paymentStatus";
+import { isPaidStatus, isDpStatus, getTempoQuickDate } from "@/lib/paymentStatus";
 import { Plus } from "lucide-react";
 
 // Ambil dan hapus SSO token dari URL segera sebelum render agar tidak bertahan di history
@@ -264,6 +265,13 @@ function MainDashboardApp() {
   const [isActivityLogOpen, setIsActivityLogOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isDataHygieneModalOpen, setIsDataHygieneModalOpen] = useState(false);
+  const [paymentModalExpense, setPaymentModalExpense] = useState<Expense | null>(null);
+  const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">("full");
+
+  const handleOpenPaymentModal = (expense: Expense, mode: "full" | "percent" | "amount" = "full") => {
+    setPaymentModalExpense(expense);
+    setPaymentModalMode(mode);
+  };
 
   // Theme state with localStorage persistence
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -675,6 +683,10 @@ function MainDashboardApp() {
   });
 
   const handleToggleStatus = (item: Expense) => {
+    if (isDpStatus(item.pay_status)) {
+      handleOpenPaymentModal(item, "full");
+      return;
+    }
     const isLunas = isPaidStatus(item.pay_status);
     const newStatus = isLunas ? "Belum Lunas" : "Lunas";
     toggleStatusMutation.mutate({ id: item.id, newStatus });
@@ -830,6 +842,7 @@ function MainDashboardApp() {
                         totalCount={expensesData?.total || 0}
                         onPageChange={setPage}
                         onToggleStatus={handleToggleStatus}
+                        onOpenPaymentModal={handleOpenPaymentModal}
                         onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
@@ -1124,6 +1137,7 @@ function MainDashboardApp() {
                       totalCount={expensesData?.total || 0}
                       onPageChange={setPage}
                       onToggleStatus={handleToggleStatus}
+                      onOpenPaymentModal={handleOpenPaymentModal}
                       onEditExpense={(item) => {
                         setRepeatingExpense(null);
                         setEditingExpense(item);
@@ -1174,6 +1188,7 @@ function MainDashboardApp() {
                         totalCount={expensesData?.total || 0}
                         onPageChange={setPage}
                         onToggleStatus={handleToggleStatus}
+                        onOpenPaymentModal={handleOpenPaymentModal}
                         onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
@@ -1331,6 +1346,7 @@ function MainDashboardApp() {
                         totalCount={expensesData?.total || 0}
                         onPageChange={setPage}
                         onToggleStatus={handleToggleStatus}
+                        onOpenPaymentModal={handleOpenPaymentModal}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
                           setEditingExpense(item);
@@ -1492,6 +1508,7 @@ function MainDashboardApp() {
                       totalCount={expensesData?.total || 0}
                       onPageChange={setPage}
                       onToggleStatus={handleToggleStatus}
+                      onOpenPaymentModal={handleOpenPaymentModal}
                       onEditExpense={(item) => {
                         setRepeatingExpense(null);
                         setEditingExpense(item);
@@ -1871,6 +1888,27 @@ function MainDashboardApp() {
               onInspectItemPrice={(name, id) => {
                 setViewingExpense(null);
                 handleInspectItemPrice(name, id);
+              }}
+              onOpenPaymentModal={handleOpenPaymentModal}
+            />
+          </React.Suspense>
+        )}
+
+        {/* DP & Pelunasan Payment Modal */}
+        {paymentModalExpense && (
+          <React.Suspense fallback={null}>
+            <DpPaymentModal
+              isOpen={Boolean(paymentModalExpense)}
+              onClose={() => setPaymentModalExpense(null)}
+              expense={paymentModalExpense}
+              initialMode={paymentModalMode}
+              onPaymentUpdated={() => {
+                queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+                queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+                queryClient.invalidateQueries({ queryKey: ["report"] });
+                queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
+                queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
               }}
             />
           </React.Suspense>

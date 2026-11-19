@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ConfigDict
 class ExpensePaymentCreate(BaseModel):
     amount: float | None = Field(None, gt=0)
     dp_percent: float | None = Field(None, gt=0, le=100)
+    payment_type: str | None = None  # "dp", "installment", "settlement", "reimbursement"
     payment_date: date = Field(default_factory=date.today)
     pay_method: str = "Transfer"
     bank_account_id: int | None = None

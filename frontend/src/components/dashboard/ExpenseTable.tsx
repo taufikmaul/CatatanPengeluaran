@@ -3,7 +3,13 @@ import { cn } from "@/lib/utils";
 import { Expense } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
-import { getExpensePaymentBreakdown, isPaidStatus } from "@/lib/paymentStatus";
+import {
+  getExpensePaymentBreakdown,
+  isPaidStatus,
+  isCodExpense,
+  isReimbursementExpense,
+  hasInstallmentHistory,
+} from "@/lib/paymentStatus";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +51,7 @@ import {
   History,
   ShieldAlert,
   Sparkles,
+  Package,
 } from "lucide-react";
 
 interface ExpenseTableProps {
@@ -60,6 +67,7 @@ interface ExpenseTableProps {
   onInspectItemPrice?: (itemName: string, itemId?: number | null) => void;
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
+  onOpenPaymentModal?: (expense: Expense, mode?: "full" | "percent" | "amount") => void;
   onOpenActivityLog?: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -81,6 +89,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onInspectItemPrice,
   onDeleteExpense,
   onViewExpense,
+  onOpenPaymentModal,
   onOpenActivityLog,
   onOpenAuditDuplicates,
   onOpenDataHygiene,
@@ -296,15 +305,40 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
           <DataGridColumnHeader title="Status" column={column} className="justify-center text-center" />
         ),
         cell: ({ row }) => {
-          const bd = getExpensePaymentBreakdown(row.original);
+          const exp = row.original;
+          const bd = getExpensePaymentBreakdown(exp);
+          const isCod = isCodExpense(exp);
+          const isReimb = isReimbursementExpense(exp);
+          const hasInst = hasInstallmentHistory(exp);
+          const hasDpSettled =
+            bd.isPaid &&
+            ((exp.payments_count || 0) > 1 ||
+              (exp.payments && exp.payments.some((p) => p.payment_type === "dp")) ||
+              Boolean(exp.dp_type || (exp.dp_percent && Number(exp.dp_percent) > 0)));
+          const hasInstSettled = bd.isPaid && hasInst;
+
           return (
             <div className="text-center whitespace-nowrap">
               <button
-                onClick={() => onToggleStatus(row.original)}
-                title="Klik untuk ubah status pembayaran"
+                onClick={() => {
+                  if ((bd.isDp || isCod) && onOpenPaymentModal) {
+                    onOpenPaymentModal(exp, isCod ? "full" : "full");
+                  } else {
+                    onToggleStatus(exp);
+                  }
+                }}
+                title={
+                  isCod && !bd.isPaid
+                    ? "Klik untuk bayar / lunasi COD di kasir"
+                    : bd.isDp
+                    ? "Klik untuk catat pelunasan atau cicilan"
+                    : "Klik untuk ubah status pembayaran"
+                }
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${
                   bd.isPaid
                     ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100"
+                    : isCod
+                    ? "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100"
                     : bd.isDp
                     ? "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100"
                     : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100"
@@ -314,6 +348,16 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     <span>Lunas</span>
+                  </>
+                ) : isCod ? (
+                  <>
+                    <Package className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>COD Belum Bayar</span>
+                  </>
+                ) : hasInst ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Termin {Math.round(bd.progressPct)}%</span>
                   </>
                 ) : bd.isDp ? (
                   <>
@@ -327,9 +371,73 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   </>
                 )}
               </button>
-              {row.original.pay_method && (
+
+              {/* Sub-badge: COD Dilunasi / DP Dilunasi / Termin Lunas */}
+              {bd.isPaid && isCod && (
+                <div className="mt-0.5">
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100/90 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+                    title="Transaksi COD lunas dibayar kasir"
+                  >
+                    <Package className="w-2.5 h-2.5 shrink-0" />
+                    <span>COD Dilunasi</span>
+                  </span>
+                </div>
+              )}
+
+              {hasInstSettled && !isCod && (
+                <div className="mt-0.5">
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100/90 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
+                    title="Hutang bertahap telah lunas seluruh termin"
+                  >
+                    <History className="w-2.5 h-2.5 shrink-0" />
+                    <span>Termin Lunas</span>
+                  </span>
+                </div>
+              )}
+
+              {hasDpSettled && !isCod && !hasInstSettled && (
+                <div className="mt-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onViewExpense) {
+                        onViewExpense(exp);
+                      } else if (onOpenPaymentModal) {
+                        onOpenPaymentModal(exp, "full");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100/90 hover:bg-emerald-200 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 transition-colors"
+                    title="Transaksi DP telah lunas. Klik untuk lihat track record pembayaran"
+                  >
+                    <History className="w-2.5 h-2.5 shrink-0" />
+                    <span>DP Dilunasi</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Status Talangan Sub-badge */}
+              {isReimb && (
+                <div className="mt-0.5">
+                  <span
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                      exp.reimbursed_at
+                        ? "bg-purple-100/90 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300"
+                        : "bg-amber-100/90 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300"
+                    }`}
+                    title={exp.reimbursed_at ? "Uang talangan sudah diganti oleh owner/admin" : "Uang talangan belum diganti"}
+                  >
+                    <Briefcase className="w-2.5 h-2.5 shrink-0" />
+                    <span>{exp.reimbursed_at ? "Talangan Diganti" : "Ditalangi"}</span>
+                  </span>
+                </div>
+              )}
+
+              {exp.pay_method && !isCod && (
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
-                  {row.original.pay_method}
+                  {exp.pay_method}
                 </div>
               )}
             </div>
@@ -634,7 +742,13 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                 <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
-                      onClick={() => onToggleStatus(e)}
+                      onClick={() => {
+                        if (bd.isDp && onOpenPaymentModal) {
+                          onOpenPaymentModal(e, "full");
+                        } else {
+                          onToggleStatus(e);
+                        }
+                      }}
                       className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border ${
                         isLunas
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -660,6 +774,13 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                         </>
                       )}
                     </button>
+
+                    {isLunas && ((e.payments_count || 0) > 1 || (e.payments && e.payments.some((p) => p.payment_type === "dp"))) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <History className="w-3 h-3" />
+                        <span>DP Dilunasi</span>
+                      </span>
+                    )}
 
                     {e.is_reimbursement && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">

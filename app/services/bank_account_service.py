@@ -3,7 +3,7 @@ app/services/bank_account_service.py — Layanan CRUD & Mapping Rekening Penerim
 """
 import json
 from typing import Any
-from sqlalchemy import select, func, exists
+from sqlalchemy import select, func, exists, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
@@ -95,9 +95,34 @@ async def list_bank_accounts(
         for row in agg_res.fetchall()
     }
 
+    # Bangun pemetaan pay_method -> bank_account_id dari channel_mappings rekening aktif
+    method_to_acc_id: dict[str, int] = {}
+    default_acc_id: int | None = None
+    for acc in accounts:
+        if acc.is_default and default_acc_id is None:
+            default_acc_id = acc.id
+        for m in _parse_mappings(acc.channel_mappings):
+            key = m.strip().lower()
+            if key and key not in method_to_acc_id:
+                method_to_acc_id[key] = acc.id
+
+    def match_account_by_method(method_name: str | None) -> int | None:
+        m_key = (method_name or "").strip().lower()
+        if not m_key:
+            return default_acc_id
+        matched = method_to_acc_id.get(m_key)
+        if matched is None:
+            for k, aid in method_to_acc_id.items():
+                if k in m_key or m_key in k:
+                    matched = aid
+                    break
+        return matched if matched is not None else default_acc_id
+
     has_payment_subq = exists(
         select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
     )
+    # 1. Pengeluaran langsung (tanpa payment terpisah) yang sudah memiliki bank_account_id
+    # Catatan: Talangan belum diganti (~and_(is_reimbursement, reimbursed_at IS NULL)) belum memotong kas perusahaan
     exp_res = await db.execute(
         select(
             Expense.bank_account_id,
@@ -107,21 +132,59 @@ async def list_bank_accounts(
             Expense.bank_account_id.is_not(None),
             Expense.pay_status == "Lunas",
             ~has_payment_subq,
+            ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
         )
         .group_by(Expense.bank_account_id)
     )
     exp_map = {int(r[0]): float(r[1] or 0.0) for r in exp_res.fetchall()}
 
+    # 1b. Pengeluaran langsung lunas tanpa bank_account_id -> fallback channel_mappings
+    exp_unassigned_res = await db.execute(
+        select(
+            Expense.pay_method,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            Expense.bank_account_id.is_(None),
+            Expense.pay_status == "Lunas",
+            ~has_payment_subq,
+            ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
+        )
+        .group_by(Expense.pay_method)
+    )
+    for m_name, amt in exp_unassigned_res.fetchall():
+        matched_id = match_account_by_method(m_name)
+        if matched_id is not None:
+            exp_map[matched_id] = exp_map.get(matched_id, 0.0) + float(amt or 0.0)
+
+    # 2. Pembayaran bertahap (DP, COD settlement, Talangan, Termin) yang sudah terhubung ke rekening
+    effective_ep_bank_id = func.coalesce(ExpensePayment.bank_account_id, Expense.bank_account_id)
     ep_res = await db.execute(
         select(
-            ExpensePayment.bank_account_id,
+            effective_ep_bank_id,
             func.coalesce(func.sum(ExpensePayment.amount), 0.0),
         )
-        .where(ExpensePayment.bank_account_id.is_not(None))
-        .group_by(ExpensePayment.bank_account_id)
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
+        .where(effective_ep_bank_id.is_not(None))
+        .group_by(effective_ep_bank_id)
     )
     for aid, amt in ep_res.fetchall():
         exp_map[int(aid)] = exp_map.get(int(aid), 0.0) + float(amt or 0.0)
+
+    # 2b. Pembayaran bertahap tanpa bank_account_id -> fallback channel_mappings
+    ep_unassigned_res = await db.execute(
+        select(
+            func.coalesce(ExpensePayment.pay_method, Expense.pay_method),
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
+        .where(effective_ep_bank_id.is_(None))
+        .group_by(func.coalesce(ExpensePayment.pay_method, Expense.pay_method))
+    )
+    for m_name, amt in ep_unassigned_res.fetchall():
+        matched_id = match_account_by_method(m_name)
+        if matched_id is not None:
+            exp_map[matched_id] = exp_map.get(matched_id, 0.0) + float(amt or 0.0)
 
     tr_in_res = await db.execute(
         select(

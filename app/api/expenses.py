@@ -48,6 +48,7 @@ from app.services.expense_service import (
     get_expense_payment_breakdown,
     is_paid_status,
     is_dp_status,
+    _resolve_account_for_expense_payment,
     get_data_hygiene_stats,
     run_bulk_data_clean,
     check_invoice_duplicate,
@@ -260,6 +261,8 @@ async def create_expense(
     raw_pay_status = payload.pay_status or "Lunas"
     dp_type_val = payload.dp_type
     dp_percent_val = Decimal(str(payload.dp_percent)) if payload.dp_percent is not None else None
+    if dp_percent_val is not None and not dp_type_val:
+        dp_type_val = "percent"
     paid_amount_val = Decimal(str(payload.paid_amount or 0))
 
     if is_dp_status(raw_pay_status):
@@ -330,7 +333,13 @@ async def create_expense(
     await db.flush()
 
     actor = f"dashboard:{get_current_role(request)}"
+    is_cod = (expense.pay_method or "").strip().upper() == "COD" or "cod" in (expense.notes or "").lower()
     if is_dp_status(resolved_pay_status) and paid_amount_val > 0:
+        target_acc = await _resolve_account_for_expense_payment(
+            db, payload.bank_account_id, payload.pay_method or "Transfer", expense.bank_account_id
+        )
+        if expense.bank_account_id is None and target_acc is not None:
+            expense.bank_account_id = target_acc
         db.add(
             ExpensePayment(
                 expense_id=expense.id,
@@ -339,9 +348,29 @@ async def create_expense(
                 dp_percent=dp_percent_val,
                 payment_date=payload.dp_payment_date or payload.expense_date,
                 pay_method=payload.pay_method or "Transfer",
-                bank_account_id=payload.bank_account_id,
+                bank_account_id=target_acc,
                 reference_no=payload.dp_reference_no,
                 notes="Pembayaran DP awal",
+                actor=actor,
+            )
+        )
+        await db.flush()
+    elif is_paid_status(resolved_pay_status) and is_cod:
+        cod_note = expense.notes if expense.notes and expense.notes != "-" else "Pelunasan COD (Bayar di Kasir)"
+        target_acc = await _resolve_account_for_expense_payment(
+            db, payload.bank_account_id, payload.pay_method or "Tunai", expense.bank_account_id
+        )
+        if expense.bank_account_id is None and target_acc is not None:
+            expense.bank_account_id = target_acc
+        db.add(
+            ExpensePayment(
+                expense_id=expense.id,
+                payment_type="settlement",
+                amount=expense.total_price,
+                payment_date=payload.expense_date or date.today(),
+                pay_method=payload.pay_method or "Tunai",
+                bank_account_id=target_acc,
+                notes=cod_note,
                 actor=actor,
             )
         )
@@ -661,6 +690,7 @@ async def create_expense_payment_endpoint(
         expense_id=expense_id,
         amount=payload.amount,
         dp_percent=payload.dp_percent,
+        payment_type=payload.payment_type,
         payment_date=payload.payment_date,
         pay_method=payload.pay_method,
         bank_account_id=payload.bank_account_id,

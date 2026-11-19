@@ -8,6 +8,8 @@ import {
   getEndOfMonthDate,
   getExpensePaymentBreakdown,
   getTempoQuickDate,
+  isCodExpense,
+  hasInstallmentHistory,
 } from "@/lib/paymentStatus";
 import { InlineMathInput } from "@/components/forms/expense/InlineMathInput";
 import {
@@ -34,6 +36,8 @@ import {
   Percent,
   Trash2,
   Wallet,
+  Package,
+  Briefcase,
 } from "lucide-react";
 
 interface DpPaymentModalProps {
@@ -131,8 +135,11 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
     queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+    queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     queryClient.invalidateQueries({ queryKey: ["report"] });
+    queryClient.invalidateQueries({ queryKey: ["accounting-report"] });
     queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     queryClient.invalidateQueries({ queryKey: ["supplier"] });
     queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
@@ -141,25 +148,46 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
     }
   };
 
+  const isCod = isCodExpense(expense);
+  const hasInst = hasInstallmentHistory({ payments });
+
   const recordMutation = useMutation({
-    mutationFn: () =>
-      recordExpensePayment(expense!.id, {
+    mutationFn: () => {
+      const effectivePaymentType = willBeFull
+        ? "settlement"
+        : breakdown.paid <= 0
+        ? breakdown.isDp
+          ? "dp"
+          : "installment"
+        : "installment";
+
+      const defaultNotes = willBeFull
+        ? isCod
+          ? "Pelunasan COD (Bayar di Kasir)"
+          : hasInst
+          ? "Pelunasan Akhir (Termin)"
+          : breakdown.isDp
+          ? "Pelunasan Akhir (Sisa DP)"
+          : "Pelunasan sisa tagihan"
+        : breakdown.paid <= 0
+        ? breakdown.isDp
+          ? `DP ${effectivePctOfTotal}%`
+          : `Pembayaran Termin #1 (${effectivePctOfTotal}%)`
+        : `Pembayaran Termin #${payments.filter((p) => p.payment_type === "installment").length + 1}`;
+
+      return recordExpensePayment(expense!.id, {
         settle_full: payMode === "full",
         dp_percent: payMode === "percent" ? Number(percentVal) : null,
         amount: payMode === "amount" ? Number(amountVal) : null,
+        payment_type: effectivePaymentType,
         payment_date: paymentDate,
         pay_method: payMethod,
         bank_account_id: bankAccountId ? Number(bankAccountId) : null,
         reference_no: referenceNo.trim() || null,
-        notes:
-          notes.trim() ||
-          (willBeFull
-            ? "Pelunasan sisa tagihan"
-            : breakdown.paid <= 0
-            ? `DP ${effectivePctOfTotal}%`
-            : "Pembayaran termin / cicilan"),
+        notes: notes.trim() || defaultNotes,
         due_date: !willBeFull && dueDate ? dueDate : null,
-      }),
+      });
+    },
     onSuccess: (updatedExpense) => {
       invalidateAll();
       if (onPaymentUpdated) onPaymentUpdated(updatedExpense);
@@ -238,8 +266,18 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <Wallet className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span>DP & Pelunasan Tagihan</span>
+                  {isCod ? (
+                    <Package className="w-5 h-5 text-amber-600 shrink-0" />
+                  ) : (
+                    <Wallet className="w-5 h-5 text-amber-600 shrink-0" />
+                  )}
+                  <span>
+                    {isCod
+                      ? "Pelunasan COD / Bayar di Kasir"
+                      : breakdown.isDp
+                      ? "DP & Pelunasan Tagihan"
+                      : "Cicilan & Pelunasan Hutang (Termin)"}
+                  </span>
                 </DialogTitle>
                 <Badge
                   variant="outline"
@@ -662,16 +700,23 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
             ) : (
               <div className="space-y-2">
                 {payments.map((p, idx) => {
-                  const typeLabel =
-                    p.payment_type === "dp"
-                      ? "DP Awal"
-                      : p.payment_type === "settlement"
-                      ? "Pelunasan"
-                      : `Termin #${idx + 1}`;
-                  const typeClass =
-                    p.payment_type === "settlement"
-                      ? "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
-                      : "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
+                  let typeLabel = `Tahap #${idx + 1}`;
+                  let typeClass = "bg-slate-50 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200";
+
+                  if (p.payment_type === "reimbursement") {
+                    typeLabel = "Penggantian Talangan";
+                    typeClass = "bg-purple-50 text-purple-800 border-purple-300 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800";
+                  } else if (p.payment_type === "settlement") {
+                    typeLabel = isCod ? "Pelunasan COD (Kasir)" : hasInst ? "Pelunasan Akhir (Termin)" : "Pelunasan";
+                    typeClass = "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
+                  } else if (p.payment_type === "dp") {
+                    typeLabel = "DP Awal";
+                    typeClass = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
+                  } else if (p.payment_type === "installment") {
+                    const instIdx = payments.filter((item, i) => i <= idx && item.payment_type === "installment").length;
+                    typeLabel = `Termin #${instIdx}`;
+                    typeClass = "bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
+                  }
 
                   return (
                     <div

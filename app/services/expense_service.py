@@ -62,6 +62,32 @@ def unpaid_status_clause():
     )
 
 
+async def _resolve_account_for_expense_payment(
+    db: AsyncSession,
+    preferred_id: int | None,
+    pay_method: str | None,
+    expense_bank_id: int | None = None,
+) -> int | None:
+    """
+    Tentukan bank_account_id yang tepat untuk pencatatan transaksi/pembayaran:
+    1. Prioritas 1: preferred_id (yang dipilih user di form/modal)
+    2. Prioritas 2: expense_bank_id (rekening parent expense jika ada)
+    3. Prioritas 3: pemetaan channel_mappings berdasarkan pay_method
+    4. Prioritas 4: rekening default aktif
+    """
+    if preferred_id is not None:
+        return preferred_id
+    if expense_bank_id is not None:
+        return expense_bank_id
+    try:
+        from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
+        ch_map, def_acc = await build_channel_account_map(db)
+        acc_id, _ = resolve_bank_account_for_tx(pay_method or "Tunai", "", ch_map, def_acc)
+        return acc_id
+    except Exception:
+        return None
+
+
 async def record_expense_log(
     db: AsyncSession,
     expense_id: int | None,
@@ -258,6 +284,66 @@ async def save_expenses(
     await db.flush()
 
     effective_actor = actor or (f"telegram:{user_id}" if user_id else "system")
+    for exp in saved:
+        is_cod = (exp.pay_method or "").strip().upper() == "COD" or "cod" in (exp.notes or "").lower()
+        if is_dp_status(exp.pay_status) and float(exp.paid_amount or 0) > 0:
+            target_acc = await _resolve_account_for_expense_payment(
+                db, exp.bank_account_id, exp.pay_method or "Transfer", exp.bank_account_id
+            )
+            if exp.bank_account_id is None and target_acc is not None:
+                exp.bank_account_id = target_acc
+            db.add(
+                ExpensePayment(
+                    expense_id=exp.id,
+                    payment_type="dp",
+                    amount=exp.paid_amount,
+                    dp_percent=exp.dp_percent,
+                    payment_date=exp.expense_date or date.today(),
+                    pay_method=exp.pay_method or "Transfer",
+                    bank_account_id=target_acc,
+                    notes="Pembayaran DP awal",
+                    actor=effective_actor,
+                )
+            )
+        elif is_paid_status(exp.pay_status) and is_cod:
+            # Transaksi COD yang langsung lunas saat dicatat
+            cod_note = exp.notes if exp.notes and exp.notes != "-" else "Pelunasan COD (Bayar di Kasir)"
+            target_acc = await _resolve_account_for_expense_payment(
+                db, exp.bank_account_id, exp.pay_method or "Tunai", exp.bank_account_id
+            )
+            if exp.bank_account_id is None and target_acc is not None:
+                exp.bank_account_id = target_acc
+            db.add(
+                ExpensePayment(
+                    expense_id=exp.id,
+                    payment_type="settlement",
+                    amount=exp.total_price,
+                    payment_date=exp.expense_date or date.today(),
+                    pay_method=exp.pay_method or "Tunai",
+                    bank_account_id=target_acc,
+                    notes=cod_note,
+                    actor=effective_actor,
+                )
+            )
+        elif exp.is_reimbursement and exp.reimbursed_at is not None:
+            user_label = exp.user.name if getattr(exp, "user", None) and exp.user and exp.user.name else "karyawan"
+            target_acc = await _resolve_account_for_expense_payment(
+                db, exp.bank_account_id, "Transfer", exp.bank_account_id
+            )
+            if exp.bank_account_id is None and target_acc is not None:
+                exp.bank_account_id = target_acc
+            db.add(
+                ExpensePayment(
+                    expense_id=exp.id,
+                    payment_type="reimbursement",
+                    amount=exp.total_price,
+                    payment_date=exp.reimbursed_at.date() if hasattr(exp.reimbursed_at, "date") else date.today(),
+                    pay_method="Transfer",
+                    bank_account_id=target_acc,
+                    notes=f"Penggantian uang talangan kepada {user_label}",
+                    actor=effective_actor,
+                )
+            )
     for idx, exp in enumerate(saved):
         await record_expense_log(
             db,
@@ -1367,6 +1453,12 @@ async def update_expense(
     if not expense:
         return None
 
+    # Catat status dan pembayaran awal sebelum updates diaplikasikan
+    old_pay_status = expense.pay_status
+    old_paid_amount = Decimal(str(expense.paid_amount or 0))
+    was_lunas = is_paid_status(old_pay_status)
+    was_dp = is_dp_status(old_pay_status)
+
     changes = {}
     for field, val in updates.items():
         if hasattr(expense, field):
@@ -1394,12 +1486,79 @@ async def update_expense(
 
     # Sinkronisasi konsistensi paid_amount & ExpensePayment saat pay_status / total_price berubah
     total_dec = Decimal(str(expense.total_price or 0))
-    if is_paid_status(expense.pay_status):
-        current_paid = Decimal(str(expense.paid_amount or 0))
-        if current_paid < total_dec:
-            remaining_dec = total_dec - current_paid
-            existing_payments = list(getattr(expense, "payments", None) or [])
-            if existing_payments and remaining_dec > 0:
+    existing_payments = list(getattr(expense, "payments", None) or [])
+    is_now_lunas = is_paid_status(expense.pay_status)
+
+    if is_now_lunas:
+        # Hitung akumulasi pembayaran bertahap non-settlement (DP awal & cicilan)
+        sum_non_settlement = sum(
+            Decimal(str(p.amount or 0))
+            for p in existing_payments
+            if p.payment_type != "settlement"
+        )
+        # Jika transaksi sebelumnya berstatus DP atau ada paid_amount awal tetapi belum tercatat di ExpensePayment (data legacy)
+        if (was_dp or old_paid_amount > 0) and not any(p.payment_type == "dp" for p in existing_payments):
+            dp_base_amt = old_paid_amount if old_paid_amount > 0 else Decimal(
+                str(round(float(total_dec) * (float(expense.dp_percent or 0) / 100.0), 2))
+            )
+            if dp_base_amt > 0:
+                retro_acc = await _resolve_account_for_expense_payment(
+                    db, expense.bank_account_id, expense.pay_method or "Transfer", expense.bank_account_id
+                )
+                if expense.bank_account_id is None and retro_acc is not None:
+                    expense.bank_account_id = retro_acc
+                retro_dp = ExpensePayment(
+                    expense_id=expense.id,
+                    payment_type="dp",
+                    amount=dp_base_amt,
+                    dp_percent=expense.dp_percent,
+                    payment_date=expense.expense_date or date.today(),
+                    pay_method=expense.pay_method or "Transfer",
+                    bank_account_id=retro_acc,
+                    notes="Pembayaran DP awal",
+                    actor=actor,
+                )
+                db.add(retro_dp)
+                existing_payments.append(retro_dp)
+                sum_non_settlement += dp_base_amt
+
+        remaining_dec = total_dec - sum_non_settlement
+        if remaining_dec > 0 and (was_dp or old_paid_amount > 0 or len(existing_payments) > 0 or not was_lunas):
+            existing_settlement = next((p for p in existing_payments if p.payment_type == "settlement"), None)
+            is_cod = (expense.pay_method or "").strip().upper() == "COD" or "cod" in (expense.notes or "").lower() or (updates.get("pay_method") == "COD")
+            has_inst = any(p.payment_type == "installment" for p in existing_payments)
+            has_dp = any(p.payment_type == "dp" for p in existing_payments)
+            if is_cod:
+                default_settle_notes = "Pelunasan COD (Bayar di Kasir)"
+            elif has_inst:
+                default_settle_notes = "Pelunasan Akhir (Termin)"
+            elif has_dp:
+                default_settle_notes = "Pelunasan Akhir (Sisa DP)"
+            else:
+                default_settle_notes = "Pelunasan via edit transaksi"
+
+            settle_notes = updates.get("settlement_notes") or updates.get("notes") or default_settle_notes
+            if is_cod and (not settle_notes or settle_notes in ("-", "Pelunasan via edit transaksi")):
+                settle_notes = "Pelunasan COD (Bayar di Kasir)"
+
+            settle_acc = await _resolve_account_for_expense_payment(
+                db, expense.bank_account_id, expense.pay_method or "Transfer", expense.bank_account_id
+            )
+            if expense.bank_account_id is None and settle_acc is not None:
+                expense.bank_account_id = settle_acc
+
+            if existing_settlement:
+                existing_settlement.amount = remaining_dec
+                existing_settlement.payment_date = date.today()
+                if expense.bank_account_id is not None:
+                    existing_settlement.bank_account_id = expense.bank_account_id
+                elif settle_acc is not None:
+                    existing_settlement.bank_account_id = settle_acc
+                if expense.pay_method:
+                    existing_settlement.pay_method = expense.pay_method
+                if not existing_settlement.notes or existing_settlement.notes in ("-", "Pelunasan via edit transaksi"):
+                    existing_settlement.notes = settle_notes
+            else:
                 db.add(
                     ExpensePayment(
                         expense_id=expense.id,
@@ -1407,26 +1566,45 @@ async def update_expense(
                         amount=remaining_dec,
                         payment_date=date.today(),
                         pay_method=expense.pay_method or "Transfer",
-                        bank_account_id=expense.bank_account_id,
-                        notes="Pelunasan via edit transaksi",
+                        bank_account_id=settle_acc,
+                        reference_no=updates.get("reference_no") or updates.get("settlement_reference_no"),
+                        notes=settle_notes,
                         actor=actor,
                     )
                 )
-            expense.paid_amount = total_dec
+        expense.paid_amount = total_dec
     elif is_dp_status(expense.pay_status):
         expense.pay_status = "DP / Sebagian"
+        # Jika revert dari status Lunas: hapus settlement payment agar track record kembali akurat
+        if was_lunas:
+            for p in list(existing_payments):
+                if p.payment_type == "settlement":
+                    await db.delete(p)
+                    existing_payments.remove(p)
+
+        sum_kept = sum(
+            Decimal(str(p.amount or 0)) for p in existing_payments if p.payment_type != "settlement"
+        )
         paid_dec = Decimal(str(expense.paid_amount or 0))
         if expense.dp_type == "percent" and expense.dp_percent and float(expense.dp_percent) > 0 and "paid_amount" not in updates:
             paid_dec = (total_dec * Decimal(str(expense.dp_percent)) / Decimal("100")).quantize(Decimal("0.01"))
             expense.paid_amount = paid_dec
+        elif sum_kept > 0 and "paid_amount" not in updates:
+            paid_dec = sum_kept
+            expense.paid_amount = paid_dec
+
         if paid_dec >= total_dec and total_dec > 0:
             expense.pay_status = "Lunas"
             expense.paid_amount = total_dec
         elif paid_dec > 0:
             if not expense.dp_percent and total_dec > 0:
                 expense.dp_percent = (paid_dec / total_dec * Decimal("100")).quantize(Decimal("0.01"))
-            existing_payments = list(getattr(expense, "payments", None) or [])
             if not existing_payments:
+                dp_acc = await _resolve_account_for_expense_payment(
+                    db, expense.bank_account_id, expense.pay_method or "Transfer", expense.bank_account_id
+                )
+                if expense.bank_account_id is None and dp_acc is not None:
+                    expense.bank_account_id = dp_acc
                 db.add(
                     ExpensePayment(
                         expense_id=expense.id,
@@ -1435,12 +1613,18 @@ async def update_expense(
                         dp_percent=expense.dp_percent,
                         payment_date=expense.expense_date or date.today(),
                         pay_method=expense.pay_method or "Transfer",
-                        bank_account_id=expense.bank_account_id,
+                        bank_account_id=dp_acc,
                         notes="Pembayaran DP awal",
                         actor=actor,
                     )
                 )
     else:
+        # Status Belum Lunas: jika sebelumnya Lunas atau DP, bersihkan settlement payment
+        if was_lunas or was_dp:
+            for p in list(existing_payments):
+                if p.payment_type == "settlement":
+                    await db.delete(p)
+                    existing_payments.remove(p)
         if "pay_status" in updates and float(expense.paid_amount or 0) > 0 and "paid_amount" not in updates:
             expense.paid_amount = Decimal("0")
             expense.dp_type = None
@@ -2325,6 +2509,29 @@ async def mark_reimbursed(
     for e in items:
         e.reimbursed_at = now
         e.sheets_synced = False
+        user_name = None
+        if e.user_id:
+            user_obj = await db.get(User, e.user_id)
+            if user_obj and user_obj.name:
+                user_name = user_obj.name
+        user_label = user_name or "karyawan"
+        target_acc = await _resolve_account_for_expense_payment(
+            db, e.bank_account_id, "Transfer", e.bank_account_id
+        )
+        if e.bank_account_id is None and target_acc is not None:
+            e.bank_account_id = target_acc
+        db.add(
+            ExpensePayment(
+                expense_id=e.id,
+                payment_type="reimbursement",
+                amount=Decimal(str(e.total_price or 0)),
+                payment_date=now.date(),
+                pay_method="Transfer",
+                bank_account_id=target_acc,
+                notes=f"Penggantian uang talangan kepada {user_label}",
+                actor=actor,
+            )
+        )
         await record_expense_log(
             db,
             expense_id=e.id,
@@ -2372,6 +2579,37 @@ async def settle_reimbursements(
                 if bank_account_id is not None:
                     e.bank_account_id = bank_account_id
                 e.sheets_synced = False
+
+                user_name = None
+                if e.user_id:
+                    user_obj = await db.get(User, e.user_id)
+                    if user_obj and user_obj.name:
+                        user_name = user_obj.name
+                user_label = user_name or "karyawan"
+
+                existing_payments = list(getattr(e, "payments", None) or [])
+                target_acc = await _resolve_account_for_expense_payment(
+                    db, bank_account_id, "Transfer", e.bank_account_id
+                )
+                if bank_account_id is not None:
+                    e.bank_account_id = bank_account_id
+                elif e.bank_account_id is None and target_acc is not None:
+                    e.bank_account_id = target_acc
+
+                if not any(p.payment_type == "reimbursement" for p in existing_payments):
+                    db.add(
+                        ExpensePayment(
+                            expense_id=e.id,
+                            payment_type="reimbursement",
+                            amount=Decimal(str(e.total_price or 0)),
+                            payment_date=now.date(),
+                            pay_method="Transfer",
+                            bank_account_id=target_acc,
+                            notes=f"Penggantian uang talangan kepada {user_label}",
+                            actor=actor,
+                        )
+                    )
+
                 await record_expense_log(
                     db,
                     expense_id=e.id,
@@ -2392,6 +2630,14 @@ async def settle_reimbursements(
             if e.reimbursed_at is not None:
                 e.reimbursed_at = None
                 e.sheets_synced = False
+
+                existing_payments = list(getattr(e, "payments", None) or [])
+                if not existing_payments:
+                    existing_payments = await get_expense_payments(db, e.id)
+                for p in existing_payments:
+                    if p.payment_type == "reimbursement":
+                        await db.delete(p)
+
                 await record_expense_log(
                     db,
                     expense_id=e.id,
@@ -2717,17 +2963,54 @@ async def settle_unpaid_expenses(
         if action == "mark_paid":
             if is_paid_status(old_status):
                 continue
+            existing_payments = list(getattr(e, "payments", None) or [])
+            if paid_val > 0 and not any(p.payment_type in ("dp", "installment") for p in existing_payments):
+                is_explicit_dp = is_dp_status(e.pay_status) or e.dp_percent is not None
+                initial_type = "dp" if is_explicit_dp else "installment"
+                initial_note = "Pembayaran DP awal" if is_explicit_dp else "Pembayaran Termin #1"
+                retro_dp = ExpensePayment(
+                    expense_id=e.id,
+                    payment_type=initial_type,
+                    amount=Decimal(str(round(paid_val, 2))),
+                    dp_percent=e.dp_percent,
+                    payment_date=e.expense_date or date.today(),
+                    pay_method=e.pay_method or "Transfer",
+                    bank_account_id=e.bank_account_id,
+                    notes=initial_note,
+                    actor=actor,
+                )
+                db.add(retro_dp)
+                existing_payments.append(retro_dp)
+
             if remaining_val > 0:
+                is_cod = (e.pay_method or "").strip().upper() == "COD" or "cod" in (e.notes or "").lower()
+                has_inst = any(p.payment_type == "installment" for p in existing_payments)
+                has_dp = any(p.payment_type == "dp" for p in existing_payments)
+                if notes and notes.strip() and notes.strip() != "-":
+                    settle_note = notes.strip()
+                elif is_cod:
+                    settle_note = "Pelunasan COD (Bayar di Kasir)"
+                elif has_inst:
+                    settle_note = "Pelunasan Akhir (Termin)"
+                elif has_dp:
+                    settle_note = "Pelunasan Akhir (Sisa DP)"
+                else:
+                    settle_note = "Pelunasan tagihan"
+
+                settle_method = pay_method or ("Tunai Kasir" if is_cod and (e.pay_method or "").strip().upper() == "COD" else (e.pay_method or "Transfer"))
+                target_acc = await _resolve_account_for_expense_payment(
+                    db, bank_account_id, settle_method, e.bank_account_id
+                )
                 db.add(
                     ExpensePayment(
                         expense_id=e.id,
                         payment_type="settlement",
                         amount=Decimal(str(round(remaining_val, 2))),
                         payment_date=pay_dt,
-                        pay_method=pay_method or e.pay_method or "Transfer",
-                        bank_account_id=bank_account_id if bank_account_id is not None else e.bank_account_id,
+                        pay_method=settle_method,
+                        bank_account_id=target_acc,
                         reference_no=reference_no,
-                        notes=notes or "Pelunasan tagihan",
+                        notes=settle_note,
                         actor=actor,
                     )
                 )
@@ -2735,6 +3018,8 @@ async def settle_unpaid_expenses(
             e.paid_amount = e.total_price
             if bank_account_id is not None:
                 e.bank_account_id = bank_account_id
+            elif e.bank_account_id is None and target_acc is not None:
+                e.bank_account_id = target_acc
             if pay_method:
                 e.pay_method = pay_method
             e.sheets_synced = False
@@ -2815,6 +3100,7 @@ async def record_expense_payment(
     *,
     amount: float | None = None,
     dp_percent: float | None = None,
+    payment_type: str | None = None,
     payment_date: date | None = None,
     pay_method: str = "Transfer",
     bank_account_id: int | None = None,
@@ -2874,28 +3160,65 @@ async def record_expense_payment(
     new_paid = round(old_paid + pay_amt, 2)
     is_now_full = new_paid >= total_val - 0.01
 
+    existing_payments = await get_expense_payments(db, expense.id)
+    is_cod = (expense.pay_method or "").strip().upper() == "COD" or "cod" in (expense.notes or "").lower()
+    has_inst = any(p.payment_type == "installment" for p in existing_payments)
+    has_dp = any(p.payment_type == "dp" for p in existing_payments)
+
     if is_now_full:
-        payment_type = "settlement"
+        resolved_type = "settlement"
         new_paid = total_val
+    elif payment_type in ("dp", "installment", "settlement", "reimbursement"):
+        resolved_type = payment_type
     elif old_paid <= 0:
-        payment_type = "dp"
+        if dp_percent is not None or is_dp_status(expense.pay_status):
+            resolved_type = "dp"
+        else:
+            resolved_type = "installment"
     else:
-        payment_type = "installment"
+        resolved_type = "installment"
 
     computed_pct = dp_percent if dp_percent is not None else (
         round((pay_amt / total_val) * 100.0, 2) if total_val > 0 else None
     )
 
+    clean_notes = (notes or "").strip()
+    if not clean_notes or clean_notes == "-":
+        if resolved_type == "settlement":
+            if is_cod:
+                resolved_notes = "Pelunasan COD (Bayar di Kasir)"
+            elif has_inst:
+                resolved_notes = "Pelunasan Akhir (Termin)"
+            elif has_dp:
+                resolved_notes = "Pelunasan Akhir (Sisa DP)"
+            else:
+                resolved_notes = "Pelunasan sisa tagihan"
+        elif resolved_type == "installment":
+            inst_num = len([p for p in existing_payments if p.payment_type == "installment"]) + 1
+            pct_label = f" ({computed_pct}%)" if computed_pct else ""
+            resolved_notes = f"Pembayaran Termin #{inst_num}{pct_label}"
+        elif resolved_type == "dp":
+            resolved_notes = f"Pembayaran DP awal ({computed_pct}%)" if computed_pct else "Pembayaran DP awal"
+        else:
+            resolved_notes = "-"
+    else:
+        resolved_notes = clean_notes
+
+    effective_pay_method = pay_method or ("Tunai Kasir" if is_cod and resolved_type == "settlement" else (expense.pay_method or "Transfer"))
+    target_bank_id = await _resolve_account_for_expense_payment(
+        db, bank_account_id, effective_pay_method, expense.bank_account_id
+    )
+
     payment = ExpensePayment(
         expense_id=expense.id,
-        payment_type=payment_type,
+        payment_type=resolved_type,
         amount=Decimal(str(round(pay_amt, 2))),
         dp_percent=Decimal(str(round(computed_pct, 2))) if computed_pct is not None else None,
         payment_date=payment_date or date.today(),
-        pay_method=pay_method or expense.pay_method or "Transfer",
-        bank_account_id=bank_account_id,
+        pay_method=effective_pay_method,
+        bank_account_id=target_bank_id,
         reference_no=reference_no.strip() if reference_no and reference_no.strip() else None,
-        notes=(notes or "-").strip() or "-",
+        notes=resolved_notes,
         actor=actor,
     )
     db.add(payment)
@@ -2907,12 +3230,19 @@ async def record_expense_payment(
         expense.paid_amount = expense.total_price
         if bank_account_id is not None:
             expense.bank_account_id = bank_account_id
+        elif expense.bank_account_id is None and target_bank_id is not None:
+            expense.bank_account_id = target_bank_id
         if pay_method:
             expense.pay_method = pay_method
     else:
         expense.pay_status = "DP / Sebagian"
-        if old_paid <= 0:
+        if expense.bank_account_id is None and target_bank_id is not None:
+            expense.bank_account_id = target_bank_id
+        if old_paid <= 0 and resolved_type == "dp":
             expense.dp_type = "percent" if dp_percent is not None else "amount"
+            expense.dp_percent = Decimal(str(round(computed_pct, 2))) if computed_pct is not None else None
+        elif old_paid <= 0 and resolved_type == "installment":
+            expense.dp_type = "amount"
             expense.dp_percent = Decimal(str(round(computed_pct, 2))) if computed_pct is not None else None
         if due_date is not None and due_date.strip() and due_date.strip() != "-":
             parsed_d = parse_due_date(due_date.strip())
@@ -2921,7 +3251,7 @@ async def record_expense_payment(
     expense.sheets_synced = False
 
     log_action = (
-        "STATUS_CHANGE" if is_now_full else ("PAYMENT_DP" if payment_type == "dp" else "PAYMENT_INSTALLMENT")
+        "STATUS_CHANGE" if is_now_full else ("PAYMENT_DP" if resolved_type == "dp" else "PAYMENT_INSTALLMENT")
     )
     await record_expense_log(
         db,

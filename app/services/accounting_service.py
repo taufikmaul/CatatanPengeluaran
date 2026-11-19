@@ -128,6 +128,30 @@ async def get_accounting_report(
             "description": opt.get("description", ""),
         })
 
+    # Tangani kategori belanja aktual yang belum terdaftar di opsi master kategori
+    seen_cats = {opt["name"].strip().lower() for opt in kategori_options}
+    for cat_name, val_cur in cur_per_kat.items():
+        if cat_name.strip().lower() not in seen_cats:
+            coa = coa_map.get(cat_name, {})
+            code = coa.get("account_code") or "6-9900"
+            acc_name = coa.get("account_name") or f"Beban Lainnya ({cat_name})"
+            group = coa.get("account_group") or ("HPP" if any(k in cat_name.lower() for k in ("bahan", "kemasan", "baku")) else "OPEX")
+            rep_type = coa.get("report_type") or "LABA_RUGI"
+            val_prev = float(prev_per_kat.get(cat_name, 0.0))
+            all_account_lines.append({
+                "account_code": code,
+                "account_name": acc_name,
+                "category": cat_name,
+                "account_group": group,
+                "report_type": rep_type,
+                "total": float(val_cur),
+                "prev_total": val_prev,
+                "diff_nominal": float(val_cur) - val_prev,
+                "mom_change_pct": _calc_mom_pct(float(val_cur), val_prev),
+                "transaction_count": tx_counts.get(cat_name.lower(), 0),
+                "description": f"Kategori pengeluaran {cat_name}",
+            })
+
     # Urutkan berdasarkan account_code
     all_account_lines.sort(key=lambda x: (x["account_code"], x["category"]))
 
@@ -525,6 +549,18 @@ async def get_accounting_report(
             if key and key not in method_to_acc_id:
                 method_to_acc_id[key] = acc.id
 
+    def match_account_by_method(method_name: str | None) -> int | None:
+        m_key = (method_name or "").strip().lower()
+        if not m_key:
+            return default_acc_id
+        matched = method_to_acc_id.get(m_key)
+        if matched is None:
+            for k, aid in method_to_acc_id.items():
+                if k in m_key or m_key in k:
+                    matched = aid
+                    break
+        return matched if matched is not None else default_acc_id
+
     has_payment_subq = exists(
         select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
     )
@@ -542,31 +578,55 @@ async def get_accounting_report(
                 Expense.pay_status == "Lunas",
                 Expense.bank_account_id.is_not(None),
                 ~has_payment_subq,
+                ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
             )
         )
         .group_by(Expense.bank_account_id)
     )
     out_month_map: dict[int, float] = {int(r[0]): float(r[1] or 0.0) for r in exp_direct_res.fetchall()}
 
-    # Pembayaran DP/termin/pelunasan bulan ini per rekening langsung
+    # Pembayaran DP/termin/pelunasan/talangan bulan ini per rekening (coalesce payment & parent expense)
+    effective_ep_month_id = func.coalesce(ExpensePayment.bank_account_id, Expense.bank_account_id)
     ep_month_res = await db.execute(
         select(
-            ExpensePayment.bank_account_id,
+            effective_ep_month_id,
             func.coalesce(func.sum(ExpensePayment.amount), 0.0),
         )
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
         .where(
             and_(
                 ExpensePayment.payment_date >= start_date,
                 ExpensePayment.payment_date < end_date,
-                ExpensePayment.bank_account_id.is_not(None),
+                effective_ep_month_id.is_not(None),
             )
         )
-        .group_by(ExpensePayment.bank_account_id)
+        .group_by(effective_ep_month_id)
     )
     for aid, amt in ep_month_res.fetchall():
         out_month_map[int(aid)] = out_month_map.get(int(aid), 0.0) + float(amt or 0.0)
 
-    # Pengeluaran bulan ini yang belum punya bank_account_id -> fallback mapping pay_method
+    # Pembayaran DP/termin/pelunasan bulan ini tanpa bank_account_id -> fallback channel_mappings
+    ep_month_unassigned_res = await db.execute(
+        select(
+            func.coalesce(ExpensePayment.pay_method, Expense.pay_method),
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
+        .where(
+            and_(
+                ExpensePayment.payment_date >= start_date,
+                ExpensePayment.payment_date < end_date,
+                effective_ep_month_id.is_(None),
+            )
+        )
+        .group_by(func.coalesce(ExpensePayment.pay_method, Expense.pay_method))
+    )
+    for m_name, amt in ep_month_unassigned_res.fetchall():
+        matched_id = match_account_by_method(m_name)
+        if matched_id is not None:
+            out_month_map[matched_id] = out_month_map.get(matched_id, 0.0) + float(amt or 0.0)
+
+    # Pengeluaran langsung bulan ini yang belum punya bank_account_id -> fallback mapping pay_method
     exp_unassigned_res = await db.execute(
         select(
             Expense.pay_method,
@@ -579,20 +639,13 @@ async def get_accounting_report(
                 Expense.pay_status == "Lunas",
                 Expense.bank_account_id.is_(None),
                 ~has_payment_subq,
+                ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
             )
         )
         .group_by(Expense.pay_method)
     )
     for m_name, m_total in exp_unassigned_res.fetchall():
-        m_key = (m_name or "").strip().lower()
-        matched_id = method_to_acc_id.get(m_key)
-        if matched_id is None:
-            for k, aid in method_to_acc_id.items():
-                if k in m_key or m_key in k:
-                    matched_id = aid
-                    break
-        if matched_id is None:
-            matched_id = default_acc_id
+        matched_id = match_account_by_method(m_name)
         if matched_id is not None:
             out_month_map[matched_id] = out_month_map.get(matched_id, 0.0) + float(m_total or 0.0)
 
@@ -620,22 +673,62 @@ async def get_accounting_report(
                 Expense.bank_account_id.is_not(None),
                 Expense.pay_status == "Lunas",
                 ~has_payment_subq,
+                ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
             )
         )
         .group_by(Expense.bank_account_id)
     )
     exp_all_map = {int(r[0]): float(r[1] or 0.0) for r in exp_all_res.fetchall()}
 
+    # Pengeluaran langsung all-time tanpa bank_account_id -> fallback channel_mappings
+    exp_all_unassigned_res = await db.execute(
+        select(
+            Expense.pay_method,
+            func.coalesce(func.sum(Expense.total_price), 0.0),
+        )
+        .where(
+            and_(
+                Expense.bank_account_id.is_(None),
+                Expense.pay_status == "Lunas",
+                ~has_payment_subq,
+                ~and_(Expense.is_reimbursement == True, Expense.reimbursed_at.is_(None)),  # noqa: E712
+            )
+        )
+        .group_by(Expense.pay_method)
+    )
+    for m_name, amt in exp_all_unassigned_res.fetchall():
+        matched_id = match_account_by_method(m_name)
+        if matched_id is not None:
+            exp_all_map[matched_id] = exp_all_map.get(matched_id, 0.0) + float(amt or 0.0)
+
+    # Pembayaran bertahap all-time (coalesce payment & parent expense)
+    effective_ep_all_id = func.coalesce(ExpensePayment.bank_account_id, Expense.bank_account_id)
     ep_all_res = await db.execute(
         select(
-            ExpensePayment.bank_account_id,
+            effective_ep_all_id,
             func.coalesce(func.sum(ExpensePayment.amount), 0.0),
         )
-        .where(ExpensePayment.bank_account_id.is_not(None))
-        .group_by(ExpensePayment.bank_account_id)
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
+        .where(effective_ep_all_id.is_not(None))
+        .group_by(effective_ep_all_id)
     )
     for aid, amt in ep_all_res.fetchall():
         exp_all_map[int(aid)] = exp_all_map.get(int(aid), 0.0) + float(amt or 0.0)
+
+    # Pembayaran bertahap all-time tanpa bank_account_id -> fallback channel_mappings
+    ep_all_unassigned_res = await db.execute(
+        select(
+            func.coalesce(ExpensePayment.pay_method, Expense.pay_method),
+            func.coalesce(func.sum(ExpensePayment.amount), 0.0),
+        )
+        .join(Expense, ExpensePayment.expense_id == Expense.id, isouter=True)
+        .where(effective_ep_all_id.is_(None))
+        .group_by(func.coalesce(ExpensePayment.pay_method, Expense.pay_method))
+    )
+    for m_name, amt in ep_all_unassigned_res.fetchall():
+        matched_id = match_account_by_method(m_name)
+        if matched_id is not None:
+            exp_all_map[matched_id] = exp_all_map.get(matched_id, 0.0) + float(amt or 0.0)
 
     rekening_positions: list[dict[str, Any]] = []
     for acc in bank_accounts:

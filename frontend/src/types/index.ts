@@ -1,7 +1,7 @@
 export interface ExpensePayment {
   id: number;
   expense_id: number;
-  payment_type: "dp" | "installment" | "settlement" | string;
+  payment_type: "dp" | "installment" | "settlement" | "reimbursement" | string;
   amount: number;
   dp_percent?: number | null;
   payment_date: string;
@@ -17,6 +17,7 @@ export interface ExpensePayment {
 export interface ExpensePaymentPayload {
   amount?: number | null;
   dp_percent?: number | null;
+  payment_type?: "dp" | "installment" | "settlement" | "reimbursement" | string | null;
   payment_date?: string;
   pay_method?: string;
   bank_account_id?: number | null;

@@ -202,6 +202,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["accounting-report"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
