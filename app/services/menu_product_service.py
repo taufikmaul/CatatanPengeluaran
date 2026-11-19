@@ -320,9 +320,12 @@ def compute_menu_financials(
             }
         )
 
-    recipe_hpp = round(recipe_hpp, 2)
+    subtotal_ingredients = round(recipe_hpp, 2)
+    other_fee = round(float(getattr(menu, "other_fee", 0.0) or 0.0), 2)
+    other_fee_desc = getattr(menu, "other_fee_description", None)
+    recipe_hpp = round(subtotal_ingredients + other_fee, 2)
     hpp_manual = round(float(menu.hpp_manual or 0.0), 2)
-    has_recipe = len(ingredient_rows) > 0
+    has_recipe = len(ingredient_rows) > 0 or other_fee > 0
     mode = (menu.hpp_mode or "auto").strip().lower()
     if mode not in ("auto", "manual", "recipe"):
         mode = "auto"
@@ -360,6 +363,9 @@ def compute_menu_financials(
     return {
         "ingredients": ingredient_rows,
         "ingredient_count": len(ingredient_rows),
+        "subtotal_ingredients": subtotal_ingredients,
+        "other_fee": other_fee,
+        "other_fee_description": other_fee_desc,
         "recipe_hpp": recipe_hpp,
         "hpp_manual": hpp_manual,
         "hpp_mode": mode,
@@ -411,6 +417,7 @@ def serialize_menu_product(
             "created_at": menu.created_at.isoformat() if menu.created_at else None,
             "updated_at": menu.updated_at.isoformat() if menu.updated_at else None,
             **fin,
+            "other_fee_description": None,
             "ingredients": masked_ingredients,
         }
 

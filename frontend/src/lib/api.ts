@@ -18,6 +18,7 @@ import {
   MasterItemAuditResponse,
   ReimbursementSummaryResponse,
   UnpaidSummaryResponse,
+  DailyCashflowResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -1418,6 +1419,44 @@ export async function importIncomingTransactionsCsv(
   });
   return res.data;
 }
+
+export async function getDailyCashflow(params?: {
+  month?: number;
+  year?: number;
+  startDate?: string;
+  endDate?: string;
+  bankAccountId?: number;
+}): Promise<DailyCashflowResponse> {
+  const q = new URLSearchParams();
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.startDate) q.append("start_date", params.startDate);
+  if (params?.endDate) q.append("end_date", params.endDate);
+  if (params?.bankAccountId) q.append("bank_account_id", String(params.bankAccountId));
+  const res = await api.get(`/reports/cashflow?${q.toString()}`);
+  return res.data;
+}
+
+export async function exportDailyCashflowCsv(params?: {
+  month?: number;
+  year?: number;
+  startDate?: string;
+  endDate?: string;
+  bankAccountId?: number;
+}): Promise<void> {
+  const q = new URLSearchParams();
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.startDate) q.append("start_date", params.startDate);
+  if (params?.endDate) q.append("end_date", params.endDate);
+  if (params?.bankAccountId) q.append("bank_account_id", String(params.bankAccountId));
+  const endpoint = `/reports/cashflow/export?${q.toString()}`;
+  const filename = params?.month && params?.year
+    ? `cashflow_harian_${params.year}_${String(params.month).padStart(2, "0")}.csv`
+    : `cashflow_harian_${new Date().toISOString().slice(0, 10)}.csv`;
+  return triggerCsvDownload(endpoint, filename);
+}
+
 
 
 

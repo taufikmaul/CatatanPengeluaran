@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAccountingReport, api } from "@/lib/api";
-import { AccountingReportData, AccountLineItem, Expense } from "@/types";
+import { getAccountingReport, getDailyCashflow, exportDailyCashflowCsv, api } from "@/lib/api";
+import { AccountingReportData, AccountLineItem, Expense, DailyCashflowResponse } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +66,10 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
   const [selectedLedgerAccount, setSelectedLedgerAccount] = useState<string>("5-1100");
   const [ledgerSearch, setLedgerSearch] = useState<string>("");
 
+  // State & Query untuk Arus Kas Harian (Daily Cashflow)
+  const [selectedCashflowAccount, setSelectedCashflowAccount] = useState<number | null>(null);
+  const [isExportingCashflow, setIsExportingCashflow] = useState(false);
+
   // Query Data Akuntansi
   const {
     data: accountingData,
@@ -79,6 +83,39 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
     queryFn: () => getAccountingReport(currentMonth, currentYear),
     staleTime: 60 * 1000,
   });
+
+  // Query Data Arus Kas Harian (Daily Cashflow)
+  const {
+    data: dailyCashflowData,
+    isLoading: isLoadingCashflow,
+    isError: isErrorCashflow,
+    refetch: refetchCashflow,
+  } = useQuery<DailyCashflowResponse>({
+    queryKey: ["daily-cashflow", currentYear, currentMonth, selectedCashflowAccount],
+    queryFn: () =>
+      getDailyCashflow({
+        month: currentMonth,
+        year: currentYear,
+        bankAccountId: selectedCashflowAccount || undefined,
+      }),
+    enabled: activeSubTab === "arus_kas",
+    staleTime: 60 * 1000,
+  });
+
+  const handleExportCashflowCsv = async () => {
+    setIsExportingCashflow(true);
+    try {
+      await exportDailyCashflowCsv({
+        month: currentMonth,
+        year: currentYear,
+        bankAccountId: selectedCashflowAccount || undefined,
+      });
+    } catch (err) {
+      console.error("Gagal export cashflow:", err);
+    } finally {
+      setIsExportingCashflow(false);
+    }
+  };
 
   // Query Transaksi Buku Besar untuk akun terpilih
   const selectedAccountInfo = useMemo(() => {
@@ -222,17 +259,31 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             <span className="hidden sm:inline">Segarkan</span>
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExportCsv}
-            disabled={!accountingData}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
-            title="Export CSV"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Export CSV</span>
-          </Button>
+          {activeSubTab === "arus_kas" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCashflowCsv}
+              disabled={isExportingCashflow || !dailyCashflowData}
+              className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400"
+              title="Export Arus Kas Harian ke CSV (Cash In, Cash Out, Saldo)"
+            >
+              <Download className={`w-3.5 h-3.5 ${isExportingCashflow ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Export Cashflow CSV</span>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={!accountingData}
+              className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
+              title="Export CSV Akuntansi (SAK EMKM)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Export CSV</span>
+            </Button>
+          )}
 
           <Button
             variant="outline"
@@ -1295,6 +1346,243 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </div>
                     ))}
                   </div>
+                </div>
+              </Card>
+
+              {/* Rekapitulasi & Tabel Arus Kas Harian (Daily Cashflow) */}
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
+                {/* Header Card dengan Filter Rekening & Tombol Export */}
+                <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
+                        <FileSpreadsheet className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        Buku Kas &amp; Arus Kas Harian (Daily Cashflow)
+                      </h4>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Rincian mutasi cash in, cash out, dan saldo berjalan per hari periode {accountingData.month_name} {accountingData.year}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Filter Rekening */}
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor="cashflow-acc-select" className="text-xs text-slate-500 font-medium">Rekening:</label>
+                      <select
+                        id="cashflow-acc-select"
+                        value={selectedCashflowAccount ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedCashflowAccount(val ? Number(val) : null);
+                        }}
+                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="">Semua Rekening &amp; Kas</option>
+                        {dailyCashflowData?.bank_accounts?.map((acc) => (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.name} ({acc.bank_name})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tombol Export CSV */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportCashflowCsv}
+                      disabled={isExportingCashflow || isLoadingCashflow || !dailyCashflowData}
+                      className="h-8 gap-1.5 text-xs bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg font-semibold shadow-2xs"
+                      title="Unduh file CSV Arus Kas Harian"
+                    >
+                      <Download className={`w-3.5 h-3.5 ${isExportingCashflow ? "animate-spin" : ""}`} />
+                      <span>Export CSV Cashflow</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* KPI Strip: Saldo Awal, Total In, Total Out, Saldo Akhir */}
+                {dailyCashflowData && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 divide-x divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800 text-xs">
+                    <div className="p-3">
+                      <span className="text-[11px] text-slate-500 block">Saldo Awal:</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100 text-sm tabular-nums">
+                        {formatRupiah(dailyCashflowData.saldo_awal)}
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block">Total Cash In:</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-300 text-sm tabular-nums">
+                        +{formatRupiah(dailyCashflowData.total_cash_in)}
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <span className="text-[11px] text-rose-500 block">Total Cash Out:</span>
+                      <span className="font-bold text-rose-600 dark:text-rose-400 text-sm tabular-nums">
+                        -{formatRupiah(dailyCashflowData.total_cash_out)}
+                      </span>
+                    </div>
+                    <div className="p-3">
+                      <span className="text-[11px] text-slate-500 block">Arus Bersih (Net):</span>
+                      <span className={`font-bold text-sm tabular-nums ${
+                        dailyCashflowData.net_cash_flow >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                      }`}>
+                        {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
+                        {formatRupiah(dailyCashflowData.net_cash_flow)}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-blue-50/40 dark:bg-blue-950/20">
+                      <span className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold block">Saldo Akhir:</span>
+                      <span className="font-black text-blue-900 dark:text-blue-200 text-sm tabular-nums">
+                        {formatRupiah(dailyCashflowData.saldo_akhir)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Table Content */}
+                <div className="overflow-x-auto">
+                  {isLoadingCashflow ? (
+                    <div className="p-6 space-y-2">
+                      <Skeleton className="h-6 w-full" />
+                      <Skeleton className="h-6 w-full" />
+                      <Skeleton className="h-6 w-full" />
+                      <Skeleton className="h-6 w-full" />
+                    </div>
+                  ) : isErrorCashflow ? (
+                    <div className="p-8 text-center text-xs text-rose-600">
+                      <AlertCircle className="w-5 h-5 mx-auto mb-1.5" />
+                      Gagal memuat data arus kas harian.
+                      <Button variant="ghost" size="sm" onClick={() => refetchCashflow()} className="mt-2 text-xs">
+                        Coba Lagi
+                      </Button>
+                    </div>
+                  ) : dailyCashflowData?.daily_rows?.length ? (
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 bg-slate-50/60 dark:bg-slate-800/40">
+                          <th className="py-2.5 px-4 font-semibold w-36">Tanggal</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Kas Masuk (Cash In)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Kas Keluar (Cash Out)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Arus Bersih (Net)</th>
+                          <th className="py-2.5 px-4 font-semibold text-right">Saldo Berjalan</th>
+                          <th className="py-2.5 px-4 font-semibold text-center w-28">Transaksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {dailyCashflowData.daily_rows.map((row) => {
+                          const hasActivity = row.cash_in > 0 || row.cash_out > 0;
+                          return (
+                            <tr
+                              key={row.date}
+                              className={`transition-colors ${
+                                hasActivity
+                                  ? "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                  : "opacity-60 hover:opacity-100 hover:bg-slate-50/50"
+                              }`}
+                            >
+                              <td className="py-2.5 px-4 font-mono text-slate-700 dark:text-slate-300">
+                                {formatDateId(row.date)}
+                              </td>
+                              <td className="py-2.5 px-4 text-right tabular-nums">
+                                {row.cash_in > 0 ? (
+                                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                    +{formatRupiah(row.cash_in)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right tabular-nums">
+                                {row.cash_out > 0 ? (
+                                  <span className="font-semibold text-rose-600 dark:text-rose-400">
+                                    -{formatRupiah(row.cash_out)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right tabular-nums">
+                                {row.net_flow !== 0 ? (
+                                  <span
+                                    className={`font-semibold ${
+                                      row.net_flow > 0
+                                        ? "text-emerald-700 dark:text-emerald-400"
+                                        : "text-rose-600 dark:text-rose-400"
+                                    }`}
+                                  >
+                                    {row.net_flow > 0 ? "+" : ""}
+                                    {formatRupiah(row.net_flow)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                                {formatRupiah(row.saldo)}
+                              </td>
+                              <td className="py-2.5 px-4 text-center">
+                                {hasActivity ? (
+                                  <div className="inline-flex items-center gap-1">
+                                    {row.cash_in_count > 0 && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                                        title={`${row.cash_in_count} transaksi uang masuk`}
+                                      >
+                                        +{row.cash_in_count}
+                                      </Badge>
+                                    )}
+                                    {row.cash_out_count > 0 && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-[10px] px-1.5 py-0 bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
+                                        title={`${row.cash_out_count} transaksi kas keluar`}
+                                      >
+                                        -{row.cash_out_count}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-600 text-[11px]">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-slate-100">
+                          <td className="py-3 px-4">TOTAL &amp; SALDO AKHIR</td>
+                          <td className="py-3 px-4 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                            +{formatRupiah(dailyCashflowData.total_cash_in)}
+                          </td>
+                          <td className="py-3 px-4 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                            -{formatRupiah(dailyCashflowData.total_cash_out)}
+                          </td>
+                          <td className={`py-3 px-4 text-right tabular-nums ${
+                            dailyCashflowData.net_cash_flow >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                          }`}>
+                            {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
+                            {formatRupiah(dailyCashflowData.net_cash_flow)}
+                          </td>
+                          <td className="py-3 px-4 text-right tabular-nums text-blue-900 dark:text-blue-200 text-sm">
+                            {formatRupiah(dailyCashflowData.saldo_akhir)}
+                          </td>
+                          <td className="py-3 px-4 text-center text-[11px] text-slate-500">
+                            {dailyCashflowData.total_tx_in + dailyCashflowData.total_tx_out} tx
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  ) : (
+                    <div className="p-8 text-center text-xs text-slate-500">
+                      Tidak ada data arus kas untuk periode ini.
+                    </div>
+                  )}
                 </div>
               </Card>
             </div>

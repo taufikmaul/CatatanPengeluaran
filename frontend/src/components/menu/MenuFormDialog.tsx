@@ -19,7 +19,8 @@ import {
   MenuProduct,
   MenuProductPayload,
 } from "@/types";
-import { Plus, Trash2, Calculator, TrendingUp } from "lucide-react";
+import { Plus, Trash2, Calculator, TrendingUp, Package } from "lucide-react";
+import { MasterItemCombobox } from "./MasterItemCombobox";
 
 interface IngredientDraftRow {
   key: string;
@@ -79,6 +80,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
   const [sellingPrice, setSellingPrice] = useState("");
   const [hppManual, setHppManual] = useState("");
   const [hppMode, setHppMode] = useState<MenuHppMode>("auto");
+  const [otherFee, setOtherFee] = useState("");
+  const [otherFeeDescription, setOtherFeeDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [ingredients, setIngredients] = useState<IngredientDraftRow[]>([]);
@@ -105,6 +108,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       setSellingPrice(String(editingMenu.selling_price || 0));
       setHppManual(String(editingMenu.hpp_manual || 0));
       setHppMode(editingMenu.hpp_mode || "auto");
+      setOtherFee(editingMenu.other_fee ? String(editingMenu.other_fee) : "");
+      setOtherFeeDescription(editingMenu.other_fee_description || "");
       setNotes(editingMenu.notes || "");
       setIsActive(editingMenu.is_active);
       setIngredients(
@@ -135,6 +140,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       setSellingPrice("");
       setHppManual("");
       setHppMode("auto");
+      setOtherFee("");
+      setOtherFeeDescription("");
       setNotes("");
       setIsActive(true);
       setIngredients([]);
@@ -157,16 +164,26 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       total += cost;
       return { unitCost, masterPrice, cost };
     });
-    return { total: Math.round(total), rowCosts };
-  }, [ingredients, masterMap]);
+    const otherFeeNum = Math.max(0, Number(otherFee) || 0);
+    const subtotalIngredients = Math.round(total);
+    const grandTotal = Math.round(total + otherFeeNum);
+    return {
+      subtotalIngredients,
+      otherFee: otherFeeNum,
+      total: grandTotal,
+      rowCosts,
+    };
+  }, [ingredients, masterMap, otherFee]);
 
   const sellingPriceNum = Math.max(0, Number(sellingPrice) || 0);
   const hppManualNum = Math.max(0, Number(hppManual) || 0);
   const effectiveHpp = useMemo(() => {
     if (hppMode === "manual") return hppManualNum;
     if (hppMode === "recipe") return recipeSummary.total;
-    return ingredients.length > 0 ? recipeSummary.total : hppManualNum;
-  }, [hppMode, hppManualNum, recipeSummary.total, ingredients.length]);
+    return (ingredients.length > 0 || recipeSummary.otherFee > 0)
+      ? recipeSummary.total
+      : hppManualNum;
+  }, [hppMode, hppManualNum, recipeSummary.total, recipeSummary.otherFee, ingredients.length]);
 
   const foodCostPct = sellingPriceNum > 0 ? (effectiveHpp / sellingPriceNum) * 100 : 0;
   const grossMargin = sellingPriceNum - effectiveHpp;
@@ -190,8 +207,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     }
   };
 
-  const handleSelectMasterItem = (rowKey: string, rawId: string) => {
-    const mid = rawId ? Number(rawId) : null;
+  const handleSelectMasterItem = (rowKey: string, mid: number | null) => {
     const found = mid ? masterMap.get(mid) : undefined;
     const nextUnit = found ? found.satuan_ecer || found.satuan_beli || "Gram" : "";
     setIngredients((prev) =>
@@ -265,6 +281,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       });
     }
 
+    const otherFeeNum = Math.max(0, Number(otherFee) || 0);
+
     onSubmit({
       name: cleanName,
       anonymous_name: anonymousName.trim() || null,
@@ -275,6 +293,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       selling_price: sellingPriceNum,
       hpp_manual: hppManualNum,
       hpp_mode: hppMode,
+      other_fee: otherFeeNum,
+      other_fee_description: otherFeeDescription.trim() || null,
       notes: notes.trim() || null,
       is_active: isActive,
       ingredients: parsedIngredients,
@@ -510,19 +530,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                           <label className="block text-[11px] text-slate-600 dark:text-slate-400 mb-0.5">
                             Master Item (Opsional)
                           </label>
-                          <select
-                            value={row.master_item_id ?? ""}
-                            onChange={(e) => handleSelectMasterItem(row.key, e.target.value)}
-                            className="h-8 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-xs text-slate-900 dark:text-slate-100"
-                          >
-                            <option value="">Input Bahan Manual</option>
-                            {masterItems.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.item_name} ({m.satuan_beli}
-                                {m.last_unit_price > 0 ? ` - ${formatRupiah(m.last_unit_price)}` : ""})
-                              </option>
-                            ))}
-                          </select>
+                          <MasterItemCombobox
+                            value={row.master_item_id}
+                            onChange={(mid) => handleSelectMasterItem(row.key, mid)}
+                            masterItems={masterItems}
+                            placeholder="Pilih / Cari Master Item..."
+                          />
                         </div>
 
                         <div className="sm:col-span-4">
@@ -677,11 +690,94 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   <option value="ml" />
                   <option value="Pcs" />
                 </datalist>
-                <div className="flex justify-end text-xs font-semibold text-slate-800 dark:text-slate-200 pt-1">
-                  Total HPP Resep: <span className="ml-1.5 tabular-nums">{formatRupiah(recipeSummary.total)}</span>
-                </div>
               </div>
             )}
+
+            {/* Biaya Lainnya di Bawah Bahan-Bahan */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  <Package className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Biaya Lainnya (Kemasan &amp; Operasional)</span>
+                </div>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                  Opsional per porsi / unit jual
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                Tambahkan biaya packaging (box, mika, pita), stiker, gas/listrik, atau operasional per porsi untuk melengkapi HPP resep.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
+                <div className="sm:col-span-5">
+                  <label htmlFor="recipe-other-fee" className="block text-[11px] text-slate-600 dark:text-slate-400 mb-0.5 font-medium">
+                    Nominal Biaya Lainnya (Rp)
+                  </label>
+                  <Input
+                    id="recipe-other-fee"
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={otherFee}
+                    onChange={(e) => setOtherFee(e.target.value)}
+                    placeholder="0"
+                    className="h-8 text-xs tabular-nums bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div className="sm:col-span-7">
+                  <label htmlFor="recipe-other-fee-desc" className="block text-[11px] text-slate-600 dark:text-slate-400 mb-0.5 font-medium">
+                    Keterangan Biaya Lainnya (Opsional)
+                  </label>
+                  <Input
+                    id="recipe-other-fee-desc"
+                    value={otherFeeDescription}
+                    onChange={(e) => setOtherFeeDescription(e.target.value)}
+                    placeholder="Contoh: Box kemasan + stiker + gas"
+                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                  />
+                </div>
+              </div>
+
+              {/* Quick chips if description is empty */}
+              {!otherFeeDescription && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {["Box & Kemasan", "Stiker & Segel", "Gas & Listrik", "Sendok & Tissue"].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setOtherFeeDescription(chip)}
+                      className="px-2 py-0.5 rounded text-[10px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
+                    >
+                      + {chip}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Summary Breakdown */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-slate-600 dark:text-slate-400 text-[11px]">
+                  <span>
+                    Subtotal Bahan:{" "}
+                    <strong className="text-slate-800 dark:text-slate-200 tabular-nums">
+                      {formatRupiah(recipeSummary.subtotalIngredients)}
+                    </strong>
+                  </span>
+                  <span>+</span>
+                  <span>
+                    Biaya Lainnya:{" "}
+                    <strong className="text-amber-700 dark:text-amber-400 tabular-nums">
+                      {formatRupiah(recipeSummary.otherFee)}
+                    </strong>
+                  </span>
+                </div>
+                <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                  <span>Total HPP Resep:</span>
+                  <span className="tabular-nums text-sm font-bold text-blue-600 dark:text-blue-400">
+                    {formatRupiah(recipeSummary.total)}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Status & Notes */}

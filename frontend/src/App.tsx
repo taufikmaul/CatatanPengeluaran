@@ -822,6 +822,8 @@ function MainDashboardApp() {
                   reimburseTotal={reportData?.reimburse_pending_total || 0}
                   totalPengeluaran={reportData?.total_pengeluaran || 0}
                   userRole={userRole}
+                  currentMonth={month}
+                  currentYear={year}
                 >
                   {activeTab === "overview" && (
               <>

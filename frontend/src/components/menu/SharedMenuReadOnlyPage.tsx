@@ -323,7 +323,7 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
                           <React.Fragment key={menu.id}>
                             <tr className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40">
                               <td className="px-2 py-2.5 text-center">
-                                {menu.ingredient_count > 0 && (
+                                {(menu.ingredient_count > 0 || (menu.other_fee && menu.other_fee > 0)) && (
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -376,7 +376,7 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
                                 {menu.selling_price > 0 ? formatRupiah(menu.gross_margin) : "-"}
                               </td>
                             </tr>
-                            {isExp && menu.ingredients.length > 0 && (
+                            {isExp && (menu.ingredients.length > 0 || (menu.other_fee && menu.other_fee > 0)) && (
                               <tr className="bg-slate-50/80 dark:bg-slate-900/60">
                                 <td colSpan={7} className="px-8 py-2.5">
                                   <div className="space-y-1">
@@ -393,6 +393,14 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
                                         </span>
                                       </div>
                                     ))}
+                                    {menu.other_fee > 0 && (
+                                      <div className="flex justify-between text-[11px] font-medium text-amber-700 dark:text-amber-400 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1 mt-1">
+                                        <span>+ Biaya Lainnya</span>
+                                        <span className="tabular-nums font-semibold">
+                                          {formatRupiah(menu.other_fee)}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

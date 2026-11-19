@@ -506,6 +506,7 @@ export interface MasterItem {
   item_name: string;
   category: string;
   default_supplier: string;
+  supplier?: string;
   aliases: string;
   satuan_beli?: string;
   tipe_satuan?: "paket" | "ecer" | "keduanya";
@@ -1406,6 +1407,9 @@ export interface MenuProduct {
   updated_at?: string | null;
   ingredients: MenuIngredient[];
   ingredient_count: number;
+  subtotal_ingredients?: number;
+  other_fee: number;
+  other_fee_description?: string | null;
   recipe_hpp: number;
   hpp_manual: number;
   hpp_mode: MenuHppMode;
@@ -1431,6 +1435,8 @@ export interface MenuProductPayload {
   selling_price: number;
   hpp_manual: number;
   hpp_mode: MenuHppMode;
+  other_fee?: number;
+  other_fee_description?: string | null;
   notes?: string | null;
   is_active: boolean;
   ingredients?: MenuIngredientInput[];
@@ -1591,6 +1597,46 @@ export interface AssetReanalyzeResult {
   balance_sheet_delta: number;
   message: string;
 }
+
+export interface DailyCashflowRow {
+  date: string;
+  cash_in: number;
+  cash_out: number;
+  net_flow: number;
+  saldo: number;
+  cash_in_count: number;
+  cash_out_count: number;
+}
+
+export interface DailyCashflowResponse {
+  ok: boolean;
+  periode: string;
+  start_date: string;
+  end_date: string;
+  month?: number;
+  year?: number;
+  bank_account_id?: number;
+  account_name: string;
+  saldo_awal: number;
+  total_cash_in: number;
+  total_cash_out: number;
+  net_cash_flow: number;
+  saldo_akhir: number;
+  total_tx_in: number;
+  total_tx_out: number;
+  days_count: number;
+  bank_accounts: {
+    id: number;
+    name: string;
+    bank_name: string;
+    account_number: string;
+    account_type: string;
+    account_code: string;
+    opening_balance: number;
+  }[];
+  daily_rows: DailyCashflowRow[];
+}
+
 
 
 

@@ -1,13 +1,19 @@
 """
 app/api/reports.py — REST API for Analytics & Reports
 """
-from datetime import datetime
-from fastapi import APIRouter, Depends, Query
+from datetime import datetime, date
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.config import settings
 from app.api.deps import require_admin_role, require_roles
-from app.api.schemas import MonthlyReportResponse, AiAnalysisResponse, AccountingReportResponse
+from app.api.schemas import (
+    MonthlyReportResponse,
+    AiAnalysisResponse,
+    AccountingReportResponse,
+    DailyCashflowResponse,
+)
+from app.services.cashflow_service import get_daily_cashflow, export_cashflow_to_csv
 from app.services.expense_service import (
     get_monthly_report,
     get_monthly_chart_data,
@@ -285,3 +291,70 @@ async def get_accounting_analytics(
     cur_year = year or now.year
 
     return await get_accounting_report(db, cur_year, cur_month)
+
+
+@router.get("/cashflow", response_model=DailyCashflowResponse)
+async def get_daily_cashflow_endpoint(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    bank_account_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint rekapitulasi arus kas harian (Daily Cashflow):
+    - Saldo awal
+    - Kas Masuk (Cash In) harian
+    - Kas Keluar (Cash Out) harian
+    - Arus kas bersih (Net Flow)
+    - Saldo kumulatif (Running Balance)
+    """
+    data = await get_daily_cashflow(
+        db,
+        year=year,
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+        bank_account_id=bank_account_id,
+    )
+    return DailyCashflowResponse(**data)
+
+
+@router.get("/cashflow/export")
+async def export_daily_cashflow_csv_endpoint(
+    month: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    bank_account_id: int | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Export laporan arus kas harian ke format CSV dengan kolom:
+    Tanggal, Kas Masuk (Cash In), Kas Keluar (Cash Out), Arus Kas Bersih (Net), Saldo (Balance), Jml Tx Masuk, Jml Tx Keluar
+    """
+    data = await get_daily_cashflow(
+        db,
+        year=year,
+        month=month,
+        start_date=start_date,
+        end_date=end_date,
+        bank_account_id=bank_account_id,
+    )
+    csv_text = export_cashflow_to_csv(data)
+
+    if start_date and end_date:
+        filename = f"cashflow_harian_{start_date.isoformat()}_{end_date.isoformat()}.csv"
+    elif year and month:
+        filename = f"cashflow_harian_{year}_{month:02d}.csv"
+    else:
+        now = datetime.now()
+        filename = f"cashflow_harian_{now.year}_{now.month:02d}.csv"
+
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+

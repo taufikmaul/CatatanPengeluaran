@@ -1222,7 +1222,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                           }`}
                         >
                           <td className="px-2 py-2.5 text-center">
-                            {menu.ingredient_count > 0 && (
+                            {(menu.ingredient_count > 0 || (menu.other_fee && menu.other_fee > 0)) && (
                               <button
                                 type="button"
                                 onClick={() => toggleExpand(menu.id)}
@@ -1331,7 +1331,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                                 </div>
                                 <div className="text-[10px] text-slate-600 dark:text-slate-400">
                                   {menu.active_hpp_source === "recipe"
-                                    ? `Resep (${menu.ingredient_count} bahan)`
+                                    ? `Resep (${menu.ingredient_count} bahan${menu.other_fee > 0 ? " + lain" : ""})`
                                     : "Input Manual"}
                                 </div>
                               </>
@@ -1407,12 +1407,19 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                           </td>
                         </tr>
 
-                        {isExpanded && menu.ingredients.length > 0 && (
+                        {isExpanded && (menu.ingredients.length > 0 || (menu.other_fee && menu.other_fee > 0)) && (
                           <tr className="bg-slate-50/80 dark:bg-slate-900/60">
                             <td colSpan={8} className="px-8 py-3">
-                              <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                                Komposisi Bahan Resep ({menu.ingredients.length} item, total HPP resep{" "}
-                                {formatRupiah(menu.recipe_hpp)})
+                              <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <span>
+                                  Komposisi Bahan Resep ({menu.ingredients.length} item, total HPP resep{" "}
+                                  {formatRupiah(menu.recipe_hpp)})
+                                </span>
+                                {menu.other_fee > 0 && (
+                                  <span className="text-[10px] text-slate-500 font-normal">
+                                    Bahan: {formatRupiah(menu.subtotal_ingredients ?? (menu.recipe_hpp - menu.other_fee))} + Biaya Lain: {formatRupiah(menu.other_fee)}
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-1">
                                 {menu.ingredients.map((ing, idx) => (
@@ -1441,6 +1448,22 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                                     </div>
                                   </div>
                                 ))}
+
+                                {menu.other_fee > 0 && (
+                                  <div className="flex items-center justify-between gap-2 text-[11px] text-amber-700 dark:text-amber-400 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1 mt-1 font-medium">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-semibold">+ Biaya Lainnya</span>
+                                      {menu.other_fee_description && (
+                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                                          ({menu.other_fee_description})
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="tabular-nums font-semibold shrink-0">
+                                      {formatRupiah(menu.other_fee)}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1587,7 +1610,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                       </div>
                     )}
 
-                    {menu.ingredient_count > 0 && (
+                    {(menu.ingredient_count > 0 || (menu.other_fee && menu.other_fee > 0)) && (
                       <div>
                         <button
                           type="button"
@@ -1595,7 +1618,9 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                           className="min-h-[44px] w-full flex items-center justify-between px-2 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300"
                           aria-expanded={isExpanded}
                         >
-                          <span>Resep ({menu.ingredient_count} bahan)</span>
+                          <span>
+                            Resep ({menu.ingredient_count} bahan{menu.other_fee > 0 ? " + biaya lain" : ""})
+                          </span>
                           {isExpanded ? (
                             <ChevronDown className="w-4 h-4" />
                           ) : (
@@ -1617,6 +1642,17 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                                 </span>
                               </div>
                             ))}
+                            {menu.other_fee > 0 && (
+                              <div className="flex justify-between gap-2 text-amber-700 dark:text-amber-400 font-medium border-t border-dashed border-slate-200 dark:border-slate-800 pt-1 mt-1">
+                                <span>
+                                  + Biaya Lainnya
+                                  {menu.other_fee_description ? ` (${menu.other_fee_description})` : ""}
+                                </span>
+                                <span className="tabular-nums font-semibold shrink-0">
+                                  {formatRupiah(menu.other_fee)}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

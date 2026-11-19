@@ -67,6 +67,8 @@ class MenuProductCreate(BaseModel):
     selling_price: float = Field(0.0, ge=0)
     hpp_manual: float = Field(0.0, ge=0)
     hpp_mode: str = Field("auto", pattern="^(auto|manual|recipe)$")
+    other_fee: float = Field(0.0, ge=0)
+    other_fee_description: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
     is_active: bool = True
     ingredients: list[MenuIngredientInput] = Field(default_factory=list)
@@ -82,6 +84,8 @@ class MenuProductUpdate(BaseModel):
     selling_price: Optional[float] = Field(None, ge=0)
     hpp_manual: Optional[float] = Field(None, ge=0)
     hpp_mode: Optional[str] = Field(None, pattern="^(auto|manual|recipe)$")
+    other_fee: Optional[float] = Field(None, ge=0)
+    other_fee_description: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = None
     is_active: Optional[bool] = None
     ingredients: Optional[list[MenuIngredientInput]] = None
@@ -496,6 +500,8 @@ async def api_create_menu(
         selling_price=float(payload.selling_price or 0.0),
         hpp_manual=float(payload.hpp_manual or 0.0),
         hpp_mode=payload.hpp_mode,
+        other_fee=float(payload.other_fee or 0.0),
+        other_fee_description=(payload.other_fee_description or "").strip() or None,
         notes=(payload.notes or "").strip() or None,
         is_active=payload.is_active,
     )
@@ -585,6 +591,10 @@ async def api_update_menu(
         menu.hpp_manual = float(payload.hpp_manual)
     if payload.hpp_mode is not None:
         menu.hpp_mode = payload.hpp_mode
+    if payload.other_fee is not None:
+        menu.other_fee = float(payload.other_fee)
+    if payload.other_fee_description is not None:
+        menu.other_fee_description = payload.other_fee_description.strip() or None
     if payload.notes is not None:
         menu.notes = payload.notes.strip() or None
     if payload.is_active is not None:

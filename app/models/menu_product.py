@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.connection import Base
@@ -32,6 +33,8 @@ class MenuProduct(Base):
     selling_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     hpp_manual: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     hpp_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="auto")  # auto | manual | recipe
+    other_fee: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default=text("0.0"))
+    other_fee_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

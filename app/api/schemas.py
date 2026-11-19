@@ -484,6 +484,37 @@ class AccountingReportResponse(BaseModel):
     all_accounts: list[AccountLineItem]
 
 
+class DailyCashflowRow(BaseModel):
+    date: str
+    cash_in: float
+    cash_out: float
+    net_flow: float
+    saldo: float
+    cash_in_count: int = 0
+    cash_out_count: int = 0
+
+
+class DailyCashflowResponse(BaseModel):
+    ok: bool = True
+    periode: str
+    start_date: str
+    end_date: str
+    month: int | None = None
+    year: int | None = None
+    bank_account_id: int | None = None
+    account_name: str
+    saldo_awal: float
+    total_cash_in: float
+    total_cash_out: float
+    net_cash_flow: float
+    saldo_akhir: float
+    total_tx_in: int
+    total_tx_out: int
+    days_count: int
+    bank_accounts: list[dict[str, Any]] = []
+    daily_rows: list[DailyCashflowRow]
+
+
 class MasterItemCreate(BaseModel):
     item_name: str
     category: str = "Bahan Kue"

@@ -103,6 +103,35 @@ async def test_menu_crud_and_recipe_hpp_calculation(
 
     menu_id = menu["id"]
 
+    # 1b. Buat menu dengan bahan + biaya lainnya (kemasan & overhead)
+    res_other_fee = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Choco Lava Cake",
+            "category": "Cake Ready",
+            "unit": "Pcs",
+            "selling_price": 30000,
+            "hpp_mode": "recipe",
+            "other_fee": 2500,
+            "other_fee_description": "Kemasan & Gas",
+            "ingredients": [
+                {
+                    "master_item_id": cokelat.id,
+                    "qty": 50,
+                    "unit": "Gram",
+                    "yield_factor": 1000,  # 50 / 1000 * 120000 = 6000
+                }
+            ],
+        },
+    )
+    assert res_other_fee.status_code == 201, res_other_fee.text
+    lava = res_other_fee.json()["item"]
+    assert lava["subtotal_ingredients"] == 6000.0
+    assert lava["other_fee"] == 2500.0
+    assert lava["other_fee_description"] == "Kemasan & Gas"
+    assert lava["recipe_hpp"] == 8500.0
+    assert lava["effective_hpp"] == 8500.0
+
     # 2. Switch hpp_mode ke manual
     res_upd = await client.put(
         f"/api/v1/menus/{menu_id}",
