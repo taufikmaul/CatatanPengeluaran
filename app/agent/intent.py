@@ -54,7 +54,7 @@ _COMMANDS = {
 
 # Pola untuk natural language (tanpa command)
 _NL_PATTERNS = {
-    r"(tolong\s+beli|minta\s+beli|request\s+beli|ajukan\s+belanja|beliin)\s+": Intent.CMD_REQUEST,
+    r"(tolong\s+beli|minta\s+beli|request\s+beli|ajukan\s+belanja|beliin|stok\s+habis|bahan\s+habis)\s*": Intent.CMD_REQUEST,
     r"(daftar\s+request|cek\s+request|list\s+request|belanjaan\s+siap\s+beli)": Intent.CMD_REQUEST,
     r"(analisis|analisa|evaluasi|insight|saran).*(keuangan|pengeluaran|belanja|biaya|toko)": Intent.CMD_ANALISIS,
     r"(cek|lihat|daftar|review)\s+(reimburse|reimbursement|talangan|rembes)": Intent.CMD_REIMBURSE,
@@ -62,6 +62,8 @@ _NL_PATTERNS = {
     r"(daftar\s+hutang|tagihan\s+belum\s+lunas|cek\s+hutang)": Intent.CMD_HUTANG,
     r"(naik|turun|trend|perbandingan|banding)": Intent.QUERY_TREND,
     r"(rekap|laporan|total|pengeluaran|belanja).*(bulan|minggu|hari)": Intent.QUERY_REPORT,
+    r"\b(ongkir|gosend|grabexpress|grab\s+express|lalamove|paxel|kurir|delivery\s+cake|antar\s+kue)\b": Intent.CMD_ONGKIR,
+    r"\b(tukar\s+cash|tukercash|tarik\s+tunai|titip\s+transfer|transfer\s+kasir)\b": Intent.CMD_TUKAR_CASH,
 }
 
 

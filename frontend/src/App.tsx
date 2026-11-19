@@ -42,6 +42,10 @@ const ApprovalBelanjaPage = React.lazy(() => import("@/components/requests/Appro
 const PurchasingOrdersPage = React.lazy(() => import("@/components/requests/PurchasingOrdersPage").then(m => ({ default: m.PurchasingOrdersPage })));
 const WarehouseReceivingPage = React.lazy(() => import("@/components/requests/WarehouseReceivingPage").then(m => ({ default: m.WarehouseReceivingPage })));
 const CsvImportModal = React.lazy(() => import("@/components/import/CsvImportModal").then(m => ({ default: m.CsvImportModal })));
+const CashflowHubView = React.lazy(() => import("@/components/dashboard/CashflowHubView").then(m => ({ default: m.CashflowHubView })));
+const UnifiedProcurementHub = React.lazy(() => import("@/components/requests/UnifiedProcurementHub").then(m => ({ default: m.UnifiedProcurementHub })));
+const CatalogHubView = React.lazy(() => import("@/components/master/CatalogHubView").then(m => ({ default: m.CatalogHubView })));
+const GovernanceHubView = React.lazy(() => import("@/components/accounting/GovernanceHubView").then(m => ({ default: m.GovernanceHubView })));
 
 function TabLoadingFallback() {
   return (
@@ -176,6 +180,46 @@ function MainDashboardApp() {
       navigate("/" + tab);
     }
   };
+
+  const isCashflowActive = [
+    "overview",
+    "transactions",
+    "incoming",
+    "unpaid",
+    "talangan",
+    "tukar-cash-ongkir",
+  ].includes(activeTab);
+
+  const isProcurementActive = [
+    "requests",
+    "approval",
+    "purchasing",
+    "gudang",
+  ].includes(activeTab);
+
+  const isCatalogActive = [
+    "master",
+    "menus",
+    "suppliers",
+    "supplier-detail",
+    "inventaris",
+  ].includes(activeTab);
+
+  const isGovernanceActive = [
+    "accounting",
+    "config",
+  ].includes(activeTab);
+
+  const cashflowSubTab: "transactions" | "unpaid" | "talangan" | "cash-delivery" | "incoming" =
+    activeTab === "unpaid"
+      ? "unpaid"
+      : activeTab === "talangan"
+      ? "talangan"
+      : activeTab === "tukar-cash-ongkir"
+      ? "cash-delivery"
+      : activeTab === "incoming"
+      ? "incoming"
+      : "transactions";
 
   const [cashDeliverySubtype, setCashDeliverySubtype] = useState<"all" | "tukar_cash" | "ongkir">("all");
 
@@ -743,7 +787,31 @@ function MainDashboardApp() {
 
           {/* Main Content Area */}
           <main className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6 space-y-6">
-            {activeTab === "overview" && (
+            {/* Hub 1: Kas & Pengeluaran */}
+            {isCashflowActive && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <CashflowHubView
+                  activeSubTab={cashflowSubTab}
+                  onSubTabChange={(sub) => {
+                    if (sub === "transactions") navigate("/transactions");
+                    else if (sub === "unpaid") navigate("/unpaid");
+                    else if (sub === "talangan") navigate("/talangan");
+                    else if (sub === "cash-delivery") navigate("/tukar-cash-ongkir");
+                    else if (sub === "incoming") navigate("/incoming");
+                  }}
+                  onOpenAddExpense={() => {
+                    setEditingExpense(null);
+                    setRepeatingExpense(null);
+                    setIsFormOpen(true);
+                  }}
+                  unpaidCount={reportData?.list_hutang?.length || 0}
+                  unpaidTotal={totalUnpaidNominal}
+                  reimburseCount={reportData?.reimburse_pending_count || 0}
+                  reimburseTotal={reportData?.reimburse_pending_total || 0}
+                  totalPengeluaran={reportData?.total_pengeluaran || 0}
+                  userRole={userRole}
+                >
+                  {activeTab === "overview" && (
               <>
                 {/* Tampilan Header & Statistik Sesuai Role Pengguna */}
                 {canViewCharts ? (
@@ -1520,259 +1588,299 @@ function MainDashboardApp() {
               </>
             )}
 
-            <React.Suspense fallback={<TabLoadingFallback />}>
-              {activeTab === "accounting" && (
-                <AccountingTab
-                  currentMonth={month}
-                  currentYear={year}
-                  onMonthChange={setMonth}
-                  onYearChange={setYear}
-                  onViewExpense={(item) => setViewingExpense(item)}
-                />
-              )}
+                  {activeTab === "tukar-cash-ongkir" && (
+                    <TukarCashOngkirTab
+                      currentMonth={month}
+                      currentYear={year}
+                      reportData={reportData}
+                      initialType={cashDeliverySubtype}
+                      onEditExpense={(item) => {
+                        setRepeatingExpense(null);
+                        setEditingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                      onToggleStatus={handleToggleStatus}
+                      onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                      onAddNewExpense={(type) => {
+                        setEditingExpense(null);
+                        setRepeatingExpense({
+                          id: 0,
+                          created_at: new Date().toISOString(),
+                          expense_date: new Date().toISOString().split("T")[0],
+                          category: type === "tukar_cash" ? "Tukar Cash" : "Ongkir",
+                          item_name: type === "tukar_cash" ? "Tukar Cash - " : "ongkir delivery cake",
+                          supplier: "-",
+                          qty: 1,
+                          unit: type === "tukar_cash" ? "Trans" : "Trip",
+                          unit_price: 0,
+                          shipping_fee: 0,
+                          tax: 0,
+                          other_fee: 0,
+                          discount: 0,
+                          total_price: 0,
+                          pay_method: type === "tukar_cash" ? "Tunai" : "Gopay - Kasir",
+                          pay_status: "Lunas",
+                          due_date: "-",
+                          notes: "-",
+                          msg_link: "Web Dashboard",
+                          is_reimbursement: false,
+                          invoice_number: "-",
+                        } as Expense);
+                        setIsFormOpen(true);
+                      }}
+                      canDelete={canDelete}
+                    />
+                  )}
 
-              {activeTab === "master" && (
-                <MasterItemsTab
-                  categories={categories}
-                  units={activeUnits}
-                  onInspectItemPrice={handleInspectItemPrice}
-                  canEdit={isOwner || isPurchasing}
-                  canDelete={isOwner}
-                />
-              )}
+                  {activeTab === "talangan" && (
+                    <TalanganTab
+                      currentMonth={month}
+                      currentYear={year}
+                      users={usersData}
+                      onEditExpense={(item) => {
+                        setRepeatingExpense(null);
+                        setEditingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                      onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                      onAddNewTalangan={() => {
+                        setEditingExpense(null);
+                        setRepeatingExpense({
+                          id: 0,
+                          created_at: new Date().toISOString(),
+                          expense_date: new Date().toISOString().split("T")[0],
+                          category: "Operasional",
+                          item_name: "",
+                          supplier: "-",
+                          qty: 1,
+                          unit: "Pcs",
+                          unit_price: 0,
+                          shipping_fee: 0,
+                          tax: 0,
+                          other_fee: 0,
+                          discount: 0,
+                          total_price: 0,
+                          pay_method: "Tunai",
+                          pay_status: "Lunas",
+                          due_date: "-",
+                          notes: "Ditalangi karyawan",
+                          msg_link: "Web Dashboard",
+                          is_reimbursement: true,
+                          invoice_number: "-",
+                        } as Expense);
+                        setIsFormOpen(true);
+                      }}
+                      canDelete={canDelete}
+                      canSettle={canSettleTalangan}
+                      userRole={userRole}
+                    />
+                  )}
 
-              {activeTab === "menus" && (
-                <MenuProductsTab
-                  isAdmin={isOwner}
-                  units={activeUnits}
-                />
-              )}
+                  {activeTab === "unpaid" && (
+                    <UnpaidTab
+                      currentMonth={month}
+                      currentYear={year}
+                      onEditExpense={(item) => {
+                        setRepeatingExpense(null);
+                        setEditingExpense(item);
+                        setIsFormOpen(true);
+                      }}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                      onDeleteExpense={(id) => deleteMutation.mutate(id)}
+                      onAddNewUnpaid={() => {
+                        setEditingExpense(null);
+                        const in7Days = getTempoQuickDate(7);
+                        setRepeatingExpense({
+                          id: 0,
+                          created_at: new Date().toISOString(),
+                          expense_date: new Date().toISOString().split("T")[0],
+                          category: category || categories[0] || "Bahan Kue",
+                          item_name: "",
+                          supplier: "",
+                          qty: 1,
+                          unit: "Pcs",
+                          unit_price: 0,
+                          shipping_fee: 0,
+                          tax: 0,
+                          other_fee: 0,
+                          discount: 0,
+                          total_price: 0,
+                          pay_method: "Tempo / Tagihan",
+                          pay_status: "Belum Lunas",
+                          due_date: in7Days,
+                          notes: "-",
+                          msg_link: "Web Dashboard",
+                          is_reimbursement: false,
+                          invoice_number: "-",
+                        } as Expense);
+                        setIsFormOpen(true);
+                      }}
+                      onAddNewDp={() => {
+                        setEditingExpense(null);
+                        const in14Days = getTempoQuickDate(14);
+                        setRepeatingExpense({
+                          id: 0,
+                          created_at: new Date().toISOString(),
+                          expense_date: new Date().toISOString().split("T")[0],
+                          category: category || categories[0] || "Bahan Kue",
+                          item_name: "",
+                          supplier: "",
+                          qty: 1,
+                          unit: "Pcs",
+                          unit_price: 0,
+                          shipping_fee: 0,
+                          tax: 0,
+                          other_fee: 0,
+                          discount: 0,
+                          total_price: 0,
+                          pay_method: "Transfer",
+                          pay_status: "DP / Sebagian",
+                          due_date: in14Days,
+                          paid_amount: 0,
+                          dp_type: "percent",
+                          dp_percent: 50,
+                          notes: "-",
+                          msg_link: "Web Dashboard",
+                          is_reimbursement: false,
+                          invoice_number: "-",
+                        } as Expense);
+                        setIsFormOpen(true);
+                      }}
+                      canDelete={canDelete}
+                    />
+                  )}
+                </CashflowHubView>
+              </React.Suspense>
+            )}
 
-              {activeTab === "suppliers" && (
-                <SuppliersTab
-                  onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
-                  canDelete={canDelete}
-                />
-              )}
-
-              {activeTab === "inventaris" && (
-                <AssetsTab isOwner={isOwner} />
-              )}
-
-              {activeTab === "supplier-detail" && selectedSupplierId && (
-                <SupplierDetailPage
-                  supplierId={selectedSupplierId}
-                  onBack={() => navigate("/suppliers")}
-                  canDelete={canDelete}
-                  categories={categories}
-                  paymentMethods={configData?.payment_methods}
-                  units={activeUnits}
-                />
-              )}
-
-              {activeTab === "tukar-cash-ongkir" && (
-                <TukarCashOngkirTab
-                  currentMonth={month}
-                  currentYear={year}
-                  reportData={reportData}
-                  initialType={cashDeliverySubtype}
-                  onEditExpense={(item) => {
-                    setRepeatingExpense(null);
-                    setEditingExpense(item);
-                    setIsFormOpen(true);
-                  }}
-                  onViewExpense={(item) => setViewingExpense(item)}
-                  onToggleStatus={handleToggleStatus}
-                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                  onAddNewExpense={(type) => {
-                    setEditingExpense(null);
-                    setRepeatingExpense({
-                      id: 0,
-                      created_at: new Date().toISOString(),
-                      expense_date: new Date().toISOString().split("T")[0],
-                      category: type === "tukar_cash" ? "Tukar Cash" : "Ongkir",
-                      item_name: type === "tukar_cash" ? "Tukar Cash - " : "ongkir delivery cake",
-                      supplier: "-",
-                      qty: 1,
-                      unit: type === "tukar_cash" ? "Trans" : "Trip",
-                      unit_price: 0,
-                      shipping_fee: 0,
-                      tax: 0,
-                      other_fee: 0,
-                      discount: 0,
-                      total_price: 0,
-                      pay_method: type === "tukar_cash" ? "Tunai" : "Gopay - Kasir",
-                      pay_status: "Lunas",
-                      due_date: "-",
-                      notes: "-",
-                      msg_link: "Web Dashboard",
-                      is_reimbursement: false,
-                      invoice_number: "-",
-                    } as Expense);
-                    setIsFormOpen(true);
-                  }}
-                  canDelete={canDelete}
-                />
-              )}
-
-              {activeTab === "talangan" && (
-                <TalanganTab
-                  currentMonth={month}
-                  currentYear={year}
-                  users={usersData}
-                  onEditExpense={(item) => {
-                    setRepeatingExpense(null);
-                    setEditingExpense(item);
-                    setIsFormOpen(true);
-                  }}
-                  onViewExpense={(item) => setViewingExpense(item)}
-                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                  onAddNewTalangan={() => {
-                    setEditingExpense(null);
-                    setRepeatingExpense({
-                      id: 0,
-                      created_at: new Date().toISOString(),
-                      expense_date: new Date().toISOString().split("T")[0],
-                      category: "Operasional",
-                      item_name: "",
-                      supplier: "-",
-                      qty: 1,
-                      unit: "Pcs",
-                      unit_price: 0,
-                      shipping_fee: 0,
-                      tax: 0,
-                      other_fee: 0,
-                      discount: 0,
-                      total_price: 0,
-                      pay_method: "Tunai",
-                      pay_status: "Lunas",
-                      due_date: "-",
-                      notes: "Ditalangi karyawan",
-                      msg_link: "Web Dashboard",
-                      is_reimbursement: true,
-                      invoice_number: "-",
-                    } as Expense);
-                    setIsFormOpen(true);
-                  }}
-                  canDelete={canDelete}
-                  canSettle={canSettleTalangan}
+            {/* Hub 2: Alur Pengadaan */}
+            {isProcurementActive && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <UnifiedProcurementHub
+                  activeStage={activeTab as any}
+                  onStageChange={(stage) => navigate("/" + stage)}
+                  pendingApprovalCount={requestStatsData?.pending || 0}
+                  purchasingReadyCount={requestStatsData?.approved || 0}
                   userRole={userRole}
-                />
-              )}
+                >
+                  {activeTab === "requests" && (
+                    <StaffRequestsPage
+                      categories={categories}
+                      itemSuggestions={suggestionsData?.items || []}
+                      currentUser={authData?.user || authData?.username || ""}
+                    />
+                  )}
 
-              {activeTab === "unpaid" && (
-                <UnpaidTab
-                  currentMonth={month}
-                  currentYear={year}
-                  onEditExpense={(item) => {
-                    setRepeatingExpense(null);
-                    setEditingExpense(item);
-                    setIsFormOpen(true);
-                  }}
-                  onViewExpense={(item) => setViewingExpense(item)}
-                  onDeleteExpense={(id) => deleteMutation.mutate(id)}
-                  onAddNewUnpaid={() => {
-                    setEditingExpense(null);
-                    const in7Days = getTempoQuickDate(7);
-                    setRepeatingExpense({
-                      id: 0,
-                      created_at: new Date().toISOString(),
-                      expense_date: new Date().toISOString().split("T")[0],
-                      category: category || categories[0] || "Bahan Kue",
-                      item_name: "",
-                      supplier: "",
-                      qty: 1,
-                      unit: "Pcs",
-                      unit_price: 0,
-                      shipping_fee: 0,
-                      tax: 0,
-                      other_fee: 0,
-                      discount: 0,
-                      total_price: 0,
-                      pay_method: "Tempo / Tagihan",
-                      pay_status: "Belum Lunas",
-                      due_date: in7Days,
-                      notes: "-",
-                      msg_link: "Web Dashboard",
-                      is_reimbursement: false,
-                      invoice_number: "-",
-                    } as Expense);
-                    setIsFormOpen(true);
-                  }}
-                  onAddNewDp={() => {
-                    setEditingExpense(null);
-                    const in14Days = getTempoQuickDate(14);
-                    setRepeatingExpense({
-                      id: 0,
-                      created_at: new Date().toISOString(),
-                      expense_date: new Date().toISOString().split("T")[0],
-                      category: category || categories[0] || "Bahan Kue",
-                      item_name: "",
-                      supplier: "",
-                      qty: 1,
-                      unit: "Pcs",
-                      unit_price: 0,
-                      shipping_fee: 0,
-                      tax: 0,
-                      other_fee: 0,
-                      discount: 0,
-                      total_price: 0,
-                      pay_method: "Transfer",
-                      pay_status: "DP / Sebagian",
-                      due_date: in14Days,
-                      paid_amount: 0,
-                      dp_type: "percent",
-                      dp_percent: 50,
-                      notes: "-",
-                      msg_link: "Web Dashboard",
-                      is_reimbursement: false,
-                      invoice_number: "-",
-                    } as Expense);
-                    setIsFormOpen(true);
-                  }}
-                  canDelete={canDelete}
-                />
-              )}
+                  {activeTab === "approval" && isOwner && (
+                    <ApprovalBelanjaPage
+                      categories={categories}
+                      itemSuggestions={suggestionsData?.items || []}
+                      currentUser={authData?.user || authData?.username || ""}
+                    />
+                  )}
 
-              {activeTab === "requests" && (
-                <StaffRequestsPage
-                  categories={categories}
-                  itemSuggestions={suggestionsData?.items || []}
-                  currentUser={authData?.user || authData?.username || ""}
-                />
-              )}
+                  {activeTab === "purchasing" && (isOwner || isPurchasing) && (
+                    <PurchasingOrdersPage
+                      categories={categories}
+                      itemSuggestions={suggestionsData?.items || []}
+                    />
+                  )}
 
-              {activeTab === "approval" && isOwner && (
-                <ApprovalBelanjaPage
-                  categories={categories}
-                  itemSuggestions={suggestionsData?.items || []}
-                  currentUser={authData?.user || authData?.username || ""}
-                />
-              )}
+                  {activeTab === "gudang" && (isOwner || isWarehouse) && (
+                    <WarehouseReceivingPage
+                      currentUser={authData?.user || authData?.username || ""}
+                    />
+                  )}
+                </UnifiedProcurementHub>
+              </React.Suspense>
+            )}
 
-              {activeTab === "purchasing" && (isOwner || isPurchasing) && (
-                <PurchasingOrdersPage
-                  categories={categories}
-                  itemSuggestions={suggestionsData?.items || []}
-                />
-              )}
+            {/* Hub 3: Katalog & Margin */}
+            {isCatalogActive && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <CatalogHubView
+                  activeSubTab={activeTab as any}
+                  onSubTabChange={(sub) => navigate("/" + sub)}
+                  userRole={userRole}
+                >
+                  {activeTab === "master" && (
+                    <MasterItemsTab
+                      categories={categories}
+                      units={activeUnits}
+                      onInspectItemPrice={handleInspectItemPrice}
+                      canEdit={isOwner || isPurchasing}
+                      canDelete={isOwner}
+                    />
+                  )}
 
-              {activeTab === "gudang" && (isOwner || isWarehouse) && (
-                <WarehouseReceivingPage
-                  currentUser={authData?.user || authData?.username || ""}
-                />
-              )}
+                  {activeTab === "menus" && (
+                    <MenuProductsTab
+                      isAdmin={isOwner}
+                      units={activeUnits}
+                    />
+                  )}
 
-              {activeTab === "config" && canManageConfig && (
-                <ConfigTab
-                  config={configData || null}
-                  onRefreshConfig={() => {
-                    refetchConfig();
-                    refetchReport();
-                  }}
-                />
-              )}
-            </React.Suspense>
+                  {activeTab === "suppliers" && (
+                    <SuppliersTab
+                      onSelectSupplier={(id) => navigate(`/suppliers/${id}`)}
+                      canDelete={canDelete}
+                    />
+                  )}
+
+                  {activeTab === "supplier-detail" && selectedSupplierId && (
+                    <SupplierDetailPage
+                      supplierId={selectedSupplierId}
+                      onBack={() => navigate("/suppliers")}
+                      canDelete={canDelete}
+                      categories={categories}
+                      paymentMethods={configData?.payment_methods}
+                      units={activeUnits}
+                    />
+                  )}
+
+                  {activeTab === "inventaris" && (
+                    <AssetsTab isOwner={isOwner} />
+                  )}
+                </CatalogHubView>
+              </React.Suspense>
+            )}
+
+            {/* Hub 4: Laporan & Kontrol */}
+            {isGovernanceActive && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <GovernanceHubView
+                  activeSubTab={activeTab === "config" ? "config" : "accounting"}
+                  onSubTabChange={(sub) => navigate("/" + sub)}
+                  onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
+                  onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
+                  onOpenImport={() => setIsImportOpen(true)}
+                  canManageConfig={canManageConfig}
+                  userRole={userRole}
+                >
+                  {activeTab === "accounting" && (
+                    <AccountingTab
+                      currentMonth={month}
+                      currentYear={year}
+                      onMonthChange={setMonth}
+                      onYearChange={setYear}
+                      onViewExpense={(item) => setViewingExpense(item)}
+                    />
+                  )}
+
+                  {activeTab === "config" && canManageConfig && (
+                    <ConfigTab
+                      config={configData || null}
+                      onRefreshConfig={() => {
+                        refetchConfig();
+                        refetchReport();
+                      }}
+                    />
+                  )}
+                </GovernanceHubView>
+              </React.Suspense>
+            )}
           </main>
         </SidebarInset>
 

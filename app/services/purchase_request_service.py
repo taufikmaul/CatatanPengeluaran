@@ -5,7 +5,7 @@ Mendukung 3 peran:
 2. Purchasing: Mapping supplier, mengelompokkan pesanan per supplier, generate format WA/Email, order
 3. Gudang: Memeriksa fisik (sesuai/kurang/lebih), input tanggal expired, dan catatan kondisi
 """
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 import logging
 from typing import Any
@@ -987,6 +987,44 @@ async def receive_warehouse_item(
         all_received = all(i.receiving_status != "PENDING" for i in req.items)
         if all_received:
             req.status = "RECEIVED"
+
+    # Otomatis catat pengeluaran (Expense) jika barang diterima fisik dan belum punya expense
+    if clean_qty > 0 and item.estimated_price and item.estimated_price > 0 and not item.expense_id:
+        try:
+            from app.models.expense import Expense
+            req_no = req.request_number if req else f"REQ-{item.request_id}"
+            supplier_name = item.supplier.name if item.supplier else (item.supplier_name or "-")
+            unit_price = item.estimated_price
+            total_price = clean_qty * unit_price
+            has_top = bool(item.supplier and getattr(item.supplier, "top_days", 0) and item.supplier.top_days > 0)
+            top_days = item.supplier.top_days if has_top else 0
+
+            auto_expense = Expense(
+                expense_date=date.today(),
+                supplier=supplier_name,
+                item_name=item.item_name,
+                qty=clean_qty,
+                unit=item.unit or "Pcs",
+                category=item.category or "Bahan Kue",
+                unit_price=unit_price,
+                total_price=total_price,
+                pay_method="Transfer",
+                pay_status="Belum Lunas" if has_top else "Lunas",
+                due_date=date.today() + timedelta(days=top_days) if has_top else None,
+                paid_amount=0 if has_top else total_price,
+                notes=f"Otomatis dari PO #{req_no} (Diterima oleh {received_by})",
+                msg_link="Warehouse Receiving",
+                supplier_id=item.supplier_id,
+                master_item_id=getattr(item, "master_item_id", None),
+                sheets_synced=False,
+            )
+            db.add(auto_expense)
+            await db.flush()
+            item.expense_id = auto_expense.id
+            if req and not req.expense_id:
+                req.expense_id = auto_expense.id
+        except Exception as exp_err:
+            logger.warning("Gagal auto-create expense saat penerimaan gudang: %s", exp_err)
 
     await db.commit()
     item = await _get_item_with_request(db, item.id) or item

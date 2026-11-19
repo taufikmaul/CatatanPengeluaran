@@ -66,6 +66,16 @@ class TestNaturalLanguage:
         intent, _ = classify_intent("rekap pengeluaran bulan ini")
         assert intent == Intent.QUERY_REPORT
 
+    def test_ongkir_and_tukar_cash_natural_language(self):
+        intent, _ = classify_intent("ongkir gosend bolu ke tebet 25rb")
+        assert intent == Intent.CMD_ONGKIR
+
+        intent, _ = classify_intent("tukar cash kasir 100rb bca")
+        assert intent == Intent.CMD_TUKAR_CASH
+
+        intent, _ = classify_intent("stok habis tolong beliin keju 2 box")
+        assert intent == Intent.CMD_REQUEST
+
 
 class TestTextInputFallback:
     def test_long_text_becomes_text_input(self):

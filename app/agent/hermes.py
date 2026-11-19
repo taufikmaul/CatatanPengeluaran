@@ -152,23 +152,13 @@ class HermesAgent:
             await self._handle_text_input(param or text, msg_link)
 
         elif intent == Intent.CMD_ONGKIR:
-            if not param:
+            if not param or len(param.strip()) < 3:
                 msg = (
                     "🚚 *FORMAT LAPORAN ONGKIR (DELIVERY CAKE)*\n\n"
-                    "💡 *Format Lengkap (Paling Direkomendasikan):*\n"
-                    "```\n"
-                    "/ongkir\n"
-                    "Judul: Ongkir delivery cake\n"
-                    "Kurir: GoSend Car\n"
-                    "Biaya: 25.000\n"
-                    "Bayar: Gopay - Admin Toko\n"
-                    "Catatan: Pesanan bolu Bu Maya ke Tebet\n"
-                    "```\n\n"
-                    "⚡ *Format Cepat 1 Baris:*\n"
-                    "`/ongkir 25.000, GoSend Car, Gopay - Kasir, kirim ke Tebet`\n\n"
-                    "📸 *Kirim Screenshot Resi/App Kurir:*\n"
-                    "Kirim screenshot dari Gojek/Grab/Lalamove dengan caption:\n"
-                    "`/ongkir bayar Gopay - Admin, kue Bu Maya`"
+                    "💡 *Cara Paling Cepat & Mudah:*\n"
+                    "• 📸 Kirim foto screenshot aplikasi GoSend/Grab/Lalamove\n"
+                    "• ⚡ Format Cepat: `/ongkir 25.000 GoSend Car, Gopay, ke Tebet`\n"
+                    "• 🎤 Atau kirim voice note singkat"
                 )
                 await tg.send_message(self.chat_id, msg, self.thread_id)
                 return
@@ -176,23 +166,14 @@ class HermesAgent:
             await self._handle_text_input(content, msg_link)
 
         elif intent == Intent.CMD_TUKAR_CASH:
-            if not param:
+            if not param or len(param.strip()) < 3:
                 msg = (
                     "🔄 *FORMAT LAPORAN TUKAR CASH (TARIK TUNAI)*\n\n"
-                    "💡 *Format Lengkap (Paling Direkomendasikan):*\n"
-                    "```\n"
-                    "/tukercash\n"
-                    "Nama: Budi\n"
-                    "Nominal: 100.000\n"
-                    "Bank: Transfer BCA An Budi\n"
-                    "Catatan: Titip tarik tunai kasir (Ref: 123456)\n"
-                    "```\n\n"
-                    "⚡ *Format Cepat 1 Baris:*\n"
-                    "`/tukercash 100.000 - Budi (Transfer BCA)`\n\n"
-                    "📸 *Kirim Bukti Transfer:*\n"
-                    "Kirim foto/screenshot bukti transfer m-banking dengan caption:\n"
-                    "`/tukercash Tarik tunai Budi`\n\n"
-                    "_Catatan: Metode bayar otomatis tercatat Tunai (kas fisik kasir) & bukti bank otomatis masuk ke Catatan._"
+                    "💡 *Cara Paling Cepat & Mudah:*\n"
+                    "• 📸 Kirim screenshot bukti transfer m-banking\n"
+                    "• ⚡ Format Cepat: `/tukercash 100.000 Budi (Transfer BCA)`\n"
+                    "• 🎤 Atau kirim voice note singkat\n\n"
+                    "_Otomatis tercatat kas fisik kasir keluar & bukti bank tersimpan di catatan._"
                 )
                 await tg.send_message(self.chat_id, msg, self.thread_id)
                 return
