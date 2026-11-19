@@ -42,45 +42,10 @@ export const UnifiedProcurementHub: React.FC<UnifiedProcurementHubProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Header Hub */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200/60 dark:border-amber-900/40">
-            <ShoppingBag className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                Alur Pengadaan &amp; Belanja
-              </h1>
-              <Badge variant="outline" className="text-[10px] font-semibold text-amber-800 bg-amber-50/60 dark:bg-amber-950/30 dark:text-amber-300 border-amber-200 dark:border-amber-900">
-                Unified Pipeline
-              </Badge>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Pantau siklus barang: Permintaan staf dapur ➔ Approval owner ➔ Order supplier (PO) ➔ Cek fisik gudang
-            </p>
-          </div>
-        </div>
-
-        {/* Quick Action Button */}
-        {onOpenCreateRequest && (
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              onClick={onOpenCreateRequest}
-              size="sm"
-              className="h-9 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs gap-1.5 text-xs px-3.5"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Minta Belanja Baru</span>
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Stepper Pipeline Navigation */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800 rounded-2xl overflow-x-auto no-scrollbar">
-        {/* Step 1: Pengajuan Staf */}
+      {/* Stepper Pipeline Navigation & Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+          {/* Step 1: Pengajuan Staf */}
         <Button
           variant={activeStage === "requests" ? "secondary" : "ghost"}
           size="sm"
@@ -174,6 +139,21 @@ export const UnifiedProcurementHub: React.FC<UnifiedProcurementHubProps> = ({
           </Button>
         )}
       </div>
+
+      {/* Quick Action Button */}
+      {onOpenCreateRequest && (
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            onClick={onOpenCreateRequest}
+            size="sm"
+            className="h-9 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs gap-1.5 text-xs px-3.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Minta Belanja Baru</span>
+          </Button>
+        </div>
+      )}
+    </div>
 
       {/* Main Content Area */}
       <div className="min-h-[450px]">

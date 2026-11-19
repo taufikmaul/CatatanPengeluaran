@@ -103,6 +103,28 @@ export function DashboardHeader({
     config: "Konfigurasi Sistem",
   };
 
+  const breadcrumbMap: Record<string, { hub: string; sub: string }> = {
+    overview: { hub: "Kas & Pengeluaran", sub: "Overview Kas" },
+    transactions: { hub: "Kas & Pengeluaran", sub: "Semua Transaksi" },
+    unpaid: { hub: "Kas & Pengeluaran", sub: "Tagihan Belum Lunas" },
+    talangan: { hub: "Kas & Pengeluaran", sub: "Talangan Staff" },
+    "tukar-cash-ongkir": { hub: "Kas & Pengeluaran", sub: "Kurir & Kasir" },
+    incoming: { hub: "Kas & Pengeluaran", sub: "Uang Masuk POS" },
+    requests: { hub: "Alur Pengadaan", sub: "Pengajuan Belanja" },
+    approval: { hub: "Alur Pengadaan", sub: "Approval Owner" },
+    purchasing: { hub: "Alur Pengadaan", sub: "Pemesanan PO" },
+    gudang: { hub: "Alur Pengadaan", sub: "Penerimaan Gudang" },
+    master: { hub: "Katalog & Margin", sub: "Item & Satuan" },
+    menus: { hub: "Katalog & Margin", sub: "Menu & Resep HPP" },
+    suppliers: { hub: "Katalog & Margin", sub: "Supplier & Toko" },
+    "supplier-detail": { hub: "Katalog & Margin", sub: "Detail Toko" },
+    inventaris: { hub: "Katalog & Margin", sub: "Inventaris Aset" },
+    accounting: { hub: "Laporan & Kontrol", sub: "Laporan Akuntansi" },
+    config: { hub: "Laporan & Kontrol", sub: "Pengaturan Sistem" },
+  };
+
+  const currentBreadcrumb = breadcrumbMap[activeTab] || { hub: "Dashboard", sub: titleMap[activeTab] || "Overview" };
+
   const currentYear = new Date().getFullYear();
   const availableYears = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
@@ -123,28 +145,24 @@ export function DashboardHeader({
 
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-4 md:px-6 transition-all">
-      {/* Left: Sidebar Trigger & Page Title */}
+      {/* Left: Sidebar Trigger & Breadcrumb */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <SidebarTrigger className="h-9 w-9 shrink-0 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
         <Separator orientation="vertical" className="h-5 bg-slate-200 dark:bg-slate-800 hidden sm:block shrink-0" />
         <div className="flex items-center gap-1.5 min-w-0">
-          <h1 className="font-bold text-sm sm:text-base md:text-lg text-slate-900 dark:text-slate-100 leading-tight truncate">
-            {titleMap[activeTab] || "Dashboard"}
+          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 hidden sm:inline shrink-0">
+            {currentBreadcrumb.hub}
+          </span>
+          <span className="text-slate-300 dark:text-slate-700 hidden sm:inline text-xs font-bold">/</span>
+          <h1 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 leading-tight truncate">
+            {currentBreadcrumb.sub}
           </h1>
           <Badge
             variant="outline"
-            className={`text-[10px] font-semibold hidden sm:inline-flex shrink-0 ${currentRoleBadge.color}`}
+            className={`text-[10px] font-semibold hidden md:inline-flex shrink-0 ${currentRoleBadge.color}`}
           >
             {currentRoleBadge.label}
           </Badge>
-          {!["requests", "approval", "purchasing", "gudang"].includes(activeTab) && (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-semibold text-slate-600 border-slate-200 bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hidden md:inline-flex shrink-0"
-            >
-              {MONTH_NAMES[month - 1]} {year}
-            </Badge>
-          )}
         </div>
       </div>
 

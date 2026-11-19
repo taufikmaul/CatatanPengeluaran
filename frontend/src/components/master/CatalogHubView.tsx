@@ -32,30 +32,8 @@ export const CatalogHubView: React.FC<CatalogHubViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Header Hub */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400 border border-purple-200/60 dark:border-purple-900/40">
-            <PackageCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                Katalog &amp; Margin Bisnis
-              </h1>
-              <Badge variant="outline" className="text-[10px] font-semibold text-purple-700 bg-purple-50/60 dark:bg-purple-950/30 dark:text-purple-300 border-purple-200 dark:border-purple-900">
-                Pusat Data Master
-              </Badge>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Kelola master item bahan baku, database resep &amp; HPP kue, direktori supplier, serta aset inventaris
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Sub-Pills Navigation */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800 rounded-2xl overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
         {/* Tab 1: Master Item Bahan */}
         {(isOwner || isPurchasing || isWarehouse) && (
           <Button

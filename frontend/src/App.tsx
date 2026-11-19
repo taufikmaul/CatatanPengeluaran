@@ -1290,39 +1290,6 @@ function MainDashboardApp() {
                     /* 2. Tampilan Desktop Halaman Daftar Transaksi */
                     <React.Suspense fallback={<TabLoadingFallback />}>
                     <div className="space-y-6">
-                      {/* Header Halaman Transaksi */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-11 h-11 rounded-2xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <ReceiptText className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                                Transaksi &amp; Peringkat Belanja
-                              </h2>
-                              <Badge variant="outline" className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40">
-                                {expensesData?.total || 0} Total Transaksi
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              Rincian nota belanja operasional dan analitika peringkat belanja periode {reportData?.month_name || "Bulan Ini"} {year}.
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => {
-                            setEditingExpense(null);
-                            setRepeatingExpense(null);
-                            setIsFormOpen(true);
-                          }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>Catat Pengeluaran Baru</span>
-                        </Button>
-                      </div>
-
                       {/* Leaderboard & Top Stats Section (Top Sering Dibeli, Top Item Termahal, Top Naik Drastis, Top Toko & Mitra, Rata-rata / Hari, Rata-rata / Transaksi, Ragam Item Unik, Transaksi Terbesar) */}
                       <LeaderboardCards
                         topFrequentItems={reportData?.top_frequent_items || []}

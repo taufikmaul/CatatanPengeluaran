@@ -298,43 +298,34 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. Header Banner & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 shadow-xs">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0">
-            <HandCoins className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                Daftar Talangan (Reimbursement)
-              </h2>
-              {summaryData && summaryData.pending_count > 0 && (
-                <Badge
-                  variant="outline"
-                  className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                >
-                  {summaryData.pending_count} Belum Diganti
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Kelola nota talangan tim dan verifikasi penggantian kas toko.
-            </p>
-          </div>
-        </div>
-
+      {/* 1. Compact Action Bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          {onAddNewTalangan && (
-            <Button
-              onClick={onAddNewTalangan}
-              className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold h-10 px-4 gap-2 shadow-xs shrink-0"
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Talangan Tim:
+          </span>
+          {summaryData && summaryData.pending_count > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
             >
-              <Plus className="w-4 h-4" />
-              <span>Catat Talangan Baru</span>
-            </Button>
+              {summaryData.pending_count} Perlu Diganti
+            </Badge>
           )}
         </div>
+
+        {onAddNewTalangan && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              onClick={onAddNewTalangan}
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Talangan Baru</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {!isSettleAllowed && (

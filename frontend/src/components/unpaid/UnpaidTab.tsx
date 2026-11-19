@@ -329,66 +329,55 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* 1. Header Banner & Actions */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
-            <CalendarClock className="w-6 h-6" />
+      {/* 1. Compact Action Bar */}
+      {(onAddNewDp || onAddNewUnpaid) && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Monitoring Tagihan:
+            </span>
+            {activeUnpaidCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] font-semibold text-rose-800 border-rose-300 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
+              >
+                {activeUnpaidCount} Tagihan Aktif
+              </Badge>
+            )}
+            {dpCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-[10px] font-semibold text-amber-800 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
+              >
+                {dpCount} Berstatus DP
+              </Badge>
+            )}
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-                Tagihan Tempo, DP & Pelunasan
-              </h2>
-              {activeUnpaidCount > 0 && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] font-semibold text-rose-800 border-rose-300 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
-                >
-                  {activeUnpaidCount} Aktif
-                </Badge>
-              )}
-              {dpCount > 0 && (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] font-semibold text-amber-800 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-                >
-                  {dpCount} Berstatus DP
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Pantau invoice tempo, uang muka (DP), dan histori termin pelunasan.
-            </p>
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {onAddNewDp && (
-            <Button
-              onClick={onAddNewDp}
-              className="bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-semibold min-h-[44px] sm:min-h-[40px] px-4 gap-2 shadow-xs"
-            >
-              <Percent className="w-4 h-4" />
-              <span>Catat Invoice DP</span>
-            </Button>
-          )}
-          {onAddNewUnpaid && (
-            <Button
-              onClick={onAddNewUnpaid}
-              variant={onAddNewDp ? "outline" : "default"}
-              className={
-                onAddNewDp
-                  ? "border-rose-300 text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-200 rounded-xl text-xs font-semibold min-h-[44px] sm:min-h-[40px] px-4 gap-2"
-                  : "bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold min-h-[44px] sm:min-h-[40px] px-4 gap-2 shadow-xs"
-              }
-            >
-              <Plus className="w-4 h-4" />
-              <span>Catat Tagihan Baru</span>
-            </Button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {onAddNewDp && (
+              <Button
+                onClick={onAddNewDp}
+                size="sm"
+                className="bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs"
+              >
+                <Percent className="w-3.5 h-3.5" />
+                <span>+ Invoice DP</span>
+              </Button>
+            )}
+            {onAddNewUnpaid && (
+              <Button
+                onClick={onAddNewUnpaid}
+                size="sm"
+                className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Tagihan Baru</span>
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Summary Error Banner */}
       {isSummaryError && (
