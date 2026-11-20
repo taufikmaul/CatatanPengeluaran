@@ -13,7 +13,7 @@ from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_account import BankAccount
 from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
-from app.services.sales_import_service import parse_sales_csv
+from app.services.sales_import_service import parse_sales_csv, audit_sales_transactions
 from app.utils.csv_helpers import (
     build_csv_template,
     col_lookup,
@@ -453,7 +453,7 @@ async def api_download_incoming_csv_template():
     return Response(
         content=csv_text.encode("utf-8"),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="template_import_transaksi_masuk.csv"'},
+        headers={"Content-Disposition": 'attachment; filename="Transaction Import.csv"'},
     )
 
 
@@ -672,9 +672,145 @@ async def api_import_incoming_csv(
     update_existing: bool = Form(True),
     db: AsyncSession = Depends(get_db),
 ):
-    """Import banyak transaksi masuk dari file CSV (didukung update jika nomor struk sudah ada)."""
+    """Import banyak transaksi masuk dari file CSV (format Transaction Import.csv maupun POS per-item)."""
     content = await file.read()
     validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+
+    parsed_txs = None
+    try:
+        parsed_res = parse_sales_csv(content)
+        if parsed_res and parsed_res.transactions:
+            parsed_txs = parsed_res.transactions
+    except Exception:
+        parsed_txs = None
+
+    if parsed_txs is not None:
+        acc_res = await db.execute(select(BankAccount))
+        all_accounts = acc_res.scalars().all()
+        acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
+        channel_map, default_acc = await build_channel_account_map(db)
+
+        csv_receipt_nos = [t["receipt_no"] for t in parsed_txs if t.get("receipt_no")]
+        existing_by_receipt: dict[str, IncomingTransaction] = {}
+        if csv_receipt_nos:
+            res = await db.execute(
+                select(IncomingTransaction).where(
+                    IncomingTransaction.receipt_no.in_(csv_receipt_nos)
+                )
+            )
+            for tx in res.scalars().all():
+                if tx.receipt_no:
+                    existing_by_receipt[tx.receipt_no.strip()] = tx
+
+        added = 0
+        updated = 0
+        skipped = 0
+
+        for tx_data in parsed_txs:
+            rno = tx_data.get("receipt_no")
+            ono = tx_data.get("order_no")
+            tx_date = tx_data["transaction_date"]
+            if not tx_date:
+                skipped += 1
+                continue
+
+            order_type = tx_data["order_type"] or "Take Away"
+            pay_method = tx_data["payment_method"] or "Tunai"
+
+            target_acc_raw = (tx_data.get("bank_account_name") or "").strip().lower()
+            if target_acc_raw and target_acc_raw in acc_by_name:
+                acc_id = acc_by_name[target_acc_raw]
+            else:
+                acc_id, _ = resolve_bank_account_for_tx(pay_method, order_type, channel_map, default_acc)
+
+            existing = existing_by_receipt.get(rno) if rno else None
+            if existing:
+                if not update_existing:
+                    skipped += 1
+                    continue
+                existing.transaction_date = tx_date
+                if tx_data.get("transaction_time"):
+                    existing.transaction_time = tx_data["transaction_time"]
+                if ono:
+                    existing.order_no = ono
+                existing.order_type = order_type
+                existing.payment_method = pay_method
+                existing.bank_account_id = acc_id
+                if tx_data.get("customer_name"):
+                    existing.customer_name = tx_data["customer_name"]
+                if tx_data.get("cashier_name"):
+                    existing.cashier_name = tx_data["cashier_name"]
+                existing.gross_sales = tx_data["gross_sales"]
+                existing.discount_amount = tx_data["discount_amount"]
+                existing.net_sales = tx_data["net_sales"]
+                existing.platform_fee = tx_data["platform_fee"]
+                existing.net_received = tx_data["net_received"]
+                existing.cancellation_total = tx_data["cancellation_total"]
+                existing.status = tx_data["status"]
+                if tx_data.get("notes"):
+                    existing.notes = tx_data["notes"]
+                updated += 1
+            else:
+                new_tx = IncomingTransaction(
+                    source_type=tx_data.get("source_type", "pos"),
+                    receipt_no=rno,
+                    order_no=ono,
+                    transaction_date=tx_date,
+                    transaction_time=tx_data.get("transaction_time"),
+                    location_name=tx_data.get("location_name"),
+                    order_type=order_type,
+                    payment_method=pay_method,
+                    bank_account_id=acc_id,
+                    customer_name=tx_data.get("customer_name"),
+                    cashier_name=tx_data.get("cashier_name"),
+                    gross_sales=tx_data["gross_sales"],
+                    discount_amount=tx_data["discount_amount"],
+                    net_sales=tx_data["net_sales"],
+                    platform_fee=tx_data["platform_fee"],
+                    net_received=tx_data["net_received"],
+                    cancellation_total=tx_data["cancellation_total"],
+                    promo_name=tx_data.get("promo_name"),
+                    status=tx_data["status"],
+                    void_at=tx_data.get("void_at"),
+                    notes=tx_data.get("notes"),
+                    items=[
+                        IncomingTransactionItem(
+                            category=it["category"],
+                            product_group=it["product_group"],
+                            product_name=it["product_name"],
+                            sku=it["sku"],
+                            qty=it["qty"],
+                            modifier=it["modifier"],
+                            unit_price=it["unit_price"],
+                            extra_price=it["extra_price"],
+                            gross_amount=it["gross_amount"],
+                            discount_amount=it["discount_amount"],
+                        )
+                        for it in tx_data.get("items", [])
+                    ],
+                )
+                db.add(new_tx)
+                if rno:
+                    existing_by_receipt[rno] = new_tx
+                added += 1
+
+        await db.commit()
+        audit_res = audit_sales_transactions(
+            parsed_txs,
+            existing_receipts=set(existing_by_receipt.keys()),
+            registered_bank_accounts=set(acc_by_name.keys()),
+            skipped_rows=parsed_res.skipped_rows if parsed_res else None,
+        )
+        return {
+            "ok": True,
+            "added": added,
+            "updated": updated,
+            "skipped": skipped,
+            "audit": audit_res,
+            "message": f"Import CSV transaksi selesai: {added} ditambahkan, {updated} diperbarui, {skipped} dilewati."
+            + (f" ({audit_res['warning_count']} catatan audit)" if audit_res["warning_count"] > 0 else ""),
+        }
+
     first_row, data_rows = parse_csv_table(content)
 
     idx_rno = col_lookup(first_row, "receipt_no", "no receipt", "no struk", "receipt", "struk")
@@ -781,7 +917,7 @@ async def api_import_incoming_csv(
             updated += 1
         else:
             new_tx = IncomingTransaction(
-                source_type="manual",
+                source_type="pos",
                 receipt_no=rno,
                 order_no=ono,
                 transaction_date=tx_date,
@@ -1006,6 +1142,9 @@ async def api_preview_sales_import(
 
     receipt_nos = [t["receipt_no"] for t in parsed.transactions if t.get("receipt_no")]
     existing_receipts = await _find_existing_receipts(db, parsed.source_type, receipt_nos)
+    acc_res = await db.execute(select(BankAccount))
+    all_accounts = acc_res.scalars().all()
+    acc_by_name = {a.name.strip().lower(): a for a in all_accounts}
     channel_map, default_acc = await build_channel_account_map(db)
 
     new_paid = []
@@ -1020,9 +1159,15 @@ async def api_preview_sales_import(
             duplicates.append(tx)
             continue
 
-        acc_id, acc_name = resolve_bank_account_for_tx(
-            tx["payment_method"], tx["order_type"], channel_map, default_acc
-        )
+        target_acc_raw = (tx.get("bank_account_name") or "").strip().lower()
+        if target_acc_raw and target_acc_raw in acc_by_name:
+            matched_acc = acc_by_name[target_acc_raw]
+            acc_id = matched_acc.id
+            acc_name = matched_acc.name
+        else:
+            acc_id, acc_name = resolve_bank_account_for_tx(
+                tx["payment_method"], tx["order_type"], channel_map, default_acc
+            )
         tx["bank_account_id"] = acc_id
         tx["bank_account_name"] = acc_name
 
@@ -1057,6 +1202,13 @@ async def api_preview_sales_import(
             }
         )
 
+    audit_res = audit_sales_transactions(
+        parsed.transactions,
+        existing_receipts=existing_receipts,
+        registered_bank_accounts=set(acc_by_name.keys()),
+        skipped_rows=parsed.skipped_rows,
+    )
+
     return {
         "ok": True,
         "preview": {
@@ -1074,6 +1226,7 @@ async def api_preview_sales_import(
             "total_void_amount": sum(t["cancellation_total"] for t in new_void),
             "channel_breakdown": channel_breakdown,
             "sample_rows": preview_rows,
+            "audit": audit_res,
         },
     }
 
@@ -1099,6 +1252,9 @@ async def api_commit_sales_import(
         if skip_duplicates
         else set()
     )
+    acc_res = await db.execute(select(BankAccount))
+    all_accounts = acc_res.scalars().all()
+    acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
     channel_map, default_acc = await build_channel_account_map(db)
 
     inserted_paid = 0
@@ -1113,9 +1269,13 @@ async def api_commit_sales_import(
         if not include_void and tx_data["status"] != "paid":
             continue
 
-        acc_id, _ = resolve_bank_account_for_tx(
-            tx_data["payment_method"], tx_data["order_type"], channel_map, default_acc
-        )
+        target_acc_raw = (tx_data.get("bank_account_name") or "").strip().lower()
+        if target_acc_raw and target_acc_raw in acc_by_name:
+            acc_id = acc_by_name[target_acc_raw]
+        else:
+            acc_id, _ = resolve_bank_account_for_tx(
+                tx_data["payment_method"], tx_data["order_type"], channel_map, default_acc
+            )
 
         tx_model = IncomingTransaction(
             source_type=tx_data["source_type"],
@@ -1165,6 +1325,13 @@ async def api_commit_sales_import(
 
     await db.commit()
 
+    audit_res = audit_sales_transactions(
+        parsed.transactions,
+        existing_receipts=existing_receipts,
+        registered_bank_accounts=set(acc_by_name.keys()),
+        skipped_rows=parsed.skipped_rows,
+    )
+
     return {
         "ok": True,
         "result": {
@@ -1172,5 +1339,11 @@ async def api_commit_sales_import(
             "inserted_void": inserted_void,
             "duplicate_count": duplicate_count,
             "skipped_count": len(parsed.skipped_rows),
+            "audit_summary": {
+                "total_findings": audit_res["total_findings"],
+                "warning_count": audit_res["warning_count"],
+                "error_count": audit_res["error_count"],
+                "info_count": audit_res["info_count"],
+            },
         },
     }

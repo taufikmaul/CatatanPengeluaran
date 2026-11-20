@@ -200,7 +200,7 @@ async def test_incoming_template_and_export_csv(client: AsyncSession, auth_cooki
     text_tpl = res_tpl.text
     assert "No Receipt" in text_tpl
     assert "Penjualan Kotor" in text_tpl
-    assert "template_import_transaksi_masuk.csv" in res_tpl.headers.get("content-disposition", "")
+    assert "Transaction Import.csv" in res_tpl.headers.get("content-disposition", "")
 
     # 2. Export CSV (kosong atau filter aktif)
     res_exp = await client.get("/api/v1/incoming-transactions/export?order_type=all")
@@ -367,3 +367,202 @@ async def test_incoming_bulk_and_csv_import_with_update(client: AsyncSession, au
     res_csv_json = res_csv.json()
     assert res_csv_json["updated"] == 1  # BLK-102 terupdate
     assert res_csv_json["added"] == 1    # CSV-201 tertambah
+
+
+USER_EXACT_TRANSACTION_IMPORT_CSV = """No Receipt,No Order,Tanggal,Jam,Tipe Order,Metode Bayar,Rekening Tujuan,Nama Pelanggan,Nama Kasir,Penjualan Kotor,Diskon,Fee Platform,Status,Catatan
+POS-001,ORD-001,2026-11-20,10:15,Take Away,QRIS,BCA Operasional,Budi Santoso,Kasir 1,150000,0,0,paid,Pembelian offline di kasir
+GF-002,F-3429057006,2026-11-20,12:30,GoFood Integrasi,GoFood Integrasi,GoBiz,Siti Rahma,-,120000,15000,21000,paid,Order via GoFood
+""".encode("utf-8")
+
+
+MODERN_POS_CSV_TANGGAL_JAM = """Nama Lokasi,No Receipt,No Penjualan,Tanggal,Jam,Nama Pelanggan,Nomor Telepon Pelanggan,Jumlah Pelanggan,Tipe Order,Kategori Produk,Grup Produk,Nama Produk,SKU Produk,Qty produk,Pengubah,Kuantitas Tercancel,Alasan pembatalan,Dibatalkan Oleh,Harga,Harga Tambahan,Penjualan Kotor,Total Diskon,Diskon Penjualan,Diskon Produk,Tambahan Biaya,Penjualan Bersih,Service Charge,Pajak Service Charge,Pajak Produk,Total Pajak,Nama Pajak,Biaya Tambahan,Pembulatan,Metode Pengiriman,Biaya Pengiriman,Total,Total Pembatalan,Nama Promo,Poin yang Ditukarkan,Skema Hadiah,Subsidi Promo,Biaya Pembayaran,Bersih Diterima,Jenis Pembayaran,Catatan Pembayaran,Catatan Penyesuaian,Nama Perangkat,Durasi Persiapan,Durasi Penyajian,Nama Kasir,Nama Pelayan,Status,Tanggal Void,Waktu Void,Void Oleh,Catatan Void
+History Cake,RCP-MOD-01,ORD-MOD-01,20/11/2026,10:15:00 WIB,Budi Santoso,,0,Take Away,Cake Ready,,Kue Ulang Tahun,SKU-001,1,,0,-,-,150000,0,150000,0,0,0,0,150000,0,0,0,0,-,0,0,-,,150000,,-,-,-,0,0,150000,QRIS,-,-,DEV01,-,-,Kasir 1,,Dibayar,-,-,,
+History Cake,RCP-MOD-02,F-99887766,20/11/2026,12:30:00 WIB,Siti Rahma,,0,GoFood Integrasi,Cake Ready,,Kue Cokelat,SKU-002,1,,0,-,-,120000,0,120000,15000,15000,0,0,105000,0,0,0,0,-,0,0,-,,105000,,-,-,-,0,21000,84000,GoFood Integrasi,-,-,DEV01,-,-,Kasir 1,,Dibayar,-,-,,
+,,,,,,,,GoFood Integrasi,Minuman,,Kopi Susu,SKU-003,1,,0,-,-,30000,0,30000,0,0,0,0,,,,0,,-,,,,,,,,,,,,,,,-,,-,-,,,,,,,
+""".encode("utf-8")
+
+
+def test_parse_sales_csv_transaction_import_format():
+    from app.services.sales_import_service import parse_sales_csv
+
+    parsed = parse_sales_csv(USER_EXACT_TRANSACTION_IMPORT_CSV)
+    assert len(parsed.transactions) == 2
+    assert parsed.paid_count == 2
+    assert parsed.void_count == 0
+    assert len(parsed.skipped_rows) == 0
+
+    tx1 = parsed.transactions[0]
+    assert tx1["receipt_no"] == "POS-001"
+    assert tx1["order_no"] == "ORD-001"
+    assert tx1["gross_sales"] == 150000.0
+    assert tx1["discount_amount"] == 0.0
+    assert tx1["platform_fee"] == 0.0
+    assert tx1["net_sales"] == 150000.0
+    assert tx1["net_received"] == 150000.0
+    assert tx1["bank_account_name"] == "BCA Operasional"
+    assert tx1["customer_name"] == "Budi Santoso"
+    assert tx1["cashier_name"] == "Kasir 1"
+
+    tx2 = parsed.transactions[1]
+    assert tx2["receipt_no"] == "GF-002"
+    assert tx2["order_no"] == "F-3429057006"
+    assert tx2["gross_sales"] == 120000.0
+    assert tx2["discount_amount"] == 15000.0
+    assert tx2["platform_fee"] == 21000.0
+    assert tx2["net_sales"] == 105000.0
+    assert tx2["net_received"] == 84000.0
+    assert tx2["bank_account_name"] == "GoBiz"
+
+
+def test_parse_sales_csv_modern_pos_tanggal_jam():
+    from app.services.sales_import_service import parse_sales_csv
+
+    parsed = parse_sales_csv(MODERN_POS_CSV_TANGGAL_JAM)
+    assert len(parsed.transactions) == 2
+    assert parsed.paid_count == 2
+    assert parsed.total_items == 3
+    assert len(parsed.skipped_rows) == 0
+
+    tx2 = parsed.transactions[1]
+    assert tx2["receipt_no"] == "RCP-MOD-02"
+    assert len(tx2["items"]) == 2
+    assert tx2["gross_sales"] == 150000.0  # 120k + 30k
+    assert tx2["discount_amount"] == 15000.0
+    assert tx2["platform_fee"] == 21000.0
+
+
+@pytest.mark.asyncio
+async def test_preview_and_commit_user_transaction_import_csv(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # Pastikan BCA Operasional & GoBiz terdaftar
+    await client.post(
+        "/api/v1/bank-accounts",
+        json={
+            "name": "BCA Operasional",
+            "bank_name": "BCA",
+            "opening_balance": 0,
+            "is_default": True,
+        },
+    )
+    await client.post(
+        "/api/v1/bank-accounts",
+        json={
+            "name": "GoBiz",
+            "bank_name": "GoPay / GoBiz",
+            "opening_balance": 0,
+        },
+    )
+
+    # 1. Preview
+    res_prev = await client.post(
+        "/api/v1/incoming-transactions/import/preview",
+        files={"file": ("Transaction Import.csv", USER_EXACT_TRANSACTION_IMPORT_CSV, "text/csv")},
+        data={"source_type": "auto"},
+    )
+    assert res_prev.status_code == 200
+    prev = res_prev.json()["preview"]
+    assert prev["new_paid_count"] == 2
+    assert prev["total_gross_sales"] == 270000.0
+    assert prev["total_discount"] == 15000.0
+    assert prev["total_platform_fee"] == 21000.0
+    assert prev["total_net_received"] == 234000.0
+
+    # 2. Commit
+    res_commit = await client.post(
+        "/api/v1/incoming-transactions/import/commit",
+        files={"file": ("Transaction Import.csv", USER_EXACT_TRANSACTION_IMPORT_CSV, "text/csv")},
+        data={"source_type": "auto", "skip_duplicates": "true"},
+    )
+    assert res_commit.status_code == 200
+    assert res_commit.json()["result"]["inserted_paid"] == 2
+
+    # 3. Verify in list
+    res_list = await client.get("/api/v1/incoming-transactions")
+    assert res_list.status_code == 200
+    txs = {t["receipt_no"]: t for t in res_list.json()["transactions"]}
+    assert "POS-001" in txs
+    assert txs["POS-001"]["bank_account_name"] == "BCA Operasional"
+    assert "GF-002" in txs
+    assert txs["GF-002"]["bank_account_name"] == "GoBiz"
+
+
+@pytest.mark.asyncio
+async def test_import_csv_endpoint_supports_user_format_and_pos(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # Import via /import-csv using user template format
+    res_import = await client.post(
+        "/api/v1/incoming-transactions/import-csv",
+        files={"file": ("Transaction Import.csv", USER_EXACT_TRANSACTION_IMPORT_CSV, "text/csv")},
+        data={"update_existing": "true"},
+    )
+    assert res_import.status_code == 200
+    assert res_import.json()["ok"] is True
+    # If they were already committed above, they would be updated; if new, added
+    assert res_import.json()["added"] + res_import.json()["updated"] == 2
+
+
+ANOMALOUS_SALES_CSV = """No Receipt,No Order,Tanggal,Jam,Tipe Order,Metode Bayar,Rekening Tujuan,Nama Pelanggan,Nama Kasir,Penjualan Kotor,Diskon,Fee Platform,Status,Catatan
+ANOM-01,ORD-A1,2026-11-20,10:00,Dine In,QRIS,BCA Operasional,Budi,Kasir 1,100000,0,0,paid,Normal
+ANOM-02,ORD-A2,2099-01-01,11:00,Dine In,Tunai,BCA Operasional,Andi,Kasir 1,50000,0,0,paid,Tanggal masa depan
+ANOM-03,ORD-A3,2026-11-20,12:00,Dine In,Debit,BCA Operasional,Cici,Kasir 1,50000,80000,0,paid,Diskon melebihi kotor
+ANOM-04,ORD-A4,2026-11-20,13:00,GoFood,GoFood,Rekening Gaib,Dodi,Kasir 1,75000,0,15000,paid,Rekening tidak terdaftar
+ANOM-01,ORD-A5,2026-11-20,14:00,Dine In,Tunai,BCA Operasional,Eka,Kasir 1,60000,0,0,paid,Duplikat receipt dalam satu file
+ANOM-ERR,ORD-A6,,15:00,Dine In,Tunai,BCA Operasional,Fani,Kasir 1,40000,0,0,paid,Tanggal kosong
+"""
+
+
+@pytest.mark.asyncio
+async def test_sales_import_audit_and_verification(client: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+
+    # Pastikan BCA Operasional terdaftar
+    await client.post(
+        "/api/v1/bank-accounts",
+        json={
+            "name": "BCA Operasional",
+            "bank_name": "BCA",
+            "opening_balance": 0,
+            "is_default": True,
+        },
+    )
+
+    # 1. Preview dengan data anomali (termasuk error tanggal kosong)
+    res_prev = await client.post(
+        "/api/v1/incoming-transactions/import/preview",
+        files={"file": ("Transaction Import.csv", ANOMALOUS_SALES_CSV, "text/csv")},
+        data={"source_type": "auto"},
+    )
+    assert res_prev.status_code == 200
+    prev = res_prev.json()["preview"]
+    assert "audit" in prev
+    audit = prev["audit"]
+    assert audit["total_findings"] >= 5
+    assert audit["has_blocking_errors"] is True
+    assert audit["error_count"] >= 1  # Tanggal kosong
+    assert audit["warning_count"] >= 4  # Tanggal masa depan, diskon > kotor, rekening gaib, receipt duplikat
+
+    cats = {f["category"] for f in audit["findings"]}
+    assert "missing_field" in cats
+    assert "date_anomaly" in cats
+    assert "financial_anomaly" in cats
+    assert "account_mapping" in cats
+    assert "duplicate" in cats
+
+    # 2. Preview data bersih (hanya baris normal)
+    clean_csv = """No Receipt,No Order,Tanggal,Jam,Tipe Order,Metode Bayar,Rekening Tujuan,Nama Pelanggan,Nama Kasir,Penjualan Kotor,Diskon,Fee Platform,Status,Catatan
+CLN-01,ORD-C1,2026-11-20,10:00,Dine In,QRIS,BCA Operasional,Budi,Kasir 1,100000,0,0,paid,Normal
+"""
+    res_clean = await client.post(
+        "/api/v1/incoming-transactions/import/preview",
+        files={"file": ("Transaction Import.csv", clean_csv, "text/csv")},
+        data={"source_type": "auto"},
+    )
+    assert res_clean.status_code == 200
+    audit_clean = res_clean.json()["preview"]["audit"]
+    assert audit_clean["total_findings"] == 0
+    assert audit_clean["has_blocking_errors"] is False
+    assert audit_clean["error_count"] == 0
+    assert audit_clean["warning_count"] == 0
+

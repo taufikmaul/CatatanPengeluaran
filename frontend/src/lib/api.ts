@@ -19,6 +19,7 @@ import {
   ReimbursementSummaryResponse,
   UnpaidSummaryResponse,
   DailyCashflowResponse,
+  SalesImportAuditSummary,
 } from "@/types";
 
 export const api = axios.create({
@@ -1366,7 +1367,7 @@ export async function bulkCreateMenus(
 export async function downloadIncomingTxTemplateCsv(): Promise<void> {
   return triggerCsvDownload(
     "/incoming-transactions/template-csv",
-    "template_import_transaksi_masuk.csv"
+    "Transaction Import.csv"
   );
 }
 
@@ -1410,7 +1411,14 @@ export async function bulkCreateIncomingTransactions(
 export async function importIncomingTransactionsCsv(
   file: File,
   updateExisting = true
-): Promise<{ ok: boolean; added: number; updated: number; skipped: number; message: string }> {
+): Promise<{
+  ok: boolean;
+  added: number;
+  updated: number;
+  skipped: number;
+  message: string;
+  audit?: SalesImportAuditSummary;
+}> {
   const form = new FormData();
   form.append("file", file);
   form.append("update_existing", String(updateExisting));

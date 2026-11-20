@@ -148,7 +148,17 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
-      toast.success(res.message || "Import CSV selesai");
+      if (res.audit && res.audit.warning_count > 0) {
+        toast.warning(
+          res.message || `Import CSV selesai dengan ${res.audit.warning_count} catatan audit`,
+          {
+            description:
+              "Ditemukan transaksi dengan potensi anomali nominal, tanggal, atau rekening belum terdaftar.",
+          }
+        );
+      } else {
+        toast.success(res.message || "Import CSV selesai");
+      }
       setCsvTemplateOpen(false);
     },
     onError: (err: any) => {

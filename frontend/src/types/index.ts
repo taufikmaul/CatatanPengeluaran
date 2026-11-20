@@ -1325,6 +1325,23 @@ export interface IncomingTransactionsSummary {
   cancellation_total: number;
 }
 
+export interface SalesAuditFinding {
+  level: "error" | "warning" | "info";
+  category: "missing_field" | "financial_anomaly" | "date_anomaly" | "account_mapping" | "duplicate";
+  message: string;
+  receipt_no?: string | null;
+  field?: string | null;
+}
+
+export interface SalesImportAuditSummary {
+  total_findings: number;
+  error_count: number;
+  warning_count: number;
+  info_count: number;
+  has_blocking_errors: boolean;
+  findings: SalesAuditFinding[];
+}
+
 export interface SalesImportPreview {
   source_type: string;
   total_transactions: number;
@@ -1357,6 +1374,7 @@ export interface SalesImportPreview {
     status: string;
     item_count: number;
   }>;
+  audit?: SalesImportAuditSummary;
 }
 
 export interface MenuIngredient {

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { SalesImportPreview } from "@/types";
-import { previewSalesImport, commitSalesImport } from "@/lib/api";
+import { previewSalesImport, commitSalesImport, downloadIncomingTxTemplateCsv } from "@/lib/api";
 import { formatRupiah } from "@/lib/formatters";
 import {
   Dialog,
@@ -12,7 +12,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  Upload,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  Download,
+  ShieldCheck,
+  ShieldAlert,
+  AlertCircle,
+  Info,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 interface SalesImportModalProps {
   isOpen: boolean;
@@ -32,10 +45,12 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [preview, setPreview] = useState<SalesImportPreview | null>(null);
+  const [showAuditDetails, setShowAuditDetails] = useState(false);
 
   const handleReset = () => {
     setFile(null);
     setPreview(null);
+    setShowAuditDetails(false);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,6 +117,29 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-100 flex items-center justify-between gap-3 text-xs text-blue-900">
+            <span>
+              Mendukung format <strong>Transaction Import.csv</strong> maupun ekspor laporan langsung dari POS (Moka, Olsera) tanpa perlu penyesuaian manual.
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await downloadIncomingTxTemplateCsv();
+                  toast.success("Template Transaction Import.csv berhasil diunduh.");
+                } catch {
+                  toast.error("Gagal mengunduh template CSV.");
+                }
+              }}
+              className="shrink-0 h-7 text-xs bg-white text-blue-700 hover:bg-blue-50 border-blue-200 gap-1.5 shadow-2xs"
+            >
+              <Download className="w-3 h-3 text-blue-600" />
+              Unduh Template
+            </Button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-slate-700 block mb-1">
@@ -116,8 +154,8 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
                   if (file) runPreview(file, next);
                 }}
               >
-                <option value="auto">Auto-detect (POS History CSV)</option>
-                <option value="pos">POS (Take Away, GoFood, GrabFood, ShopeeFood)</option>
+                <option value="auto">Auto-detect (POS / Transaction Import.csv)</option>
+                <option value="pos">POS / Transaction Import (Multi-channel &amp; Rekening)</option>
                 <option value="gofood">GoFood</option>
                 <option value="grabfood">GrabFood</option>
                 <option value="shopeefood">ShopeeFood</option>
@@ -187,6 +225,135 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
                   <div className="text-[11px] text-slate-400">Otomatis dilewati</div>
                 </div>
               </div>
+
+              {/* Audit & Verifikasi Data */}
+              {preview.audit && (
+                <>
+                  {preview.audit.total_findings === 0 ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        <strong>Verifikasi Audit:</strong> Lolos pengecekan integritas data (0 anomali/kejanggalan).
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      className={`rounded-lg border p-3 ${
+                        preview.audit.has_blocking_errors
+                          ? "bg-rose-50/70 border-rose-200 text-rose-950"
+                          : "bg-amber-50/70 border-amber-200 text-amber-950"
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-start sm:items-center gap-2">
+                          {preview.audit.has_blocking_errors ? (
+                            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                          )}
+                          <div>
+                            <div className="text-xs font-semibold flex items-center gap-1.5">
+                              <span>Audit &amp; Verifikasi Integritas Data</span>
+                              <span className="text-[11px] font-normal text-slate-600">
+                                ({preview.audit.total_findings} catatan temuan)
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-600">
+                              {preview.audit.has_blocking_errors
+                                ? "Terdapat error kritis yang harus diperbaiki sebelum transaksi dapat disimpan."
+                                : "Terdapat data anomali atau rekening yang belum terdaftar. Harap tinjau catatan berikut."}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {preview.audit.error_count > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="bg-rose-100 text-rose-800 border-rose-300 text-[10px] px-1.5 py-0"
+                            >
+                              {preview.audit.error_count} Error
+                            </Badge>
+                          )}
+                          {preview.audit.warning_count > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-100 text-amber-800 border-amber-300 text-[10px] px-1.5 py-0"
+                            >
+                              {preview.audit.warning_count} Peringatan
+                            </Badge>
+                          )}
+                          {preview.audit.info_count > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="bg-blue-100 text-blue-800 border-blue-300 text-[10px] px-1.5 py-0"
+                            >
+                              {preview.audit.info_count} Info
+                            </Badge>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowAuditDetails(!showAuditDetails)}
+                            className="h-6 px-2 text-[11px] text-slate-700 hover:text-slate-900 hover:bg-black/5 gap-1"
+                          >
+                            {showAuditDetails ? "Tutup Rincian" : "Lihat Rincian"}
+                            {showAuditDetails ? (
+                              <ChevronUp className="w-3 h-3" />
+                            ) : (
+                              <ChevronDown className="w-3 h-3" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {showAuditDetails && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-200/80 max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                          {preview.audit.findings.map((finding, idx) => {
+                            const isErr = finding.level === "error";
+                            const isWarn = finding.level === "warning";
+                            const badgeStyle = isErr
+                              ? "bg-rose-100 text-rose-800 border-rose-200"
+                              : isWarn
+                              ? "bg-amber-100 text-amber-800 border-amber-200"
+                              : "bg-blue-100 text-blue-800 border-blue-200";
+
+                            const categoryMap: Record<string, string> = {
+                              missing_field: "Data Kosong",
+                              financial_anomaly: "Anomali Finansial",
+                              date_anomaly: "Anomali Tanggal",
+                              account_mapping: "Rekening Tujuan",
+                              duplicate: "Duplikasi",
+                            };
+
+                            return (
+                              <div
+                                key={idx}
+                                className="flex items-start gap-2 bg-white/90 rounded border border-slate-200 p-2 text-xs text-slate-800"
+                              >
+                                <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${badgeStyle}`}
+                                  >
+                                    {isErr ? "Error" : isWarn ? "Peringatan" : "Info"}
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">
+                                    {categoryMap[finding.category] || finding.category}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0 leading-relaxed">
+                                  {finding.message}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
 
               {Object.keys(preview.channel_breakdown).length > 0 && (
                 <div className="rounded-lg border border-slate-200 p-3">
@@ -304,27 +471,43 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Tutup
-          </Button>
-          <Button
-            disabled={
-              !preview ||
-              isCommitting ||
-              (preview.new_paid_count === 0 && (!includeVoid || preview.new_void_count === 0))
-            }
-            onClick={handleCommit}
-            className="gap-1.5"
-          >
-            {isCommitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="w-4 h-4" />
-            )}
-            Simpan {preview ? preview.new_paid_count + (includeVoid ? preview.new_void_count : 0) : 0}{" "}
-            Transaksi
-          </Button>
+        <DialogFooter className="flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+          <div className="text-[11px] text-slate-500">
+            {preview?.audit?.has_blocking_errors ? (
+              <span className="text-rose-600 font-medium flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                Perbaiki error kritis di atas sebelum menyimpan data.
+              </span>
+            ) : preview?.audit && preview.audit.warning_count > 0 ? (
+              <span className="text-amber-700 flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {preview.audit.warning_count} catatan peringatan audit terdeteksi.
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <Button variant="outline" onClick={onClose}>
+              Tutup
+            </Button>
+            <Button
+              disabled={
+                !preview ||
+                isCommitting ||
+                Boolean(preview.audit?.has_blocking_errors) ||
+                (preview.new_paid_count === 0 && (!includeVoid || preview.new_void_count === 0))
+              }
+              onClick={handleCommit}
+              className="gap-1.5"
+            >
+              {isCommitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )}
+              Simpan {preview ? preview.new_paid_count + (includeVoid ? preview.new_void_count : 0) : 0}{" "}
+              Transaksi
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

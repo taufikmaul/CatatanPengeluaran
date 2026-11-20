@@ -112,8 +112,18 @@ class ParsedSalesResult:
 def _find_pos_header_index(rows: list[list[str]]) -> int:
     for idx, row in enumerate(rows[:40]):
         normalized = {cell.strip().lower() for cell in row if cell and cell.strip()}
-        if "no receipt" in normalized and (
-            "no penjualan" in normalized or "tanggal penjualan" in normalized
+        if "no receipt" in normalized and any(
+            k in normalized
+            for k in (
+                "no penjualan",
+                "no order",
+                "order id",
+                "tanggal penjualan",
+                "tanggal",
+                "tanggal transaksi",
+                "penjualan kotor",
+                "gross sales",
+            )
         ):
             return idx
     return -1
@@ -121,11 +131,14 @@ def _find_pos_header_index(rows: list[list[str]]) -> int:
 
 def parse_pos_csv(content: bytes) -> ParsedSalesResult:
     """
-    Parser khusus laporan ekspor POS (mode Per Item):
-    - Melewati baris metadata (baris 1-11) hingga menemukan header `No Receipt`
+    Parser laporan penjualan:
+    1. Format Template Transaksi Masuk (Transaction Import.csv: per-transaksi)
+    2. Format Laporan Ekspor POS Moka / Olsera (mode Per Item multi-baris)
+    - Melewati baris metadata hingga menemukan header `No Receipt`
     - Melewati baris `TOTAL` di akhir laporan
-    - Menggabungkan baris child item (yang `No Receipt`-nya kosong) ke transaksi parent
-    - Memisahkan transaksi `Dibayar` vs `Void`
+    - Menggabungkan baris child item ke transaksi parent jika ada kolom produk
+    - Mendukung format 'Tanggal' & 'Jam' maupun 'Tanggal Penjualan' & 'Waktu Penjualan'
+    - Memisahkan status transaksi `Dibayar` / `Paid` vs `Void` / `Cancelled`
     """
     text = _decode_csv_bytes(content)
     lines = text.splitlines()
@@ -136,7 +149,7 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
     header_idx = _find_pos_header_index(rows)
     if header_idx < 0:
         raise ValueError(
-            "Header laporan POS tidak ditemukan. Pastikan file memiliki kolom 'No Receipt' dan 'Tanggal Penjualan'."
+            "Header laporan tidak ditemukan. Pastikan file memiliki kolom 'No Receipt' dan 'Tanggal' (format Transaction Import / POS)."
         )
 
     headers = [h.strip() for h in rows[header_idx]]
@@ -148,6 +161,10 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             if i is not None and i < len(row):
                 return row[i].strip()
         return ""
+
+    has_product_col = any(
+        k in col_idx for k in ("nama produk", "kategori produk", "sku produk")
+    )
 
     result = ParsedSalesResult(source_type="pos")
     current_tx: dict[str, Any] | None = None
@@ -161,11 +178,16 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             continue
 
         result.total_raw_rows += 1
-        receipt_no = get_val(row, "No Receipt")
-        order_no = get_val(row, "No Penjualan")
+        receipt_no = get_val(row, "No Receipt", "No Struk", "Receipt", "Struk")
+        order_no = get_val(row, "No Penjualan", "No Order", "Order ID", "No Pesanan")
 
-        if receipt_no:
-            tx_date = _parse_date_id(get_val(row, "Tanggal Penjualan"))
+        if receipt_no or not has_product_col:
+            if not receipt_no:
+                continue
+
+            tx_date = _parse_date_id(
+                get_val(row, "Tanggal Penjualan", "Tanggal", "Tanggal Transaksi", "Date", "Tgl")
+            )
             if not tx_date:
                 result.skipped_rows.append(
                     {"row": row_num, "receipt_no": receipt_no, "reason": "Tanggal penjualan tidak valid"}
@@ -173,66 +195,96 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
                 current_tx = None
                 continue
 
-            raw_status = get_val(row, "Status").lower()
+            raw_status = get_val(row, "Status", "Status Transaksi").lower()
             void_date = _clean_str(get_val(row, "Tanggal Void"))
             void_time = _clean_time(get_val(row, "Waktu Void"))
-            if raw_status == "void" or void_date:
+            if raw_status in ("void", "dibatalkan") or void_date:
                 tx_status = "void"
             elif raw_status in ("batal", "cancelled", "cancel"):
                 tx_status = "cancelled"
             else:
                 tx_status = "paid"
 
-            order_type = _clean_str(get_val(row, "Tipe Order")) or "Lainnya"
-            payment_method = _clean_str(get_val(row, "Jenis Pembayaran")) or order_type
-            net_sales = _parse_number(get_val(row, "Penjualan Bersih"))
-            platform_fee = _parse_number(get_val(row, "Biaya Pembayaran"))
-            net_received = _parse_number(get_val(row, "Bersih Diterima"))
-            cancellation_total = _parse_number(get_val(row, "Total Pembatalan"))
+            order_type = _clean_str(get_val(row, "Tipe Order", "Channel", "Saluran")) or "Take Away"
+            payment_method = (
+                _clean_str(get_val(row, "Jenis Pembayaran", "Metode Bayar", "Metode Pembayaran", "Payment"))
+                or order_type
+            )
 
+            raw_gross = _parse_number(get_val(row, "Penjualan Kotor", "Gross Sales", "Total Kotor", "Gross"))
+            raw_disc = _parse_number(get_val(row, "Total Diskon", "Diskon", "Discount", "Diskon Penjualan"))
+            platform_fee = _parse_number(
+                get_val(row, "Biaya Pembayaran", "Fee Platform", "Biaya Platform", "Platform Fee", "Komisi")
+            )
+
+            net_sales_raw = get_val(row, "Penjualan Bersih", "Net Sales")
+            if net_sales_raw:
+                net_sales = _parse_number(net_sales_raw)
+            else:
+                net_sales = max(0.0, raw_gross - raw_disc) if tx_status == "paid" else 0.0
+
+            net_rec_raw = get_val(row, "Bersih Diterima", "Net Received")
+            if net_rec_raw:
+                net_received = _parse_number(net_rec_raw)
+            else:
+                net_received = max(0.0, net_sales - platform_fee) if tx_status == "paid" else 0.0
+
+            cancellation_total = _parse_number(get_val(row, "Total Pembatalan"))
             if tx_status != "paid":
                 net_received = 0.0
                 if cancellation_total == 0.0 and net_sales > 0:
                     cancellation_total = net_sales
+                elif cancellation_total == 0.0 and raw_gross > 0:
+                    cancellation_total = max(0.0, raw_gross - raw_disc)
+
+            bank_account_name = _clean_str(
+                get_val(row, "Rekening Tujuan", "Rekening", "Nama Rekening", "Bank Account")
+            )
+            notes = _clean_str(
+                get_val(row, "Catatan Pembayaran", "Catatan Penyesuaian", "Catatan", "Notes", "Keterangan")
+            )
+            void_str = f"{void_date or ''} {void_time or ''}".strip() or None
 
             current_tx = {
                 "source_type": "pos",
                 "receipt_no": receipt_no,
                 "order_no": _clean_str(order_no),
                 "transaction_date": tx_date,
-                "transaction_time": _clean_time(get_val(row, "Waktu Penjualan")),
+                "transaction_time": _clean_time(get_val(row, "Waktu Penjualan", "Jam", "Waktu", "Time")),
                 "location_name": _clean_str(get_val(row, "Nama Lokasi")),
                 "order_type": order_type,
                 "payment_method": payment_method,
-                "customer_name": _clean_str(get_val(row, "Nama Pelanggan")),
-                "cashier_name": _clean_str(get_val(row, "Nama Kasir")),
-                "gross_sales": 0.0,
-                "discount_amount": 0.0,
+                "bank_account_name": bank_account_name,
+                "raw_bank_account_name": bank_account_name,
+                "customer_name": _clean_str(get_val(row, "Nama Pelanggan", "Customer")),
+                "cashier_name": _clean_str(get_val(row, "Nama Kasir", "Cashier")),
+                "gross_sales": raw_gross if not has_product_col else 0.0,
+                "discount_amount": raw_disc if not has_product_col else 0.0,
                 "net_sales": net_sales,
                 "platform_fee": platform_fee,
                 "net_received": net_received,
                 "cancellation_total": cancellation_total,
                 "promo_name": _clean_str(get_val(row, "Nama Promo")),
                 "status": tx_status,
-                "void_at": f"{void_date or ''} {void_time or ''}".strip() or None,
-                "notes": _clean_str(get_val(row, "Catatan Pembayaran", "Catatan Penyesuaian")),
+                "void_at": void_str,
+                "notes": notes,
                 "items": [],
             }
             result.transactions.append(current_tx)
 
         # Tambahkan item (baik untuk baris parent maupun child rows)
-        product_name = _clean_str(get_val(row, "Nama Produk"))
+        product_name = _clean_str(get_val(row, "Nama Produk", "Product Name", "Produk"))
         if current_tx is not None and product_name:
-            item_gross = _parse_number(get_val(row, "Penjualan Kotor"))
-            item_discount = _parse_number(get_val(row, "Total Diskon"))
+            item_gross = _parse_number(get_val(row, "Penjualan Kotor", "Harga Subtotal"))
+            item_discount = _parse_number(get_val(row, "Total Diskon", "Diskon Produk", "Diskon"))
             item = {
-                "category": _clean_str(get_val(row, "Kategori Produk")),
+                "category": _clean_str(get_val(row, "Kategori Produk", "Kategori")),
                 "product_group": _clean_str(get_val(row, "Grup Produk")),
                 "product_name": product_name,
-                "sku": _clean_str(get_val(row, "SKU Produk")),
-                "qty": _parse_number(get_val(row, "Qty produk")) or 1.0,
-                "modifier": _clean_str(get_val(row, "Pengubah")),
-                "unit_price": _parse_number(get_val(row, "Harga")),
+                "sku": _clean_str(get_val(row, "SKU Produk", "SKU")),
+                "qty": _parse_number(get_val(row, "Qty produk", "Qty", "Jumlah")) or 1.0,
+                "modifier": _clean_str(get_val(row, "Pengubah", "Modifier")),
+                "unit_price": _parse_number(get_val(row, "Harga", "Harga Satuan")),
                 "extra_price": _parse_number(get_val(row, "Harga Tambahan")),
                 "gross_amount": item_gross,
                 "discount_amount": item_discount,
@@ -265,3 +317,224 @@ def parse_sales_csv(content: bytes, source_type: str = "auto") -> ParsedSalesRes
                 "atau lampirkan contoh CSV portal untuk ditambahkan mapping-nya."
             )
     raise ValueError(f"Sumber laporan tidak dikenal: {source_type}")
+
+
+def audit_sales_transactions(
+    transactions: list[dict[str, Any]],
+    existing_receipts: set[str] | None = None,
+    registered_bank_accounts: set[str] | None = None,
+    skipped_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Verifikasi & audit data anomali atau data kurang sebelum import transaksi masuk.
+    Mendeteksi:
+    1. Kelengkapan: baris dilewati (tanggal/kolom kosong), struk tanpa nomor, order_type/metode bayar kosong.
+    2. Tanggal Anomali: tanggal di masa depan atau terlalu lampau (>2 tahun).
+    3. Anomali Finansial:
+       - Status paid tapi penjualan kotor Rp 0 / minus
+       - Diskon lebih besar dari penjualan kotor
+       - Fee platform lebih besar dari penjualan bersih
+       - Penjualan kotor sangat tinggi (> Rp 15 juta per struk, warning potensi typo 0)
+       - Selisih total kotor struk vs jumlahan item produk
+    4. Rekening Tujuan: rekening tujuan belum terpetakan atau nama rekening tidak dikenal.
+    5. Duplikasi: nomor struk duplikat di dalam file impor atau sudah terdaftar di database.
+    """
+    from datetime import timedelta
+
+    findings: list[dict[str, Any]] = []
+
+    # 0. Baris yang dilewati saat parse (format rusak / tanggal kosong)
+    if skipped_rows:
+        for s in skipped_rows:
+            srno = s.get("receipt_no")
+            row_num = s.get("row")
+            reason = s.get("reason") or "Format data tidak valid"
+            findings.append({
+                "level": "error",
+                "category": "missing_field",
+                "receipt_no": srno,
+                "message": f"Baris #{row_num}" + (f" (Struk '{srno}')" if srno else "") + f": Dilewati karena {reason}.",
+            })
+    receipt_counts: dict[str, int] = {}
+    for tx in transactions:
+        rno = (tx.get("receipt_no") or "").strip()
+        if rno:
+            receipt_counts[rno] = receipt_counts.get(rno, 0) + 1
+
+    seen_internal_duplicates: set[str] = set()
+    today = date.today()
+
+    for idx, tx in enumerate(transactions, start=1):
+        rno = (tx.get("receipt_no") or "").strip() or None
+
+        # 1. Duplikasi internal dalam file
+        if rno and receipt_counts.get(rno, 0) > 1 and rno not in seen_internal_duplicates:
+            seen_internal_duplicates.add(rno)
+            findings.append({
+                "level": "warning",
+                "category": "duplicate",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}' muncul {receipt_counts[rno]} kali dalam file ini.",
+            })
+
+        # 2. Duplikasi data yang sudah ada di database
+        if existing_receipts and rno and rno in existing_receipts:
+            findings.append({
+                "level": "info",
+                "category": "duplicate",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}' sudah terdaftar di database (akan dilewati jika skip duplicate aktif).",
+            })
+
+        # 3. Kelengkapan data dasar
+        if not rno:
+            findings.append({
+                "level": "warning",
+                "category": "missing_field",
+                "receipt_no": None,
+                "message": f"Baris #{idx}: Nomor receipt/struk kosong.",
+            })
+
+        tx_date = tx.get("transaction_date")
+        if not tx_date:
+            findings.append({
+                "level": "error",
+                "category": "missing_field",
+                "receipt_no": rno,
+                "message": f"Struk '{rno or f'#{idx}'}': Tanggal transaksi tidak valid atau kosong.",
+            })
+        elif isinstance(tx_date, date):
+            if tx_date > today:
+                findings.append({
+                    "level": "warning",
+                    "category": "date_anomaly",
+                    "receipt_no": rno,
+                    "message": f"Struk '{rno}': Tanggal transaksi ({tx_date.isoformat()}) berada di masa depan.",
+                })
+            elif tx_date < today - timedelta(days=365 * 2):
+                findings.append({
+                    "level": "info",
+                    "category": "date_anomaly",
+                    "receipt_no": rno,
+                    "message": f"Struk '{rno}': Tanggal transaksi ({tx_date.isoformat()}) lebih dari 2 tahun lalu.",
+                })
+
+        order_type = (tx.get("order_type") or "").strip()
+        pay_method = (tx.get("payment_method") or "").strip()
+        if not order_type:
+            findings.append({
+                "level": "warning",
+                "category": "missing_field",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Tipe order kosong.",
+            })
+        if not pay_method:
+            findings.append({
+                "level": "warning",
+                "category": "missing_field",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Metode pembayaran kosong.",
+            })
+
+        # 4. Anomali finansial
+        gross = float(tx.get("gross_sales") or 0.0)
+        disc = float(tx.get("discount_amount") or 0.0)
+        fee = float(tx.get("platform_fee") or 0.0)
+        net_s = float(tx.get("net_sales") or 0.0)
+        st = (tx.get("status") or "paid").lower()
+
+        if st == "paid" and gross <= 0:
+            findings.append({
+                "level": "warning",
+                "category": "financial_anomaly",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Status Dibayar tetapi Penjualan Kotor Rp {gross:,.0f}.",
+            })
+        if disc > gross and gross > 0:
+            findings.append({
+                "level": "warning",
+                "category": "financial_anomaly",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Diskon (Rp {disc:,.0f}) lebih besar dari Penjualan Kotor (Rp {gross:,.0f}).",
+            })
+        if fee > net_s and net_s > 0:
+            findings.append({
+                "level": "warning",
+                "category": "financial_anomaly",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Fee platform (Rp {fee:,.0f}) melebihi Penjualan Bersih (Rp {net_s:,.0f}).",
+            })
+        if gross > 15_000_000:
+            findings.append({
+                "level": "info",
+                "category": "financial_anomaly",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Penjualan kotor tinggi (Rp {gross:,.0f}), periksa potensi typo digit 0.",
+            })
+
+        # 5. Rekening tujuan
+        raw_acc = (tx.get("raw_bank_account_name") or "").strip()
+        acc_name = (tx.get("bank_account_name") or "").strip()
+        acc_id = tx.get("bank_account_id")
+
+        if raw_acc and registered_bank_accounts and raw_acc.lower() not in registered_bank_accounts:
+            findings.append({
+                "level": "warning",
+                "category": "account_mapping",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Rekening tujuan '{raw_acc}' tidak terdaftar di sistem Rekening Setup.",
+            })
+        elif not raw_acc and not acc_name and not acc_id:
+            findings.append({
+                "level": "warning",
+                "category": "account_mapping",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Rekening tujuan belum terpetakan untuk metode bayar '{pay_method}'.",
+            })
+        elif not raw_acc and registered_bank_accounts and acc_name and acc_name.lower() not in registered_bank_accounts:
+            findings.append({
+                "level": "warning",
+                "category": "account_mapping",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Rekening tujuan '{acc_name}' tidak terdaftar di sistem Rekening Setup.",
+            })
+
+        # 6. Online fee checks
+        is_online = any(k in order_type.lower() for k in ("gofood", "grabfood", "shopeefood", "marketplace"))
+        if is_online and st == "paid" and gross > 0 and fee == 0:
+            findings.append({
+                "level": "info",
+                "category": "financial_anomaly",
+                "receipt_no": rno,
+                "message": f"Struk '{rno}': Pesanan online '{order_type}' tetapi Fee Platform tercatat Rp 0.",
+            })
+
+        # 7. Item check
+        items = tx.get("items", [])
+        if items:
+            items_gross = sum(float(it.get("gross_amount") or 0.0) for it in items)
+            if abs(gross - items_gross) > 1000:
+                findings.append({
+                    "level": "warning",
+                    "category": "financial_anomaly",
+                    "receipt_no": rno,
+                    "message": f"Struk '{rno}': Terdapat selisih Rp {abs(gross - items_gross):,.0f} antara total struk vs rincian item.",
+                })
+            for it in items:
+                qty = float(it.get("qty") or 0.0)
+                if qty <= 0:
+                    findings.append({
+                        "level": "warning",
+                        "category": "missing_field",
+                        "receipt_no": rno,
+                        "message": f"Struk '{rno}': Item '{it.get('product_name')}' memiliki kuantitas {qty}.",
+                    })
+
+    return {
+        "total_findings": len(findings),
+        "error_count": sum(1 for f in findings if f["level"] == "error"),
+        "warning_count": sum(1 for f in findings if f["level"] == "warning"),
+        "info_count": sum(1 for f in findings if f["level"] == "info"),
+        "has_blocking_errors": any(f["level"] == "error" for f in findings),
+        "findings": findings,
+    }
