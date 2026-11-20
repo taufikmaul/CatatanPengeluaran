@@ -308,6 +308,7 @@ class ExpenseLogResponse(BaseModel):
 class MonthlyReportResponse(BaseModel):
     ok: bool = True
     month: int
+    month_end: int | None = None
     year: int
     month_name: str
     total_lunas: float
@@ -474,6 +475,7 @@ class AccountingAnalysis(BaseModel):
 class AccountingReportResponse(BaseModel):
     ok: bool = True
     month: int
+    month_end: int | None = None
     year: int
     month_name: str
     prev_month_name: str

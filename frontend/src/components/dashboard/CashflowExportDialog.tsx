@@ -17,6 +17,7 @@ export interface CashflowExportDialogProps {
   isOpen: boolean;
   onClose: () => void;
   initialMonth?: number;
+  initialMonthEnd?: number;
   initialYear?: number;
 }
 
@@ -39,14 +40,22 @@ export const CashflowExportDialog: React.FC<CashflowExportDialogProps> = ({
   isOpen,
   onClose,
   initialMonth,
+  initialMonthEnd,
   initialYear,
 }) => {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number>(initialMonth || now.getMonth() + 1);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(initialMonthEnd || initialMonth || now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(initialYear || now.getFullYear());
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (initialMonth) setSelectedMonth(initialMonth);
+    if (initialMonthEnd || initialMonth) setSelectedMonthEnd(initialMonthEnd || initialMonth || 1);
+    if (initialYear) setSelectedYear(initialYear);
+  }, [initialMonth, initialMonthEnd, initialYear]);
 
   const { data: bankAccounts = [], isLoading: isLoadingAccounts } = useQuery({
     queryKey: ["bank-accounts-active"],
@@ -68,6 +77,7 @@ export const CashflowExportDialog: React.FC<CashflowExportDialogProps> = ({
     try {
       await exportDailyCashflowCsv({
         month: selectedMonth,
+        monthEnd: selectedMonthEnd,
         year: selectedYear,
         bankAccountId: selectedAccountId || undefined,
       });

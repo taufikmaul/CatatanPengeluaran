@@ -140,7 +140,10 @@ async def list_expenses(
     per_page: int = Query(30, ge=1, le=100),
     category: str | None = Query(None),
     month: int | None = Query(None),
+    month_end: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     search: str | None = Query(None),
     status: str | None = Query(None),
     pay_method: str | None = Query(None),
@@ -172,6 +175,9 @@ async def list_expenses(
         reimbursed_status=reimbursed_status,
         sort_by=sort_by,
         include_ongkir=include_ongkir,
+        month_end=month_end,
+        start_date=start_date,
+        end_date=end_date,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 

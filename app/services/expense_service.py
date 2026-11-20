@@ -736,18 +736,23 @@ async def audit_duplicate_expenses(
     }
 
 
-async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
+async def get_monthly_report(
+    db: AsyncSession,
+    year: int,
+    month: int,
+    month_end: int | None = None,
+) -> dict:
     """
-    Generate rekap bulan tertentu.
+    Generate rekap bulan tertentu atau rentang multi-bulan (misal Jan - Feb, Jan - Jul).
     Port dari generateReport di GAS.
     Return dict dengan total_lunas, per_kategori, list_hutang.
     """
+    m_end = month_end or month
     start_date = date(year, month, 1)
-    # Hitung akhir bulan
-    if month == 12:
+    if m_end == 12:
         end_date = date(year + 1, 1, 1)
     else:
-        end_date = date(year, month + 1, 1)
+        end_date = date(year, m_end + 1, 1)
 
     result = await db.execute(
         select(Expense).where(
@@ -954,6 +959,7 @@ async def get_monthly_report(db: AsyncSession, year: int, month: int) -> dict:
         "reimburse_pending_total": reimburse_pending_total,
         "expense_count": regular_count,
         "month": month,
+        "month_end": m_end,
         "year": year,
     }
 
@@ -964,13 +970,15 @@ async def get_price_inflation_summary(
     cur_month: int,
     prev_year: int,
     prev_month: int,
+    cur_month_end: int | None = None,
 ) -> dict[str, Any]:
     """
     Hitung ringkasan inflasi harga beli satuan (unit price) barang antara bulan berjalan dan bulan sebelumnya.
     Membandingkan item-item yang dibeli pada kedua bulan tersebut.
     """
+    m_end = cur_month_end or cur_month
     cur_start = date(cur_year, cur_month, 1)
-    cur_end = date(cur_year + 1, 1, 1) if cur_month == 12 else date(cur_year, cur_month + 1, 1)
+    cur_end = date(cur_year + 1, 1, 1) if m_end == 12 else date(cur_year, m_end + 1, 1)
 
     prev_start = date(prev_year, prev_month, 1)
     prev_end = date(prev_year + 1, 1, 1) if prev_month == 12 else date(prev_year, prev_month + 1, 1)
@@ -1287,6 +1295,9 @@ async def get_all_expenses_paginated(
     reimbursed_status: str | None = None,
     sort_by: str | None = None,
     include_ongkir: bool = False,
+    month_end: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> tuple[list[Expense], int]:
     """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
     if sort_by == "due_date":
@@ -1368,9 +1379,14 @@ async def get_all_expenses_paginated(
 
     if category:
         query = query.where(Expense.category == category)
-    if month and year:
+    if start_date:
+        query = query.where(Expense.expense_date >= start_date)
+    if end_date:
+        query = query.where(Expense.expense_date <= end_date)
+    if not start_date and not end_date and month and year:
+        m_end = month_end or month
         start = date(year, month, 1)
-        end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        end = date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))
     if status:
         st_lower = status.strip().lower()
@@ -1860,10 +1876,16 @@ async def delete_expense(
     return True
 
 
-async def get_monthly_chart_data(db: AsyncSession, year: int, month: int) -> list[dict]:
-    """Mengambil akumulasi harian pengeluaran dalam satu bulan untuk visualisasi chart (exclude Tukar Cash & Ongkir)."""
+async def get_monthly_chart_data(
+    db: AsyncSession,
+    year: int,
+    month: int,
+    month_end: int | None = None,
+) -> list[dict]:
+    """Mengambil akumulasi harian pengeluaran dalam satu bulan atau rentang bulan untuk visualisasi chart (exclude Tukar Cash & Ongkir)."""
+    m_end = month_end or month
     start = date(year, month, 1)
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    end = date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)
 
     result = await db.execute(
         select(
@@ -1898,7 +1920,12 @@ async def get_monthly_chart_data(db: AsyncSession, year: int, month: int) -> lis
     ]
 
 
-async def get_monthly_leaderboards(db: AsyncSession, year: int, month: int) -> dict:
+async def get_monthly_leaderboards(
+    db: AsyncSession,
+    year: int,
+    month: int,
+    month_end: int | None = None,
+) -> dict:
     """
     Menghitung statistik analitik mendalam dan leaderboard untuk dashboard:
     - Top 5 Item Paling Sering Dibeli (frekuensi & volume)
@@ -1908,8 +1935,9 @@ async def get_monthly_leaderboards(db: AsyncSession, year: int, month: int) -> d
     - Top 5 Supplier / Toko dengan Pengeluaran Terbesar
     - Ringkasan KPI Eksekutif (rata-rata per transaksi, rata-rata harian, transaksi terbesar, ragam item)
     """
+    m_end = month_end or month
     start_date = date(year, month, 1)
-    end_date = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    end_date = date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)
 
     result = await db.execute(
         select(Expense)

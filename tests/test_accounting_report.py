@@ -66,3 +66,31 @@ async def test_accounting_endpoint(client, auth_cookies):
     assert json_data["year"] == 2026
     assert len(json_data["laba_rugi"]["hpp_items"]) > 0
     assert len(json_data["laba_rugi"]["opex_items"]) > 0
+
+
+@pytest.mark.anyio
+async def test_accounting_multi_month_range(client, auth_cookies, db):
+    """Pastikan multi-month range bekerja di accounting dan monthly report."""
+    data = await get_accounting_report(db, 2026, 1, month_end=6)
+    assert data["ok"] is True
+    assert data["month"] == 1
+    assert data["month_end"] == 6
+    assert "Januari - Juni" in data["month_name"]
+
+    client.cookies.update(auth_cookies)
+    res = await client.get("/api/v1/reports/accounting?month=1&month_end=6&year=2026")
+    assert res.status_code == 200
+    json_data = res.json()
+    assert json_data["ok"] is True
+    assert json_data["month"] == 1
+    assert json_data["month_end"] == 6
+    assert "Januari - Juni" in json_data["month_name"]
+
+    # Test monthly report endpoint with month_end
+    res_monthly = await client.get("/api/v1/reports/monthly?month=1&month_end=7&year=2026")
+    assert res_monthly.status_code == 200
+    monthly_data = res_monthly.json()
+    assert monthly_data["month"] == 1
+    assert monthly_data["month_end"] == 7
+    assert "Januari - Juli" in monthly_data["month_name"]
+

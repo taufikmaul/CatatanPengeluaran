@@ -226,8 +226,27 @@ function MainDashboardApp() {
 
   // Filter states
   const now = new Date();
-  const [month, setMonth] = useState<number>(now.getMonth() + 1);
+  const [monthStart, setMonthStart] = useState<number>(now.getMonth() + 1);
+  const [monthEnd, setMonthEnd] = useState<number>(now.getMonth() + 1);
   const [year, setYear] = useState<number>(now.getFullYear());
+
+  // Backwards-compatible alias for single-month usage
+  const month = monthStart;
+  const setMonth = (m: number, mEnd?: number) => {
+    setMonthStart(m);
+    setMonthEnd(mEnd || m);
+  };
+
+  // Formatted ISO date range for the active header period
+  const filterStartDate = useMemo(() => {
+    return `${year}-${String(monthStart).padStart(2, "0")}-01`;
+  }, [year, monthStart]);
+
+  const filterEndDate = useMemo(() => {
+    const lastDay = new Date(year, monthEnd, 0).getDate();
+    return `${year}-${String(monthEnd).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  }, [year, monthEnd]);
+
   const [category, setCategory] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [status, setStatus] = useState<string>("");
@@ -407,9 +426,9 @@ function MainDashboardApp() {
 
   // 2. Monthly Analytics Report Query
   const { data: reportData, refetch: refetchReport } = useQuery<MonthlyReport>({
-    queryKey: ["report", month, year],
+    queryKey: ["report", monthStart, monthEnd, year],
     queryFn: async () => {
-      const res = await api.get(`/reports/monthly?month=${month}&year=${year}`);
+      const res = await api.get(`/reports/monthly?month=${monthStart}&month_end=${monthEnd}&year=${year}`);
       return res.data;
     },
     enabled: !!authData?.authenticated && canViewFinancialData,
@@ -429,14 +448,17 @@ function MainDashboardApp() {
     isLoading: isExpensesLoading,
     refetch: refetchExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, month, year, category, search, status, payMethod, isReimbursement, selectedUserId],
+    queryKey: ["expenses", page, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
         per_page: "30",
-        month: String(month),
+        month: String(monthStart),
         year: String(year),
       });
+      if (monthEnd && monthEnd !== monthStart) {
+        params.append("month_end", String(monthEnd));
+      }
       if (category) params.append("category", category);
       if (search) params.append("search", search);
       if (status) params.append("status", status);
@@ -767,10 +789,18 @@ function MainDashboardApp() {
           {/* Dashboard Header */}
           <DashboardHeader
             activeTab={activeTab}
-            month={month}
+            month={monthStart}
+            monthEnd={monthEnd}
             year={year}
-            onMonthChange={(m) => {
-              setMonth(m);
+            onMonthChange={(m, mEnd) => {
+              setMonthStart(m);
+              setMonthEnd(mEnd || m);
+              setPage(1);
+            }}
+            onPeriodChange={(s, e, y) => {
+              setMonthStart(s);
+              setMonthEnd(e);
+              setYear(y);
               setPage(1);
             }}
             onYearChange={(y) => {
@@ -822,7 +852,8 @@ function MainDashboardApp() {
                   reimburseTotal={reportData?.reimburse_pending_total || 0}
                   totalPengeluaran={reportData?.total_pengeluaran || 0}
                   userRole={userRole}
-                  currentMonth={month}
+                  currentMonth={monthStart}
+                  currentMonthEnd={monthEnd}
                   currentYear={year}
                 >
                   {activeTab === "overview" && (
@@ -1168,7 +1199,14 @@ function MainDashboardApp() {
 
             {activeTab === "incoming" && (
               <React.Suspense fallback={<TabLoadingFallback />}>
-                <IncomingTransactionsTab isAdmin={isOwner} />
+                <IncomingTransactionsTab
+                  isAdmin={isOwner}
+                  headerStartDate={filterStartDate}
+                  headerEndDate={filterEndDate}
+                  headerMonthStart={monthStart}
+                  headerMonthEnd={monthEnd}
+                  headerYear={year}
+                />
               </React.Suspense>
             )}
 
@@ -1539,7 +1577,8 @@ function MainDashboardApp() {
 
                   {activeTab === "tukar-cash-ongkir" && (
                     <TukarCashOngkirTab
-                      currentMonth={month}
+                      currentMonth={monthStart}
+                      currentMonthEnd={monthEnd}
                       currentYear={year}
                       reportData={reportData}
                       initialType={cashDeliverySubtype}
@@ -1584,7 +1623,8 @@ function MainDashboardApp() {
 
                   {activeTab === "talangan" && (
                     <TalanganTab
-                      currentMonth={month}
+                      currentMonth={monthStart}
+                      currentMonthEnd={monthEnd}
                       currentYear={year}
                       users={usersData}
                       onEditExpense={(item) => {
@@ -1629,7 +1669,8 @@ function MainDashboardApp() {
 
                   {activeTab === "unpaid" && (
                     <UnpaidTab
-                      currentMonth={month}
+                      currentMonth={monthStart}
+                      currentMonthEnd={monthEnd}
                       currentYear={year}
                       onEditExpense={(item) => {
                         setRepeatingExpense(null);
@@ -1810,9 +1851,13 @@ function MainDashboardApp() {
                 >
                   {activeTab === "accounting" && (
                     <AccountingTab
-                      currentMonth={month}
+                      currentMonth={monthStart}
+                      currentMonthEnd={monthEnd}
                       currentYear={year}
-                      onMonthChange={setMonth}
+                      onMonthChange={(m) => {
+                        setMonthStart(m);
+                        setMonthEnd(m);
+                      }}
                       onYearChange={setYear}
                       onViewExpense={(item) => setViewingExpense(item)}
                     />

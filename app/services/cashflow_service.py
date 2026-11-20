@@ -26,6 +26,7 @@ async def get_daily_cashflow(
     db: AsyncSession,
     year: int | None = None,
     month: int | None = None,
+    month_end: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     bank_account_id: int | None = None,
@@ -46,12 +47,17 @@ async def get_daily_cashflow(
         year_val = None
         periode_str = f"{period_start.strftime('%d/%m/%Y')} s/d {period_end.strftime('%d/%m/%Y')}"
     elif year and month:
+        m_end = month_end or month
         period_start = date(year, month, 1)
-        next_m = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        next_m = date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)
         period_end = next_m - timedelta(days=1)
         month_val = month
         year_val = year
-        periode_str = f"{MONTH_NAMES[month - 1]} {year}"
+        periode_str = (
+            f"{MONTH_NAMES[month - 1]} - {MONTH_NAMES[m_end - 1]} {year}"
+            if m_end != month
+            else f"{MONTH_NAMES[month - 1]} {year}"
+        )
     else:
         now = datetime.now()
         month_val = now.month

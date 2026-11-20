@@ -90,9 +90,10 @@ export async function getAiAnalysis(month?: number, year?: number, forceRefresh 
   return res.data;
 }
 
-export async function getAccountingReport(month?: number, year?: number) {
+export async function getAccountingReport(month?: number, year?: number, monthEnd?: number) {
   const params = new URLSearchParams();
   if (month) params.append("month", String(month));
+  if (monthEnd) params.append("month_end", String(monthEnd));
   if (year) params.append("year", String(year));
   const res = await api.get(`/reports/accounting?${params.toString()}`);
   return res.data;
@@ -1430,6 +1431,7 @@ export async function importIncomingTransactionsCsv(
 
 export async function getDailyCashflow(params?: {
   month?: number;
+  monthEnd?: number;
   year?: number;
   startDate?: string;
   endDate?: string;
@@ -1437,6 +1439,7 @@ export async function getDailyCashflow(params?: {
 }): Promise<DailyCashflowResponse> {
   const q = new URLSearchParams();
   if (params?.month) q.append("month", String(params.month));
+  if (params?.monthEnd) q.append("month_end", String(params.monthEnd));
   if (params?.year) q.append("year", String(params.year));
   if (params?.startDate) q.append("start_date", params.startDate);
   if (params?.endDate) q.append("end_date", params.endDate);
@@ -1447,6 +1450,7 @@ export async function getDailyCashflow(params?: {
 
 export async function exportDailyCashflowCsv(params?: {
   month?: number;
+  monthEnd?: number;
   year?: number;
   startDate?: string;
   endDate?: string;
@@ -1454,6 +1458,7 @@ export async function exportDailyCashflowCsv(params?: {
 }): Promise<void> {
   const q = new URLSearchParams();
   if (params?.month) q.append("month", String(params.month));
+  if (params?.monthEnd) q.append("month_end", String(params.monthEnd));
   if (params?.year) q.append("year", String(params.year));
   if (params?.startDate) q.append("start_date", params.startDate);
   if (params?.endDate) q.append("end_date", params.endDate);

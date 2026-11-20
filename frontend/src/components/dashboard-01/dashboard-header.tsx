@@ -34,8 +34,10 @@ import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopov
 export interface DashboardHeaderProps {
   activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
   month: number;
+  monthEnd?: number;
   year: number;
-  onMonthChange: (month: number) => void;
+  onMonthChange: (month: number, monthEnd?: number) => void;
+  onPeriodChange?: (monthStart: number, monthEnd: number, year: number) => void;
   onYearChange: (year: number) => void;
   onOpenAddExpense: () => void;
   userRole?: string | null;
@@ -67,8 +69,10 @@ const MONTH_NAMES = [
 export function DashboardHeader({
   activeTab,
   month,
+  monthEnd,
   year,
   onMonthChange,
+  onPeriodChange,
   onYearChange,
   onOpenAddExpense,
   userRole,
@@ -82,6 +86,34 @@ export function DashboardHeader({
   onLogout,
 }: DashboardHeaderProps) {
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+  const [isPeriodOpen, setIsPeriodOpen] = useState(false);
+  const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
+
+  const effectiveMonthEnd = monthEnd || month;
+  const now = new Date();
+  const currentRealMonth = now.getMonth() + 1;
+  const currentRealYear = now.getFullYear();
+
+  const setPeriod = (start: number, end: number, yr: number = year) => {
+    const s = Math.min(start, end);
+    const e = Math.max(start, end);
+    if (onPeriodChange) {
+      onPeriodChange(s, e, yr);
+    } else {
+      onMonthChange(s, e);
+      if (yr !== year) onYearChange(yr);
+    }
+  };
+
+  const handleMonthGridClick = (mNum: number) => {
+    if (rangeAnchor === null) {
+      setRangeAnchor(mNum);
+      setPeriod(mNum, mNum, year);
+    } else {
+      setPeriod(rangeAnchor, mNum, year);
+      setRangeAnchor(null);
+    }
+  };
 
   const titleMap: Record<string, string> = {
     overview: "Overview & Analisis Keuangan",
@@ -168,63 +200,271 @@ export function DashboardHeader({
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {/* Quick Month & Year Picker */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        {/* Multi-Month Range & Year Picker Popover */}
+        <Popover open={isPeriodOpen} onOpenChange={setIsPeriodOpen}>
+          <PopoverTrigger asChild>
             <Button
               variant="outline"
               size="sm"
-              className="h-9 px-2 sm:px-3 rounded-xl border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 gap-1 sm:gap-1.5"
+              className="h-9 px-2 sm:px-3 rounded-xl border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 gap-1 sm:gap-1.5 shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-800/60"
             >
-              <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              <span className="hidden sm:inline">
-                {MONTH_NAMES[month - 1]} {year}
-              </span>
-              <span className="sm:hidden text-[11px]">
-                {MONTH_NAMES[month - 1].slice(0, 3)} '{String(year).slice(-2)}
-              </span>
+              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              {month === effectiveMonthEnd ? (
+                <>
+                  <span className="hidden sm:inline">
+                    {MONTH_NAMES[month - 1]} {year}
+                  </span>
+                  <span className="sm:hidden text-[11px]">
+                    {MONTH_NAMES[month - 1].slice(0, 3)} '{String(year).slice(-2)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">
+                    {MONTH_NAMES[month - 1].slice(0, 3)} - {MONTH_NAMES[effectiveMonthEnd - 1].slice(0, 3)} {year}
+                  </span>
+                  <span className="sm:hidden text-[11px]">
+                    {MONTH_NAMES[month - 1].slice(0, 3)}-{MONTH_NAMES[effectiveMonthEnd - 1].slice(0, 3)} '{String(year).slice(-2)}
+                  </span>
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] px-1 py-0 h-4 font-mono hidden md:inline-flex bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border-none"
+                  >
+                    {Math.abs(effectiveMonthEnd - month) + 1} bln
+                  </Badge>
+                </>
+              )}
               <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
+          </PopoverTrigger>
+          <PopoverContent
             align="end"
-            className="w-56 rounded-xl border border-slate-200 dark:border-slate-800 p-2 shadow-lg"
+            className="w-[330px] sm:w-[380px] rounded-2xl border border-slate-200 dark:border-slate-800 p-3 sm:p-4 shadow-xl bg-white dark:bg-slate-900"
           >
-            <DropdownMenuLabel className="text-xs font-semibold px-2 py-1 text-slate-500">
-              Pilih Periode Laporan
-            </DropdownMenuLabel>
-            <div className="grid grid-cols-3 gap-1 p-1">
-              {MONTH_NAMES.map((mName, idx) => {
-                const mNum = idx + 1;
-                const isSelected = mNum === month;
-                return (
-                  <button
-                    key={mName}
-                    type="button"
-                    onClick={() => onMonthChange(mNum)}
-                    className={`text-xs py-1.5 px-1 rounded-lg text-center transition-colors font-medium ${
-                      isSelected
-                        ? "bg-blue-600 text-white font-semibold"
-                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    {mName.slice(0, 3)}
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800 mb-2.5">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Filter Periode Laporan & Data
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Pilih satu bulan atau rentang multi-bulan (mis. Jan - Jul)
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className="text-[11px] font-mono font-semibold bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800"
+              >
+                {month === effectiveMonthEnd
+                  ? `${MONTH_NAMES[month - 1]} ${year}`
+                  : `${MONTH_NAMES[month - 1].slice(0, 3)} - ${MONTH_NAMES[effectiveMonthEnd - 1].slice(0, 3)} ${year}`}
+              </Badge>
             </div>
-            <DropdownMenuSeparator className="my-1.5" />
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-xs text-slate-500 font-medium">Tahun</span>
+
+            {/* Quick Presets */}
+            <div className="mb-3">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 block mb-1.5">
+                Preset Cepat
+              </span>
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(currentRealMonth, currentRealMonth, currentRealYear)}
+                >
+                  Bulan Ini
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    const prevMonth = currentRealMonth === 1 ? 12 : currentRealMonth - 1;
+                    const prevYear = currentRealMonth === 1 ? currentRealYear - 1 : currentRealYear;
+                    setPeriod(prevMonth, prevMonth, prevYear);
+                  }}
+                >
+                  Bulan Lalu
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(1, 3, year)}
+                >
+                  Q1 (Jan-Mar)
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(4, 6, year)}
+                >
+                  Q2 (Apr-Jun)
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(7, 9, year)}
+                >
+                  Q3 (Jul-Sep)
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(10, 12, year)}
+                >
+                  Q4 (Okt-Des)
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(1, 6, year)}
+                >
+                  Semester 1
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setPeriod(7, 12, year)}
+                >
+                  Semester 2
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px] px-1 font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 col-span-2 sm:col-span-2"
+                  onClick={() => setPeriod(1, 12, year)}
+                >
+                  1 Tahun Penuh (Jan - Des)
+                </Button>
+              </div>
+            </div>
+
+            {/* Dari Bulan / Sampai Bulan Dropdowns */}
+            <div className="grid grid-cols-2 gap-2 mb-3 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
+                  Dari Bulan
+                </label>
+                <select
+                  value={month}
+                  onChange={(e) => {
+                    const newStart = parseInt(e.target.value, 10);
+                    const newEnd = Math.max(newStart, effectiveMonthEnd);
+                    setPeriod(newStart, newEnd, year);
+                  }}
+                  className="w-full h-8 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 px-2 outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx + 1}>
+                      {idx + 1}. {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block mb-1">
+                  Sampai Bulan
+                </label>
+                <select
+                  value={effectiveMonthEnd}
+                  onChange={(e) => {
+                    const newEnd = parseInt(e.target.value, 10);
+                    const newStart = Math.min(month, newEnd);
+                    setPeriod(newStart, newEnd, year);
+                  }}
+                  className="w-full h-8 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 px-2 outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx + 1}>
+                      {idx + 1}. {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Interactive 12-Month Range Grid */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500">
+                  Pilih Pada Grid Bulan {rangeAnchor !== null && "(Pilih Bulan Akhir...)"}
+                </span>
+                {rangeAnchor !== null && (
+                  <button
+                    type="button"
+                    onClick={() => setRangeAnchor(null)}
+                    className="text-[10px] text-rose-500 hover:underline font-semibold"
+                  >
+                    Batal
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {MONTH_NAMES.map((mName, idx) => {
+                  const mNum = idx + 1;
+                  const isRangeStart = mNum === month;
+                  const isRangeEnd = mNum === effectiveMonthEnd;
+                  const isInRange = mNum >= month && mNum <= effectiveMonthEnd;
+                  const isAnchor = mNum === rangeAnchor;
+
+                  let styleClass = "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800";
+                  if (isAnchor) {
+                    styleClass = "bg-amber-500 text-white border-amber-600 font-bold ring-2 ring-amber-300 animate-pulse";
+                  } else if (isRangeStart && isRangeEnd) {
+                    styleClass = "bg-blue-600 text-white border-blue-600 font-bold shadow-xs";
+                  } else if (isRangeStart || isRangeEnd) {
+                    styleClass = "bg-blue-600 text-white border-blue-600 font-bold";
+                  } else if (isInRange) {
+                    styleClass = "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900 font-semibold";
+                  }
+
+                  return (
+                    <button
+                      key={mName}
+                      type="button"
+                      onClick={() => handleMonthGridClick(mNum)}
+                      className={`text-xs py-1.5 px-1 rounded-lg border text-center transition-all ${styleClass}`}
+                    >
+                      {mName.slice(0, 3)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Year Selector & Done Button */}
+            <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mr-1">Tahun:</span>
                 {availableYears.map((yr) => (
                   <button
                     key={yr}
                     type="button"
-                    onClick={() => onYearChange(yr)}
-                    className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                    onClick={() => {
+                      if (onPeriodChange) {
+                        onPeriodChange(month, effectiveMonthEnd, yr);
+                      } else {
+                        onYearChange(yr);
+                      }
+                    }}
+                    className={`text-xs px-2 py-0.5 rounded-md transition-colors ${
                       yr === year
-                        ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold"
+                        ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 font-semibold shadow-2xs"
                         : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                     }`}
                   >
@@ -232,9 +472,17 @@ export function DashboardHeader({
                   </button>
                 ))}
               </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-3 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => setIsPeriodOpen(false)}
+              >
+                Tutup
+              </Button>
             </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </PopoverContent>
+        </Popover>
 
         {/* Operational Alerts / Notifications Popover */}
         {canViewAlerts && (

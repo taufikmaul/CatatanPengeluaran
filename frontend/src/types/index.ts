@@ -408,6 +408,7 @@ export interface AccountingAnalysisData {
 export interface AccountingReportData {
   ok: boolean;
   month: number;
+  month_end?: number;
   year: number;
   month_name: string;
   prev_month_name: string;
@@ -446,6 +447,7 @@ export interface AccountingInflation {
 export interface MonthlyReport {
   ok: boolean;
   month: number;
+  month_end?: number;
   year: number;
   month_name: string;
   total_lunas: number;

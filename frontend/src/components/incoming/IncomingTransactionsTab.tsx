@@ -51,10 +51,20 @@ import type { IncomingTransaction, BulkIncomingTxRow } from "@/types";
 
 interface IncomingTransactionsTabProps {
   isAdmin: boolean;
+  headerStartDate?: string;
+  headerEndDate?: string;
+  headerMonthStart?: number;
+  headerMonthEnd?: number;
+  headerYear?: number;
 }
 
 export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = ({
   isAdmin,
+  headerStartDate,
+  headerEndDate,
+  headerMonthStart,
+  headerMonthEnd,
+  headerYear,
 }) => {
   const queryClient = useQueryClient();
   const [importOpen, setImportOpen] = useState(false);
@@ -66,13 +76,23 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
   const [subTab, setSubTab] = useState<string>("list");
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
 
-  // Filters
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Filters — default ke periode header bila tersedia
+  const [startDate, setStartDate] = useState(headerStartDate || "");
+  const [endDate, setEndDate] = useState(headerEndDate || "");
   const [orderType, setOrderType] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [bankAccountId, setBankAccountId] = useState<string>("all");
   const [search, setSearch] = useState("");
+
+  // Sinkronisasi otomatis saat filter header (bulan/tahun/rentang) berubah
+  React.useEffect(() => {
+    if (headerStartDate !== undefined) {
+      setStartDate(headerStartDate);
+    }
+    if (headerEndDate !== undefined) {
+      setEndDate(headerEndDate);
+    }
+  }, [headerStartDate, headerEndDate]);
 
   const { data: accounts = [] } = useQuery({
     queryKey: ["bank-accounts"],
@@ -340,13 +360,18 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     <div className="space-y-4">
       {/* Compact Action Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
             {summary?.paid_count || 0} Transaksi Masuk
           </Badge>
           <span className="text-xs text-slate-500 dark:text-slate-400">
             Total Bersih: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{formatRupiah(summary?.net_received || 0)}</strong>
           </span>
+          {startDate && endDate && (
+            <Badge variant="secondary" className="text-[11px] font-mono text-blue-700 bg-blue-50 dark:bg-blue-950/40 border-blue-200">
+              📅 {startDate} s/d {endDate}
+            </Badge>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
           <Button
@@ -530,7 +555,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
               <option value="void">Void / Batal</option>
             </select>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
               <Input
                 type="date"
                 value={startDate}
@@ -545,6 +570,21 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                 className="h-9 text-xs"
                 aria-label="Tanggal selesai"
               />
+              {headerStartDate && headerEndDate && (startDate !== headerStartDate || endDate !== headerEndDate) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStartDate(headerStartDate);
+                    setEndDate(headerEndDate);
+                  }}
+                  className="h-9 text-[10px] px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-semibold shrink-0"
+                  title="Kembalikan tanggal ke filter periode header"
+                >
+                  Reset Header
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>

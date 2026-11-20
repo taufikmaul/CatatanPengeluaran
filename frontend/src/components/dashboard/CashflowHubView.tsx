@@ -30,6 +30,7 @@ export interface CashflowHubViewProps {
   totalPengeluaran?: number;
   userRole?: string | null;
   currentMonth?: number;
+  currentMonthEnd?: number;
   currentYear?: number;
   children: React.ReactNode;
 }
@@ -45,6 +46,7 @@ export const CashflowHubView: React.FC<CashflowHubViewProps> = ({
   totalPengeluaran = 0,
   userRole,
   currentMonth,
+  currentMonthEnd,
   currentYear,
   children,
 }) => {
@@ -172,6 +174,7 @@ export const CashflowHubView: React.FC<CashflowHubViewProps> = ({
         isOpen={isExportDialogOpen}
         onClose={() => setIsExportDialogOpen(false)}
         initialMonth={currentMonth}
+        initialMonthEnd={currentMonthEnd}
         initialYear={currentYear}
       />
 

@@ -47,6 +47,7 @@ import {
 interface TukarCashOngkirTabProps {
   currentMonth: number;
   currentYear: number;
+  currentMonthEnd?: number;
   reportData?: MonthlyReport;
   initialType?: "all" | "tukar_cash" | "ongkir";
   onEditExpense: (expense: Expense) => void;
@@ -65,6 +66,7 @@ const MONTH_NAMES = [
 export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   currentMonth,
   currentYear,
+  currentMonthEnd,
   reportData,
   initialType = "all",
   onEditExpense,
@@ -78,15 +80,17 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [page, setPage] = useState<number>(1);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     setSelectedMonth(currentMonth);
+    setSelectedMonthEnd(currentMonthEnd || currentMonth);
     setSelectedYear(currentYear);
     setPage(1);
-  }, [currentMonth, currentYear]);
+  }, [currentMonth, currentMonthEnd, currentYear]);
 
   // Fetch data secara server-side menggunakan special_type
   const specialTypeParam = filterType === "all" ? "cash_or_delivery" : filterType;
@@ -100,6 +104,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
       "expenses-cash-delivery",
       page,
       selectedMonth,
+      selectedMonthEnd,
       selectedYear,
       filterType,
       search,
@@ -113,6 +118,9 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
         year: String(selectedYear),
         special_type: specialTypeParam,
       });
+      if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
+        params.append("month_end", String(selectedMonthEnd));
+      }
       if (search.trim()) params.append("search", search.trim());
       if (statusFilter) params.append("status", statusFilter);
 

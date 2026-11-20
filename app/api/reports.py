@@ -40,29 +40,39 @@ MONTH_NAMES = [
 @router.get("/monthly", response_model=MonthlyReportResponse)
 async def get_monthly_analytics(
     month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
     db: AsyncSession = Depends(get_db),
 ):
     now = datetime.now()
     cur_month = month or now.month
+    cur_month_end = month_end or cur_month
     cur_year = year or now.year
 
-    report = await get_monthly_report(db, cur_year, cur_month)
-    daily_chart = await get_monthly_chart_data(db, cur_year, cur_month)
-    leaderboards = await get_monthly_leaderboards(db, cur_year, cur_month)
+    report = await get_monthly_report(db, cur_year, cur_month, month_end=cur_month_end)
+    daily_chart = await get_monthly_chart_data(db, cur_year, cur_month, month_end=cur_month_end)
+    leaderboards = await get_monthly_leaderboards(db, cur_year, cur_month, month_end=cur_month_end)
 
-    # Hitung bulan sebelumnya untuk perbandingan MoM (Month-over-Month)
-    if cur_month == 1:
-        prev_month, prev_year = 12, cur_year - 1
+    # Hitung periode sebelumnya untuk perbandingan MoM / YoY
+    if cur_month_end == cur_month:
+        if cur_month == 1:
+            prev_month, prev_year = 12, cur_year - 1
+        else:
+            prev_month, prev_year = cur_month - 1, cur_year
+        prev_report = await get_monthly_report(db, prev_year, prev_month)
+        prev_label = MONTH_NAMES[prev_month - 1]
     else:
-        prev_month, prev_year = cur_month - 1, cur_year
+        # Multi-month: bandingkan dengan rentang yang sama di tahun lalu
+        prev_year = cur_year - 1
+        prev_month = cur_month
+        prev_report = await get_monthly_report(db, prev_year, cur_month, month_end=cur_month_end)
+        prev_label = f"{MONTH_NAMES[cur_month - 1][:3]}-{MONTH_NAMES[cur_month_end - 1][:3]} {prev_year}"
 
-    prev_report = await get_monthly_report(db, prev_year, prev_month)
     prev_total_lunas = float(prev_report.get("total_lunas", 0))
     prev_total_hutang = sum(item.get("nominal", 0) for item in prev_report.get("list_hutang", []))
     prev_total_pengeluaran = prev_total_lunas + prev_total_hutang
 
-    # Total pengeluaran (lunas + belum lunas) bulan ini
+    # Total pengeluaran (lunas + belum lunas) periode ini
     total_hutang = sum(item.get("nominal", 0) for item in report.get("list_hutang", []))
     total_lunas = float(report.get("total_lunas", 0))
     total_pengeluaran = total_lunas + total_hutang
@@ -78,11 +88,24 @@ async def get_monthly_analytics(
         else None
     )
 
-    eff_budget = await get_effective_budget(db, cur_year, cur_month)
-    budget_limit = float(eff_budget.get("total_budget", 0))
-    cat_budgets = eff_budget.get("category_amounts", {})
-    cat_percentages = eff_budget.get("category_percentages", {})
-    is_custom_budget = eff_budget.get("is_custom", False)
+    if cur_month_end and cur_month_end > cur_month:
+        total_b = 0.0
+        cat_b: dict[str, float] = {}
+        for m in range(cur_month, cur_month_end + 1):
+            eff = await get_effective_budget(db, cur_year, m)
+            total_b += float(eff.get("total_budget", 0))
+            for c, amt in eff.get("category_amounts", {}).items():
+                cat_b[c] = cat_b.get(c, 0.0) + float(amt)
+        budget_limit = total_b
+        cat_budgets = cat_b
+        cat_percentages = {}
+        is_custom_budget = False
+    else:
+        eff_budget = await get_effective_budget(db, cur_year, cur_month)
+        budget_limit = float(eff_budget.get("total_budget", 0))
+        cat_budgets = eff_budget.get("category_amounts", {})
+        cat_percentages = eff_budget.get("category_percentages", {})
+        is_custom_budget = eff_budget.get("is_custom", False)
 
     budget_used_pct = (
         round((total_pengeluaran / budget_limit) * 100.0, 1)
@@ -189,11 +212,18 @@ async def get_monthly_analytics(
         item_copy["mom_change_pct"] = item_mom_pct
         enriched_breakdown.append(item_copy)
 
+    cur_period_name = (
+        f"{MONTH_NAMES[cur_month - 1]} - {MONTH_NAMES[cur_month_end - 1]}"
+        if cur_month_end != cur_month
+        else MONTH_NAMES[cur_month - 1]
+    )
+
     return MonthlyReportResponse(
         ok=True,
         month=cur_month,
+        month_end=cur_month_end,
         year=cur_year,
-        month_name=MONTH_NAMES[cur_month - 1],
+        month_name=cur_period_name,
         total_lunas=total_lunas,
         total_pengeluaran=total_pengeluaran,
         total_tukar_cash=float(report.get("total_tukar_cash", 0.0)),
@@ -204,7 +234,7 @@ async def get_monthly_analytics(
         ongkir_reimburse_total=float(report.get("ongkir_reimburse_total", 0.0)),
         total_belanja_riil=float(report.get("total_belanja_riil", 0.0)),
         expense_count=report.get("expense_count", 0),
-        prev_month_name=MONTH_NAMES[prev_month - 1],
+        prev_month_name=prev_label,
         prev_total_lunas=prev_total_lunas,
         prev_total_pengeluaran=prev_total_pengeluaran,
         mom_lunas_change_pct=mom_lunas_change_pct,
@@ -275,6 +305,7 @@ async def get_ai_analysis_endpoint(
 @router.get("/accounting", response_model=AccountingReportResponse, dependencies=[Depends(require_admin_role)])
 async def get_accounting_analytics(
     month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
     db: AsyncSession = Depends(get_db),
 ):
@@ -288,14 +319,16 @@ async def get_accounting_analytics(
     """
     now = datetime.now()
     cur_month = month or now.month
+    cur_month_end = month_end or cur_month
     cur_year = year or now.year
 
-    return await get_accounting_report(db, cur_year, cur_month)
+    return await get_accounting_report(db, cur_year, cur_month, month_end=cur_month_end)
 
 
 @router.get("/cashflow", response_model=DailyCashflowResponse)
 async def get_daily_cashflow_endpoint(
     month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
@@ -314,6 +347,7 @@ async def get_daily_cashflow_endpoint(
         db,
         year=year,
         month=month,
+        month_end=month_end,
         start_date=start_date,
         end_date=end_date,
         bank_account_id=bank_account_id,
@@ -324,6 +358,7 @@ async def get_daily_cashflow_endpoint(
 @router.get("/cashflow/export")
 async def export_daily_cashflow_csv_endpoint(
     month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000, le=2100),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
@@ -338,6 +373,7 @@ async def export_daily_cashflow_csv_endpoint(
         db,
         year=year,
         month=month,
+        month_end=month_end,
         start_date=start_date,
         end_date=end_date,
         bank_account_id=bank_account_id,

@@ -49,6 +49,7 @@ import {
 interface UnpaidTabProps {
   currentMonth: number;
   currentYear: number;
+  currentMonthEnd?: number;
   onEditExpense: (expense: Expense) => void;
   onViewExpense?: (expense: Expense) => void;
   onDeleteExpense: (id: number) => void;
@@ -65,6 +66,7 @@ const MONTH_NAMES = [
 export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   currentMonth,
   currentYear,
+  currentMonthEnd,
   onEditExpense,
   onViewExpense,
   onDeleteExpense,
@@ -78,11 +80,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   const [statusTab, setStatusTab] = useState<"unpaid" | "dp" | "overdue" | "soon" | "paid" | "all">("unpaid");
   const [isAllPeriods, setIsAllPeriods] = useState<boolean>(true);
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [search, setSearch] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("due_date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  React.useEffect(() => {
+    setSelectedMonth(currentMonth);
+    setSelectedMonthEnd(currentMonthEnd || currentMonth);
+    setSelectedYear(currentYear);
+  }, [currentMonth, currentMonthEnd, currentYear]);
 
   const [page, setPage] = useState<number>(1);
   const perPage = 25;
@@ -135,6 +144,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       page,
       perPage,
       isAllPeriods ? null : selectedMonth,
+      isAllPeriods ? null : selectedMonthEnd,
       isAllPeriods ? null : selectedYear,
       statusTab,
       selectedSupplierId,
@@ -153,6 +163,9 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
       if (!isAllPeriods) {
         params.append("month", String(selectedMonth));
+        if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
+          params.append("month_end", String(selectedMonthEnd));
+        }
         params.append("year", String(selectedYear));
       }
 

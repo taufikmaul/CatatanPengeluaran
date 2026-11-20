@@ -40,6 +40,7 @@ import {
 interface AccountingTabProps {
   currentMonth: number;
   currentYear: number;
+  currentMonthEnd?: number;
   onMonthChange: (m: number) => void;
   onYearChange: (y: number) => void;
   onViewExpense?: (expense: Expense) => void;
@@ -53,10 +54,16 @@ const MONTH_NAMES = [
 export const AccountingTab: React.FC<AccountingTabProps> = ({
   currentMonth,
   currentYear,
+  currentMonthEnd,
   onMonthChange,
   onYearChange,
   onViewExpense,
 }) => {
+  const effectiveMonthEnd = currentMonthEnd || currentMonth;
+  const periodLabel = currentMonthEnd && currentMonthEnd !== currentMonth
+    ? `${MONTH_NAMES[currentMonth - 1]} - ${MONTH_NAMES[currentMonthEnd - 1]} ${currentYear}`
+    : `${MONTH_NAMES[currentMonth - 1]} ${currentYear}`;
+
   // Sub-tabs dalam halaman akuntansi
   const [activeSubTab, setActiveSubTab] = useState<
     "laba_rugi" | "neraca" | "arus_kas" | "analisis" | "buku_besar"
@@ -79,8 +86,8 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
     refetch,
     isFetching,
   } = useQuery<AccountingReportData>({
-    queryKey: ["accounting-report", currentMonth, currentYear],
-    queryFn: () => getAccountingReport(currentMonth, currentYear),
+    queryKey: ["accounting-report", currentMonth, currentYear, currentMonthEnd],
+    queryFn: () => getAccountingReport(currentMonth, currentYear, currentMonthEnd),
     staleTime: 60 * 1000,
   });
 
@@ -91,11 +98,12 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
     isError: isErrorCashflow,
     refetch: refetchCashflow,
   } = useQuery<DailyCashflowResponse>({
-    queryKey: ["daily-cashflow", currentYear, currentMonth, selectedCashflowAccount],
+    queryKey: ["daily-cashflow", currentYear, currentMonth, currentMonthEnd, selectedCashflowAccount],
     queryFn: () =>
       getDailyCashflow({
         month: currentMonth,
         year: currentYear,
+        monthEnd: currentMonthEnd,
         bankAccountId: selectedCashflowAccount || undefined,
       }),
     enabled: activeSubTab === "arus_kas",
@@ -108,6 +116,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
       await exportDailyCashflowCsv({
         month: currentMonth,
         year: currentYear,
+        monthEnd: currentMonthEnd,
         bankAccountId: selectedCashflowAccount || undefined,
       });
     } catch (err) {
@@ -242,7 +251,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             Standar SAK EMKM
           </Badge>
           <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            Periode {MONTH_NAMES[currentMonth - 1]} {currentYear}
+            Periode {periodLabel}
           </span>
         </div>
 
@@ -304,7 +313,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           Laporan &amp; Analisis Akuntansi (SAK EMKM)
         </h1>
         <p className="text-xs text-slate-500 mt-1">
-          Periode: {MONTH_NAMES[currentMonth - 1]} {currentYear}
+          Periode: {periodLabel}
         </p>
       </div>
 

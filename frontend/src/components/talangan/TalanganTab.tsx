@@ -41,6 +41,7 @@ import {
 interface TalanganTabProps {
   currentMonth: number;
   currentYear: number;
+  currentMonthEnd?: number;
   users?: ExpenseUser[];
   onEditExpense: (expense: Expense) => void;
   onViewExpense?: (expense: Expense) => void;
@@ -59,6 +60,7 @@ const MONTH_NAMES = [
 export const TalanganTab: React.FC<TalanganTabProps> = ({
   currentMonth,
   currentYear,
+  currentMonthEnd,
   users = [],
   onEditExpense,
   onViewExpense,
@@ -75,12 +77,19 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reimbursed">("pending");
   const [isAllPeriods, setIsAllPeriods] = useState<boolean>(true); // Default true agar owner bisa langsung lihat seluruh talangan tertunda
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [includeOngkir, setIncludeOngkir] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
   const [page, setPage] = useState<number>(1);
   const perPage = 25;
+
+  React.useEffect(() => {
+    setSelectedMonth(currentMonth);
+    setSelectedMonthEnd(currentMonthEnd || currentMonth);
+    setSelectedYear(currentYear);
+  }, [currentMonth, currentMonthEnd, currentYear]);
 
   // Selection states for batch action
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -126,6 +135,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       page,
       perPage,
       isAllPeriods ? null : selectedMonth,
+      isAllPeriods ? null : selectedMonthEnd,
       isAllPeriods ? null : selectedYear,
       statusFilter,
       selectedUserId,
@@ -146,6 +156,9 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
       if (!isAllPeriods) {
         params.append("month", String(selectedMonth));
+        if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
+          params.append("month_end", String(selectedMonthEnd));
+        }
         params.append("year", String(selectedYear));
       }
 

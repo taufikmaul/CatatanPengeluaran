@@ -1,7 +1,7 @@
 """
 app/api/incoming_transactions.py — REST API for Daftar Transaksi Masuk & Import Laporan POS/Platform
 """
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -145,8 +145,16 @@ def _build_incoming_tx_filter(
     status_filter: Optional[str] = None,
     bank_account_id: Optional[int] = None,
     search: Optional[str] = None,
+    month: Optional[int] = None,
+    month_end: Optional[int] = None,
+    year: Optional[int] = None,
 ):
     conditions = []
+    if not start_date and not end_date and month and year:
+        m_end = month_end or month
+        start_date = date(year, month, 1)
+        end_date = (date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)) - timedelta(days=1)
+
     if start_date:
         conditions.append(IncomingTransaction.transaction_date >= start_date)
     if end_date:
@@ -179,6 +187,9 @@ def _build_incoming_tx_filter(
 async def api_list_incoming_transactions(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    month_end: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
     order_type: Optional[str] = Query(None),
     payment_method: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -196,6 +207,9 @@ async def api_list_incoming_transactions(
         status_filter=status_filter,
         bank_account_id=bank_account_id,
         search=search,
+        month=month,
+        month_end=month_end,
+        year=year,
     )
 
     # Paginated rows
@@ -264,6 +278,9 @@ async def api_list_incoming_transactions(
 async def api_incoming_analytics(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    month_end: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -273,6 +290,11 @@ async def api_incoming_analytics(
     - peak_hours: distribusi transaksi per jam (offline vs online delivery)
     - void_summary: ringkasan transaksi void
     """
+    if not start_date and not end_date and month and year:
+        m_end = month_end or month
+        start_date = date(year, month, 1)
+        end_date = (date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)) - timedelta(days=1)
+
     tx_conds = [IncomingTransaction.status == "paid"]
     if start_date:
         tx_conds.append(IncomingTransaction.transaction_date >= start_date)
@@ -461,6 +483,9 @@ async def api_download_incoming_csv_template():
 async def api_export_incoming_transactions_csv(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    month_end: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
     order_type: Optional[str] = Query(None),
     payment_method: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -477,6 +502,9 @@ async def api_export_incoming_transactions_csv(
         status_filter=status_filter,
         bank_account_id=bank_account_id,
         search=search,
+        month=month,
+        month_end=month_end,
+        year=year,
     )
     stmt = (
         select(IncomingTransaction)

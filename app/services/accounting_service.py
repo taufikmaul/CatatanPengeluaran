@@ -36,6 +36,7 @@ async def get_accounting_report(
     db: AsyncSession,
     year: int,
     month: int,
+    month_end: int | None = None,
 ) -> dict[str, Any]:
     """
     Kompilasi laporan dan analisis akuntansi lengkap standar SAK EMKM:
@@ -47,18 +48,29 @@ async def get_accounting_report(
     """
     cur_year = year
     cur_month = month
-    cur_month_name = MONTH_NAMES[cur_month - 1]
+    cur_month_end = month_end or month
+    cur_month_name = (
+        f"{MONTH_NAMES[cur_month - 1]} - {MONTH_NAMES[cur_month_end - 1]}"
+        if cur_month_end != cur_month
+        else MONTH_NAMES[cur_month - 1]
+    )
 
-    # Hitung periode bulan lalu
-    if cur_month == 1:
-        prev_month, prev_year = 12, cur_year - 1
+    # Hitung periode pembanding
+    if cur_month_end == cur_month:
+        if cur_month == 1:
+            prev_month, prev_year = 12, cur_year - 1
+        else:
+            prev_month, prev_year = cur_month - 1, cur_year
+        prev_report = await get_monthly_report(db, prev_year, prev_month)
+        prev_month_name = MONTH_NAMES[prev_month - 1]
     else:
-        prev_month, prev_year = cur_month - 1, cur_year
-    prev_month_name = MONTH_NAMES[prev_month - 1]
+        prev_year = cur_year - 1
+        prev_month = cur_month
+        prev_report = await get_monthly_report(db, prev_year, cur_month, month_end=cur_month_end)
+        prev_month_name = f"{MONTH_NAMES[cur_month - 1][:3]}-{MONTH_NAMES[cur_month_end - 1][:3]} {prev_year}"
 
-    # Ambil laporan belanja bulan ini dan bulan lalu
-    cur_report = await get_monthly_report(db, cur_year, cur_month)
-    prev_report = await get_monthly_report(db, prev_year, prev_month)
+    # Ambil laporan belanja periode ini
+    cur_report = await get_monthly_report(db, cur_year, cur_month, month_end=cur_month_end)
 
     # Ambil master options dan COA
     kategori_options = await get_master_options(db, opt_type="kategori", active_only=True)
@@ -67,7 +79,7 @@ async def get_accounting_report(
 
     # Hitung jumlah transaksi per kategori pada periode ini
     start_date = date(cur_year, cur_month, 1)
-    end_date = date(cur_year + 1, 1, 1) if cur_month == 12 else date(cur_year, cur_month + 1, 1)
+    end_date = date(cur_year + 1, 1, 1) if cur_month_end == 12 else date(cur_year, cur_month_end + 1, 1)
     
     tx_count_res = await db.execute(
         select(func.lower(Expense.category), func.count(Expense.id))
@@ -1005,6 +1017,7 @@ async def get_accounting_report(
     return {
         "ok": True,
         "month": cur_month,
+        "month_end": cur_month_end,
         "year": cur_year,
         "month_name": cur_month_name,
         "prev_month_name": prev_month_name,
