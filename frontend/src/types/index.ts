@@ -1332,7 +1332,9 @@ export interface SalesAuditFinding {
   category: "missing_field" | "financial_anomaly" | "date_anomaly" | "account_mapping" | "duplicate";
   message: string;
   receipt_no?: string | null;
+  tx_index?: number | null;
   field?: string | null;
+  raw_value?: string | null;
 }
 
 export interface SalesImportAuditSummary {
@@ -1344,6 +1346,43 @@ export interface SalesImportAuditSummary {
   findings: SalesAuditFinding[];
 }
 
+export interface SalesImportRowOverride {
+  receipt_no?: string;
+  transaction_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string | null;
+  gross_sales?: number;
+  discount_amount?: number;
+  platform_fee?: number;
+  status?: string;
+  notes?: string;
+  exclude?: boolean;
+}
+
+export interface SalesImportEditableRow {
+  tx_index: number;
+  receipt_no?: string | null;
+  order_no?: string | null;
+  transaction_date: string;
+  transaction_time?: string | null;
+  order_type: string;
+  payment_method: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string | null;
+  raw_bank_account_name?: string | null;
+  gross_sales: number;
+  discount_amount: number;
+  platform_fee: number;
+  net_received: number;
+  status: string;
+  notes?: string | null;
+  item_count: number;
+  is_edited: boolean;
+  is_excluded: boolean;
+}
+
 export interface SalesImportPreview {
   source_type: string;
   total_transactions: number;
@@ -1351,6 +1390,8 @@ export interface SalesImportPreview {
   new_void_count: number;
   duplicate_count: number;
   skipped_count: number;
+  edited_count?: number;
+  excluded_count?: number;
   total_items: number;
   total_gross_sales: number;
   total_discount: number;
@@ -1362,12 +1403,14 @@ export interface SalesImportPreview {
     { count: number; net_received: number; platform_fee: number }
   >;
   sample_rows: Array<{
+    tx_index?: number;
     receipt_no?: string | null;
     order_no?: string | null;
     transaction_date: string;
     transaction_time?: string | null;
     order_type: string;
     payment_method: string;
+    bank_account_id?: number | null;
     bank_account_name?: string | null;
     gross_sales: number;
     discount_amount: number;
@@ -1375,6 +1418,14 @@ export interface SalesImportPreview {
     net_received: number;
     status: string;
     item_count: number;
+    is_edited?: boolean;
+  }>;
+  editable_rows?: Record<string, SalesImportEditableRow>;
+  available_accounts?: Array<{
+    id: number;
+    name: string;
+    bank_name: string;
+    account_type: string;
   }>;
   audit?: SalesImportAuditSummary;
 }

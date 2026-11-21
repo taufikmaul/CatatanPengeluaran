@@ -566,3 +566,93 @@ CLN-01,ORD-C1,2026-11-20,10:00,Dine In,QRIS,BCA Operasional,Budi,Kasir 1,100000,
     assert audit_clean["error_count"] == 0
     assert audit_clean["warning_count"] == 0
 
+
+@pytest.mark.asyncio
+async def test_sales_import_edit_problematic_rows_and_commit(client: AsyncSession, auth_cookies):
+    import json
+
+    client.cookies.update(auth_cookies)
+
+    res_acc = await client.post(
+        "/api/v1/bank-accounts",
+        json={
+            "name": "BCA Penerimaan",
+            "bank_name": "BCA",
+            "opening_balance": 0,
+            "is_default": True,
+        },
+    )
+    assert res_acc.status_code == 201
+    bca_id = res_acc.json()["account"]["id"]
+
+    csv_with_issues = """No Receipt,No Order,Tanggal,Jam,Tipe Order,Metode Bayar,Rekening Tujuan,Nama Pelanggan,Nama Kasir,Penjualan Kotor,Diskon,Fee Platform,Status,Catatan
+HST-001,ORD-1,2026-11-20,10:00,Cakeflow,Tunai,Kas Toko,Ani,Kasir 1,220000,0,0,paid,Rekening belum terdaftar
+HST-002,ORD-2,2026-11-20,11:00,Cakeflow,Tunai,Kas Toko,Budi,Kasir 1,100000,150000,0,paid,Diskon melebihi kotor
+HST-003,ORD-3,2026-11-20,12:00,Cakeflow,Transfer,BCA Penerimaan,Cici,Kasir 1,0,0,0,paid,Baris nol untuk diabaikan
+""".encode("utf-8")
+
+    # 1. Preview awal: temukan warning rekening 'Kas Toko', diskon > kotor, dan gross 0
+    res_prev = await client.post(
+        "/api/v1/incoming-transactions/import/preview",
+        files={"file": ("CakeFlow.csv", csv_with_issues, "text/csv")},
+        data={"source_type": "auto"},
+    )
+    assert res_prev.status_code == 200
+    prev = res_prev.json()["preview"]
+    assert prev["audit"]["warning_count"] == 4
+    assert len(prev["editable_rows"]) == 3
+    assert any(a["id"] == bca_id for a in prev["available_accounts"])
+
+    acc_findings = [f for f in prev["audit"]["findings"] if f["category"] == "account_mapping"]
+    assert len(acc_findings) == 2
+    assert all(f["raw_value"] == "Kas Toko" for f in acc_findings)
+    assert {f["tx_index"] for f in acc_findings} == {0, 1}
+
+    # 2. Preview ulang dengan overrides: remap rekening untuk row 0 & 1, perbaiki diskon row 1, exclude row 2
+    overrides = {
+        "0": {"bank_account_id": bca_id},
+        "1": {"bank_account_id": bca_id, "gross_sales": 150000, "discount_amount": 20000, "platform_fee": 5000},
+        "2": {"exclude": True},
+    }
+    res_fixed = await client.post(
+        "/api/v1/incoming-transactions/import/preview",
+        files={"file": ("CakeFlow.csv", csv_with_issues, "text/csv")},
+        data={"source_type": "auto", "overrides_json": json.dumps(overrides)},
+    )
+    assert res_fixed.status_code == 200
+    fixed_prev = res_fixed.json()["preview"]
+    assert fixed_prev["audit"]["total_findings"] == 0
+    assert fixed_prev["new_paid_count"] == 2
+    assert fixed_prev["edited_count"] == 2
+    assert fixed_prev["excluded_count"] == 1
+    assert fixed_prev["total_net_received"] == 220000.0 + 125000.0
+
+    # 3. Commit dengan overrides yang sama -> data tersimpan sesuai hasil edit & row 2 diabaikan
+    res_commit = await client.post(
+        "/api/v1/incoming-transactions/import/commit",
+        files={"file": ("CakeFlow.csv", csv_with_issues, "text/csv")},
+        data={
+            "source_type": "auto",
+            "skip_duplicates": "true",
+            "include_void": "true",
+            "overrides_json": json.dumps(overrides),
+        },
+    )
+    assert res_commit.status_code == 200
+    commit_res = res_commit.json()["result"]
+    assert commit_res["inserted_paid"] == 2
+    assert commit_res["excluded_count"] == 1
+
+    # 4. Verifikasi di database
+    res_list = await client.get("/api/v1/incoming-transactions")
+    assert res_list.status_code == 200
+    tx_by_receipt = {t["receipt_no"]: t for t in res_list.json()["transactions"]}
+    assert set(tx_by_receipt.keys()) == {"HST-001", "HST-002"}
+    assert tx_by_receipt["HST-001"]["bank_account_id"] == bca_id
+    assert tx_by_receipt["HST-002"]["bank_account_id"] == bca_id
+    assert tx_by_receipt["HST-002"]["gross_sales"] == 150000.0
+    assert tx_by_receipt["HST-002"]["discount_amount"] == 20000.0
+    assert tx_by_receipt["HST-002"]["platform_fee"] == 5000.0
+    assert tx_by_receipt["HST-002"]["net_received"] == 125000.0
+
+

@@ -2,9 +2,10 @@
 app/api/incoming_transactions.py — REST API for Daftar Transaksi Masuk & Import Laporan POS/Platform
 """
 from datetime import date, timedelta
+import json
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +14,11 @@ from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_account import BankAccount
 from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
-from app.services.sales_import_service import parse_sales_csv, audit_sales_transactions
+from app.services.sales_import_service import (
+    parse_sales_csv,
+    audit_sales_transactions,
+    apply_sales_import_overrides,
+)
 from app.utils.csv_helpers import (
     build_csv_template,
     col_lookup,
@@ -1155,25 +1160,117 @@ async def _find_existing_receipts(
     return {r[0] for r in res.fetchall() if r[0]}
 
 
+class SalesImportRowOverride(BaseModel):
+    receipt_no: Optional[str] = Field(None, max_length=80)
+    transaction_date: Optional[str] = None
+    order_type: Optional[str] = Field(None, max_length=60)
+    payment_method: Optional[str] = Field(None, max_length=60)
+    bank_account_id: Optional[int] = None
+    bank_account_name: Optional[str] = Field(None, max_length=120)
+    gross_sales: Optional[float] = Field(None, ge=0)
+    discount_amount: Optional[float] = Field(None, ge=0)
+    platform_fee: Optional[float] = Field(None, ge=0)
+    status: Optional[str] = Field(None, max_length=20)
+    notes: Optional[str] = None
+    exclude: bool = False
+
+
+def _parse_overrides_json(overrides_json: Optional[str]) -> dict[int, dict[str, Any]]:
+    if not overrides_json or not overrides_json.strip():
+        return {}
+    try:
+        raw = json.loads(overrides_json)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Format overrides_json tidak valid.",
+        )
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="overrides_json harus berupa objek JSON dengan kunci indeks baris.",
+        )
+    validated: dict[int, dict[str, Any]] = {}
+    for k, v in raw.items():
+        try:
+            idx = int(k)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Indeks baris override tidak valid: {k}",
+            )
+        if not isinstance(v, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Data override untuk baris #{idx} harus berupa objek.",
+            )
+        try:
+            model = SalesImportRowOverride(**v)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Validasi override baris #{idx} gagal: {exc.errors()[0].get('msg', 'data tidak valid')}",
+            )
+        validated[idx] = model.model_dump(exclude_unset=True)
+    return validated
+
+
+def _serialize_editable_import_row(tx: dict[str, Any]) -> dict[str, Any]:
+    tx_date = tx.get("transaction_date")
+    return {
+        "tx_index": tx.get("tx_index"),
+        "receipt_no": tx.get("receipt_no"),
+        "order_no": tx.get("order_no"),
+        "transaction_date": tx_date.isoformat() if isinstance(tx_date, date) else (str(tx_date) if tx_date else ""),
+        "transaction_time": tx.get("transaction_time"),
+        "order_type": tx.get("order_type") or "",
+        "payment_method": tx.get("payment_method") or "",
+        "bank_account_id": tx.get("bank_account_id"),
+        "bank_account_name": tx.get("bank_account_name"),
+        "raw_bank_account_name": tx.get("raw_bank_account_name"),
+        "gross_sales": float(tx.get("gross_sales") or 0.0),
+        "discount_amount": float(tx.get("discount_amount") or 0.0),
+        "platform_fee": float(tx.get("platform_fee") or 0.0),
+        "net_received": float(tx.get("net_received") or 0.0),
+        "status": tx.get("status") or "paid",
+        "notes": tx.get("notes") or "",
+        "item_count": len(tx.get("items", [])),
+        "is_edited": bool(tx.get("_edited")),
+        "is_excluded": bool(tx.get("_excluded")),
+    }
+
+
 @router.post("/import/preview")
 async def api_preview_sales_import(
     file: UploadFile = File(...),
     source_type: str = Form("auto"),
+    overrides_json: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     content = await file.read()
     validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    overrides = _parse_overrides_json(overrides_json)
     try:
         parsed = parse_sales_csv(content, source_type=source_type)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    receipt_nos = [t["receipt_no"] for t in parsed.transactions if t.get("receipt_no")]
-    existing_receipts = await _find_existing_receipts(db, parsed.source_type, receipt_nos)
-    acc_res = await db.execute(select(BankAccount))
+    acc_res = await db.execute(select(BankAccount).order_by(BankAccount.sort_order.asc(), BankAccount.id.asc()))
     all_accounts = acc_res.scalars().all()
+    acc_by_id = {a.id: a for a in all_accounts}
     acc_by_name = {a.name.strip().lower(): a for a in all_accounts}
     channel_map, default_acc = await build_channel_account_map(db)
+
+    apply_sales_import_overrides(
+        parsed.transactions,
+        overrides=overrides,
+        acc_by_id=acc_by_id,
+        acc_by_name=acc_by_name,
+    )
+
+    active_txs = [t for t in parsed.transactions if not t.get("_excluded")]
+    receipt_nos = [t["receipt_no"] for t in active_txs if t.get("receipt_no")]
+    existing_receipts = await _find_existing_receipts(db, parsed.source_type, receipt_nos)
 
     new_paid = []
     new_void = []
@@ -1181,23 +1278,24 @@ async def api_preview_sales_import(
 
     channel_breakdown: dict[str, dict[str, Any]] = {}
 
-    for tx in parsed.transactions:
+    for tx in active_txs:
         rno = tx.get("receipt_no")
         if rno and rno in existing_receipts:
             duplicates.append(tx)
             continue
 
-        target_acc_raw = (tx.get("bank_account_name") or "").strip().lower()
-        if target_acc_raw and target_acc_raw in acc_by_name:
-            matched_acc = acc_by_name[target_acc_raw]
-            acc_id = matched_acc.id
-            acc_name = matched_acc.name
-        else:
-            acc_id, acc_name = resolve_bank_account_for_tx(
-                tx["payment_method"], tx["order_type"], channel_map, default_acc
-            )
-        tx["bank_account_id"] = acc_id
-        tx["bank_account_name"] = acc_name
+        if not tx.get("_bank_overridden"):
+            target_acc_raw = (tx.get("bank_account_name") or "").strip().lower()
+            if target_acc_raw and target_acc_raw in acc_by_name:
+                matched_acc = acc_by_name[target_acc_raw]
+                acc_id = matched_acc.id
+                acc_name = matched_acc.name
+            else:
+                acc_id, acc_name = resolve_bank_account_for_tx(
+                    tx["payment_method"], tx["order_type"], channel_map, default_acc
+                )
+            tx["bank_account_id"] = acc_id
+            tx["bank_account_name"] = acc_name
 
         if tx["status"] == "paid":
             new_paid.append(tx)
@@ -1214,12 +1312,14 @@ async def api_preview_sales_import(
     for tx in (new_paid + new_void)[:15]:
         preview_rows.append(
             {
+                "tx_index": tx["tx_index"],
                 "receipt_no": tx["receipt_no"],
                 "order_no": tx["order_no"],
                 "transaction_date": tx["transaction_date"].isoformat(),
                 "transaction_time": tx["transaction_time"],
                 "order_type": tx["order_type"],
                 "payment_method": tx["payment_method"],
+                "bank_account_id": tx.get("bank_account_id"),
                 "bank_account_name": tx.get("bank_account_name"),
                 "gross_sales": tx["gross_sales"],
                 "discount_amount": tx["discount_amount"],
@@ -1227,6 +1327,7 @@ async def api_preview_sales_import(
                 "net_received": tx["net_received"],
                 "status": tx["status"],
                 "item_count": len(tx.get("items", [])),
+                "is_edited": bool(tx.get("_edited")),
             }
         )
 
@@ -1237,16 +1338,49 @@ async def api_preview_sales_import(
         skipped_rows=parsed.skipped_rows,
     )
 
+    # Kumpulkan baris yang memiliki temuan audit, sedang di-sample, atau pernah diedit agar user bisa edit/reset
+    relevant_indices: set[int] = set()
+    for f in audit_res["findings"]:
+        if f.get("tx_index") is not None:
+            relevant_indices.add(int(f["tx_index"]))
+    for r in preview_rows:
+        if r.get("tx_index") is not None:
+            relevant_indices.add(int(r["tx_index"]))
+    for idx_key in overrides.keys():
+        relevant_indices.add(int(idx_key))
+
+    editable_rows = {
+        str(tx["tx_index"]): _serialize_editable_import_row(tx)
+        for tx in parsed.transactions
+        if tx["tx_index"] in relevant_indices
+    }
+
+    available_accounts = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "bank_name": a.bank_name,
+            "account_type": a.account_type,
+        }
+        for a in all_accounts
+        if a.is_active
+    ]
+
+    edited_count = sum(1 for t in parsed.transactions if t.get("_edited") and not t.get("_excluded"))
+    excluded_count = sum(1 for t in parsed.transactions if t.get("_excluded"))
+
     return {
         "ok": True,
         "preview": {
             "source_type": parsed.source_type,
-            "total_transactions": len(parsed.transactions),
+            "total_transactions": len(active_txs),
             "new_paid_count": len(new_paid),
             "new_void_count": len(new_void),
             "duplicate_count": len(duplicates),
             "skipped_count": len(parsed.skipped_rows),
-            "total_items": parsed.total_items,
+            "edited_count": edited_count,
+            "excluded_count": excluded_count,
+            "total_items": sum(len(t.get("items", [])) for t in active_txs),
             "total_gross_sales": sum(t["gross_sales"] for t in new_paid),
             "total_discount": sum(t["discount_amount"] for t in new_paid),
             "total_platform_fee": sum(t["platform_fee"] for t in new_paid),
@@ -1254,6 +1388,8 @@ async def api_preview_sales_import(
             "total_void_amount": sum(t["cancellation_total"] for t in new_void),
             "channel_breakdown": channel_breakdown,
             "sample_rows": preview_rows,
+            "editable_rows": editable_rows,
+            "available_accounts": available_accounts,
             "audit": audit_res,
         },
     }
@@ -1265,31 +1401,58 @@ async def api_commit_sales_import(
     source_type: str = Form("auto"),
     skip_duplicates: bool = Form(True),
     include_void: bool = Form(True),
+    overrides_json: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     content = await file.read()
     validate_upload_file(content, file.filename, allowed_extensions=(".csv",))
+    overrides = _parse_overrides_json(overrides_json)
     try:
         parsed = parse_sales_csv(content, source_type=source_type)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    receipt_nos = [t["receipt_no"] for t in parsed.transactions if t.get("receipt_no")]
+    acc_res = await db.execute(select(BankAccount))
+    all_accounts = acc_res.scalars().all()
+    acc_by_id = {a.id: a for a in all_accounts}
+    acc_by_name_obj = {a.name.strip().lower(): a for a in all_accounts}
+    acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
+    channel_map, default_acc = await build_channel_account_map(db)
+
+    apply_sales_import_overrides(
+        parsed.transactions,
+        overrides=overrides,
+        acc_by_id=acc_by_id,
+        acc_by_name=acc_by_name_obj,
+    )
+
+    active_txs = [t for t in parsed.transactions if not t.get("_excluded")]
+    receipt_nos = [t["receipt_no"] for t in active_txs if t.get("receipt_no")]
     existing_receipts = (
         await _find_existing_receipts(db, parsed.source_type, receipt_nos)
         if skip_duplicates
         else set()
     )
-    acc_res = await db.execute(select(BankAccount))
-    all_accounts = acc_res.scalars().all()
-    acc_by_name = {a.name.strip().lower(): a.id for a in all_accounts}
-    channel_map, default_acc = await build_channel_account_map(db)
+
+    pre_audit = audit_sales_transactions(
+        parsed.transactions,
+        existing_receipts=existing_receipts,
+        registered_bank_accounts=set(acc_by_name.keys()),
+        skipped_rows=parsed.skipped_rows,
+    )
+    if pre_audit["has_blocking_errors"]:
+        first_err = next((f["message"] for f in pre_audit["findings"] if f["level"] == "error"), "Terdapat error kritis.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Import dibatalkan karena masih ada error kritis: {first_err}",
+        )
 
     inserted_paid = 0
     inserted_void = 0
     duplicate_count = 0
+    excluded_count = len(parsed.transactions) - len(active_txs)
 
-    for tx_data in parsed.transactions:
+    for tx_data in active_txs:
         rno = tx_data.get("receipt_no")
         if skip_duplicates and rno and rno in existing_receipts:
             duplicate_count += 1
@@ -1297,13 +1460,16 @@ async def api_commit_sales_import(
         if not include_void and tx_data["status"] != "paid":
             continue
 
-        target_acc_raw = (tx_data.get("bank_account_name") or "").strip().lower()
-        if target_acc_raw and target_acc_raw in acc_by_name:
-            acc_id = acc_by_name[target_acc_raw]
+        if tx_data.get("_bank_overridden"):
+            acc_id = tx_data.get("bank_account_id")
         else:
-            acc_id, _ = resolve_bank_account_for_tx(
-                tx_data["payment_method"], tx_data["order_type"], channel_map, default_acc
-            )
+            target_acc_raw = (tx_data.get("bank_account_name") or "").strip().lower()
+            if target_acc_raw and target_acc_raw in acc_by_name:
+                acc_id = acc_by_name[target_acc_raw]
+            else:
+                acc_id, _ = resolve_bank_account_for_tx(
+                    tx_data["payment_method"], tx_data["order_type"], channel_map, default_acc
+                )
 
         tx_model = IncomingTransaction(
             source_type=tx_data["source_type"],
@@ -1367,6 +1533,7 @@ async def api_commit_sales_import(
             "inserted_void": inserted_void,
             "duplicate_count": duplicate_count,
             "skipped_count": len(parsed.skipped_rows),
+            "excluded_count": excluded_count,
             "audit_summary": {
                 "total_findings": audit_res["total_findings"],
                 "warning_count": audit_res["warning_count"],

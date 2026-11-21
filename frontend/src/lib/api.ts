@@ -863,11 +863,15 @@ export async function deleteIncomingTransaction(txId: number): Promise<void> {
 
 export async function previewSalesImport(
   file: File,
-  sourceType = "auto"
+  sourceType = "auto",
+  overrides?: Record<string, import("@/types").SalesImportRowOverride>
 ): Promise<import("@/types").SalesImportPreview> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("source_type", sourceType);
+  if (overrides && Object.keys(overrides).length > 0) {
+    formData.append("overrides_json", JSON.stringify(overrides));
+  }
   const res = await api.post("/incoming-transactions/import/preview", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -878,18 +882,23 @@ export async function commitSalesImport(
   file: File,
   sourceType = "auto",
   skipDuplicates = true,
-  includeVoid = true
+  includeVoid = true,
+  overrides?: Record<string, import("@/types").SalesImportRowOverride>
 ): Promise<{
   inserted_paid: number;
   inserted_void: number;
   duplicate_count: number;
   skipped_count: number;
+  excluded_count?: number;
 }> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("source_type", sourceType);
   formData.append("skip_duplicates", String(skipDuplicates));
   formData.append("include_void", String(includeVoid));
+  if (overrides && Object.keys(overrides).length > 0) {
+    formData.append("overrides_json", JSON.stringify(overrides));
+  }
   const res = await api.post("/incoming-transactions/import/commit", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });

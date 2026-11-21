@@ -342,6 +342,113 @@ def parse_sales_csv(content: bytes, source_type: str = "auto") -> ParsedSalesRes
     raise ValueError(f"Sumber laporan tidak dikenal: {source_type}")
 
 
+def apply_sales_import_overrides(
+    transactions: list[dict[str, Any]],
+    overrides: dict[int, dict[str, Any]] | None,
+    acc_by_id: dict[int, Any] | None = None,
+    acc_by_name: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Terapkan override manual dari user pada daftar transaksi hasil parse CSV.
+    Setiap transaksi diberi `tx_index` (0-based) yang stabil agar edit berulang dan
+    proses commit selalu merujuk baris yang sama.
+    """
+    overrides = overrides or {}
+    acc_by_id = acc_by_id or {}
+    acc_by_name = acc_by_name or {}
+
+    for idx, tx in enumerate(transactions):
+        tx["tx_index"] = idx
+        tx["_edited"] = False
+        tx["_excluded"] = False
+
+        ov = overrides.get(idx)
+        if not ov:
+            continue
+
+        tx["_edited"] = True
+        if ov.get("exclude"):
+            tx["_excluded"] = True
+            continue
+
+        if ov.get("receipt_no") is not None:
+            cleaned_rno = _clean_str(ov.get("receipt_no"))
+            tx["receipt_no"] = cleaned_rno or ""
+
+        if ov.get("transaction_date") is not None:
+            raw_dt = str(ov.get("transaction_date")).strip()
+            parsed_dt = _parse_date_id(raw_dt)
+            if parsed_dt:
+                tx["transaction_date"] = parsed_dt
+
+        if ov.get("order_type") is not None:
+            tx["order_type"] = str(ov.get("order_type")).strip()
+
+        if ov.get("payment_method") is not None:
+            tx["payment_method"] = str(ov.get("payment_method")).strip()
+
+        if ov.get("notes") is not None:
+            tx["notes"] = _clean_str(ov.get("notes"))
+
+        if ov.get("bank_account_id") is not None:
+            acc_id_val = int(ov["bank_account_id"])
+            matched_acc = acc_by_id.get(acc_id_val)
+            if matched_acc is not None:
+                tx["bank_account_id"] = matched_acc.id
+                tx["bank_account_name"] = matched_acc.name
+                tx["raw_bank_account_name"] = matched_acc.name
+                tx["_bank_overridden"] = True
+        elif ov.get("bank_account_name") is not None:
+            acc_name_raw = str(ov.get("bank_account_name")).strip()
+            matched_acc = acc_by_name.get(acc_name_raw.lower()) if acc_name_raw else None
+            if matched_acc is not None:
+                tx["bank_account_id"] = matched_acc.id
+                tx["bank_account_name"] = matched_acc.name
+                tx["raw_bank_account_name"] = matched_acc.name
+                tx["_bank_overridden"] = True
+            else:
+                tx["bank_account_id"] = None
+                tx["bank_account_name"] = acc_name_raw or None
+                tx["raw_bank_account_name"] = acc_name_raw or None
+                tx["_bank_overridden"] = True
+
+        financial_changed = False
+        if ov.get("status") is not None:
+            st_val = str(ov.get("status")).strip().lower()
+            if st_val in ("paid", "void", "cancelled"):
+                tx["status"] = st_val
+                financial_changed = True
+
+        if ov.get("gross_sales") is not None:
+            tx["gross_sales"] = max(0.0, float(ov["gross_sales"]))
+            financial_changed = True
+
+        if ov.get("discount_amount") is not None:
+            tx["discount_amount"] = max(0.0, float(ov["discount_amount"]))
+            financial_changed = True
+
+        if ov.get("platform_fee") is not None:
+            tx["platform_fee"] = max(0.0, float(ov["platform_fee"]))
+            financial_changed = True
+
+        if financial_changed:
+            gross = float(tx.get("gross_sales") or 0.0)
+            disc = float(tx.get("discount_amount") or 0.0)
+            fee = float(tx.get("platform_fee") or 0.0)
+            if tx.get("status") == "paid":
+                net_sales = max(0.0, gross - disc)
+                net_received = max(0.0, net_sales - fee)
+                tx["net_sales"] = net_sales
+                tx["net_received"] = net_received
+                tx["cancellation_total"] = 0.0
+            else:
+                tx["net_sales"] = 0.0
+                tx["net_received"] = 0.0
+                tx["cancellation_total"] = max(0.0, gross - disc)
+
+    return transactions
+
+
 def audit_sales_transactions(
     transactions: list[dict[str, Any]],
     existing_receipts: set[str] | None = None,
@@ -376,10 +483,15 @@ def audit_sales_transactions(
                 "level": "error",
                 "category": "missing_field",
                 "receipt_no": srno,
+                "tx_index": None,
+                "field": "transaction_date",
                 "message": f"Baris #{row_num}" + (f" (Struk '{srno}')" if srno else "") + f": Dilewati karena {reason}.",
             })
+
+    active_transactions = [tx for tx in transactions if not tx.get("_excluded")]
+
     receipt_counts: dict[str, int] = {}
-    for tx in transactions:
+    for tx in active_transactions:
         rno = (tx.get("receipt_no") or "").strip()
         if rno:
             receipt_counts[rno] = receipt_counts.get(rno, 0) + 1
@@ -387,7 +499,8 @@ def audit_sales_transactions(
     seen_internal_duplicates: set[str] = set()
     today = date.today()
 
-    for idx, tx in enumerate(transactions, start=1):
+    for idx, tx in enumerate(active_transactions, start=1):
+        tx_idx = tx.get("tx_index", idx - 1)
         rno = (tx.get("receipt_no") or "").strip() or None
 
         # 1. Duplikasi internal dalam file
@@ -397,6 +510,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "duplicate",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "receipt_no",
                 "message": f"Struk '{rno}' muncul {receipt_counts[rno]} kali dalam file ini.",
             })
 
@@ -406,6 +521,8 @@ def audit_sales_transactions(
                 "level": "info",
                 "category": "duplicate",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "receipt_no",
                 "message": f"Struk '{rno}' sudah terdaftar di database (akan dilewati jika skip duplicate aktif).",
             })
 
@@ -415,6 +532,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "missing_field",
                 "receipt_no": None,
+                "tx_index": tx_idx,
+                "field": "receipt_no",
                 "message": f"Baris #{idx}: Nomor receipt/struk kosong.",
             })
 
@@ -424,6 +543,8 @@ def audit_sales_transactions(
                 "level": "error",
                 "category": "missing_field",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "transaction_date",
                 "message": f"Struk '{rno or f'#{idx}'}': Tanggal transaksi tidak valid atau kosong.",
             })
         elif isinstance(tx_date, date):
@@ -432,6 +553,8 @@ def audit_sales_transactions(
                     "level": "warning",
                     "category": "date_anomaly",
                     "receipt_no": rno,
+                    "tx_index": tx_idx,
+                    "field": "transaction_date",
                     "message": f"Struk '{rno}': Tanggal transaksi ({tx_date.isoformat()}) berada di masa depan.",
                 })
             elif tx_date < today - timedelta(days=365 * 2):
@@ -439,6 +562,8 @@ def audit_sales_transactions(
                     "level": "info",
                     "category": "date_anomaly",
                     "receipt_no": rno,
+                    "tx_index": tx_idx,
+                    "field": "transaction_date",
                     "message": f"Struk '{rno}': Tanggal transaksi ({tx_date.isoformat()}) lebih dari 2 tahun lalu.",
                 })
 
@@ -449,6 +574,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "missing_field",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "order_type",
                 "message": f"Struk '{rno}': Tipe order kosong.",
             })
         if not pay_method:
@@ -456,6 +583,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "missing_field",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "payment_method",
                 "message": f"Struk '{rno}': Metode pembayaran kosong.",
             })
 
@@ -471,6 +600,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "financial_anomaly",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "gross_sales",
                 "message": f"Struk '{rno}': Status Dibayar tetapi Penjualan Kotor Rp {gross:,.0f}.",
             })
         if disc > gross and gross > 0:
@@ -478,6 +609,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "financial_anomaly",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "discount_amount",
                 "message": f"Struk '{rno}': Diskon (Rp {disc:,.0f}) lebih besar dari Penjualan Kotor (Rp {gross:,.0f}).",
             })
         if fee > net_s and net_s > 0:
@@ -485,6 +618,8 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "financial_anomaly",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "platform_fee",
                 "message": f"Struk '{rno}': Fee platform (Rp {fee:,.0f}) melebihi Penjualan Bersih (Rp {net_s:,.0f}).",
             })
         if gross > 15_000_000:
@@ -492,6 +627,8 @@ def audit_sales_transactions(
                 "level": "info",
                 "category": "financial_anomaly",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "gross_sales",
                 "message": f"Struk '{rno}': Penjualan kotor tinggi (Rp {gross:,.0f}), periksa potensi typo digit 0.",
             })
 
@@ -505,6 +642,9 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "account_mapping",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "bank_account_name",
+                "raw_value": raw_acc,
                 "message": f"Struk '{rno}': Rekening tujuan '{raw_acc}' tidak terdaftar di sistem Rekening Setup.",
             })
         elif not raw_acc and not acc_name and not acc_id:
@@ -512,6 +652,9 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "account_mapping",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "bank_account_name",
+                "raw_value": pay_method or "(Kosong)",
                 "message": f"Struk '{rno}': Rekening tujuan belum terpetakan untuk metode bayar '{pay_method}'.",
             })
         elif not raw_acc and registered_bank_accounts and acc_name and acc_name.lower() not in registered_bank_accounts:
@@ -519,6 +662,9 @@ def audit_sales_transactions(
                 "level": "warning",
                 "category": "account_mapping",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "bank_account_name",
+                "raw_value": acc_name,
                 "message": f"Struk '{rno}': Rekening tujuan '{acc_name}' tidak terdaftar di sistem Rekening Setup.",
             })
 
@@ -529,6 +675,8 @@ def audit_sales_transactions(
                 "level": "info",
                 "category": "financial_anomaly",
                 "receipt_no": rno,
+                "tx_index": tx_idx,
+                "field": "platform_fee",
                 "message": f"Struk '{rno}': Pesanan online '{order_type}' tetapi Fee Platform tercatat Rp 0.",
             })
 
@@ -541,6 +689,8 @@ def audit_sales_transactions(
                     "level": "warning",
                     "category": "financial_anomaly",
                     "receipt_no": rno,
+                    "tx_index": tx_idx,
+                    "field": "gross_sales",
                     "message": f"Struk '{rno}': Terdapat selisih Rp {abs(gross - items_gross):,.0f} antara total struk vs rincian item.",
                 })
             for it in items:
@@ -550,6 +700,8 @@ def audit_sales_transactions(
                         "level": "warning",
                         "category": "missing_field",
                         "receipt_no": rno,
+                        "tx_index": tx_idx,
+                        "field": "items",
                         "message": f"Struk '{rno}': Item '{it.get('product_name')}' memiliki kuantitas {qty}.",
                     })
 
