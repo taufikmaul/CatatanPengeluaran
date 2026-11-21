@@ -64,7 +64,15 @@ def _parse_date_id(raw: str) -> date | None:
     s = (raw or "").strip()
     if not s or s == "-":
         return None
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d %b %Y"):
+    for fmt in (
+        "%d/%m/%Y",
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%Y/%m/%d",
+        "%d %b %Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ):
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
@@ -126,6 +134,12 @@ def _find_pos_header_index(rows: list[list[str]]) -> int:
             )
         ):
             return idx
+        if (
+            "order id" in normalized
+            and "total belanja" in normalized
+            and any(k in normalized for k in ("tanggal input", "tanggal target", "tanggal"))
+        ):
+            return idx
     return -1
 
 
@@ -180,13 +194,17 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
         result.total_raw_rows += 1
         receipt_no = get_val(row, "No Receipt", "No Struk", "Receipt", "Struk")
         order_no = get_val(row, "No Penjualan", "No Order", "Order ID", "No Pesanan")
+        if not receipt_no and order_no:
+            receipt_no = order_no
 
         if receipt_no or not has_product_col:
             if not receipt_no:
                 continue
 
-            tx_date = _parse_date_id(
-                get_val(row, "Tanggal Penjualan", "Tanggal", "Tanggal Transaksi", "Date", "Tgl")
+            tx_date = (
+                _parse_date_id(get_val(row, "Tanggal Penjualan", "Tanggal", "Tanggal Transaksi", "Date", "Tgl"))
+                or _parse_date_id(get_val(row, "Tanggal Target"))
+                or _parse_date_id(get_val(row, "Tanggal Input"))
             )
             if not tx_date:
                 result.skipped_rows.append(
@@ -208,10 +226,14 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             order_type = _clean_str(get_val(row, "Tipe Order", "Channel", "Saluran")) or "Take Away"
             payment_method = (
                 _clean_str(get_val(row, "Jenis Pembayaran", "Metode Bayar", "Metode Pembayaran", "Payment"))
+                or _clean_str(get_val(row, "Metode Pelunasan"))
+                or _clean_str(get_val(row, "Metode DP"))
                 or order_type
             )
 
-            raw_gross = _parse_number(get_val(row, "Penjualan Kotor", "Gross Sales", "Total Kotor", "Gross"))
+            raw_gross = _parse_number(
+                get_val(row, "Penjualan Kotor", "Gross Sales", "Total Kotor", "Gross", "Total Belanja")
+            )
             raw_disc = _parse_number(get_val(row, "Total Diskon", "Diskon", "Discount", "Diskon Penjualan"))
             platform_fee = _parse_number(
                 get_val(row, "Biaya Pembayaran", "Fee Platform", "Biaya Platform", "Platform Fee", "Komisi")
@@ -240,8 +262,9 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             bank_account_name = _clean_str(
                 get_val(row, "Rekening Tujuan", "Rekening", "Nama Rekening", "Bank Account")
             )
-            notes = _clean_str(
-                get_val(row, "Catatan Pembayaran", "Catatan Penyesuaian", "Catatan", "Notes", "Keterangan")
+            notes = (
+                _clean_str(get_val(row, "Catatan Pembayaran", "Catatan Penyesuaian", "Catatan", "Notes", "Keterangan"))
+                or _clean_str(get_val(row, "Produk"))
             )
             void_str = f"{void_date or ''} {void_time or ''}".strip() or None
 
@@ -256,8 +279,8 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
                 "payment_method": payment_method,
                 "bank_account_name": bank_account_name,
                 "raw_bank_account_name": bank_account_name,
-                "customer_name": _clean_str(get_val(row, "Nama Pelanggan", "Customer")),
-                "cashier_name": _clean_str(get_val(row, "Nama Kasir", "Cashier")),
+                "customer_name": _clean_str(get_val(row, "Nama Pelanggan", "Customer", "Customer/Penerima")),
+                "cashier_name": _clean_str(get_val(row, "Nama Kasir", "Cashier", "Admin")),
                 "gross_sales": raw_gross if not has_product_col else 0.0,
                 "discount_amount": raw_disc if not has_product_col else 0.0,
                 "net_sales": net_sales,
@@ -272,9 +295,9 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             }
             result.transactions.append(current_tx)
 
-        # Tambahkan item (baik untuk baris parent maupun child rows)
+        # Tambahkan item (hanya untuk laporan multi-item POS agar ringkasan produk 1-baris tidak memicu selisih audit item)
         product_name = _clean_str(get_val(row, "Nama Produk", "Product Name", "Produk"))
-        if current_tx is not None and product_name:
+        if current_tx is not None and has_product_col and product_name:
             item_gross = _parse_number(get_val(row, "Penjualan Kotor", "Harga Subtotal"))
             item_discount = _parse_number(get_val(row, "Total Diskon", "Diskon Produk", "Diskon"))
             item = {
