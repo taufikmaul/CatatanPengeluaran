@@ -12,9 +12,10 @@ from fastapi import HTTPException, status
 from app.models.master_data import MasterDataOption
 from app.models.expense import Expense
 from app.models.master_item import MasterItem
+from app.models.menu_product import MenuProduct
 from app.config import settings
 
-VALID_TYPES = ("kategori", "metode_bayar", "satuan")
+VALID_TYPES = ("kategori", "metode_bayar", "satuan", "kategori_menu")
 
 DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
     "kategori": [
@@ -66,6 +67,16 @@ DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
         {"name": "Butir", "description": "Butir (telur, kelapa, buah)", "sort_order": 19, "is_default": False},
         {"name": "Trans", "description": "Transaksi (Tukar Cash kasir)", "sort_order": 20, "is_default": False},
         {"name": "Trip", "description": "Trip pengiriman kurir (Ongkir)", "sort_order": 21, "is_default": False},
+    ],
+    "kategori_menu": [
+        {"name": "Cake Ready", "description": "Kue siap jual di etalase / showcase", "sort_order": 1, "is_default": True},
+        {"name": "Custom Cake", "description": "Kue tart pesanan khusus / ulang tahun", "sort_order": 2, "is_default": False},
+        {"name": "Slice & Dessert Box", "description": "Potongan kue, tiramisu, dessert box", "sort_order": 3, "is_default": False},
+        {"name": "Pastry & Bakery", "description": "Croissant, roti, cookies, brownies", "sort_order": 4, "is_default": False},
+        {"name": "Minuman", "description": "Kopi, teh, minuman dingin dan panas", "sort_order": 5, "is_default": False},
+        {"name": "Prepared / Sub-Resep", "description": "Bahan setengah jadi: ganache, saus, sponge", "sort_order": 6, "is_default": False},
+        {"name": "Hampers / Bundling", "description": "Paket bingkisan, hampers, dan bundling produk", "sort_order": 7, "is_default": False},
+        {"name": "Lainnya", "description": "Kategori menu / produk lainnya", "sort_order": 8, "is_default": False},
     ],
 }
 
@@ -151,6 +162,14 @@ async def get_usage_count(db: AsyncSession, opt_type: str, name: str) -> int:
         )
         mi_count = mi_res.scalar() or 0
         return exp_count + mi_count
+
+    elif opt_type == "kategori_menu":
+        menu_res = await db.execute(
+            select(func.count(MenuProduct.id)).where(
+                func.lower(MenuProduct.category) == func.lower(name_clean)
+            )
+        )
+        return menu_res.scalar() or 0
 
     return 0
 
@@ -437,6 +456,8 @@ async def update_master_option(
             detail="Opsi master data tidak ditemukan",
         )
 
+    old_name = item.name
+
     # Validasi nama jika diubah
     if name is not None:
         clean_name = name.strip()
@@ -459,6 +480,12 @@ async def update_master_option(
                     detail=f"Opsi '{clean_name}' sudah ada dalam master {item.type}",
                 )
         item.name = clean_name
+        if item.type == "kategori_menu" and clean_name != old_name:
+            await db.execute(
+                update(MenuProduct)
+                .where(func.lower(MenuProduct.category) == func.lower(old_name))
+                .values(category=clean_name)
+            )
 
     if description is not None:
         item.description = description.strip()
@@ -534,10 +561,15 @@ async def delete_master_option(
 
     usage = await get_usage_count(db, item.type, item.name)
     if usage > 0 and not force:
+        usage_noun = (
+            f"{usage} menu / resep"
+            if item.type == "kategori_menu"
+            else f"{usage} transaksi / data master"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Opsi '{item.name}' tidak dapat dihapus karena sedang dipakai oleh {usage} transaksi / data master. "
+                f"Opsi '{item.name}' tidak dapat dihapus karena sedang dipakai oleh {usage_noun}. "
                 "Anda dapat menonaktifkannya agar tidak muncul lagi pada pilihan input baru."
             ),
         )

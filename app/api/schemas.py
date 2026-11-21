@@ -699,7 +699,7 @@ class MonthlyBudgetDetailResponse(BaseModel):
 # ──────────────────────────────────────────────
 
 class MasterDataOptionCreate(BaseModel):
-    type: str  # "kategori" | "metode_bayar" | "satuan"
+    type: str  # "kategori" | "metode_bayar" | "satuan" | "kategori_menu"
     name: str
     description: str = ""
     sort_order: int | None = None

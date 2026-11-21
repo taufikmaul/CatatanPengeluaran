@@ -3,8 +3,10 @@ tests/test_master_data.py — Unit & Integration tests untuk Master Data Sistem 
 """
 import pytest
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import select
 from app.main import app
 from app.models.master_data import MasterDataOption
+from app.models.menu_product import MenuProduct
 from app.services.master_data_service import (
     get_master_options,
     create_master_option,
@@ -179,3 +181,104 @@ async def test_api_master_data_endpoints(client):
     )
     assert res_reset.status_code == 200
     assert res_reset.json()["ok"] is True
+
+
+@pytest.mark.anyio
+async def test_menu_category_master_data_crud_usage_and_cascade(client, db):
+    """Test CRUD master kategori_menu, hitung pemakaian MenuProduct, proteksi hapus, & rename cascade."""
+    from app.services.dashboard_auth_service import create_session_token
+
+    token = create_session_token(role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1. Default kategori_menu ter-seed otomatis
+    res_list = await client.get("/api/v1/config/master-data?type=kategori_menu", headers=headers)
+    assert res_list.status_code == 200
+    items = res_list.json()["items"]
+    names = [it["name"] for it in items]
+    assert "Cake Ready" in names
+    assert "Prepared / Sub-Resep" in names
+    assert all(it["type"] == "kategori_menu" for it in items)
+
+    # 2. Tambah kategori_menu baru
+    res_create = await client.post(
+        "/api/v1/config/master-data",
+        json={
+            "type": "kategori_menu",
+            "name": "Seasonal Cake",
+            "description": "Kue edisi musiman",
+            "sort_order": 20,
+        },
+        headers=headers,
+    )
+    assert res_create.status_code == 200
+    created_cat = res_create.json()["item"]
+    cat_id = created_cat["id"]
+    assert created_cat["name"] == "Seasonal Cake"
+    assert created_cat["usage_count"] == 0
+
+    # 3. Buat MenuProduct memakai kategori baru
+    res_menu = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Mango Sticky Roll",
+            "category": "Seasonal Cake",
+            "unit": "Porsi",
+            "selling_price": 45000,
+        },
+        headers=headers,
+    )
+    assert res_menu.status_code in (200, 201)
+    menu_id = res_menu.json()["item"]["id"]
+
+    # Verifikasi usage_count == 1
+    res_list_after = await client.get("/api/v1/config/master-data?type=kategori_menu", headers=headers)
+    assert res_list_after.status_code == 200
+    matched = [it for it in res_list_after.json()["items"] if it["id"] == cat_id]
+    assert len(matched) == 1
+    assert matched[0]["usage_count"] == 1
+
+    # 4. Hapus ditolak (400) karena masih dipakai MenuProduct
+    res_del_blocked = await client.delete(f"/api/v1/config/master-data/{cat_id}", headers=headers)
+    assert res_del_blocked.status_code == 400
+    assert "menu / resep" in res_del_blocked.json()["detail"].lower()
+
+    # 5. Rename kategori otomatis cascade ke MenuProduct.category dan muncul di /api/v1/menus categories
+    res_rename = await client.put(
+        f"/api/v1/config/master-data/{cat_id}",
+        json={"name": "Limited Edition Cake"},
+        headers=headers,
+    )
+    assert res_rename.status_code == 200
+    assert res_rename.json()["item"]["name"] == "Limited Edition Cake"
+    assert res_rename.json()["item"]["usage_count"] == 1
+
+    db.expire_all()
+    refreshed_menu = (
+        await db.execute(select(MenuProduct).where(MenuProduct.id == menu_id))
+    ).scalar_one()
+    assert refreshed_menu.category == "Limited Edition Cake"
+
+    res_menus = await client.get("/api/v1/menus", headers=headers)
+    assert res_menus.status_code == 200
+    assert "Limited Edition Cake" in res_menus.json()["categories"]
+
+    # 6. Nonaktifkan, pindahkan menu ke kategori lain, lalu hapus berhasil (200)
+    res_deactivate = await client.put(
+        f"/api/v1/config/master-data/{cat_id}",
+        json={"is_active": False},
+        headers=headers,
+    )
+    assert res_deactivate.status_code == 200
+    assert res_deactivate.json()["item"]["is_active"] is False
+
+    res_move_menu = await client.put(
+        f"/api/v1/menus/{menu_id}",
+        json={"category": "Cake Ready"},
+        headers=headers,
+    )
+    assert res_move_menu.status_code == 200
+
+    res_del_ok = await client.delete(f"/api/v1/config/master-data/{cat_id}", headers=headers)
+    assert res_del_ok.status_code == 200
+    assert res_del_ok.json()["ok"] is True

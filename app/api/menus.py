@@ -12,6 +12,7 @@ from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.database.connection import get_db
 from app.models.master_item import MasterItem
 from app.models.menu_product import MenuIngredient, MenuProduct
+from app.services.master_data_service import get_active_names
 from app.services.menu_product_service import (
     build_master_price_history_map,
     build_menus_json_export,
@@ -245,7 +246,16 @@ async def _load_filtered_menus(
     price_map = {mid: float(info["latest_price"]) for mid, info in price_history_map.items()}
     resolved_map = resolve_all_menu_financials(menus_by_id, price_history_map)
 
-    all_categories = sorted({(m.category or "Lainnya") for m in menus_by_id.values()})
+    master_menu_cats = await get_active_names(db, "kategori_menu")
+    master_lower = {c.lower() for c in master_menu_cats}
+    legacy_cats = sorted(
+        {
+            (m.category or "Lainnya")
+            for m in menus_by_id.values()
+            if (m.category or "Lainnya").strip().lower() not in master_lower
+        }
+    )
+    all_categories = [*master_menu_cats, *legacy_cats]
     serialized_all = [
         serialize_menu_product(
             m,

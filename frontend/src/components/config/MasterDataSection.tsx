@@ -35,9 +35,10 @@ import {
   Info,
   Check,
   BookOpen,
+  UtensilsCrossed,
 } from "lucide-react";
 
-type MasterDataType = "kategori" | "metode_bayar" | "satuan";
+type MasterDataType = "kategori" | "metode_bayar" | "satuan" | "kategori_menu";
 
 interface MasterDataSectionProps {
   onRefreshConfig?: () => void;
@@ -85,6 +86,16 @@ const TYPE_CONFIG: Record<
     defaultDesc: "Satuan kemasan untuk...",
     color: "indigo",
   },
+  kategori_menu: {
+    label: "Kategori Menu",
+    singular: "Kategori Menu",
+    icon: UtensilsCrossed,
+    description:
+      "Master kategori untuk mengelompokkan Menu Jual, Prepared / Sub-Resep, dan Paket Bundling. Perubahan nama otomatis menyinkronkan menu terkait.",
+    placeholder: "Contoh: Seasonal Cake, Signature Cookies, Coffee",
+    defaultDesc: "Kelompok menu untuk...",
+    color: "amber",
+  },
 };
 
 export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshConfig }) => {
@@ -125,6 +136,8 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       setIsDialogOpen(false);
       refetch();
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       onRefreshConfig?.();
     },
     onError: (err: any) => {
@@ -141,6 +154,8 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       setEditingItem(null);
       refetch();
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       onRefreshConfig?.();
     },
     onError: (err: any) => {
@@ -157,6 +172,8 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       setDeletingItem(null);
       refetch();
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       onRefreshConfig?.();
     },
     onError: (err: any) => {
@@ -171,6 +188,8 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       toast.success(res.message || "Opsi bawaan berhasil dipulihkan!");
       refetch();
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      queryClient.invalidateQueries({ queryKey: ["menu-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
       onRefreshConfig?.();
     },
     onError: (err: any) => {
@@ -199,6 +218,7 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
       kategori: { total: 0, active: 0, inUse: 0 },
       metode_bayar: { total: 0, active: 0, inUse: 0 },
       satuan: { total: 0, active: 0, inUse: 0 },
+      kategori_menu: { total: 0, active: 0, inUse: 0 },
     };
     allItems.forEach((it) => {
       const t = it.type as MasterDataType;
@@ -473,11 +493,12 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                           )}
 
                           {item.usage_count > 0 ? (
-                            <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md font-mono">
-                              {item.usage_count} transaksi
+                            <span className="text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-mono">
+                              {item.usage_count}{" "}
+                              {activeType === "kategori_menu" ? "menu" : "transaksi"}
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-400 italic">
+                            <span className="text-[10px] text-slate-600 italic">
                               Belum digunakan
                             </span>
                           )}
@@ -734,7 +755,7 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
               </div>
             )}
 
-            {/* Default Checkbox (Metode Bayar / Satuan) */}
+            {/* Default Checkbox (Metode Bayar / Satuan / Kategori Menu) */}
             {activeType !== "kategori" && (
               <label className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-200/80 bg-amber-50/40 cursor-pointer">
                 <input
@@ -747,8 +768,10 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                   <span className="text-xs font-semibold text-amber-900 block">
                     Jadikan Pilihan Bawaan (Default)
                   </span>
-                  <p className="text-[11px] text-amber-700 leading-tight">
-                    Opsi ini otomatis terpilih terlebih dahulu saat membuat transaksi baru.
+                  <p className="text-[11px] text-amber-800 leading-tight">
+                    {activeType === "kategori_menu"
+                      ? "Opsi ini otomatis terpilih terlebih dahulu saat membuat menu / resep baru."
+                      : "Opsi ini otomatis terpilih terlebih dahulu saat membuat transaksi baru."}
                   </p>
                 </div>
               </label>
@@ -802,11 +825,14 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 font-semibold text-amber-900">
                     <Info className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Sedang Dipakai ({deletingItem.usage_count} transaksi)</span>
+                    <span>
+                      Sedang Dipakai ({deletingItem.usage_count}{" "}
+                      {activeType === "kategori_menu" ? "menu" : "transaksi"})
+                    </span>
                   </div>
-                  <p className="text-amber-800 text-[11px] leading-relaxed">
+                  <p className="text-amber-900 text-[11px] leading-relaxed">
                     Opsi ini masih digunakan oleh data yang ada. Sebaiknya <strong>nonaktifkan</strong> opsi
-                    ini daripada menghapusnya, agar data transaksi lama tetap utuh dan opsi tidak muncul lagi
+                    ini daripada menghapusnya, agar data yang ada tetap utuh dan opsi tidak muncul lagi
                     pada penginputan baru.
                   </p>
                 </div>

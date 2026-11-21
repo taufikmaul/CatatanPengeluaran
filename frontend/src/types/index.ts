@@ -631,7 +631,7 @@ export interface SuggestionsResponse {
 
 export interface MasterDataOption {
   id: number;
-  type: "kategori" | "metode_bayar" | "satuan";
+  type: "kategori" | "metode_bayar" | "satuan" | "kategori_menu";
   name: string;
   description: string;
   sort_order: number;

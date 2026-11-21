@@ -12,6 +12,7 @@ import {
   downloadMenusCsv,
   downloadMenusJson,
   downloadMenusTemplateCsv,
+  getMasterData,
   getMenuPricingChannels,
   getMenuUsages,
   getMenus,
@@ -35,6 +36,7 @@ import { MenuFormDialog } from "./MenuFormDialog";
 import { PriceSimulatorDialog } from "./PriceSimulatorDialog";
 import { CloneScaleDialog } from "./CloneScaleDialog";
 import { PricingChannelsDialog } from "./PricingChannelsDialog";
+import { MenuCategoriesDialog } from "./MenuCategoriesDialog";
 import {
   BulkRowImportDialog,
   type BulkRowColumn,
@@ -88,6 +90,7 @@ import {
   Shield,
   SlidersHorizontal,
   Table2,
+  Tags,
   Trash2,
   TrendingUp,
   Unlock,
@@ -521,6 +524,10 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [usageTarget, setUsageTarget] = useState<MenuProduct | null>(null);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [channelSettingsOpen, setChannelSettingsOpen] = useState(false);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [pendingCategorySelection, setPendingCategorySelection] = useState<
+    string | null
+  >(null);
 
   const [importCsvOpen, setImportCsvOpen] = useState(false);
   const [bulkFormOpen, setBulkFormOpen] = useState(false);
@@ -539,44 +546,6 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     is_active: boolean;
   };
 
-  const menuUnitOptions = Array.from(
-    new Set(["Porsi", "Cup", "Box", "Pcs", "Pack", "Gram", "Paket", ...units])
-  ).map((u) => ({ value: u, label: u }));
-
-  const menuBulkColumns: BulkRowColumn<BulkMenuRow>[] = [
-    { key: "name", label: "Nama Menu *", type: "text", required: true, placeholder: "Kopi Susu Gula Aren", widthClass: "min-w-[180px]" },
-    { key: "sku", label: "SKU / Kode", type: "text", placeholder: "KSGA-01", widthClass: "min-w-[110px]" },
-    { key: "category", label: "Kategori", type: "text", placeholder: "Minuman / Kue", widthClass: "min-w-[130px]" },
-    { key: "product_group", label: "Grup Produk", type: "text", placeholder: "Signature", widthClass: "min-w-[120px]" },
-    { key: "unit", label: "Satuan", type: "select", widthClass: "min-w-[100px]", options: menuUnitOptions },
-    { key: "selling_price", label: "Harga Jual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
-    { key: "hpp_manual", label: "HPP Manual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
-    {
-      key: "hpp_mode",
-      label: "Mode HPP",
-      type: "select",
-      widthClass: "min-w-[110px]",
-      options: [
-        { value: "manual", label: "Manual" },
-        { value: "recipe", label: "Resep" },
-      ],
-    },
-    { key: "notes", label: "Catatan", type: "text", placeholder: "Opsional", widthClass: "min-w-[130px]" },
-    { key: "is_active", label: "Aktif", type: "checkbox", widthClass: "w-[70px]" },
-  ];
-
-  const createEmptyMenuRow = (): BulkMenuRow => ({
-    name: "",
-    sku: "",
-    category: "Lainnya",
-    product_group: "",
-    unit: "Porsi",
-    selling_price: 0,
-    hpp_manual: 0,
-    hpp_mode: "manual",
-    notes: "",
-    is_active: true,
-  });
   const [updateExistingCsv, setUpdateExistingCsv] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -606,6 +575,11 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         item_type: itemTypeFilter !== "all" ? itemTypeFilter : undefined,
         anonymize: anonymizeMode,
       }),
+  });
+
+  const { data: menuCategories = [] } = useQuery({
+    queryKey: ["menu-categories"],
+    queryFn: () => getMasterData("kategori_menu"),
   });
 
   const { data: masterItemsRes } = useQuery<{ ok: boolean; data: MasterItem[] }>({
@@ -646,7 +620,86 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const allMenusForRecipe = allMenusRes?.items || items;
   const pricingChannels = pricingChannelsRes?.channels || [];
   const summary = menuRes?.summary;
-  const categories = menuRes?.categories || [];
+  const categories = useMemo(() => {
+    const activeMaster = [...menuCategories]
+      .filter((c) => c.is_active)
+      .sort(
+        (a, b) =>
+          (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+          a.name.localeCompare(b.name, "id")
+      )
+      .map((c) => c.name);
+    const seen = new Set(activeMaster.map((n) => n.toLowerCase()));
+    const merged = [...activeMaster];
+    for (const cat of menuRes?.categories || []) {
+      if (cat && !seen.has(cat.toLowerCase())) {
+        seen.add(cat.toLowerCase());
+        merged.push(cat);
+      }
+    }
+    return merged;
+  }, [menuCategories, menuRes?.categories]);
+
+  const menuUnitOptions = Array.from(
+    new Set(["Porsi", "Cup", "Box", "Pcs", "Pack", "Gram", "Paket", ...units])
+  ).map((u) => ({ value: u, label: u }));
+
+  const menuCategoryOptions = useMemo(() => {
+    const base =
+      categories.length > 0
+        ? categories
+        : [
+            "Cake Ready",
+            "Custom Cake",
+            "Slice & Dessert Box",
+            "Pastry & Bakery",
+            "Minuman",
+            "Prepared / Sub-Resep",
+            "Hampers / Bundling",
+            "Lainnya",
+          ];
+    return base.map((c) => ({ value: c, label: c }));
+  }, [categories]);
+
+  const defaultBulkCategory =
+    menuCategories.find((c) => c.is_active && c.is_default)?.name ||
+    menuCategoryOptions[0]?.value ||
+    "Cake Ready";
+
+  const menuBulkColumns: BulkRowColumn<BulkMenuRow>[] = [
+    { key: "name", label: "Nama Menu *", type: "text", required: true, placeholder: "Kopi Susu Gula Aren", widthClass: "min-w-[180px]" },
+    { key: "sku", label: "SKU / Kode", type: "text", placeholder: "KSGA-01", widthClass: "min-w-[110px]" },
+    { key: "category", label: "Kategori", type: "select", widthClass: "min-w-[150px]", options: menuCategoryOptions },
+    { key: "product_group", label: "Grup Produk", type: "text", placeholder: "Signature", widthClass: "min-w-[120px]" },
+    { key: "unit", label: "Satuan", type: "select", widthClass: "min-w-[100px]", options: menuUnitOptions },
+    { key: "selling_price", label: "Harga Jual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
+    { key: "hpp_manual", label: "HPP Manual (Rp)", type: "number", min: 0, widthClass: "min-w-[130px]" },
+    {
+      key: "hpp_mode",
+      label: "Mode HPP",
+      type: "select",
+      widthClass: "min-w-[110px]",
+      options: [
+        { value: "manual", label: "Manual" },
+        { value: "recipe", label: "Resep" },
+      ],
+    },
+    { key: "notes", label: "Catatan", type: "text", placeholder: "Opsional", widthClass: "min-w-[130px]" },
+    { key: "is_active", label: "Aktif", type: "checkbox", widthClass: "w-[70px]" },
+  ];
+
+  const createEmptyMenuRow = (): BulkMenuRow => ({
+    name: "",
+    sku: "",
+    category: defaultBulkCategory,
+    product_group: "",
+    unit: "Porsi",
+    selling_price: 0,
+    hpp_manual: 0,
+    hpp_mode: "manual",
+    notes: "",
+    is_active: true,
+  });
 
   useEffect(() => {
     setPage(1);
@@ -1025,6 +1078,19 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+          {/* Master Kategori Menu */}
+          {isAdmin && !effectiveAnonymized && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setCategoryManagerOpen(true)}
+              className="h-9 rounded-xl text-xs gap-1.5"
+            >
+              <Tags className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+              <span>Kategori Menu</span>
+            </Button>
+          )}
           {/* Simulasi Harga Bahan */}
           {!effectiveAnonymized && (
             <Button
@@ -2213,6 +2279,12 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         defaultItemType={defaultFormItemType}
         isAdmin={isAdmin}
         onOpenChannelSettings={() => setChannelSettingsOpen(true)}
+        menuCategories={menuCategories}
+        onOpenCategoryManager={
+          isAdmin ? () => setCategoryManagerOpen(true) : undefined
+        }
+        pendingCategorySelection={pendingCategorySelection}
+        onConsumePendingCategory={() => setPendingCategorySelection(null)}
         units={units}
         existingCategories={categories}
         isSubmitting={isMutating}
@@ -2246,6 +2318,17 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         open={channelSettingsOpen}
         onOpenChange={setChannelSettingsOpen}
         channels={pricingChannels}
+      />
+
+      {/* Master Kategori Menu CRUD Dialog */}
+      <MenuCategoriesDialog
+        open={categoryManagerOpen}
+        onOpenChange={setCategoryManagerOpen}
+        onCategoryCreated={(catName) => {
+          if (formOpen) {
+            setPendingCategorySelection(catName);
+          }
+        }}
       />
 
       {/* Where-Used Dialog */}
