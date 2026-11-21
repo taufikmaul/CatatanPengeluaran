@@ -152,7 +152,7 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
   };
 
   const defaultOrderTypes = Array.from(
-    new Set(["Take Away", "Dine In", "GoFood", "GrabFood", "ShopeeFood", "WhatsApp", ...orderTypeOptions])
+    new Set(["Take Away", "Dine In", "Cakeflow", "GoFood", "GrabFood", "ShopeeFood", "WhatsApp", ...orderTypeOptions])
   );
 
   const defaultPaymentMethods = Array.from(

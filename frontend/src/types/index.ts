@@ -1246,14 +1246,47 @@ export interface BankTransfer {
   created_at?: string | null;
 }
 
+export interface IncomingAnalyticsProductRow {
+  product_name: string;
+  category: string;
+  total_qty: number;
+  net_sales: number;
+  avg_price?: number;
+  order_lines: number;
+  qty_share_pct?: number;
+  revenue_share_pct?: number;
+  order_types?: string[];
+}
+
+export interface IncomingAnalyticsRadarPoint {
+  label: string;
+  product_name: string;
+  category: string;
+  total_qty: number;
+  net_sales: number;
+  qty_score: number;
+  revenue_score: number;
+}
+
+export interface IncomingAnalyticsChannelRow {
+  channel: string;
+  is_cakeflow: boolean;
+  tx_count: number;
+  total_qty: number;
+  gross_sales: number;
+  net_sales: number;
+  platform_fee: number;
+  net_received: number;
+  revenue_share_pct: number;
+}
+
 export interface IncomingAnalytics {
-  top_products: Array<{
-    product_name: string;
-    category: string;
-    total_qty: number;
-    net_sales: number;
-    order_lines: number;
-  }>;
+  top_products: IncomingAnalyticsProductRow[];
+  top_products_by_qty: IncomingAnalyticsProductRow[];
+  top_products_by_revenue: IncomingAnalyticsProductRow[];
+  radar_by_qty: IncomingAnalyticsRadarPoint[];
+  radar_by_revenue: IncomingAnalyticsRadarPoint[];
+  by_channel: IncomingAnalyticsChannelRow[];
   categories: Array<{
     category: string;
     total_qty: number;
@@ -1264,6 +1297,7 @@ export interface IncomingAnalytics {
     label: string;
     offline_count: number;
     online_count: number;
+    cakeflow_count?: number;
     total_count: number;
     net_received: number;
   }>;
@@ -1272,6 +1306,19 @@ export interface IncomingAnalytics {
     count: number;
     amount: number;
   }>;
+  available_order_types: string[];
+  summary: {
+    total_paid_tx: number;
+    total_qty: number;
+    total_net_sales: number;
+    total_net_received: number;
+    unique_products: number;
+    cakeflow_tx_count: number;
+    cakeflow_qty: number;
+    cakeflow_net_sales: number;
+    cakeflow_net_received: number;
+    unscheduled_time_count: number;
+  };
 }
 
 export interface ReconciliationPreview {
@@ -1430,11 +1477,45 @@ export interface SalesImportPreview {
   audit?: SalesImportAuditSummary;
 }
 
+export type MenuItemType = "finished" | "prepared" | "bundle";
+export type IngredientCostGroup = "ingredient" | "packaging";
+
+export interface SubMenuBreakdownItem {
+  id?: number;
+  ingredient_name: string;
+  master_item_id?: number | null;
+  sub_menu_id?: number | null;
+  sub_menu_name?: string | null;
+  sub_menu_item_type?: MenuItemType | null;
+  cost_group: IngredientCostGroup;
+  qty: number;
+  unit: string;
+  yield_factor: number;
+  waste_pct?: number;
+  line_cost: number;
+  price_drift_alert?: boolean;
+  price_change_pct?: number | null;
+  drift_source?: string | null;
+  sub_menu_breakdown?: SubMenuBreakdownItem[];
+}
+
 export interface MenuIngredient {
   id?: number;
   menu_id?: number;
   master_item_id?: number | null;
   master_item_name?: string | null;
+  sub_menu_id?: number | null;
+  sub_menu_name?: string | null;
+  sub_menu_anonymous_name?: string | null;
+  sub_menu_item_type?: MenuItemType | null;
+  sub_menu_yield_unit?: string | null;
+  sub_menu_core_unit_hpp?: number | null;
+  sub_menu_effective_hpp?: number | null;
+  cost_group: IngredientCostGroup;
+  include_sub_packaging?: boolean;
+  waste_pct?: number;
+  sub_menu_breakdown?: SubMenuBreakdownItem[];
+  drift_source?: string | null;
   ingredient_name: string;
   qty: number;
   unit: string;
@@ -1451,6 +1532,10 @@ export interface MenuIngredient {
 
 export interface MenuIngredientInput {
   master_item_id?: number | null;
+  sub_menu_id?: number | null;
+  cost_group?: IngredientCostGroup;
+  include_sub_packaging?: boolean | null;
+  waste_pct?: number;
   ingredient_name?: string;
   qty: number;
   unit: string;
@@ -1460,7 +1545,13 @@ export interface MenuIngredientInput {
 }
 
 export type MenuHppMode = "auto" | "manual" | "recipe";
-export type FoodCostStatus = "no_price" | "no_hpp" | "ideal" | "moderate" | "high";
+export type FoodCostStatus =
+  | "no_price"
+  | "no_hpp"
+  | "ideal"
+  | "moderate"
+  | "high"
+  | "not_sellable";
 
 export interface MenuProduct {
   id: number;
@@ -1471,6 +1562,18 @@ export interface MenuProduct {
   category: string;
   product_group?: string | null;
   unit: string;
+  item_type: MenuItemType;
+  is_sellable: boolean;
+  batch_yield_qty: number;
+  batch_yield_unit: string;
+  waste_loss_pct: number;
+  net_yield_qty: number;
+  labor_cost: number;
+  unit_labor_cost?: number;
+  unit_other_fee?: number;
+  target_food_cost_pct?: number | null;
+  shelf_life_days?: number | null;
+  storage_method?: string | null;
   notes?: string | null;
   is_active: boolean;
   is_anonymized: boolean;
@@ -1478,7 +1581,13 @@ export interface MenuProduct {
   updated_at?: string | null;
   ingredients: MenuIngredient[];
   ingredient_count: number;
+  ingredient_only_count?: number;
+  packaging_count?: number;
+  raw_batch_ingredients?: number;
+  raw_batch_total?: number;
   subtotal_ingredients?: number;
+  subtotal_packaging?: number;
+  core_unit_hpp?: number;
   other_fee: number;
   other_fee_description?: string | null;
   recipe_hpp: number;
@@ -1489,11 +1598,14 @@ export interface MenuProduct {
   selling_price: number;
   gross_margin: number;
   food_cost_pct: number;
+  pure_food_cost_pct?: number;
+  packaging_cost_pct?: number;
   margin_pct: number;
   food_cost_status: FoodCostStatus;
   has_price_drift?: boolean;
   price_drift_count?: number;
   max_ingredient_increase_pct?: number;
+  used_in_count?: number;
 }
 
 export interface MenuProductPayload {
@@ -1503,6 +1615,15 @@ export interface MenuProductPayload {
   category: string;
   product_group?: string | null;
   unit: string;
+  item_type?: MenuItemType;
+  is_sellable?: boolean;
+  batch_yield_qty?: number;
+  batch_yield_unit?: string | null;
+  waste_loss_pct?: number;
+  labor_cost?: number;
+  target_food_cost_pct?: number | null;
+  shelf_life_days?: number | null;
+  storage_method?: string | null;
   selling_price: number;
   hpp_manual: number;
   hpp_mode: MenuHppMode;
@@ -1525,6 +1646,11 @@ export interface MenuSummary {
   ideal_count: number;
   moderate_count: number;
   high_count: number;
+  finished_count?: number;
+  prepared_count?: number;
+  bundle_count?: number;
+  sellable_count?: number;
+  used_prepared_count?: number;
 }
 
 export interface MenuListResponse {
@@ -1536,6 +1662,78 @@ export interface MenuListResponse {
   anonymize_locked?: boolean;
   read_only?: boolean;
   expires_at?: number;
+}
+
+export interface MenuUsageItem {
+  menu_id: number;
+  name: string;
+  anonymous_name: string;
+  item_type: MenuItemType;
+  category: string;
+  qty: number;
+  unit: string;
+  cost_group: IngredientCostGroup;
+  include_sub_packaging: boolean;
+  line_cost: number;
+  parent_effective_hpp: number;
+  cost_share_pct: number;
+}
+
+export interface PricingChannelConfig {
+  key: string;
+  name: string;
+  commission_pct: number;
+  fixed_fee: number;
+  extra_packaging: number;
+}
+
+export interface PriceAdjustmentInput {
+  master_item_id: number;
+  mode: "pct" | "new_price";
+  value: number;
+}
+
+export interface PriceSimulationAffectedItem {
+  menu_id: number;
+  name: string;
+  anonymous_name: string;
+  item_type: MenuItemType;
+  is_sellable: boolean;
+  category: string;
+  unit: string;
+  selling_price: number;
+  old_hpp: number;
+  new_hpp: number;
+  delta_hpp: number;
+  delta_hpp_pct: number | null;
+  old_margin: number;
+  new_margin: number;
+  delta_margin: number;
+  old_food_cost_pct: number;
+  new_food_cost_pct: number;
+  old_status: FoodCostStatus;
+  new_status: FoodCostStatus;
+  suggested_selling_price: number | null;
+}
+
+export interface PriceSimulationResponse {
+  ok: boolean;
+  adjustments: Array<{
+    master_item_id: number;
+    master_item_name: string;
+    mode: "pct" | "new_price";
+    value: number;
+    base_price: number;
+    simulated_price: number;
+    delta_pct: number | null;
+  }>;
+  affected_items: PriceSimulationAffectedItem[];
+  summary: {
+    total_affected: number;
+    affected_prepared_count: number;
+    affected_menu_count: number;
+    newly_high_fc_count: number;
+  };
 }
 
 // ──────────────────────────────────────────────

@@ -418,8 +418,9 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
                   if (file) runPreview(file, next, {}, false);
                 }}
               >
-                <option value="auto">Auto-detect (POS / Transaction Import.csv)</option>
+                <option value="auto">Auto-detect (POS / Cakeflow / Transaction Import.csv)</option>
                 <option value="pos">POS / Transaction Import (Multi-channel &amp; Rekening)</option>
+                <option value="cakeflow">Cakeflow / Custom Cake</option>
                 <option value="gofood">GoFood</option>
                 <option value="grabfood">GrabFood</option>
                 <option value="shopeefood">ShopeeFood</option>

@@ -908,6 +908,8 @@ export async function commitSalesImport(
 export async function getIncomingAnalytics(params?: {
   start_date?: string;
   end_date?: string;
+  order_type?: string;
+  top_limit?: number;
 }): Promise<import("@/types").IncomingAnalytics> {
   const res = await api.get("/incoming-transactions/analytics", { params });
   return res.data.analytics;
@@ -970,6 +972,8 @@ export async function getMenus(params?: {
   search?: string;
   category?: string;
   hpp_status?: string;
+  item_type?: string;
+  sellable_only?: boolean;
   active_only?: boolean;
   anonymize?: boolean;
 }): Promise<import("@/types").MenuListResponse> {
@@ -1002,6 +1006,57 @@ export async function updateMenu(
 
 export async function deleteMenu(menuId: number): Promise<void> {
   await api.delete(`/menus/${menuId}`);
+}
+
+export async function getMenuUsages(
+  menuId: number,
+  anonymize = false
+): Promise<{
+  ok: boolean;
+  menu_id: number;
+  count: number;
+  usages: import("@/types").MenuUsageItem[];
+}> {
+  const res = await api.get(`/menus/${menuId}/usages`, { params: { anonymize } });
+  return res.data;
+}
+
+export async function cloneMenu(
+  menuId: number,
+  payload: {
+    new_name: string;
+    scale_factor?: number;
+    scale_packaging?: boolean;
+    item_type?: import("@/types").MenuItemType;
+  }
+): Promise<import("@/types").MenuProduct> {
+  const res = await api.post(`/menus/${menuId}/clone`, payload);
+  return res.data.item;
+}
+
+export async function simulateMenuPriceImpact(
+  adjustments: import("@/types").PriceAdjustmentInput[]
+): Promise<import("@/types").PriceSimulationResponse> {
+  const res = await api.post("/menus/simulate-price-impact", { adjustments });
+  return res.data;
+}
+
+export async function getMenuPricingChannels(): Promise<{
+  ok: boolean;
+  channels: import("@/types").PricingChannelConfig[];
+}> {
+  const res = await api.get("/menus/pricing-channels");
+  return res.data;
+}
+
+export async function updateMenuPricingChannels(
+  channels: import("@/types").PricingChannelConfig[]
+): Promise<{
+  ok: boolean;
+  channels: import("@/types").PricingChannelConfig[];
+}> {
+  const res = await api.put("/menus/pricing-channels", { channels });
+  return res.data;
 }
 
 export async function importMenusFromPos(): Promise<{
@@ -1042,6 +1097,8 @@ export async function downloadMenusCsv(params?: {
   search?: string;
   category?: string;
   hpp_status?: string;
+  item_type?: string;
+  sellable_only?: boolean;
   active_only?: boolean;
   anonymize?: boolean;
 }): Promise<void> {
@@ -1077,6 +1134,8 @@ export async function getMenusJsonPayload(params?: {
   search?: string;
   category?: string;
   hpp_status?: string;
+  item_type?: string;
+  sellable_only?: boolean;
   active_only?: boolean;
   anonymize?: boolean;
 }): Promise<any> {
@@ -1090,6 +1149,8 @@ export async function downloadMenusJson(params?: {
   search?: string;
   category?: string;
   hpp_status?: string;
+  item_type?: string;
+  sellable_only?: boolean;
   active_only?: boolean;
   anonymize?: boolean;
 }): Promise<void> {
@@ -1121,12 +1182,17 @@ export async function bulkUpdateMenus(
   return res.data;
 }
 
-export async function getMenuConversionHint(
-  masterItemId: number,
-  recipeUnit: string
-): Promise<{ yield_factor: number; reason: string }> {
+export async function getMenuConversionHint(params: {
+  masterItemId?: number | null;
+  subMenuId?: number | null;
+  recipeUnit: string;
+}): Promise<{ yield_factor: number; reason: string }> {
   const res = await api.get("/menus/conversion-hint", {
-    params: { master_item_id: masterItemId, recipe_unit: recipeUnit },
+    params: {
+      master_item_id: params.masterItemId ?? undefined,
+      sub_menu_id: params.subMenuId ?? undefined,
+      recipe_unit: params.recipeUnit,
+    },
   });
   return res.data;
 }
@@ -1147,7 +1213,7 @@ export async function createMenuShareToken(
 
 export async function getSharedAnonymousMenus(
   token: string,
-  params?: { search?: string; category?: string; hpp_status?: string }
+  params?: { search?: string; category?: string; hpp_status?: string; item_type?: string }
 ): Promise<import("@/types").MenuListResponse> {
   const res = await api.get(`/menus/shared/${encodeURIComponent(token)}`, { params });
   return res.data;

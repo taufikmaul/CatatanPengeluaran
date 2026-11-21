@@ -122,6 +122,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
       reassignIncomingTxBankAccount(txId, accId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       toast.success("Rekening tujuan diperbarui");
     },
@@ -132,6 +133,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     mutationFn: deleteIncomingTransaction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       toast.success("Transaksi dihapus");
     },
@@ -148,6 +150,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     }) => bulkCreateIncomingTransactions(rows, updateExisting),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       toast.success(res.message || "Transaksi masal berhasil diproses");
       setBulkDialogOpen(false);
@@ -167,6 +170,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     }) => importIncomingTransactionsCsv(file, updateExisting),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
       if (res.audit && res.audit.warning_count > 0) {
         toast.warning(
@@ -262,6 +266,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         options: [
           { value: "Take Away", label: "Take Away" },
           { value: "Dine In", label: "Dine In" },
+          { value: "Cakeflow", label: "Cakeflow" },
           { value: "Delivery Toko", label: "Delivery Toko" },
           { value: "GoFood", label: "GoFood" },
           { value: "GoFood Integrasi", label: "GoFood Integrasi" },
@@ -826,6 +831,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         onClose={() => setImportOpen(false)}
         onImportSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
           queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
         }}
       />
@@ -842,6 +848,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         paymentMethodOptions={paymentMethods}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
           queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
         }}
       />

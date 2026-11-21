@@ -181,3 +181,128 @@ async def test_transfers_petty_cash_analytics_and_reconciliation(client: AsyncSe
     assert r_apply_bank.status_code == 200
     assert r_apply_bank.json()["result"]["reconciled_expenses"] == 1
     assert r_apply_bank.json()["result"]["reconciled_incoming"] == 1
+
+
+SAMPLE_CAKEFLOW_CSV = """Order ID,Tanggal Input,Tanggal Target,Customer/Penerima,Admin,Produk,Total Belanja,Metode DP,Metode Pelunasan,Status
+CF-2026-001,2026-11-18 14:25:00,2026-11-18,Ibu Ratna,Admin CF,Custom Wedding Cake 3 Tier,1800000,Transfer,Transfer,Paid
+CF-2026-002,2026-11-18 15:10:00,2026-11-18,Pak Dimas,Admin CF,2x Bento Cake Custom Tema Bola,320000,Transfer,Transfer,Paid
+""".encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_radar_menu_top_qty_vs_omset_and_cakeflow_in_stats_and_accounting(
+    client: AsyncSession, auth_cookies, db: AsyncSession
+):
+    from datetime import date as dt_date
+    from app.models.incoming_transaction import IncomingTransaction
+
+    client.cookies.update(auth_cookies)
+
+    # 1. Setup Rekening BCA dengan mapping "Cakeflow" (tanpa spasi) untuk uji normalisasi "Cake Flow"
+    r_bca = await client.post("/api/v1/bank-accounts", json={
+        "name": "BCA Operasional",
+        "bank_name": "BCA",
+        "account_type": "bank",
+        "account_code": "1-1120",
+        "opening_balance": 500000,
+        "channel_mappings": ["Cakeflow", "Transfer", "Cash"],
+        "is_default": True,
+    })
+    assert r_bca.status_code == 201
+    bca_id = r_bca.json()["account"]["id"]
+
+    # 2. Import POS CSV (item murah qty tinggi vs item sedang)
+    r_pos = await client.post(
+        "/api/v1/incoming-transactions/import/commit",
+        files={"file": ("pos.csv", SAMPLE_POS_CSV, "text/csv")},
+        data={"source_type": "auto"},
+    )
+    assert r_pos.status_code == 200
+
+    # 3. Import Cake Flow CSV (2 transaksi: Wedding Cake 1.8jt qty 1, Bento Cake 320rb qty 2)
+    r_cf = await client.post(
+        "/api/v1/incoming-transactions/import/commit",
+        files={"file": ("cakeflow.csv", SAMPLE_CAKEFLOW_CSV, "text/csv")},
+        data={"source_type": "cakeflow"},
+    )
+    assert r_cf.status_code == 200
+    assert r_cf.json()["result"]["inserted_paid"] == 2
+
+    # 4. Tambahkan 1 transaksi historis Cake Flow (pakai spasi "Cake Flow", tanpa item & tanpa bank_account_id)
+    legacy_cf_tx = IncomingTransaction(
+        source_type="manual",
+        receipt_no="CF-LEGACY-001",
+        order_no="CF-LEGACY-001",
+        transaction_date=dt_date(2026, 11, 18),
+        transaction_time="16:00:00",
+        order_type="Cake Flow",
+        payment_method="Cake Flow",
+        bank_account_id=None,
+        gross_sales=750000.0,
+        discount_amount=0.0,
+        net_sales=750000.0,
+        platform_fee=0.0,
+        net_received=750000.0,
+        status="paid",
+        notes="Custom Cake Karakter Unicorn 22cm",
+    )
+    db.add(legacy_cf_tx)
+    await db.commit()
+
+    # 5. Verifikasi Radar Menu Analytics (Top Qty vs Top Omset + Cake Flow)
+    r_ana = await client.get("/api/v1/incoming-transactions/analytics?month=11&year=2026")
+    assert r_ana.status_code == 200
+    ana = r_ana.json()["analytics"]
+
+    # Top Omset #1 HARUS Custom Wedding Cake 3 Tier (Rp 1.800.000, qty 1)
+    assert ana["top_products_by_revenue"][0]["product_name"] == "Custom Wedding Cake 3 Tier"
+    assert ana["top_products_by_revenue"][0]["net_sales"] == 1800000.0
+    # Legacy itemless Cake Flow order juga masuk di Top Omset #2 (Rp 750.000)
+    assert ana["top_products_by_revenue"][1]["product_name"] == "Custom Cake Karakter Unicorn 22cm"
+    assert ana["top_products_by_revenue"][1]["net_sales"] == 750000.0
+
+    # Top Qty #1 adalah item qty 2 (Bento Cake Custom Tema Bola Rp 320rb mengungguli Bogel Gold Mini Rp 90rb)
+    assert ana["top_products_by_qty"][0]["product_name"] == "Bento Cake Custom Tema Bola"
+    assert ana["top_products_by_qty"][0]["total_qty"] == 2.0
+
+    # Radar dataset terisi untuk kedua mode (Qty & Revenue)
+    assert len(ana["radar_by_qty"]) >= 4
+    assert len(ana["radar_by_revenue"]) >= 4
+    assert ana["radar_by_revenue"][0]["revenue_score"] == 100.0
+
+    # Summary Cake Flow mencakup 3 transaksi (2 CSV + 1 legacy) = 1.800.000 + 320.000 + 750.000 = 2.870.000
+    assert ana["summary"]["cakeflow_tx_count"] == 3
+    assert ana["summary"]["cakeflow_net_received"] == 2870000.0
+    assert ana["summary"]["cakeflow_qty"] == 4.0  # 1 + 2 + 1
+
+    # Peak hours mencatat cakeflow_count di jam 14, 15, 16
+    cf_hours = [h for h in ana["peak_hours"] if h["cakeflow_count"] > 0]
+    assert len(cf_hours) == 3
+
+    # Filter order_type spesifik ke Cakeflow
+    r_ana_cf = await client.get("/api/v1/incoming-transactions/analytics?month=11&year=2026&order_type=Cakeflow")
+    assert r_ana_cf.status_code == 200
+    assert r_ana_cf.json()["analytics"]["summary"]["total_paid_tx"] == 2
+
+    # 6. Verifikasi Akuntansi (Laba Rugi & Posisi Kas Bank) mencakup semua transaksi Cake Flow termasuk yang bank_account_id=None
+    # Total semua transaksi masuk Nov 2026 = 154.000 + 90.000 + 1.800.000 + 320.000 + 750.000 = 3.114.000
+    r_acc = await client.get("/api/v1/reports/accounting?month=11&year=2026")
+    assert r_acc.status_code == 200
+    acc_data = r_acc.json()
+    assert acc_data["laba_rugi"]["revenue_net"] == 3114000.0
+    channels_in_acc = {c["channel"]: c["net_received"] for c in acc_data["laba_rugi"]["revenue_by_channel"]}
+    assert channels_in_acc["Cakeflow"] == 2120000.0
+    assert channels_in_acc["Cake Flow"] == 750000.0
+
+    # Posisi Kas & Bank BCA juga mencakup transaksi Cake Flow legacy (bank_account_id=None -> fallback mapping "Cakeflow")
+    pos_bca = next(p for p in acc_data["neraca"]["rekening_positions"] if p["id"] == bca_id)
+    assert pos_bca["incoming_month"] == 3114000.0
+    assert pos_bca["estimated_balance"] == 500000.0 + 3114000.0
+    assert acc_data["arus_kas"]["total_kas_masuk"] == 3114000.0
+
+    # 7. Verifikasi Daily Cashflow (All & per rekening BCA) mencakup semua transaksi Cake Flow
+    r_cf_daily = await client.get(f"/api/v1/reports/cashflow?month=11&year=2026&bank_account_id={bca_id}")
+    assert r_cf_daily.status_code == 200
+    cf_daily = r_cf_daily.json()
+    assert cf_daily["total_cash_in"] == 3114000.0
+    assert cf_daily["saldo_akhir"] == 3614000.0

@@ -14,7 +14,7 @@ from app.models.expense_payment import ExpensePayment
 from app.models.bank_account import BankAccount
 from app.models.incoming_transaction import IncomingTransaction
 from app.models.bank_transfer import BankTransfer
-from app.services.bank_account_service import _parse_mappings
+from app.services.bank_account_service import _parse_mappings, normalize_channel_key
 
 MONTH_NAMES = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -84,26 +84,37 @@ async def get_daily_cashflow(
     account_name = target_account.name if target_account else "Semua Rekening & Kas"
 
     method_to_acc_id: dict[str, int] = {}
+    norm_method_to_acc_id: dict[str, int] = {}
     default_acc_id: int | None = None
     for acc in bank_accounts:
         if acc.is_default and default_acc_id is None:
             default_acc_id = acc.id
         for m in _parse_mappings(acc.channel_mappings):
             key = m.strip().lower()
+            norm_key = normalize_channel_key(m)
             if key and key not in method_to_acc_id:
                 method_to_acc_id[key] = acc.id
+            if norm_key and norm_key not in norm_method_to_acc_id:
+                norm_method_to_acc_id[norm_key] = acc.id
 
-    def match_account_by_method(method_name: str | None) -> int | None:
-        m_key = (method_name or "").strip().lower()
-        if not m_key:
-            return default_acc_id
-        matched = method_to_acc_id.get(m_key)
-        if matched is None:
+    def match_account_by_method(method_name: str | None, fallback_order_type: str | None = None) -> int | None:
+        for candidate in (method_name, fallback_order_type):
+            m_key = (candidate or "").strip().lower()
+            if not m_key:
+                continue
+            matched = method_to_acc_id.get(m_key)
+            if matched is not None:
+                return matched
+            norm_cand = normalize_channel_key(candidate)
+            if norm_cand and norm_cand in norm_method_to_acc_id:
+                return norm_method_to_acc_id[norm_cand]
             for k, aid in method_to_acc_id.items():
                 if k in m_key or m_key in k:
-                    matched = aid
-                    break
-        return matched if matched is not None else default_acc_id
+                    return aid
+            for nk, aid in norm_method_to_acc_id.items():
+                if nk and norm_cand and (nk in norm_cand or norm_cand in nk):
+                    return aid
+        return default_acc_id
 
     has_payment_subq = exists(
         select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
@@ -127,6 +138,26 @@ async def get_daily_cashflow(
             )
         )
         prior_cash_in += float(inc_prior_res.scalar() or 0.0)
+
+        # Uang masuk lunas sebelum period_start tanpa bank_account_id -> fallback channel_mappings (termasuk Cake Flow)
+        inc_prior_unassigned = await db.execute(
+            select(
+                IncomingTransaction.payment_method,
+                IncomingTransaction.order_type,
+                func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+            )
+            .where(
+                and_(
+                    IncomingTransaction.transaction_date < period_start,
+                    IncomingTransaction.status == "paid",
+                    IncomingTransaction.bank_account_id.is_(None),
+                )
+            )
+            .group_by(IncomingTransaction.payment_method, IncomingTransaction.order_type)
+        )
+        for pm_name, ot_name, amt in inc_prior_unassigned.fetchall():
+            if match_account_by_method(pm_name, ot_name) == target_account.id:
+                prior_cash_in += float(amt or 0.0)
 
         # Transfer antar rekening masuk ke rekening ini sebelum period_start
         tr_in_prior_res = await db.execute(
@@ -297,30 +328,46 @@ async def get_daily_cashflow(
         daily_out_map[tx_date]["count"] += count
 
     # A. Kas Masuk (IncomingTransaction)
-    inc_query = (
-        select(
-            IncomingTransaction.transaction_date,
-            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
-            func.count(IncomingTransaction.id),
-        )
-        .where(
-            and_(
-                IncomingTransaction.transaction_date >= period_start,
-                IncomingTransaction.transaction_date <= period_end,
-                IncomingTransaction.status == "paid",
-                *(
-                    [IncomingTransaction.bank_account_id == target_account.id]
-                    if target_account
-                    else []
-                ),
+    if target_account:
+        inc_rows_res = await db.execute(
+            select(
+                IncomingTransaction.transaction_date,
+                IncomingTransaction.net_received,
+                IncomingTransaction.bank_account_id,
+                IncomingTransaction.payment_method,
+                IncomingTransaction.order_type,
+            ).where(
+                and_(
+                    IncomingTransaction.transaction_date >= period_start,
+                    IncomingTransaction.transaction_date <= period_end,
+                    IncomingTransaction.status == "paid",
+                )
             )
         )
-        .group_by(IncomingTransaction.transaction_date)
-    )
-    inc_res = await db.execute(inc_query)
-    for row_date, row_amt, row_cnt in inc_res.fetchall():
-        if row_date:
-            _add_inc(row_date, float(row_amt or 0.0), int(row_cnt or 0))
+        for row_date, row_amt, row_acc_id, row_pm, row_ot in inc_rows_res.fetchall():
+            acc_id = row_acc_id if row_acc_id is not None else match_account_by_method(row_pm, row_ot)
+            if acc_id == target_account.id and row_date:
+                _add_inc(row_date, float(row_amt or 0.0), 1)
+    else:
+        inc_query = (
+            select(
+                IncomingTransaction.transaction_date,
+                func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+                func.count(IncomingTransaction.id),
+            )
+            .where(
+                and_(
+                    IncomingTransaction.transaction_date >= period_start,
+                    IncomingTransaction.transaction_date <= period_end,
+                    IncomingTransaction.status == "paid",
+                )
+            )
+            .group_by(IncomingTransaction.transaction_date)
+        )
+        inc_res = await db.execute(inc_query)
+        for row_date, row_amt, row_cnt in inc_res.fetchall():
+            if row_date:
+                _add_inc(row_date, float(row_amt or 0.0), int(row_cnt or 0))
 
     # B. Transfer Masuk / Keluar (BankTransfer)
     if target_account:

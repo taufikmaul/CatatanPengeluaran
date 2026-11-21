@@ -88,6 +88,38 @@ def _clean_time(raw: str) -> str | None:
     return s or None
 
 
+def _extract_time_from_str(raw: str) -> str | None:
+    """Ekstrak jam (HH:MM atau HH:MM:SS) dari string datetime seperti '2026-11-20 14:30:00'."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    m = re.search(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b", s)
+    return m.group(1) if m else None
+
+
+def _parse_single_row_product_summary(raw_product: str) -> tuple[str, float]:
+    """Parse ringkasan produk 1-baris (mis. Cakeflow: '2x Custom Cake 20cm' atau 'Custom Cake (2x)')."""
+    text = (raw_product or "").strip()
+    if not text:
+        return "", 1.0
+    # Pola prefix: "2x Nama Produk" atau "2 x Nama Produk"
+    m_prefix = re.match(r"^(\d+(?:[.,]\d+)?)\s*[xX×]\s+(.+)$", text)
+    if m_prefix:
+        qty_val = float(m_prefix.group(1).replace(",", "."))
+        name_val = m_prefix.group(2).strip()
+        if qty_val > 0 and name_val:
+            return name_val[:255], qty_val
+    # Pola suffix: "Nama Produk (2x)" atau "Nama Produk x2"
+    m_suffix = re.match(r"^(.+?)\s*(?:\((\d+(?:[.,]\d+)?)\s*[xX×]?\)|[xX×]\s*(\d+(?:[.,]\d+)?))$", text)
+    if m_suffix:
+        name_val = m_suffix.group(1).strip()
+        qty_raw = m_suffix.group(2) or m_suffix.group(3)
+        qty_val = float(qty_raw.replace(",", ".")) if qty_raw else 1.0
+        if qty_val > 0 and name_val:
+            return name_val[:255], qty_val
+    return text[:255], 1.0
+
+
 def _clean_str(raw: Any) -> str | None:
     if raw is None:
         return None
@@ -179,6 +211,7 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
     has_product_col = any(
         k in col_idx for k in ("nama produk", "kategori produk", "sku produk")
     )
+    is_cakeflow_csv = "order id" in col_idx and "total belanja" in col_idx
 
     result = ParsedSalesResult(source_type="pos")
     current_tx: dict[str, Any] | None = None
@@ -223,7 +256,8 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             else:
                 tx_status = "paid"
 
-            order_type = _clean_str(get_val(row, "Tipe Order", "Channel", "Saluran")) or "Take Away"
+            default_ot = "Cakeflow" if is_cakeflow_csv else "Take Away"
+            order_type = _clean_str(get_val(row, "Tipe Order", "Channel", "Saluran")) or default_ot
             payment_method = (
                 _clean_str(get_val(row, "Jenis Pembayaran", "Metode Bayar", "Metode Pembayaran", "Payment"))
                 or _clean_str(get_val(row, "Metode Pelunasan"))
@@ -268,12 +302,19 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             )
             void_str = f"{void_date or ''} {void_time or ''}".strip() or None
 
+            tx_time = (
+                _clean_time(get_val(row, "Waktu Penjualan", "Jam", "Waktu", "Time"))
+                or _extract_time_from_str(get_val(row, "Tanggal Input"))
+                or _extract_time_from_str(get_val(row, "Tanggal Penjualan", "Tanggal", "Tanggal Transaksi"))
+                or _extract_time_from_str(get_val(row, "Tanggal Target"))
+            )
+
             current_tx = {
                 "source_type": "pos",
                 "receipt_no": receipt_no,
                 "order_no": _clean_str(order_no),
                 "transaction_date": tx_date,
-                "transaction_time": _clean_time(get_val(row, "Waktu Penjualan", "Jam", "Waktu", "Time")),
+                "transaction_time": tx_time,
                 "location_name": _clean_str(get_val(row, "Nama Lokasi")),
                 "order_type": order_type,
                 "payment_method": payment_method,
@@ -295,7 +336,9 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             }
             result.transactions.append(current_tx)
 
-        # Tambahkan item (hanya untuk laporan multi-item POS agar ringkasan produk 1-baris tidak memicu selisih audit item)
+        # Tambahkan item:
+        # 1) Laporan multi-item POS (has_product_col=True)
+        # 2) Laporan 1-baris Cake Flow yang memuat kolom "Produk" & "Total Belanja"
         product_name = _clean_str(get_val(row, "Nama Produk", "Product Name", "Produk"))
         if current_tx is not None and has_product_col and product_name:
             item_gross = _parse_number(get_val(row, "Penjualan Kotor", "Harga Subtotal"))
@@ -315,6 +358,25 @@ def parse_pos_csv(content: bytes) -> ParsedSalesResult:
             current_tx["items"].append(item)
             current_tx["gross_sales"] += item_gross
             current_tx["discount_amount"] += item_discount
+        elif current_tx is not None and not has_product_col and product_name and current_tx["gross_sales"] > 0:
+            parsed_name, parsed_qty = _parse_single_row_product_summary(product_name)
+            if parsed_name:
+                ot_val = (current_tx.get("order_type") or "").strip()
+                item_cat = "Cakeflow" if "cakeflow" in re.sub(r"[\s_\-]+", "", ot_val.lower()) else (ot_val or "Lainnya")
+                item_gross = float(current_tx["gross_sales"] or 0.0)
+                item_discount = float(current_tx["discount_amount"] or 0.0)
+                current_tx["items"].append({
+                    "category": item_cat,
+                    "product_group": ot_val or None,
+                    "product_name": parsed_name,
+                    "sku": None,
+                    "qty": parsed_qty,
+                    "modifier": None,
+                    "unit_price": round(item_gross / parsed_qty, 2) if parsed_qty > 0 else item_gross,
+                    "extra_price": 0.0,
+                    "gross_amount": item_gross,
+                    "discount_amount": item_discount,
+                })
 
     return result
 
@@ -326,7 +388,7 @@ def parse_sales_csv(content: bytes, source_type: str = "auto") -> ParsedSalesRes
     GrabFood Integrasi, ShopeeFood, Marketplace, Cakeflow) ditangani penuh.
     """
     src = (source_type or "auto").strip().lower()
-    if src in ("auto", "pos"):
+    if src in ("auto", "pos", "cakeflow", "cake_flow"):
         return parse_pos_csv(content)
     if src in ("gofood", "grabfood", "shopeefood"):
         # Jika user memilih channel spesifik namun mengunggah CSV POS, fallback ke POS parser

@@ -6,14 +6,18 @@ import json
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
 from app.api.deps import require_admin_role, require_roles, validate_upload_file
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_account import BankAccount
-from app.services.bank_account_service import build_channel_account_map, resolve_bank_account_for_tx
+from app.services.bank_account_service import (
+    build_channel_account_map,
+    resolve_bank_account_for_tx,
+    is_cakeflow_order_type,
+)
 from app.services.sales_import_service import (
     parse_sales_csv,
     audit_sales_transactions,
@@ -279,6 +283,33 @@ async def api_list_incoming_transactions(
     }
 
 
+def _fallback_product_from_tx(order_type: str | None, notes: str | None) -> tuple[str, str]:
+    """
+    Turunkan nama menu & kategori fallback bagi transaksi lunas tanpa rincian IncomingTransactionItem
+    (mis. order Cake Flow lama, input manual, atau import template CSV 1-baris).
+    """
+    ot = (order_type or "").strip() or "Lainnya"
+    is_cf = is_cakeflow_order_type(ot)
+    category = "Cakeflow" if is_cf else ot
+
+    raw_note = (notes or "").strip()
+    if raw_note:
+        first_line = next((ln.strip() for ln in raw_note.splitlines() if ln.strip()), "")
+        if first_line and first_line not in ("-", "—"):
+            return first_line[:120], category
+
+    if is_cf:
+        return f"{ot} (Order Custom)", category
+    return f"{ot} (Tanpa Rincian Item)", category
+
+
+def _short_radar_label(name: str, max_len: int = 22) -> str:
+    clean = (name or "").strip()
+    if len(clean) <= max_len:
+        return clean
+    return clean[: max_len - 1].rstrip() + "…"
+
+
 @router.get("/analytics")
 async def api_incoming_analytics(
     start_date: Optional[date] = Query(None),
@@ -286,84 +317,267 @@ async def api_incoming_analytics(
     month: Optional[int] = Query(None, ge=1, le=12),
     month_end: Optional[int] = Query(None, ge=1, le=12),
     year: Optional[int] = Query(None, ge=2000, le=2100),
+    order_type: Optional[str] = Query(None),
+    top_limit: int = Query(15, ge=5, le=50),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Radar Menu Terlaris & Jam Sibuk Toko:
-    - top_products: produk terlaris berdasarkan qty & penjualan
-    - categories: ringkasan per kategori produk
-    - peak_hours: distribusi transaksi per jam (offline vs online delivery)
-    - void_summary: ringkasan transaksi void
+    Radar Menu Terlaris (Top Qty & Top Omset), Kontribusi Channel (termasuk Cake Flow), & Jam Sibuk:
+    - top_products / top_products_by_qty: produk terlaris berdasarkan qty
+    - top_products_by_revenue: produk terlaris berdasarkan omset net
+    - radar_by_qty & radar_by_revenue: dataset radar chart (skor 0-100 Qty vs Omset)
+    - by_channel: kontribusi per tipe order (Take Away, Cakeflow, GoFood, GrabFood, ShopeeFood, dll.)
+    - categories: ringkasan per kategori produk (termasuk transaksi tanpa item seperti Cake Flow)
+    - peak_hours: distribusi transaksi per jam (offline vs online delivery vs cakeflow)
+    - void_by_channel: ringkasan transaksi void
+    - summary: ringkasan KPI termasuk kontribusi khusus Cake Flow
     """
     if not start_date and not end_date and month and year:
         m_end = month_end or month
         start_date = date(year, month, 1)
         end_date = (date(year + 1, 1, 1) if m_end == 12 else date(year, m_end + 1, 1)) - timedelta(days=1)
 
-    tx_conds = [IncomingTransaction.status == "paid"]
+    base_paid_conds = [IncomingTransaction.status == "paid"]
     if start_date:
-        tx_conds.append(IncomingTransaction.transaction_date >= start_date)
+        base_paid_conds.append(IncomingTransaction.transaction_date >= start_date)
     if end_date:
-        tx_conds.append(IncomingTransaction.transaction_date <= end_date)
+        base_paid_conds.append(IncomingTransaction.transaction_date <= end_date)
+    base_paid_where = and_(*base_paid_conds)
+
+    # Distinct order_types pada periode aktif (sebelum filter order_type) untuk opsi filter UI
+    ot_avail_res = await db.execute(
+        select(IncomingTransaction.order_type)
+        .where(base_paid_where)
+        .distinct()
+        .order_by(IncomingTransaction.order_type.asc())
+    )
+    available_order_types = [r[0] for r in ot_avail_res.fetchall() if r[0]]
+
+    tx_conds = list(base_paid_conds)
+    if order_type and order_type != "all":
+        tx_conds.append(IncomingTransaction.order_type == order_type)
     paid_where = and_(*tx_conds)
 
-    # 1. Top Products
-    prod_res = await db.execute(
+    # 1. Agregasi Produk & Kategori dari IncomingTransactionItem (POS multi-item & Cake Flow ber-item)
+    product_map: dict[str, dict[str, Any]] = {}
+    category_map: dict[str, dict[str, Any]] = {}
+    channel_qty_map: dict[str, float] = {}
+
+    item_res = await db.execute(
         select(
             IncomingTransactionItem.product_name,
-            func.max(IncomingTransactionItem.category),
-            func.coalesce(func.sum(IncomingTransactionItem.qty), 0.0),
-            func.coalesce(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount), 0.0),
-            func.count(IncomingTransactionItem.id),
+            IncomingTransactionItem.category,
+            IncomingTransactionItem.qty,
+            IncomingTransactionItem.gross_amount,
+            IncomingTransactionItem.discount_amount,
+            IncomingTransaction.order_type,
         )
         .join(IncomingTransaction, IncomingTransactionItem.transaction_id == IncomingTransaction.id)
         .where(paid_where)
-        .group_by(IncomingTransactionItem.product_name)
-        .order_by(func.sum(IncomingTransactionItem.qty).desc(), func.sum(IncomingTransactionItem.gross_amount).desc())
-        .limit(15)
     )
-    top_products = [
-        {
-            "product_name": r[0],
-            "category": r[1] or "Lainnya",
-            "total_qty": float(r[2] or 0.0),
-            "net_sales": float(r[3] or 0.0),
-            "order_lines": int(r[4] or 0),
+    for p_name, p_cat, qty_val, gross_val, disc_val, o_type in item_res.fetchall():
+        clean_name = (p_name or "").strip()
+        if not clean_name:
+            continue
+        qty_f = float(qty_val or 0.0)
+        net_f = max(0.0, float(gross_val or 0.0) - float(disc_val or 0.0))
+        ot_label = (o_type or "").strip() or "Lainnya"
+        cat_label = (p_cat or "").strip() or ("Cakeflow" if is_cakeflow_order_type(ot_label) else "Lainnya")
+
+        key = clean_name.lower()
+        if key not in product_map:
+            product_map[key] = {
+                "product_name": clean_name,
+                "category": cat_label,
+                "total_qty": 0.0,
+                "net_sales": 0.0,
+                "order_lines": 0,
+                "order_types": set(),
+            }
+        elif product_map[key]["category"] == "Lainnya" and cat_label != "Lainnya":
+            product_map[key]["category"] = cat_label
+
+        product_map[key]["total_qty"] += qty_f
+        product_map[key]["net_sales"] += net_f
+        product_map[key]["order_lines"] += 1
+        product_map[key]["order_types"].add(ot_label)
+
+        if cat_label not in category_map:
+            category_map[cat_label] = {"category": cat_label, "total_qty": 0.0, "net_sales": 0.0}
+        category_map[cat_label]["total_qty"] += qty_f
+        category_map[cat_label]["net_sales"] += net_f
+
+        channel_qty_map[ot_label] = channel_qty_map.get(ot_label, 0.0) + qty_f
+
+    # 1b. Fallback transaksi lunas TANPA rincian item (mis. Cake Flow historis / input manual / template CSV)
+    has_item_subq = exists(
+        select(IncomingTransactionItem.id).where(IncomingTransactionItem.transaction_id == IncomingTransaction.id)
+    )
+    itemless_res = await db.execute(
+        select(
+            IncomingTransaction.order_type,
+            IncomingTransaction.notes,
+            IncomingTransaction.gross_sales,
+            IncomingTransaction.discount_amount,
+            IncomingTransaction.net_sales,
+            IncomingTransaction.net_received,
+        ).where(and_(paid_where, ~has_item_subq))
+    )
+    for o_type, notes_val, gross_val, disc_val, net_s_val, net_rec_val in itemless_res.fetchall():
+        ot_label = (o_type or "").strip() or "Lainnya"
+        prod_name, cat_label = _fallback_product_from_tx(ot_label, notes_val)
+        eff_net = float(net_s_val or 0.0)
+        if eff_net <= 0:
+            eff_net = float(net_rec_val or 0.0)
+        if eff_net <= 0:
+            eff_net = max(0.0, float(gross_val or 0.0) - float(disc_val or 0.0))
+        qty_f = 1.0
+
+        key = prod_name.lower()
+        if key not in product_map:
+            product_map[key] = {
+                "product_name": prod_name,
+                "category": cat_label,
+                "total_qty": 0.0,
+                "net_sales": 0.0,
+                "order_lines": 0,
+                "order_types": set(),
+            }
+        product_map[key]["total_qty"] += qty_f
+        product_map[key]["net_sales"] += eff_net
+        product_map[key]["order_lines"] += 1
+        product_map[key]["order_types"].add(ot_label)
+
+        if cat_label not in category_map:
+            category_map[cat_label] = {"category": cat_label, "total_qty": 0.0, "net_sales": 0.0}
+        category_map[cat_label]["total_qty"] += qty_f
+        category_map[cat_label]["net_sales"] += eff_net
+
+        channel_qty_map[ot_label] = channel_qty_map.get(ot_label, 0.0) + qty_f
+
+    total_product_qty = sum(p["total_qty"] for p in product_map.values())
+    total_product_net_sales = sum(p["net_sales"] for p in product_map.values())
+
+    def _serialize_product_row(p: dict[str, Any]) -> dict[str, Any]:
+        qty = float(p["total_qty"])
+        rev = float(p["net_sales"])
+        return {
+            "product_name": p["product_name"],
+            "category": p["category"],
+            "total_qty": round(qty, 2),
+            "net_sales": round(rev, 2),
+            "avg_price": round(rev / qty, 2) if qty > 0 else 0.0,
+            "order_lines": int(p["order_lines"]),
+            "qty_share_pct": round((qty / total_product_qty) * 100.0, 1) if total_product_qty > 0 else 0.0,
+            "revenue_share_pct": round((rev / total_product_net_sales) * 100.0, 1) if total_product_net_sales > 0 else 0.0,
+            "order_types": sorted(p["order_types"]),
         }
-        for r in prod_res.fetchall()
-    ]
+
+    all_products_qty = sorted(
+        product_map.values(),
+        key=lambda x: (-x["total_qty"], -x["net_sales"], x["product_name"].lower()),
+    )
+    all_products_rev = sorted(
+        product_map.values(),
+        key=lambda x: (-x["net_sales"], -x["total_qty"], x["product_name"].lower()),
+    )
+
+    top_products_by_qty = [_serialize_product_row(p) for p in all_products_qty[:top_limit]]
+    top_products_by_revenue = [_serialize_product_row(p) for p in all_products_rev[:top_limit]]
+    # Backwards-compatible alias
+    top_products = top_products_by_qty
+
+    def _build_radar_dataset(rows: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+        sliced = rows[:limit]
+        if not sliced:
+            return []
+        max_q = max((r["total_qty"] for r in sliced), default=1.0) or 1.0
+        max_r = max((r["net_sales"] for r in sliced), default=1.0) or 1.0
+        return [
+            {
+                "label": _short_radar_label(r["product_name"]),
+                "product_name": r["product_name"],
+                "category": r["category"],
+                "total_qty": r["total_qty"],
+                "net_sales": r["net_sales"],
+                "qty_score": round((r["total_qty"] / max_q) * 100.0, 1),
+                "revenue_score": round((r["net_sales"] / max_r) * 100.0, 1),
+            }
+            for r in sliced
+        ]
+
+    radar_by_qty = _build_radar_dataset(top_products_by_qty, limit=8)
+    radar_by_revenue = _build_radar_dataset(top_products_by_revenue, limit=8)
 
     # 2. Category Breakdown
-    cat_res = await db.execute(
-        select(
-            IncomingTransactionItem.category,
-            func.coalesce(func.sum(IncomingTransactionItem.qty), 0.0),
-            func.coalesce(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount), 0.0),
-        )
-        .join(IncomingTransaction, IncomingTransactionItem.transaction_id == IncomingTransaction.id)
-        .where(paid_where)
-        .group_by(IncomingTransactionItem.category)
-        .order_by(func.sum(IncomingTransactionItem.gross_amount - IncomingTransactionItem.discount_amount).desc())
+    categories = sorted(
+        [
+            {
+                "category": c["category"],
+                "total_qty": round(float(c["total_qty"]), 2),
+                "net_sales": round(float(c["net_sales"]), 2),
+            }
+            for c in category_map.values()
+        ],
+        key=lambda x: (-x["net_sales"], -x["total_qty"]),
     )
-    categories = [
-        {
-            "category": r[0] or "Lainnya",
-            "total_qty": float(r[1] or 0.0),
-            "net_sales": float(r[2] or 0.0),
-        }
-        for r in cat_res.fetchall()
-    ]
 
-    # 3. Peak Hours (offline vs online delivery)
+    # 3. Channel Breakdown (termasuk Cake Flow) & Peak Hours
     tx_rows_res = await db.execute(
         select(
             IncomingTransaction.transaction_time,
             IncomingTransaction.order_type,
+            IncomingTransaction.gross_sales,
+            IncomingTransaction.net_sales,
+            IncomingTransaction.platform_fee,
             IncomingTransaction.net_received,
         ).where(paid_where)
     )
     hour_buckets: dict[int, dict[str, Any]] = {}
-    for t_time, o_type, net_rec in tx_rows_res.fetchall():
+    channel_agg: dict[str, dict[str, Any]] = {}
+    total_paid_tx = 0
+    total_net_sales_tx = 0.0
+    total_net_received_tx = 0.0
+    cakeflow_tx_count = 0
+    cakeflow_net_sales = 0.0
+    cakeflow_net_received = 0.0
+    cakeflow_qty = 0.0
+    unscheduled_time_count = 0
+
+    for t_time, o_type, gross_v, net_s_v, fee_v, net_rec_v in tx_rows_res.fetchall():
+        ot_label = (o_type or "").strip() or "Lainnya"
+        is_cf = is_cakeflow_order_type(ot_label)
+        g_f = float(gross_v or 0.0)
+        ns_f = float(net_s_v or 0.0)
+        fee_f = float(fee_v or 0.0)
+        nr_f = float(net_rec_v or 0.0)
+
+        total_paid_tx += 1
+        total_net_sales_tx += ns_f
+        total_net_received_tx += nr_f
+
+        if is_cf:
+            cakeflow_tx_count += 1
+            cakeflow_net_sales += ns_f
+            cakeflow_net_received += nr_f
+
+        if ot_label not in channel_agg:
+            channel_agg[ot_label] = {
+                "channel": ot_label,
+                "is_cakeflow": is_cf,
+                "tx_count": 0,
+                "total_qty": 0.0,
+                "gross_sales": 0.0,
+                "net_sales": 0.0,
+                "platform_fee": 0.0,
+                "net_received": 0.0,
+            }
+        channel_agg[ot_label]["tx_count"] += 1
+        channel_agg[ot_label]["gross_sales"] += g_f
+        channel_agg[ot_label]["net_sales"] += ns_f
+        channel_agg[ot_label]["platform_fee"] += fee_f
+        channel_agg[ot_label]["net_received"] += nr_f
+
         hour = None
         if t_time and ":" in t_time:
             try:
@@ -371,6 +585,7 @@ async def api_incoming_analytics(
             except ValueError:
                 hour = None
         if hour is None or not (0 <= hour <= 23):
+            unscheduled_time_count += 1
             continue
         if hour not in hour_buckets:
             hour_buckets[hour] = {
@@ -378,17 +593,40 @@ async def api_incoming_analytics(
                 "label": f"{hour:02d}:00",
                 "offline_count": 0,
                 "online_count": 0,
+                "cakeflow_count": 0,
                 "total_count": 0,
                 "net_received": 0.0,
             }
-        ot_lower = (o_type or "").lower()
+        ot_lower = ot_label.lower()
         is_online = any(k in ot_lower for k in ("gofood", "grabfood", "shopeefood", "marketplace"))
-        if is_online:
+        if is_cf:
+            hour_buckets[hour]["cakeflow_count"] += 1
+        elif is_online:
             hour_buckets[hour]["online_count"] += 1
         else:
             hour_buckets[hour]["offline_count"] += 1
         hour_buckets[hour]["total_count"] += 1
-        hour_buckets[hour]["net_received"] += float(net_rec or 0.0)
+        hour_buckets[hour]["net_received"] += nr_f
+
+    for ot_label, ch_data in channel_agg.items():
+        ch_qty = float(channel_qty_map.get(ot_label, 0.0))
+        ch_data["total_qty"] = round(ch_qty, 2)
+        ch_data["gross_sales"] = round(ch_data["gross_sales"], 2)
+        ch_data["net_sales"] = round(ch_data["net_sales"], 2)
+        ch_data["platform_fee"] = round(ch_data["platform_fee"], 2)
+        ch_data["net_received"] = round(ch_data["net_received"], 2)
+        ch_data["revenue_share_pct"] = (
+            round((ch_data["net_received"] / total_net_received_tx) * 100.0, 1)
+            if total_net_received_tx > 0
+            else 0.0
+        )
+        if ch_data["is_cakeflow"]:
+            cakeflow_qty += ch_qty
+
+    by_channel = sorted(
+        channel_agg.values(),
+        key=lambda x: (-x["net_received"], -x["tx_count"], x["channel"].lower()),
+    )
 
     peak_hours = [hour_buckets[h] for h in sorted(hour_buckets.keys())]
 
@@ -398,6 +636,8 @@ async def api_incoming_analytics(
         void_conds.append(IncomingTransaction.transaction_date >= start_date)
     if end_date:
         void_conds.append(IncomingTransaction.transaction_date <= end_date)
+    if order_type and order_type != "all":
+        void_conds.append(IncomingTransaction.order_type == order_type)
     void_res = await db.execute(
         select(
             IncomingTransaction.order_type,
@@ -416,9 +656,27 @@ async def api_incoming_analytics(
         "ok": True,
         "analytics": {
             "top_products": top_products,
+            "top_products_by_qty": top_products_by_qty,
+            "top_products_by_revenue": top_products_by_revenue,
+            "radar_by_qty": radar_by_qty,
+            "radar_by_revenue": radar_by_revenue,
+            "by_channel": by_channel,
             "categories": categories,
             "peak_hours": peak_hours,
             "void_by_channel": void_by_channel,
+            "available_order_types": available_order_types,
+            "summary": {
+                "total_paid_tx": total_paid_tx,
+                "total_qty": round(total_product_qty, 2),
+                "total_net_sales": round(total_net_sales_tx, 2),
+                "total_net_received": round(total_net_received_tx, 2),
+                "unique_products": len(product_map),
+                "cakeflow_tx_count": cakeflow_tx_count,
+                "cakeflow_qty": round(cakeflow_qty, 2),
+                "cakeflow_net_sales": round(cakeflow_net_sales, 2),
+                "cakeflow_net_received": round(cakeflow_net_received, 2),
+                "unscheduled_time_count": unscheduled_time_count,
+            },
         },
     }
 

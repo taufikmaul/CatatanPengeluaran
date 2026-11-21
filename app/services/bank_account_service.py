@@ -2,6 +2,7 @@
 app/services/bank_account_service.py — Layanan CRUD & Mapping Rekening Penerimaan
 """
 import json
+import re
 from typing import Any
 from sqlalchemy import select, func, exists, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,16 @@ from app.models.incoming_transaction import IncomingTransaction
 from app.models.bank_transfer import BankTransfer
 from app.models.expense import Expense
 from app.models.expense_payment import ExpensePayment
+
+
+def normalize_channel_key(value: str | None) -> str:
+    """Normalisasi nama channel/tipe order agar 'Cake Flow', 'Cakeflow', 'cake_flow' cocok konsisten."""
+    return re.sub(r"[\s_\-]+", "", (value or "").strip().lower())
+
+
+def is_cakeflow_order_type(order_type: str | None) -> bool:
+    """Deteksi apakah tipe order merupakan pesanan Cake Flow / Cakeflow."""
+    return "cakeflow" in normalize_channel_key(order_type)
 
 
 def _parse_mappings(raw: str | None) -> list[str]:
@@ -90,33 +101,64 @@ async def list_bank_accounts(
         .group_by(IncomingTransaction.bank_account_id)
     )
     agg_res = await db.execute(agg_stmt)
-    agg_map = {
+    agg_map: dict[int, tuple[float, int]] = {
         row[0]: (float(row[1] or 0.0), int(row[2] or 0))
         for row in agg_res.fetchall()
     }
 
-    # Bangun pemetaan pay_method -> bank_account_id dari channel_mappings rekening aktif
+    # Bangun pemetaan pay_method / order_type -> bank_account_id dari channel_mappings rekening aktif
     method_to_acc_id: dict[str, int] = {}
+    norm_method_to_acc_id: dict[str, int] = {}
     default_acc_id: int | None = None
     for acc in accounts:
         if acc.is_default and default_acc_id is None:
             default_acc_id = acc.id
         for m in _parse_mappings(acc.channel_mappings):
             key = m.strip().lower()
+            norm_key = normalize_channel_key(m)
             if key and key not in method_to_acc_id:
                 method_to_acc_id[key] = acc.id
+            if norm_key and norm_key not in norm_method_to_acc_id:
+                norm_method_to_acc_id[norm_key] = acc.id
 
-    def match_account_by_method(method_name: str | None) -> int | None:
-        m_key = (method_name or "").strip().lower()
-        if not m_key:
-            return default_acc_id
-        matched = method_to_acc_id.get(m_key)
-        if matched is None:
+    def match_account_by_method(method_name: str | None, fallback_order_type: str | None = None) -> int | None:
+        for candidate in (method_name, fallback_order_type):
+            m_key = (candidate or "").strip().lower()
+            if not m_key:
+                continue
+            matched = method_to_acc_id.get(m_key)
+            if matched is not None:
+                return matched
+            norm_cand = normalize_channel_key(candidate)
+            if norm_cand and norm_cand in norm_method_to_acc_id:
+                return norm_method_to_acc_id[norm_cand]
             for k, aid in method_to_acc_id.items():
                 if k in m_key or m_key in k:
-                    matched = aid
-                    break
-        return matched if matched is not None else default_acc_id
+                    return aid
+            for nk, aid in norm_method_to_acc_id.items():
+                if nk and norm_cand and (nk in norm_cand or norm_cand in nk):
+                    return aid
+        return default_acc_id
+
+    # Transaksi masuk lunas tanpa bank_account_id -> fallback channel_mappings (termasuk Cake Flow)
+    inc_unassigned_res = await db.execute(
+        select(
+            IncomingTransaction.payment_method,
+            IncomingTransaction.order_type,
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+            func.count(IncomingTransaction.id),
+        )
+        .where(
+            IncomingTransaction.bank_account_id.is_(None),
+            IncomingTransaction.status == "paid",
+        )
+        .group_by(IncomingTransaction.payment_method, IncomingTransaction.order_type)
+    )
+    for pm_name, ot_name, amt, cnt in inc_unassigned_res.fetchall():
+        matched_id = match_account_by_method(pm_name, ot_name)
+        if matched_id is not None:
+            prev_amt, prev_cnt = agg_map.get(matched_id, (0.0, 0))
+            agg_map[matched_id] = (prev_amt + float(amt or 0.0), prev_cnt + int(cnt or 0))
 
     has_payment_subq = exists(
         select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
@@ -328,6 +370,19 @@ def resolve_bank_account_for_tx(
         return channel_map[pm_key]
     if ot_key and ot_key in channel_map:
         return channel_map[ot_key]
+
+    # Normalisasi spasi/underscore/hyphen agar "Cake Flow" cocok dengan "Cakeflow"
+    norm_map = {normalize_channel_key(k): v for k, v in channel_map.items() if normalize_channel_key(k)}
+    for candidate in (pm_key, ot_key):
+        norm_cand = normalize_channel_key(candidate)
+        if not norm_cand:
+            continue
+        if norm_cand in norm_map:
+            return norm_map[norm_cand]
+        for nk, val in norm_map.items():
+            if nk in norm_cand or norm_cand in nk:
+                return val
+
     if default_acc:
         return default_acc
     return None, None

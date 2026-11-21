@@ -461,3 +461,553 @@ async def test_bulk_update_template_csv_export_json_and_anonymize_lock_share(
     assert res_unlock.status_code == 200
     assert res_unlock.json()["anonymize_locked"] is False
 
+
+@pytest.mark.asyncio
+async def test_prepared_batch_yield_dual_use_packaging_and_multilevel_nesting(
+    client: AsyncClient, db: AsyncSession, auth_cookies: dict
+):
+    client.cookies.update(auth_cookies)
+
+    gula = MasterItem(item_name="Gula Pasir", category="Bahan Kue", satuan_beli="Kg", satuan_ecer="Gram")
+    coklat = MasterItem(item_name="Dark Chocolate", category="Bahan Kue", satuan_beli="Kg", satuan_ecer="Gram")
+    botol = MasterItem(item_name="Botol Kaca 250ml", category="Kemasan", satuan_beli="Pcs", satuan_ecer="Pcs")
+    box_cake = MasterItem(item_name="Box Cake 20cm", category="Kemasan", satuan_beli="Pcs", satuan_ecer="Pcs")
+    box_hampers = MasterItem(item_name="Box Hampers Hardbox", category="Kemasan", satuan_beli="Pcs", satuan_ecer="Pcs")
+    db.add_all([gula, coklat, botol, box_cake, box_hampers])
+    await db.flush()
+
+    db.add_all(
+        [
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Supplier Bahan",
+                item_name="Gula Pasir",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=18000,
+                total_price=18000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=gula.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Supplier Bahan",
+                item_name="Dark Chocolate",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=100000,
+                total_price=100000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=coklat.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 12),
+                supplier="Supplier Bahan",
+                item_name="Dark Chocolate",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=120000,  # +20% -> memicu price drift
+                total_price=120000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=coklat.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Supplier Kemasan",
+                item_name="Botol Kaca 250ml",
+                qty=1,
+                unit="Pcs",
+                category="Kemasan",
+                unit_price=3500,
+                total_price=3500,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=botol.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Supplier Kemasan",
+                item_name="Box Cake 20cm",
+                qty=1,
+                unit="Pcs",
+                category="Kemasan",
+                unit_price=5000,
+                total_price=5000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=box_cake.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Supplier Kemasan",
+                item_name="Box Hampers Hardbox",
+                qty=1,
+                unit="Pcs",
+                category="Kemasan",
+                unit_price=15000,
+                total_price=15000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=box_hampers.id,
+            ),
+        ]
+    )
+    await db.commit()
+
+    # 1. Level 1: Prepared internal (batch_yield_qty=1000 Gram, waste_loss_pct=10% -> net_yield=900 Gram)
+    res_syrup = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Simple Syrup",
+            "item_type": "prepared",
+            "is_sellable": False,
+            "category": "Prepared / Sub-Resep",
+            "unit": "Gram",
+            "batch_yield_qty": 1000,
+            "batch_yield_unit": "Gram",
+            "waste_loss_pct": 10,
+            "shelf_life_days": 7,
+            "storage_method": "Chiller",
+            "ingredients": [
+                {
+                    "master_item_id": gula.id,
+                    "cost_group": "ingredient",
+                    "qty": 500,
+                    "unit": "Gram",
+                    "yield_factor": 1000,  # 500/1000 * 18000 = 9000
+                }
+            ],
+        },
+    )
+    assert res_syrup.status_code == 201, res_syrup.text
+    syrup = res_syrup.json()["item"]
+    assert syrup["item_type"] == "prepared"
+    assert syrup["is_sellable"] is False
+    assert syrup["anonymous_name"].startswith("PREP-")
+    assert syrup["food_cost_status"] == "not_sellable"
+    assert syrup["net_yield_qty"] == 900.0
+    assert syrup["core_unit_hpp"] == 10.0  # 9000 / 900 = 10/gram
+    assert syrup["effective_hpp"] == 10.0
+
+    # 2. Level 1b: Dual-Use Prepared (bisa dijual langsung pakai botol kaca, juga bisa dipakai di menu lain tanpa botol)
+    res_sauce = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Dark Choco Sauce Jar",
+            "item_type": "prepared",
+            "is_sellable": True,
+            "category": "Kondimen",
+            "unit": "Jar",
+            "batch_yield_qty": 1,
+            "batch_yield_unit": "Jar",
+            "selling_price": 45000,
+            "ingredients": [
+                {
+                    "master_item_id": coklat.id,
+                    "cost_group": "ingredient",
+                    "qty": 100,
+                    "unit": "Gram",
+                    "yield_factor": 1000,  # 100/1000 * 120000 = 12000 (price drift +20%)
+                },
+                {
+                    "master_item_id": botol.id,
+                    "cost_group": "packaging",
+                    "qty": 1,
+                    "unit": "Pcs",
+                    "yield_factor": 1,  # 3500
+                },
+            ],
+        },
+    )
+    assert res_sauce.status_code == 201, res_sauce.text
+    sauce = res_sauce.json()["item"]
+    assert sauce["is_sellable"] is True
+    assert sauce["core_unit_hpp"] == 12000.0
+    assert sauce["subtotal_packaging"] == 3500.0
+    assert sauce["effective_hpp"] == 15500.0
+    assert sauce["has_price_drift"] is True
+
+    # 3. Level 2: Prepared Sponge Base memakai Simple Syrup
+    res_sponge = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Choco Sponge Base",
+            "item_type": "prepared",
+            "is_sellable": False,
+            "category": "Prepared / Sub-Resep",
+            "unit": "Loyang",
+            "batch_yield_qty": 1,
+            "batch_yield_unit": "Loyang",
+            "ingredients": [
+                {
+                    "sub_menu_id": syrup["id"],
+                    "cost_group": "ingredient",
+                    "qty": 100,
+                    "unit": "Gram",
+                    "yield_factor": 1,  # 100 * 10 = 1000
+                },
+                {
+                    "master_item_id": coklat.id,
+                    "cost_group": "ingredient",
+                    "qty": 200,
+                    "unit": "Gram",
+                    "yield_factor": 1000,  # 200/1000 * 120000 = 24000
+                },
+            ],
+        },
+    )
+    assert res_sponge.status_code == 201, res_sponge.text
+    sponge = res_sponge.json()["item"]
+    assert sponge["core_unit_hpp"] == 25000.0  # 1000 + 24000
+    assert sponge["has_price_drift"] is True
+    assert sponge["ingredients"][0]["sub_menu_breakdown"][0]["ingredient_name"] == "Gula Pasir"
+
+    # 4. Level 3: Menu Jual Finished memakai Sponge Base + Dark Choco Sauce (include_sub_packaging auto False) + Box Cake + Labor
+    res_cake = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Whole Choco Cake",
+            "item_type": "finished",
+            "category": "Cake Ready",
+            "unit": "Box",
+            "selling_price": 200000,
+            "labor_cost": 10000,
+            "ingredients": [
+                {
+                    "sub_menu_id": sponge["id"],
+                    "cost_group": "ingredient",
+                    "qty": 1,
+                    "unit": "Loyang",
+                    "yield_factor": 1,  # 25000
+                },
+                {
+                    "sub_menu_id": sauce["id"],
+                    "cost_group": "ingredient",
+                    "qty": 1,
+                    "unit": "Jar",
+                    "yield_factor": 1,  # auto include_sub_packaging=False -> 12000 (tanpa botol 3500!)
+                },
+                {
+                    "master_item_id": box_cake.id,
+                    "cost_group": "packaging",
+                    "qty": 1,
+                    "unit": "Pcs",
+                    "yield_factor": 1,  # 5000
+                },
+            ],
+        },
+    )
+    assert res_cake.status_code == 201, res_cake.text
+    cake = res_cake.json()["item"]
+    assert cake["subtotal_ingredients"] == 37000.0  # 25000 + 12000 (botol tidak ikut!)
+    assert cake["subtotal_packaging"] == 5000.0
+    assert cake["unit_labor_cost"] == 10000.0
+    assert cake["core_unit_hpp"] == 47000.0  # 37000 + 10000
+    assert cake["effective_hpp"] == 52000.0  # 47000 + 5000
+    assert cake["pure_food_cost_pct"] == 18.5  # 37000 / 200000
+    assert cake["packaging_cost_pct"] == 2.5  # 5000 / 200000
+    assert cake["food_cost_pct"] == 26.0  # 52000 / 200000
+    assert cake["has_price_drift"] is True  # merambat dari Dark Chocolate di dalam prepared!
+    assert cake["max_ingredient_increase_pct"] == 20.0
+    assert cake["ingredients"][0]["drift_source"] == "Choco Sponge Base"
+
+    # 5. Level 4: Bundle / Hampers memakai Whole Choco Cake (include_sub_packaging auto True) + Box Hampers
+    res_bundle = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Lebaran Eksklusif",
+            "item_type": "bundle",
+            "category": "Hampers / Bundling",
+            "unit": "Paket",
+            "selling_price": 250000,
+            "ingredients": [
+                {
+                    "sub_menu_id": cake["id"],
+                    "cost_group": "ingredient",
+                    "qty": 1,
+                    "unit": "Box",
+                    "yield_factor": 1,  # auto include_sub_packaging=True -> 52000
+                },
+                {
+                    "master_item_id": box_hampers.id,
+                    "cost_group": "packaging",
+                    "qty": 1,
+                    "unit": "Pcs",
+                    "yield_factor": 1,  # 15000
+                },
+            ],
+        },
+    )
+    assert res_bundle.status_code == 201, res_bundle.text
+    bundle = res_bundle.json()["item"]
+    assert bundle["anonymous_name"].startswith("PKT-")
+    assert bundle["ingredients"][0]["include_sub_packaging"] is True
+    assert bundle["subtotal_ingredients"] == 52000.0
+    assert bundle["subtotal_packaging"] == 15000.0
+    assert bundle["effective_hpp"] == 67000.0
+    assert bundle["has_price_drift"] is True
+
+    # 6. Conversion Hint untuk sub_menu_id
+    res_conv = await client.get(
+        f"/api/v1/menus/conversion-hint?sub_menu_id={syrup['id']}&recipe_unit=Gram"
+    )
+    assert res_conv.status_code == 200
+    assert res_conv.json()["yield_factor"] == 1.0
+
+    # 7. Filter item_type & summary hanya hitung is_sellable di rata-rata
+    res_prep_list = await client.get("/api/v1/menus?item_type=prepared")
+    assert res_prep_list.status_code == 200
+    assert len(res_prep_list.json()["items"]) == 3  # Syrup, Sauce, Sponge
+
+    # 8. Where-Used & Delete Protection (409 Conflict)
+    res_usages = await client.get(f"/api/v1/menus/{sponge['id']}/usages")
+    assert res_usages.status_code == 200
+    assert res_usages.json()["count"] == 1
+    assert res_usages.json()["usages"][0]["name"] == "Whole Choco Cake"
+
+    res_del_conflict = await client.delete(f"/api/v1/menus/{sponge['id']}")
+    assert res_del_conflict.status_code == 409
+    assert "Whole Choco Cake" in res_del_conflict.json()["detail"]
+
+    # 9. Mode Anonim menyamarkan nama prepared, bundle, sub-resep, dan kemasan
+    res_anon = await client.get(f"/api/v1/menus/{cake['id']}?anonymize=true")
+    assert res_anon.status_code == 200
+    cake_anon = res_anon.json()["item"]
+    assert cake_anon["name"].startswith("MENU-")
+    assert cake_anon["ingredients"][0]["ingredient_name"] == "Sub-Resep #1"
+    assert cake_anon["ingredients"][0]["sub_menu_id"] is None
+    assert cake_anon["ingredients"][0]["sub_menu_breakdown"] == []
+    assert cake_anon["ingredients"][2]["ingredient_name"] == "Kemasan #1"
+
+
+@pytest.mark.asyncio
+async def test_cycle_detection_clone_scale_simulator_and_channels(
+    client: AsyncClient, db: AsyncSession, auth_cookies: dict
+):
+    client.cookies.update(auth_cookies)
+
+    butter = MasterItem(item_name="Butter Test", category="Bahan Kue", satuan_beli="Kg", satuan_ecer="Gram")
+    box = MasterItem(item_name="Box Test", category="Kemasan", satuan_beli="Pcs", satuan_ecer="Pcs")
+    db.add_all([butter, box])
+    await db.flush()
+    db.add_all(
+        [
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Toko A",
+                item_name="Butter Test",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=200000,
+                total_price=200000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=butter.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 10),
+                supplier="Toko B",
+                item_name="Box Test",
+                qty=1,
+                unit="Pcs",
+                category="Kemasan",
+                unit_price=4000,
+                total_price=4000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=box.id,
+            ),
+        ]
+    )
+    await db.commit()
+
+    # Buat Prepared A -> B dan uji penolakan siklus A -> B -> A serta self-reference A -> A
+    prep_a = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Prep A",
+                "item_type": "prepared",
+                "unit": "Gram",
+                "batch_yield_qty": 1000,
+                "ingredients": [
+                    {
+                        "master_item_id": butter.id,
+                        "cost_group": "ingredient",
+                        "qty": 500,
+                        "unit": "Gram",
+                        "yield_factor": 1000,  # 100000 / 1000 = 100/gram
+                    }
+                ],
+            },
+        )
+    ).json()["item"]
+
+    prep_b = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Prep B",
+                "item_type": "prepared",
+                "unit": "Gram",
+                "batch_yield_qty": 100,
+                "ingredients": [
+                    {
+                        "sub_menu_id": prep_a["id"],
+                        "cost_group": "ingredient",
+                        "qty": 100,
+                        "unit": "Gram",
+                        "yield_factor": 1,  # 100 * 100 = 10000 / 100 = 100/gram
+                    }
+                ],
+            },
+        )
+    ).json()["item"]
+
+    # Self reference A -> A ditolak 400
+    res_self = await client.put(
+        f"/api/v1/menus/{prep_a['id']}",
+        json={
+            "ingredients": [
+                {"sub_menu_id": prep_a["id"], "cost_group": "ingredient", "qty": 10, "unit": "Gram", "yield_factor": 1}
+            ]
+        },
+    )
+    assert res_self.status_code == 400
+    assert "sendiri" in res_self.json()["detail"].lower()
+
+    # Indirect cycle A -> B -> A ditolak 400
+    res_cycle = await client.put(
+        f"/api/v1/menus/{prep_a['id']}",
+        json={
+            "ingredients": [
+                {"sub_menu_id": prep_b["id"], "cost_group": "ingredient", "qty": 10, "unit": "Gram", "yield_factor": 1}
+            ]
+        },
+    )
+    assert res_cycle.status_code == 400
+    assert "siklus" in res_cycle.json()["detail"].lower()
+
+    # Menu Jual memakai Prep B + Box Test
+    cake = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Butter Cake 16cm",
+                "item_type": "finished",
+                "unit": "Box",
+                "selling_price": 60000,
+                "ingredients": [
+                    {"sub_menu_id": prep_b["id"], "cost_group": "ingredient", "qty": 100, "unit": "Gram", "yield_factor": 1},
+                    {"master_item_id": box.id, "cost_group": "packaging", "qty": 1, "unit": "Pcs", "yield_factor": 1},
+                ],
+            },
+        )
+    ).json()["item"]
+    assert cake["effective_hpp"] == 14000.0  # 10000 + 4000
+
+    # Clone & Scale 2x (bahan ikut dikali 2, batch_yield_qty finished tetap 1.0, packaging tetap 1.0)
+    res_clone = await client.post(
+        f"/api/v1/menus/{cake['id']}/clone",
+        json={"new_name": "Butter Cake 20cm", "scale_factor": 2.0, "scale_packaging": False},
+    )
+    assert res_clone.status_code == 201, res_clone.text
+    cloned = res_clone.json()["item"]
+    assert cloned["name"] == "Butter Cake 20cm"
+    assert cloned["subtotal_ingredients"] == 20000.0
+    assert cloned["effective_hpp"] == 24000.0
+    ing_row = next(r for r in cloned["ingredients"] if r["cost_group"] == "ingredient")
+    pkg_row = next(r for r in cloned["ingredients"] if r["cost_group"] == "packaging")
+    assert ing_row["qty"] == 200.0
+    assert pkg_row["qty"] == 1.0
+    assert cloned["batch_yield_qty"] == 1.0
+
+    # What-If Price Simulator (+50% Butter -> Prep A, Prep B, Butter Cake 16cm & 20cm terdampak, DB tidak berubah)
+    res_sim = await client.post(
+        "/api/v1/menus/simulate-price-impact",
+        json={"adjustments": [{"master_item_id": butter.id, "mode": "pct", "value": 50}]},
+    )
+    assert res_sim.status_code == 200, res_sim.text
+    sim = res_sim.json()
+    assert sim["summary"]["total_affected"] >= 3
+    cake_sim = next(it for it in sim["affected_items"] if it["menu_id"] == cake["id"])
+    assert cake_sim["old_hpp"] == 14000.0
+    assert cake_sim["new_hpp"] == 19000.0  # 10000 * 1.5 + 4000
+    assert cake_sim["delta_hpp"] == 5000.0
+    assert cake_sim["suggested_selling_price"] is not None
+
+    # Pastikan DB asli tidak berubah setelah simulasi
+    res_cake_after = await client.get(f"/api/v1/menus/{cake['id']}")
+    assert res_cake_after.json()["item"]["effective_hpp"] == 14000.0
+
+    # Pricing Channels GET & PUT (admin only)
+    res_ch_get = await client.get("/api/v1/menus/pricing-channels")
+    assert res_ch_get.status_code == 200
+    assert len(res_ch_get.json()["channels"]) >= 4
+
+    purchasing_token = create_session_token(role="purchasing")
+    client.cookies.set(SESSION_COOKIE_NAME, purchasing_token)
+    res_ch_forb = await client.put(
+        "/api/v1/menus/pricing-channels",
+        json={"channels": [{"key": "gofood", "name": "GoFood", "commission_pct": 22, "fixed_fee": 1000, "extra_packaging": 500}]},
+    )
+    assert res_ch_forb.status_code == 403
+
+    client.cookies.update(auth_cookies)
+    res_ch_upd = await client.put(
+        "/api/v1/menus/pricing-channels",
+        json={"channels": [{"key": "gofood", "name": "GoFood", "commission_pct": 22, "fixed_fee": 1000, "extra_packaging": 500}]},
+    )
+    assert res_ch_upd.status_code == 200
+    assert res_ch_upd.json()["channels"][0]["commission_pct"] == 22.0
+
+    # Regression test untuk POST /api/v1/menus/bulk dengan ingredients (memastikan sync_menu_ingredients menerima object MenuProduct)
+    res_bulk = await client.post(
+        "/api/v1/menus/bulk",
+        json={
+            "update_existing": True,
+            "items": [
+                {
+                    "name": "Bulk Croissant",
+                    "category": "Pastry",
+                    "unit": "Pcs",
+                    "selling_price": 30000,
+                    "ingredients": [
+                        {"master_item_id": butter.id, "cost_group": "ingredient", "qty": 30, "unit": "Gram", "yield_factor": 1000}
+                    ],
+                }
+            ],
+        },
+    )
+    assert res_bulk.status_code == 201, res_bulk.text
+    assert res_bulk.json()["added"] == 1
+
+    # Update via bulk dengan ingredients juga harus sukses
+    res_bulk_upd = await client.post(
+        "/api/v1/menus/bulk",
+        json={
+            "update_existing": True,
+            "items": [
+                {
+                    "name": "Bulk Croissant",
+                    "category": "Pastry",
+                    "unit": "Pcs",
+                    "selling_price": 32000,
+                    "ingredients": [
+                        {"master_item_id": butter.id, "cost_group": "ingredient", "qty": 40, "unit": "Gram", "yield_factor": 1000}
+                    ],
+                }
+            ],
+        },
+    )
+    assert res_bulk_upd.status_code == 201, res_bulk_upd.text
+    assert res_bulk_upd.json()["updated"] == 1
+
+

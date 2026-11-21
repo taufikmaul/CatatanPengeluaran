@@ -16,7 +16,7 @@ from app.models.bank_transfer import BankTransfer
 from app.models.fixed_asset import FixedAsset
 from app.services.expense_service import get_monthly_report
 from app.services.master_data_service import get_category_accounting_map, get_master_options
-from app.services.bank_account_service import DEFAULT_COA_BY_TYPE, _parse_mappings
+from app.services.bank_account_service import DEFAULT_COA_BY_TYPE, _parse_mappings, normalize_channel_key
 from app.services.asset_service import calculate_asset_depreciation
 
 MONTH_NAMES = [
@@ -550,28 +550,81 @@ async def get_accounting_report(
     )
     inc_all_map = {int(r[0]): float(r[1] or 0.0) for r in inc_all_res.fetchall()}
 
-    # Cocokkan pengeluaran (cur_metode) ke rekening berdasarkan channel_mappings
+    # Cocokkan transaksi masuk / pengeluaran tanpa bank_account_id ke rekening berdasarkan channel_mappings
     method_to_acc_id: dict[str, int] = {}
+    norm_method_to_acc_id: dict[str, int] = {}
     default_acc_id: int | None = None
     for acc in bank_accounts:
         if acc.is_default and default_acc_id is None:
             default_acc_id = acc.id
         for m in _parse_mappings(acc.channel_mappings):
             key = m.strip().lower()
+            norm_key = normalize_channel_key(m)
             if key and key not in method_to_acc_id:
                 method_to_acc_id[key] = acc.id
+            if norm_key and norm_key not in norm_method_to_acc_id:
+                norm_method_to_acc_id[norm_key] = acc.id
 
-    def match_account_by_method(method_name: str | None) -> int | None:
-        m_key = (method_name or "").strip().lower()
-        if not m_key:
-            return default_acc_id
-        matched = method_to_acc_id.get(m_key)
-        if matched is None:
+    def match_account_by_method(method_name: str | None, fallback_order_type: str | None = None) -> int | None:
+        for candidate in (method_name, fallback_order_type):
+            m_key = (candidate or "").strip().lower()
+            if not m_key:
+                continue
+            matched = method_to_acc_id.get(m_key)
+            if matched is not None:
+                return matched
+            norm_cand = normalize_channel_key(candidate)
+            if norm_cand and norm_cand in norm_method_to_acc_id:
+                return norm_method_to_acc_id[norm_cand]
             for k, aid in method_to_acc_id.items():
                 if k in m_key or m_key in k:
-                    matched = aid
-                    break
-        return matched if matched is not None else default_acc_id
+                    return aid
+            for nk, aid in norm_method_to_acc_id.items():
+                if nk and norm_cand and (nk in norm_cand or norm_cand in nk):
+                    return aid
+        return default_acc_id
+
+    # Transaksi masuk lunas bulan ini tanpa bank_account_id -> fallback channel_mappings (termasuk Cake Flow)
+    inc_month_unassigned_res = await db.execute(
+        select(
+            IncomingTransaction.payment_method,
+            IncomingTransaction.order_type,
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        )
+        .where(
+            and_(
+                IncomingTransaction.transaction_date >= start_date,
+                IncomingTransaction.transaction_date < end_date,
+                IncomingTransaction.status == "paid",
+                IncomingTransaction.bank_account_id.is_(None),
+            )
+        )
+        .group_by(IncomingTransaction.payment_method, IncomingTransaction.order_type)
+    )
+    for pm_name, ot_name, amt in inc_month_unassigned_res.fetchall():
+        matched_id = match_account_by_method(pm_name, ot_name)
+        if matched_id is not None:
+            inc_month_map[matched_id] = inc_month_map.get(matched_id, 0.0) + float(amt or 0.0)
+
+    # Transaksi masuk lunas all-time tanpa bank_account_id -> fallback channel_mappings (termasuk Cake Flow)
+    inc_all_unassigned_res = await db.execute(
+        select(
+            IncomingTransaction.payment_method,
+            IncomingTransaction.order_type,
+            func.coalesce(func.sum(IncomingTransaction.net_received), 0.0),
+        )
+        .where(
+            and_(
+                IncomingTransaction.status == "paid",
+                IncomingTransaction.bank_account_id.is_(None),
+            )
+        )
+        .group_by(IncomingTransaction.payment_method, IncomingTransaction.order_type)
+    )
+    for pm_name, ot_name, amt in inc_all_unassigned_res.fetchall():
+        matched_id = match_account_by_method(pm_name, ot_name)
+        if matched_id is not None:
+            inc_all_map[matched_id] = inc_all_map.get(matched_id, 0.0) + float(amt or 0.0)
 
     has_payment_subq = exists(
         select(ExpensePayment.id).where(ExpensePayment.expense_id == Expense.id)
