@@ -182,14 +182,38 @@ def suggest_yield_factor(
     satuan_ecer: str | None,
     isi_paket: str | None,
     recipe_unit: str | None,
+    satuan_resep: str | None = None,
+    konversi_resep: float | None = None,
 ) -> tuple[float, str]:
     """
-    Hitung saran pembagi kemasan (yield_factor) berdasarkan satuan beli MasterItem dan satuan resep.
-    Contoh: satuan_beli='Kg', recipe_unit='Gram' -> (1000.0, 'Auto: 1 Kg = 1.000 Gram').
+    Hitung saran pembagi kemasan (yield_factor) berdasarkan turunan satuan resep MasterItem, satuan beli, dan satuan resep.
+    Contoh: satuan_beli='Kg', satuan_resep='Gram', konversi_resep=1000 -> (1000.0, 'Master Resep: 1 Kg = 1000 Gram').
     """
     buy_canon = _canon_unit(satuan_beli)
     rec_canon = _canon_unit(recipe_unit)
     ecer_canon = _canon_unit(satuan_ecer)
+
+    if satuan_resep and konversi_resep is not None and float(konversi_resep) > 0:
+        konv = float(konversi_resep)
+        resep_canon = _canon_unit(satuan_resep)
+        if not rec_canon or (resep_canon and resep_canon == rec_canon):
+            return round(konv, 6), (
+                f"Master Resep: 1 {satuan_beli or 'unit'} = {konv:g} {satuan_resep}"
+            )
+        if buy_canon and buy_canon == rec_canon:
+            return 1.0, f"Satuan beli & resep sama ({satuan_beli})"
+        direct_from_resep = _convert_unit_factor(resep_canon, rec_canon)
+        if direct_from_resep is not None:
+            factor = round(konv * direct_from_resep, 6)
+            return factor, (
+                f"Master Resep ({konv:g} {satuan_resep}): {factor:g} {recipe_unit}"
+            )
+        inverse_to_resep = _convert_unit_factor(rec_canon, resep_canon)
+        if inverse_to_resep is not None and inverse_to_resep > 0:
+            factor = round(konv / inverse_to_resep, 6)
+            return factor, (
+                f"Master Resep ({konv:g} {satuan_resep}): {factor:g} {recipe_unit}"
+            )
 
     if not rec_canon:
         return 1.0, "Default 1"

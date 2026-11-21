@@ -31,6 +31,228 @@ def _normalize_str(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+_RECIPE_UNIT_CANON: dict[str, str] = {
+    "g": "Gram",
+    "gr": "Gram",
+    "gram": "Gram",
+    "grams": "Gram",
+    "kg": "Kg",
+    "kilogram": "Kg",
+    "kilo": "Kg",
+    "ons": "Ons",
+    "oz": "Ons",
+    "ml": "ml",
+    "mililiter": "ml",
+    "cc": "ml",
+    "l": "Liter",
+    "lt": "Liter",
+    "ltr": "Liter",
+    "liter": "Liter",
+    "liters": "Liter",
+    "cm": "cm",
+    "m": "Meter",
+    "meter": "Meter",
+    "mtr": "Meter",
+    "pcs": "Pcs",
+    "pc": "Pcs",
+    "buah": "Pcs",
+    "biji": "Pcs",
+    "butir": "Butir",
+    "btr": "Butir",
+    "lembar": "Lembar",
+    "lbr": "Lembar",
+    "pack": "Pack",
+    "pak": "Pack",
+    "pouch": "Pouch",
+    "sachet": "Sachet",
+    "box": "Box",
+    "bungkus": "Bungkus",
+    "bks": "Bungkus",
+    "botol": "Botol",
+    "btl": "Botol",
+    "kaleng": "Kaleng",
+    "klg": "Kaleng",
+    "roll": "Roll",
+    "lusin": "Lusin",
+    "lsn": "Lusin",
+    "kodi": "Kodi",
+    "gross": "Gross",
+    "tray": "Tray",
+    "ikat": "Ikat",
+    "sak": "Sak",
+    "bal": "Bal",
+    "dus": "Dus",
+}
+
+_DIRECT_RECIPE_MAP: dict[str, tuple[str, float]] = {
+    "Kg": ("Gram", 1000.0),
+    "Ons": ("Gram", 100.0),
+    "Gram": ("Gram", 1.0),
+    "Liter": ("ml", 1000.0),
+    "ml": ("ml", 1.0),
+    "Meter": ("cm", 100.0),
+    "cm": ("cm", 1.0),
+    "Lusin": ("Pcs", 12.0),
+    "Kodi": ("Pcs", 20.0),
+    "Gross": ("Pcs", 144.0),
+    "Tray": ("Butir", 30.0),
+    "Butir": ("Butir", 1.0),
+    "Pcs": ("Pcs", 1.0),
+    "Lembar": ("Lembar", 1.0),
+}
+
+_CONTAINER_UNITS = {
+    "Bungkus",
+    "Pack",
+    "Pouch",
+    "Box",
+    "Botol",
+    "Kaleng",
+    "Dus",
+    "Sak",
+    "Bal",
+    "Roll",
+    "Sachet",
+}
+
+
+def normalize_recipe_unit(raw: str | None) -> str | None:
+    """Normalkan satuan resep agar konsisten (mis. 'gr' -> 'Gram', 'cc' -> 'ml')."""
+    if not raw or not raw.strip():
+        return None
+    cleaned = raw.strip()
+    key = re.sub(r"[^a-z]", "", cleaned.lower())
+    return _RECIPE_UNIT_CANON.get(key, cleaned)
+
+
+def _convert_qty_to_smallest_unit(
+    qty: float,
+    raw_unit: str | None,
+) -> tuple[str | None, float | None]:
+    norm = normalize_recipe_unit(raw_unit)
+    if not norm or qty <= 0:
+        return None, None
+    mapped = _DIRECT_RECIPE_MAP.get(norm)
+    if mapped:
+        target_unit, mult = mapped
+        return target_unit, round(qty * mult, 4)
+    return None, None
+
+
+def infer_recipe_unit_conversion(
+    satuan_beli: str | None,
+    satuan_ecer: str | None = None,
+    isi_paket: str | None = None,
+    item_name: str | None = None,
+) -> tuple[str | None, float | None]:
+    """
+    Turunkan satuan resep terkecil dan faktor konversi dari satuan beli / isi paket MasterItem.
+    Contoh: Kg -> ('Gram', 1000.0); Box + '6 pouch @ 2kg' -> ('Gram', 12000.0).
+    """
+    _ = satuan_ecer
+
+    if isi_paket and isi_paket.strip():
+        for seg in re.split(r"[,;]", isi_paket):
+            s = seg.strip()
+            if not s:
+                continue
+
+            m_mult = re.search(
+                r"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(?:x|@)\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)",
+                s,
+                re.IGNORECASE,
+            )
+            if m_mult:
+                outer_qty = float(m_mult.group(1).replace(",", "."))
+                inner_qty = float(m_mult.group(3).replace(",", "."))
+                inner_unit, inner_factor = _convert_qty_to_smallest_unit(
+                    inner_qty, m_mult.group(4)
+                )
+                if inner_unit and inner_factor is not None and outer_qty > 0:
+                    return inner_unit, round(outer_qty * inner_factor, 4)
+
+            m_single = re.search(r"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)", s)
+            if m_single:
+                qty_val = float(m_single.group(1).replace(",", "."))
+                res_unit, res_factor = _convert_qty_to_smallest_unit(
+                    qty_val, m_single.group(2)
+                )
+                if res_unit and res_factor is not None:
+                    return res_unit, res_factor
+
+    norm_beli = normalize_recipe_unit(satuan_beli)
+    if norm_beli and norm_beli in _DIRECT_RECIPE_MAP:
+        return _DIRECT_RECIPE_MAP[norm_beli]
+
+    if (not norm_beli or norm_beli in _CONTAINER_UNITS) and item_name:
+        m_name = re.search(
+            r"(?<![0-9x×*])\b(\d+(?:[.,]\d+)?)\s*(kg|kilogram|kilo|ons|oz|gram|grams|gr|g|liter|liters|ltr|lt|l|ml|cc)\b(?!\s*[x×*])",
+            item_name,
+            re.IGNORECASE,
+        )
+        if m_name:
+            qty_val = float(m_name.group(1).replace(",", "."))
+            res_unit, res_factor = _convert_qty_to_smallest_unit(
+                qty_val, m_name.group(2)
+            )
+            if res_unit and res_factor is not None:
+                return res_unit, res_factor
+
+    return None, None
+
+
+async def auto_fill_master_item_recipe_units(
+    db: AsyncSession,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Isi otomatis satuan_resep & konversi_resep untuk MasterItem yang belum dikonfigurasi."""
+    items = await list_master_items(db)
+    updated = 0
+    skipped = 0
+
+    for item in items:
+        has_both = bool(
+            item.satuan_resep
+            and item.konversi_resep is not None
+            and float(item.konversi_resep) > 0
+        )
+        if has_both and not overwrite:
+            skipped += 1
+            continue
+
+        inf_unit, inf_factor = infer_recipe_unit_conversion(
+            item.satuan_beli,
+            item.satuan_ecer,
+            item.isi_paket,
+            item.item_name,
+        )
+        if inf_unit and inf_factor is not None and inf_factor > 0:
+            changed = False
+            if overwrite or not item.satuan_resep:
+                item.satuan_resep = inf_unit
+                changed = True
+            if overwrite or item.konversi_resep is None or float(item.konversi_resep) <= 0:
+                item.konversi_resep = float(inf_factor)
+                changed = True
+            if changed:
+                updated += 1
+            else:
+                skipped += 1
+        else:
+            skipped += 1
+
+    await db.flush()
+    return {
+        "ok": True,
+        "updated": updated,
+        "skipped": skipped,
+        "total": len(items),
+        "message": (
+            f"Auto-isi satuan resep selesai: {updated} item diperbarui, {skipped} item dilewati."
+        ),
+    }
+
+
 def _parse_aliases(aliases_str: str | None) -> list[str]:
     if not aliases_str:
         return []
@@ -439,11 +661,19 @@ async def create_master_item(
     tipe_satuan: str = "keduanya",
     isi_paket: str = "",
     satuan_ecer: str = "Pcs",
+    satuan_resep: str | None = None,
+    konversi_resep: float | None = None,
 ) -> MasterItem:
     """Buat satu MasterItem baru atau update jika nama sudah ada."""
     clean_name = item_name.strip()
     norm_beli = (await normalize_unit_to_master(db, satuan_beli)) or "Pcs"
     norm_ecer = (await normalize_unit_to_master(db, satuan_ecer)) or "Pcs"
+    norm_resep = normalize_recipe_unit(satuan_resep)
+    clean_konv = (
+        round(float(konversi_resep), 6)
+        if konversi_resep is not None and float(konversi_resep) > 0
+        else None
+    )
 
     existing_res = await db.execute(
         select(MasterItem).where(func.lower(MasterItem.item_name) == clean_name.lower())
@@ -463,8 +693,29 @@ async def create_master_item(
             existing.isi_paket = isi_paket
         if satuan_ecer:
             existing.satuan_ecer = norm_ecer
+        if norm_resep is not None:
+            existing.satuan_resep = norm_resep
+        if clean_konv is not None:
+            existing.konversi_resep = clean_konv
+        if not existing.satuan_resep and existing.konversi_resep is None:
+            inf_u, inf_f = infer_recipe_unit_conversion(
+                existing.satuan_beli,
+                existing.satuan_ecer,
+                existing.isi_paket,
+                existing.item_name,
+            )
+            if inf_u and inf_f is not None:
+                existing.satuan_resep = inf_u
+                existing.konversi_resep = inf_f
         await db.flush()
         return existing
+
+    if not norm_resep and clean_konv is None:
+        inf_u, inf_f = infer_recipe_unit_conversion(
+            norm_beli, norm_ecer, isi_paket, clean_name
+        )
+        norm_resep = inf_u
+        clean_konv = inf_f
 
     item = MasterItem(
         item_name=clean_name,
@@ -475,6 +726,8 @@ async def create_master_item(
         tipe_satuan=(tipe_satuan or "keduanya").strip() or "keduanya",
         isi_paket=(isi_paket or "").strip(),
         satuan_ecer=norm_ecer,
+        satuan_resep=norm_resep,
+        konversi_resep=clean_konv,
     )
     db.add(item)
     await db.flush()
@@ -1355,6 +1608,15 @@ async def merge_master_items(
                 adopted_satuan_ecer = s.satuan_ecer
                 break
 
+    adopted_satuan_resep = target.satuan_resep
+    adopted_konversi_resep = target.konversi_resep
+    if not adopted_satuan_resep or not adopted_konversi_resep:
+        for s in sources:
+            if s.satuan_resep and s.konversi_resep and s.konversi_resep > 0:
+                adopted_satuan_resep = adopted_satuan_resep or s.satuan_resep
+                adopted_konversi_resep = adopted_konversi_resep or s.konversi_resep
+                break
+
     # 4. Hitung alias gabungan
     aliases_added: list[str] = []
     final_aliases_str = target.aliases or ""
@@ -1438,6 +1700,10 @@ async def merge_master_items(
         target.isi_paket = adopted_isi_paket
     if adopted_satuan_ecer is not None:
         target.satuan_ecer = adopted_satuan_ecer or "Pcs"
+    if adopted_satuan_resep is not None:
+        target.satuan_resep = adopted_satuan_resep
+    if adopted_konversi_resep is not None:
+        target.konversi_resep = adopted_konversi_resep
     if merge_aliases:
         target.aliases = final_aliases_str
 
@@ -1469,6 +1735,12 @@ async def merge_master_items(
     db.add(log)
     await db.flush()
 
+    recipe_unit_price = (
+        round(last_unit_price / float(target.konversi_resep), 4)
+        if last_unit_price > 0 and target.konversi_resep and float(target.konversi_resep) > 0
+        else None
+    )
+
     target_resp = {
         "id": target.id,
         "item_name": target.item_name,
@@ -1479,6 +1751,9 @@ async def merge_master_items(
         "tipe_satuan": target.tipe_satuan or "keduanya",
         "isi_paket": target.isi_paket or "",
         "satuan_ecer": target.satuan_ecer or "Pcs",
+        "satuan_resep": target.satuan_resep,
+        "konversi_resep": target.konversi_resep,
+        "recipe_unit_price": recipe_unit_price,
         "last_unit_price": last_unit_price,
         "last_supplier": last_supplier,
         "tx_count": tx_count,
@@ -1527,6 +1802,16 @@ async def bulk_upsert_master_items(
         isi_paket = str(raw.get("isi_paket") or "").strip()
         default_supplier = str(raw.get("default_supplier") or "-").strip() or "-"
         aliases = str(raw.get("aliases") or "").strip()
+        satuan_resep = normalize_recipe_unit(raw.get("satuan_resep"))
+        raw_konv = raw.get("konversi_resep")
+        konversi_resep: float | None = None
+        if raw_konv is not None and str(raw_konv).strip() != "":
+            try:
+                parsed_konv = float(str(raw_konv).replace(",", "."))
+                if parsed_konv > 0:
+                    konversi_resep = round(parsed_konv, 6)
+            except ValueError:
+                konversi_resep = None
 
         key = name.lower()
         if key in existing_map:
@@ -1540,12 +1825,20 @@ async def bulk_upsert_master_items(
             m.tipe_satuan = tipe_satuan
             if isi_paket:
                 m.isi_paket = isi_paket
+            if satuan_resep:
+                m.satuan_resep = satuan_resep
+            if konversi_resep is not None:
+                m.konversi_resep = konversi_resep
             if default_supplier and default_supplier != "-":
                 m.default_supplier = default_supplier
             if aliases:
                 m.aliases = aliases
             updated += 1
         else:
+            if not satuan_resep and konversi_resep is None:
+                satuan_resep, konversi_resep = infer_recipe_unit_conversion(
+                    satuan_beli, satuan_ecer, isi_paket, name
+                )
             new_m = MasterItem(
                 item_name=name,
                 category=cat,
@@ -1555,6 +1848,8 @@ async def bulk_upsert_master_items(
                 tipe_satuan=tipe_satuan,
                 isi_paket=isi_paket,
                 satuan_ecer=satuan_ecer,
+                satuan_resep=satuan_resep,
+                konversi_resep=konversi_resep,
             )
             db.add(new_m)
             existing_map[key] = new_m
@@ -1582,6 +1877,8 @@ def generate_master_item_csv_template() -> str:
         "Tipe Satuan (paket/ecer/keduanya)",
         "Isi Paket",
         "Satuan Ecer",
+        "Satuan Resep",
+        "Konversi Resep",
         "Supplier Default",
         "Alias",
     ])
@@ -1611,6 +1908,8 @@ async def import_master_items_from_csv(
     idx_tipe = col_lookup(headers, "tipe satuan", "tipe_satuan", "tipe")
     idx_isi = col_lookup(headers, "isi paket", "isi_paket", "isi")
     idx_ecer = col_lookup(headers, "satuan ecer", "satuan_ecer", "ecer")
+    idx_resep = col_lookup(headers, "satuan resep", "satuan_resep", "resep")
+    idx_konv = col_lookup(headers, "konversi resep", "konversi_resep", "konversi")
     idx_sup = col_lookup(headers, "supplier default", "default_supplier", "supplier", "toko")
     idx_alias = col_lookup(headers, "alias", "aliases")
 
@@ -1631,6 +1930,8 @@ async def import_master_items_from_csv(
             "tipe_satuan": get_cell(row, idx_tipe) or "keduanya",
             "isi_paket": get_cell(row, idx_isi),
             "satuan_ecer": get_cell(row, idx_ecer) or "Pcs",
+            "satuan_resep": get_cell(row, idx_resep),
+            "konversi_resep": get_cell(row, idx_konv),
             "default_supplier": get_cell(row, idx_sup) or "-",
             "aliases": get_cell(row, idx_alias),
         })

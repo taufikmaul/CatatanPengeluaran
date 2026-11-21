@@ -526,6 +526,8 @@ class MasterItemCreate(BaseModel):
     tipe_satuan: str = "keduanya"
     isi_paket: str = ""
     satuan_ecer: str = "Pcs"
+    satuan_resep: str | None = None
+    konversi_resep: float | None = Field(None, gt=0)
 
 
 class MasterItemUpdate(BaseModel):
@@ -537,6 +539,8 @@ class MasterItemUpdate(BaseModel):
     tipe_satuan: str | None = None
     isi_paket: str | None = None
     satuan_ecer: str | None = None
+    satuan_resep: str | None = None
+    konversi_resep: float | None = Field(None, gt=0)
 
 
 class MasterItemBulkRequest(BaseModel):
@@ -556,6 +560,9 @@ class MasterItemResponse(BaseModel):
     tipe_satuan: str = "keduanya"
     isi_paket: str = ""
     satuan_ecer: str = "Pcs"
+    satuan_resep: str | None = None
+    konversi_resep: float | None = None
+    recipe_unit_price: float | None = None
     last_unit_price: float = 0.0
     last_supplier: str = "-"
     tx_count: int = 0

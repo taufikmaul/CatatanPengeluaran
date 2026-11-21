@@ -33,6 +33,8 @@ from app.services.master_item_service import (
     get_item_and_supplier_suggestions,
     audit_duplicate_master_items,
     merge_master_items,
+    normalize_recipe_unit,
+    auto_fill_master_item_recipe_units,
 )
 
 router = APIRouter(
@@ -40,6 +42,15 @@ router = APIRouter(
     tags=["master-items"],
     dependencies=[Depends(require_auth)],
 )
+
+
+def _compute_recipe_unit_price(
+    last_unit_price: float,
+    konversi_resep: float | None,
+) -> float | None:
+    if last_unit_price > 0 and konversi_resep is not None and float(konversi_resep) > 0:
+        return round(float(last_unit_price) / float(konversi_resep), 4)
+    return None
 
 
 @router.get("", dependencies=[Depends(require_roles("admin", "purchasing", "warehouse", "admin_input"))])
@@ -71,6 +82,7 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
     data = []
     for m in items:
         h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
+        last_price = float(h.get("last_unit_price") or 0.0)
         data.append(
             MasterItemResponse(
                 id=m.id,
@@ -82,7 +94,10 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
                 tipe_satuan=m.tipe_satuan or "keduanya",
                 isi_paket=m.isi_paket or "",
                 satuan_ecer=m.satuan_ecer or "Pcs",
-                last_unit_price=float(h.get("last_unit_price") or 0.0),
+                satuan_resep=m.satuan_resep,
+                konversi_resep=m.konversi_resep,
+                recipe_unit_price=_compute_recipe_unit_price(last_price, m.konversi_resep),
+                last_unit_price=last_price,
                 last_supplier=h.get("last_supplier") or m.default_supplier or "-",
                 tx_count=int(total_tx_by_mid.get(m.id) if m.id in total_tx_by_mid else (h.get("tx_count") or 0)),
                 created_at=m.created_at,
@@ -147,6 +162,8 @@ async def add_master_item(
         tipe_satuan=payload.tipe_satuan,
         isi_paket=payload.isi_paket,
         satuan_ecer=norm_ecer,
+        satuan_resep=normalize_recipe_unit(payload.satuan_resep),
+        konversi_resep=payload.konversi_resep,
     )
     await db.commit()
     await db.refresh(item)
@@ -160,8 +177,22 @@ async def add_master_item(
         tipe_satuan=item.tipe_satuan or "keduanya",
         isi_paket=item.isi_paket or "",
         satuan_ecer=item.satuan_ecer or "Pcs",
+        satuan_resep=item.satuan_resep,
+        konversi_resep=item.konversi_resep,
+        recipe_unit_price=_compute_recipe_unit_price(0.0, item.konversi_resep),
         created_at=item.created_at,
     )
+
+
+@router.post("/auto-fill-recipe-units", dependencies=[Depends(require_roles("admin", "purchasing"))])
+async def auto_fill_recipe_units_endpoint(
+    overwrite: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Isi otomatis turunan satuan resep terkecil & konversi untuk item yang belum diatur."""
+    result = await auto_fill_master_item_recipe_units(db, overwrite=overwrite)
+    await db.commit()
+    return result
 
 
 @router.get("/template-csv")
@@ -389,6 +420,17 @@ async def update_master_item(
                 detail=f"Satuan ecer '{payload.satuan_ecer}' tidak sesuai data master yang terdaftar. Pilihan valid: {', '.join(valid_units)}",
             )
         item.satuan_ecer = norm_ecer
+    if "satuan_resep" in payload.model_fields_set:
+        if payload.satuan_resep is None or not payload.satuan_resep.strip():
+            item.satuan_resep = None
+            item.konversi_resep = None
+        else:
+            item.satuan_resep = normalize_recipe_unit(payload.satuan_resep)
+    if "konversi_resep" in payload.model_fields_set:
+        if payload.konversi_resep is None:
+            item.konversi_resep = None
+        else:
+            item.konversi_resep = round(float(payload.konversi_resep), 6)
 
     # Sinkronisasi order/transaksi yang terhubung ke produk ini
     from app.models.expense import Expense
@@ -414,6 +456,13 @@ async def update_master_item(
 
     await db.commit()
     await db.refresh(item)
+    latest_exp_res = await db.execute(
+        select(Expense.unit_price)
+        .where(Expense.master_item_id == item.id, Expense.unit_price > 0)
+        .order_by(Expense.expense_date.desc(), Expense.id.desc())
+        .limit(1)
+    )
+    last_unit_price = float(latest_exp_res.scalar() or 0.0)
     return MasterItemResponse(
         id=item.id,
         item_name=item.item_name,
@@ -424,6 +473,10 @@ async def update_master_item(
         tipe_satuan=item.tipe_satuan or "keduanya",
         isi_paket=item.isi_paket or "",
         satuan_ecer=item.satuan_ecer or "Pcs",
+        satuan_resep=item.satuan_resep,
+        konversi_resep=item.konversi_resep,
+        recipe_unit_price=_compute_recipe_unit_price(last_unit_price, item.konversi_resep),
+        last_unit_price=last_unit_price,
         created_at=item.created_at,
     )
 

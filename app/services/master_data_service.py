@@ -67,6 +67,8 @@ DEFAULT_MASTER_DATA: dict[str, list[dict[str, Any]]] = {
         {"name": "Butir", "description": "Butir (telur, kelapa, buah)", "sort_order": 19, "is_default": False},
         {"name": "Trans", "description": "Transaksi (Tukar Cash kasir)", "sort_order": 20, "is_default": False},
         {"name": "Trip", "description": "Trip pengiriman kurir (Ongkir)", "sort_order": 21, "is_default": False},
+        {"name": "ml", "description": "Mililiter (satuan volume resep cair)", "sort_order": 22, "is_default": False},
+        {"name": "cm", "description": "Sentimeter (satuan panjang pita / kemasan)", "sort_order": 23, "is_default": False},
     ],
     "kategori_menu": [
         {"name": "Cake Ready", "description": "Kue siap jual di etalase / showcase", "sort_order": 1, "is_default": True},

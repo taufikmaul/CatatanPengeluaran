@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  autoFillMasterRecipeUnits,
   enqueueMergeMasterItems,
   enqueueBatchMergeMasterItems,
   downloadMasterItemCsvTemplate,
@@ -80,6 +81,112 @@ import {
   ChevronDown,
 } from "lucide-react";
 
+const RECIPE_UNIT_BASE = ["Gram", "ml", "Pcs", "Butir", "Lembar", "cm"] as const;
+
+function normalizeLocalRecipeUnit(raw: string): string {
+  const cleaned = raw.trim().toLowerCase().replace(/[^a-z]/g, "");
+  const map: Record<string, string> = {
+    g: "Gram",
+    gr: "Gram",
+    gram: "Gram",
+    grams: "Gram",
+    kg: "Kg",
+    kilogram: "Kg",
+    ons: "Ons",
+    oz: "Ons",
+    ml: "ml",
+    cc: "ml",
+    l: "Liter",
+    lt: "Liter",
+    ltr: "Liter",
+    liter: "Liter",
+    m: "Meter",
+    meter: "Meter",
+    cm: "cm",
+    pcs: "Pcs",
+    pc: "Pcs",
+    buah: "Pcs",
+    butir: "Butir",
+    lembar: "Lembar",
+    lbr: "Lembar",
+    lusin: "Lusin",
+    lsn: "Lusin",
+    kodi: "Kodi",
+    gross: "Gross",
+    tray: "Tray",
+  };
+  return map[cleaned] || raw.trim();
+}
+
+function convertParsedQtyToSmallest(
+  qty: number,
+  rawUnit: string
+): { unit: string; factor: number } | null {
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  const norm = normalizeLocalRecipeUnit(rawUnit);
+  const direct: Record<string, { unit: string; mult: number }> = {
+    Kg: { unit: "Gram", mult: 1000 },
+    Ons: { unit: "Gram", mult: 100 },
+    Gram: { unit: "Gram", mult: 1 },
+    Liter: { unit: "ml", mult: 1000 },
+    ml: { unit: "ml", mult: 1 },
+    Meter: { unit: "cm", mult: 100 },
+    cm: { unit: "cm", mult: 1 },
+    Lusin: { unit: "Pcs", mult: 12 },
+    Kodi: { unit: "Pcs", mult: 20 },
+    Gross: { unit: "Pcs", mult: 144 },
+    Tray: { unit: "Butir", mult: 30 },
+    Butir: { unit: "Butir", mult: 1 },
+    Pcs: { unit: "Pcs", mult: 1 },
+    Lembar: { unit: "Lembar", mult: 1 },
+  };
+  const found = direct[norm];
+  if (!found) return null;
+  return {
+    unit: found.unit,
+    factor: Math.round(qty * found.mult * 10000) / 10000,
+  };
+}
+
+function suggestLocalRecipeUnit(
+  satuanBeli: string,
+  isiPaket: string
+): { unit: string; factor: string } | null {
+  if (isiPaket && isiPaket.trim()) {
+    for (const seg of isiPaket.split(/[,;]/)) {
+      const s = seg.trim();
+      if (!s) continue;
+      const mMult = s.match(
+        /(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(?:x|@)\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)/i
+      );
+      if (mMult) {
+        const outerQty = parseFloat(mMult[1].replace(",", "."));
+        const innerQty = parseFloat(mMult[3].replace(",", "."));
+        const innerConv = convertParsedQtyToSmallest(innerQty, mMult[4]);
+        if (innerConv && outerQty > 0) {
+          const total = Math.round(outerQty * innerConv.factor * 10000) / 10000;
+          return { unit: innerConv.unit, factor: String(total) };
+        }
+      }
+      const mSingle = s.match(/(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)/);
+      if (mSingle) {
+        const qtyVal = parseFloat(mSingle[1].replace(",", "."));
+        const conv = convertParsedQtyToSmallest(qtyVal, mSingle[2]);
+        if (conv) {
+          return { unit: conv.unit, factor: String(conv.factor) };
+        }
+      }
+    }
+  }
+
+  const normBeli = normalizeLocalRecipeUnit(satuanBeli);
+  const direct = convertParsedQtyToSmallest(1, normBeli);
+  if (direct) {
+    return { unit: direct.unit, factor: String(direct.factor) };
+  }
+  return null;
+}
+
 interface MasterItemsTabProps {
   categories: string[];
   units?: string[];
@@ -110,6 +217,14 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [tipeSatuan, setTipeSatuan] = useState<"keduanya" | "paket" | "ecer">("keduanya");
   const [isiPaket, setIsiPaket] = useState("");
   const [satuanEcer, setSatuanEcer] = useState("Pouch");
+  const [satuanResep, setSatuanResep] = useState("");
+  const [konversiResep, setKonversiResep] = useState("");
+  const [recipeUnitTouched, setRecipeUnitTouched] = useState(false);
+
+  const recipeUnitOptions = useMemo(
+    () => Array.from(new Set([...RECIPE_UNIT_BASE, ...units])),
+    [units]
+  );
 
   // Bulk import state
   const [showBulkBox, setShowBulkBox] = useState(false);
@@ -125,6 +240,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     tipe_satuan: "keduanya" | "paket" | "ecer";
     isi_paket: string;
     satuan_ecer: string;
+    satuan_resep: string;
+    konversi_resep: string;
     default_supplier: string;
     aliases: string;
   };
@@ -164,6 +281,14 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       widthClass: "min-w-[115px]",
       options: units.map((u) => ({ value: u, label: u })),
     },
+    {
+      key: "satuan_resep",
+      label: "Satuan Resep",
+      type: "select",
+      widthClass: "min-w-[115px]",
+      options: [{ value: "", label: "Otomatis" }, ...recipeUnitOptions.map((u) => ({ value: u, label: u }))],
+    },
+    { key: "konversi_resep", label: "Konversi Resep", type: "text", placeholder: "mis. 1000", widthClass: "min-w-[115px]" },
     { key: "default_supplier", label: "Supplier Default", type: "text", placeholder: "Toko Makmur", widthClass: "min-w-[140px]" },
     { key: "aliases", label: "Alias", type: "text", placeholder: "alias1, alias2", widthClass: "min-w-[150px]" },
   ];
@@ -175,6 +300,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     tipe_satuan: "keduanya",
     isi_paket: "",
     satuan_ecer: units[0] || "Pcs",
+    satuan_resep: "",
+    konversi_resep: "",
     default_supplier: "-",
     aliases: "",
   });
@@ -182,6 +309,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   // Search & filter
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
+  const [filterRecipeStatus, setFilterRecipeStatus] = useState<"" | "configured" | "unconfigured">("");
 
   // Inline edit state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -194,6 +322,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     tipe_satuan: "keduanya" as "keduanya" | "paket" | "ecer",
     isi_paket: "",
     satuan_ecer: "Pcs",
+    satuan_resep: "",
+    konversi_resep: "",
   });
 
   // Audit & Merge state
@@ -229,6 +359,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const filteredItems = useMemo(() => {
     return masterItems.filter((item) => {
       if (filterCat && item.category !== filterCat) return false;
+      const isConfigured = Boolean(
+        item.satuan_resep && item.konversi_resep && item.konversi_resep > 0
+      );
+      if (filterRecipeStatus === "configured" && !isConfigured) return false;
+      if (filterRecipeStatus === "unconfigured" && isConfigured) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         return (
@@ -237,12 +372,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           (item.default_supplier || "").toLowerCase().includes(q) ||
           (item.satuan_beli || "").toLowerCase().includes(q) ||
           (item.isi_paket || "").toLowerCase().includes(q) ||
-          (item.satuan_ecer || "").toLowerCase().includes(q)
+          (item.satuan_ecer || "").toLowerCase().includes(q) ||
+          (item.satuan_resep || "").toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [masterItems, filterCat, search]);
+  }, [masterItems, filterCat, filterRecipeStatus, search]);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -250,10 +386,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     queryClient.invalidateQueries({ queryKey: ["report"] });
     queryClient.invalidateQueries({ queryKey: ["master-items-audit"] });
+    queryClient.invalidateQueries({ queryKey: ["menus"] });
+    queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
   };
 
   const addMutation = useMutation({
     mutationFn: async () => {
+      const parsedKonv = Number(konversiResep);
       return (
         await api.post("/master-items", {
           item_name: itemName,
@@ -264,6 +403,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           tipe_satuan: tipeSatuan,
           isi_paket: isiPaket,
           satuan_ecer: satuanEcer || "Pcs",
+          satuan_resep: satuanResep.trim() || null,
+          konversi_resep: parsedKonv > 0 ? parsedKonv : null,
         })
       ).data;
     },
@@ -273,6 +414,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       setAliases("");
       setDefaultSupplier("");
       setIsiPaket("");
+      setRecipeUnitTouched(false);
+      const nextHint = suggestLocalRecipeUnit(satuanBeli, "");
+      setSatuanResep(nextHint ? nextHint.unit : "");
+      setKonversiResep(nextHint ? nextHint.factor : "");
       invalidateAll();
     },
     onError: (err: any) => {
@@ -305,16 +450,21 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const bulkFormMutation = useMutation({
     mutationFn: ({ rows, updateExisting }: { rows: BulkMasterItemRow[]; updateExisting: boolean }) =>
       bulkCreateMasterItemsStructured(
-        rows.map((r) => ({
-          item_name: r.item_name.trim(),
-          category: r.category || categories[0] || "Bahan Kue",
-          satuan_beli: r.satuan_beli || "Pcs",
-          tipe_satuan: r.tipe_satuan || "keduanya",
-          isi_paket: r.isi_paket.trim(),
-          satuan_ecer: r.satuan_ecer || "Pcs",
-          default_supplier: r.default_supplier.trim() || "-",
-          aliases: r.aliases.trim(),
-        })),
+        rows.map((r) => {
+          const parsedKonv = Number(String(r.konversi_resep || "").replace(",", "."));
+          return {
+            item_name: r.item_name.trim(),
+            category: r.category || categories[0] || "Bahan Kue",
+            satuan_beli: r.satuan_beli || "Pcs",
+            tipe_satuan: r.tipe_satuan || "keduanya",
+            isi_paket: r.isi_paket.trim(),
+            satuan_ecer: r.satuan_ecer || "Pcs",
+            satuan_resep: r.satuan_resep?.trim() || null,
+            konversi_resep: parsedKonv > 0 ? parsedKonv : null,
+            default_supplier: r.default_supplier.trim() || "-",
+            aliases: r.aliases.trim(),
+          };
+        }),
         categories[0] || "Bahan Kue",
         updateExisting
       ),
@@ -390,8 +540,19 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       setEditingId(null);
       invalidateAll();
     },
-    onError: () => {
-      toast.error("Gagal memperbarui item baku");
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal memperbarui item baku");
+    },
+  });
+
+  const autoFillRecipeMutation = useMutation({
+    mutationFn: () => autoFillMasterRecipeUnits(),
+    onSuccess: (res) => {
+      toast.success(res.message || "Satuan resep berhasil diisi otomatis.");
+      invalidateAll();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Gagal mengisi otomatis satuan resep.");
     },
   });
 
@@ -585,6 +746,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       tipe_satuan: item.tipe_satuan || "keduanya",
       isi_paket: item.isi_paket || "",
       satuan_ecer: item.satuan_ecer || "Pcs",
+      satuan_resep: item.satuan_resep || "",
+      konversi_resep:
+        item.konversi_resep !== null && item.konversi_resep !== undefined
+          ? String(item.konversi_resep)
+          : "",
     });
   };
 
@@ -600,6 +766,15 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         label: "Kategori",
         type: "select",
         options: categories.map((c) => ({ label: c, value: c })),
+      },
+      {
+        id: "recipe_status",
+        label: "Status Satuan Resep",
+        type: "select",
+        options: [
+          { label: "Sudah Diatur", value: "configured" },
+          { label: "Belum Diatur", value: "unconfigured" },
+        ],
       },
       {
         id: "tipe_satuan",
@@ -620,15 +795,30 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     if (filterCat) {
       rules.push(createFilterRule({ id: "rule-cat", path: ["category"], operator: "is", value: filterCat }));
     }
+    if (filterRecipeStatus) {
+      rules.push(
+        createFilterRule({
+          id: "rule-recipe-status",
+          path: ["recipe_status"],
+          operator: "is",
+          value: filterRecipeStatus,
+        })
+      );
+    }
     return createFilterQuery(rules, "and");
-  }, [filterCat]);
+  }, [filterCat, filterRecipeStatus]);
 
   const handleMasterQueryChange = (nextQuery: FilterQuery) => {
     let newCat = "";
+    let newRecipeStatus: "" | "configured" | "unconfigured" = "";
     const traverse = (nodes: FilterNode[]) => {
       for (const node of nodes) {
         if (isFilterRule(node)) {
           if (node.path[0] === "category") newCat = String(node.value ?? "");
+          if (node.path[0] === "recipe_status") {
+            const v = String(node.value ?? "");
+            if (v === "configured" || v === "unconfigured") newRecipeStatus = v;
+          }
         } else if (node.rules) {
           traverse(node.rules);
         }
@@ -636,6 +826,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     };
     if (nextQuery?.rules) traverse(nextQuery.rules);
     setFilterCat(newCat);
+    setFilterRecipeStatus(newRecipeStatus);
   };
 
   const masterColumns = useMemo<ColumnDef<DataGridFeatures, MasterItem>[]>(
@@ -847,6 +1038,144 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         size: 190,
       },
       {
+        id: "satuan_resep",
+        header: () => <span>Satuan Resep (Terkecil)</span>,
+        cell: ({ row }) => {
+          const item = row.original;
+          const isEditing = editingId === item.id;
+          if (isEditing) {
+            const suggested = suggestLocalRecipeUnit(
+              editForm.satuan_beli,
+              editForm.isi_paket
+            );
+            const editKonvNum = Number(editForm.konversi_resep);
+            const previewUnitPrice =
+              item.last_unit_price > 0 && editKonvNum > 0
+                ? item.last_unit_price / editKonvNum
+                : 0;
+            return (
+              <div className="space-y-1.5 min-w-[205px]">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">
+                      Satuan Terkecil
+                    </label>
+                    <select
+                      value={editForm.satuan_resep}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, satuan_resep: e.target.value })
+                      }
+                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-900"
+                    >
+                      <option value="">Belum diatur</option>
+                      {recipeUnitOptions.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-600 block">
+                      Isi / 1 {editForm.satuan_beli || "beli"}
+                    </label>
+                    <Input
+                      type="number"
+                      min={0.0001}
+                      step="any"
+                      value={editForm.konversi_resep}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          konversi_resep: e.target.value,
+                        })
+                      }
+                      placeholder={suggested ? suggested.factor : "mis. 1000"}
+                      className="h-7 text-[11px] rounded px-1.5 tabular-nums"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-1 text-[10px]">
+                  {suggested ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          satuan_resep: suggested.unit,
+                          konversi_resep: suggested.factor,
+                        }))
+                      }
+                      className="text-blue-700 hover:underline font-medium"
+                    >
+                      Saran: {suggested.factor} {suggested.unit}
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  {previewUnitPrice > 0 && editForm.satuan_resep && (
+                    <span className="text-emerald-700 font-semibold tabular-nums">
+                      {formatRupiah(previewUnitPrice)}/{editForm.satuan_resep}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          const hasRecipe = Boolean(
+            item.satuan_resep &&
+              item.konversi_resep !== null &&
+              item.konversi_resep !== undefined &&
+              item.konversi_resep > 0
+          );
+          if (!hasRecipe) {
+            return (
+              <div className="flex items-center gap-1.5 min-w-[150px]">
+                <span className="text-[11px] text-slate-600 italic">
+                  Belum diatur
+                </span>
+                {canEdit && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startEdit(item)}
+                    className="h-6 px-2 text-[10px] rounded-md text-blue-700 border-blue-200 hover:bg-blue-50"
+                  >
+                    Atur
+                  </Button>
+                )}
+              </div>
+            );
+          }
+
+          const computedUnitPrice =
+            item.recipe_unit_price ??
+            (item.last_unit_price > 0 && item.konversi_resep
+              ? item.last_unit_price / item.konversi_resep
+              : 0);
+
+          return (
+            <div className="space-y-0.5 min-w-[165px]">
+              <Badge
+                variant="outline"
+                className="text-[10px] font-medium px-1.5 py-0.5 bg-emerald-50 text-emerald-900 border-emerald-200 tabular-nums"
+              >
+                1 {item.satuan_beli || "Pcs"} = {item.konversi_resep}{" "}
+                {item.satuan_resep}
+              </Badge>
+              {computedUnitPrice > 0 && (
+                <div className="text-[11px] font-medium text-slate-700 tabular-nums">
+                  {formatRupiah(computedUnitPrice)} / {item.satuan_resep}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 195,
+      },
+      {
         accessorKey: "aliases",
         id: "aliases",
         header: ({ column }) => <DataGridColumnHeader title="Kata Kunci / Alias Struk" column={column} />,
@@ -943,9 +1272,26 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    updateMutation.mutate({ id: item.id, payload: editForm })
-                  }
+                  onClick={() => {
+                    const cleanUnit = editForm.satuan_resep.trim();
+                    const cleanKonv = Number(editForm.konversi_resep);
+                    if (cleanUnit && !(cleanKonv > 0)) {
+                      toast.error("Isi faktor konversi resep lebih dari 0.");
+                      return;
+                    }
+                    if (!cleanUnit && editForm.konversi_resep.trim() !== "") {
+                      toast.error("Pilih satuan resep terkecil.");
+                      return;
+                    }
+                    updateMutation.mutate({
+                      id: item.id,
+                      payload: {
+                        ...editForm,
+                        satuan_resep: cleanUnit || null,
+                        konversi_resep: cleanUnit && cleanKonv > 0 ? cleanKonv : null,
+                      },
+                    });
+                  }}
                   className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-50"
                   title="Simpan"
                 >
@@ -1011,7 +1357,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         size: 110,
       },
     ],
-    [filteredItems, selectedIds, editingId, editForm, categories, canEdit, canDelete, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
+    [filteredItems, selectedIds, editingId, editForm, categories, units, recipeUnitOptions, canEdit, canDelete, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
   );
 
   const masterTable = useTable({
@@ -1082,6 +1428,21 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   <div>
                     <div className="font-medium">Audit Item Duplikat</div>
                     <div className="text-[10px] text-slate-400">Deteksi kesamaan &amp; gabungkan item</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={autoFillRecipeMutation.isPending || masterItems.length === 0}
+                  onClick={() => autoFillRecipeMutation.mutate()}
+                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <div>
+                    <div className="font-medium">
+                      {autoFillRecipeMutation.isPending
+                        ? "Mengisi satuan resep..."
+                        : "Auto-Isi Satuan Resep"}
+                    </div>
+                    <div className="text-[10px] text-slate-400">Turunkan satuan terkecil dari satuan beli</div>
                   </div>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1287,7 +1648,15 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 </label>
                 <select
                   value={satuanBeli}
-                  onChange={(e) => setSatuanBeli(e.target.value)}
+                  onChange={(e) => {
+                    const nextBeli = e.target.value;
+                    setSatuanBeli(nextBeli);
+                    if (!recipeUnitTouched) {
+                      const nextHint = suggestLocalRecipeUnit(nextBeli, isiPaket);
+                      setSatuanResep(nextHint ? nextHint.unit : "");
+                      setKonversiResep(nextHint ? nextHint.factor : "");
+                    }
+                  }}
                   className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
                   {units.map((u) => (
@@ -1311,7 +1680,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            {/* Baris 2: Isi Paket/Kemasan, Satuan Ecer, Alias di Struk, Tombol */}
+            {/* Baris 2: Isi Paket/Kemasan, Satuan Ecer, Alias di Struk */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
               <div className="md:col-span-4">
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
@@ -1320,12 +1689,20 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <Input
                   placeholder="Contoh: 1Kg, 500g atau 1 box isi 6 pouch 2kg"
                   value={isiPaket}
-                  onChange={(e) => setIsiPaket(e.target.value)}
+                  onChange={(e) => {
+                    const nextIsi = e.target.value;
+                    setIsiPaket(nextIsi);
+                    if (!recipeUnitTouched) {
+                      const nextHint = suggestLocalRecipeUnit(satuanBeli, nextIsi);
+                      setSatuanResep(nextHint ? nextHint.unit : "");
+                      setKonversiResep(nextHint ? nextHint.factor : "");
+                    }
+                  }}
                   className="h-9 text-xs rounded-xl"
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div className="md:col-span-3">
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Satuan Eceran
                 </label>
@@ -1343,7 +1720,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 </select>
               </div>
 
-              <div className="md:col-span-4">
+              <div className="md:col-span-5">
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Kata Kunci / Alias di Struk (Opsional)
                 </label>
@@ -1353,6 +1730,60 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   onChange={(e) => setAliases(e.target.value)}
                   className="h-9 text-xs rounded-xl"
                 />
+              </div>
+            </div>
+
+            {/* Baris 3: Turunan Satuan Resep (Satuan Terkecil) & Tombol Simpan */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Satuan Resep (Terkecil)
+                </label>
+                <select
+                  value={satuanResep}
+                  onChange={(e) => {
+                    setRecipeUnitTouched(true);
+                    setSatuanResep(e.target.value);
+                  }}
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                >
+                  <option value="">Auto dari satuan beli / isi paket</option>
+                  {recipeUnitOptions.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-3">
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Isi / 1 {satuanBeli || "Satuan Beli"}
+                </label>
+                <Input
+                  type="number"
+                  min={0.0001}
+                  step="any"
+                  placeholder="Contoh: 1000"
+                  value={konversiResep}
+                  onChange={(e) => {
+                    setRecipeUnitTouched(true);
+                    setKonversiResep(e.target.value);
+                  }}
+                  className="h-9 text-xs rounded-xl tabular-nums"
+                />
+              </div>
+
+              <div className="md:col-span-4 flex items-center h-9 text-[11px] text-slate-600">
+                {satuanResep && Number(konversiResep) > 0 ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium tabular-nums truncate">
+                    1 {satuanBeli || "Pcs"} = {konversiResep} {satuanResep}
+                  </span>
+                ) : (
+                  <span>
+                    Kosongkan untuk auto-deteksi (mis. 1 Kg = 1000 Gram).
+                  </span>
+                )}
               </div>
 
               <div className="md:col-span-2">
@@ -1403,6 +1834,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               <select
                 value={filterCat}
                 onChange={(e) => setFilterCat(e.target.value)}
+                aria-label="Filter kategori master item"
                 className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
               >
                 <option value="">Semua Kategori ({masterItems.length})</option>
@@ -1411,6 +1843,20 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                     {c}
                   </option>
                 ))}
+              </select>
+              <select
+                value={filterRecipeStatus}
+                onChange={(e) =>
+                  setFilterRecipeStatus(
+                    e.target.value as "" | "configured" | "unconfigured"
+                  )
+                }
+                aria-label="Filter status satuan resep"
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
+              >
+                <option value="">Semua Satuan Resep</option>
+                <option value="configured">Resep: Sudah Diatur</option>
+                <option value="unconfigured">Resep: Belum Diatur</option>
               </select>
             </div>
           </div>
@@ -1970,6 +2416,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           "Tipe Satuan (paket/ecer/keduanya)",
           "Isi Paket",
           "Satuan Ecer",
+          "Satuan Resep",
+          "Konversi Resep",
           "Supplier Default",
           "Alias",
         ]}

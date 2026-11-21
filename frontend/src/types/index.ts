@@ -514,6 +514,9 @@ export interface MasterItem {
   tipe_satuan?: "paket" | "ecer" | "keduanya";
   isi_paket?: string;
   satuan_ecer?: string;
+  satuan_resep?: string | null;
+  konversi_resep?: number | null;
+  recipe_unit_price?: number | null;
   last_unit_price: number;
   last_supplier: string;
   tx_count: number;
@@ -594,6 +597,9 @@ export interface ItemSuggestion {
   tipe_satuan?: "paket" | "ecer" | "keduanya";
   isi_paket?: string;
   satuan_ecer?: string;
+  satuan_resep?: string | null;
+  konversi_resep?: number | null;
+  recipe_unit_price?: number | null;
   last_unit_price: number;
   last_supplier: string;
   last_date?: string | null;

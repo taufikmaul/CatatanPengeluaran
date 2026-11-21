@@ -892,7 +892,14 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
 
     if (selection.kind === "master") {
       const item = selection.item;
+      const hasMasterRecipe = Boolean(
+        item.satuan_resep &&
+          item.konversi_resep !== null &&
+          item.konversi_resep !== undefined &&
+          item.konversi_resep > 0
+      );
       const nextUnit =
+        item.satuan_resep ||
         item.satuan_ecer ||
         item.satuan_beli ||
         (selection.targetGroup === "packaging" ? "Pcs" : "Gram");
@@ -908,8 +915,11 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
         unit: nextUnit,
         waste_pct: "0",
         unit_cost_override: "",
-        yield_factor: "1",
+        yield_factor: hasMasterRecipe ? String(item.konversi_resep) : "1",
         notes: "",
+        conversion_hint: hasMasterRecipe
+          ? `Master Resep: 1 ${item.satuan_beli || "unit"} = ${item.konversi_resep} ${item.satuan_resep}`
+          : undefined,
       };
 
       setIngredients((prev) => [...prev, newRow]);
@@ -918,7 +928,9 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
         label: item.item_name,
         group: selection.targetGroup,
       });
-      void applyConversionHint(newKey, { masterId: item.id }, nextUnit);
+      if (!hasMasterRecipe) {
+        void applyConversionHint(newKey, { masterId: item.id }, nextUnit);
+      }
       return;
     }
 

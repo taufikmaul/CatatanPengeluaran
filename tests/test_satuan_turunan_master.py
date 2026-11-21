@@ -19,12 +19,14 @@ from app.services.master_data_service import (
     normalize_unit_to_master,
     create_master_option,
 )
+from app.models.master_item import MasterItem
 from app.services.master_item_service import (
     create_master_item,
     list_master_items,
     match_and_normalize_extracted_items,
     extract_derivative,
     sync_derivative_to_isi_paket,
+    infer_recipe_unit_conversion,
 )
 
 
@@ -189,3 +191,138 @@ async def test_master_item_api_rejects_unregistered_unit(client, auth_cookies):
     res = await client.post("/api/v1/master-items", json=invalid_payload)
     assert res.status_code == 400
     assert "tidak sesuai data master" in res.json()["detail"]
+
+
+def test_infer_recipe_unit_conversion():
+    """Test inferensi turunan satuan resep terkecil dari satuan beli / isi paket / nama item."""
+    assert infer_recipe_unit_conversion("Kg", "Kg", "") == ("Gram", 1000.0)
+    assert infer_recipe_unit_conversion("Liter", "Liter", "") == ("ml", 1000.0)
+    assert infer_recipe_unit_conversion("Box", "Pouch", "6 pouch @ 2kg") == ("Gram", 12000.0)
+    assert infer_recipe_unit_conversion("Bungkus", "Bungkus", "500g") == ("Gram", 500.0)
+    assert infer_recipe_unit_conversion("Tray", "Tray", "") == ("Butir", 30.0)
+    assert infer_recipe_unit_conversion("Pack", "Pcs", "25 pcs") == ("Pcs", 25.0)
+    # Pastikan dimensi kemasan seperti 20x20 tidak salah terdeteksi sebagai gram/ml
+    assert infer_recipe_unit_conversion("Box", "Pcs", "", "Box Mika 20x20") == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_master_item_recipe_units_crud_autofill_and_conversion_hint(
+    client, db: AsyncSession, auth_cookies
+):
+    """Test POST/PUT/auto-fill satuan resep MasterItem, recipe_unit_price, dan integration /menus/conversion-hint."""
+    client.cookies.update(auth_cookies)
+
+    # 1. POST MasterItem dengan satuan_beli='Kg' -> auto-infer Gram & 1000
+    res_kg = await client.post(
+        "/api/v1/master-items",
+        json={
+            "item_name": "Gula Pasir Premium",
+            "category": "Bahan Kue",
+            "satuan_beli": "Kg",
+            "satuan_ecer": "Kg",
+        },
+    )
+    assert res_kg.status_code == 201
+    kg_item = res_kg.json()
+    kg_id = kg_item["id"]
+    assert kg_item["satuan_resep"] == "Gram"
+    assert kg_item["konversi_resep"] == 1000.0
+
+    # Buat transaksi pengeluaran Rp 18.000/Kg agar recipe_unit_price terhitung (18.0 / Gram)
+    res_exp = await client.post(
+        "/api/v1/expenses",
+        json={
+            "expense_date": "2026-11-22",
+            "supplier": "Toko Berkah",
+            "item_name": "Gula Pasir Premium",
+            "master_item_id": kg_id,
+            "qty": 2,
+            "unit": "Kg",
+            "category": "Bahan Kue",
+            "unit_price": 18000,
+            "total_price": 36000,
+            "pay_method": "Tunai",
+        },
+    )
+    assert res_exp.status_code == 201
+
+    res_list = await client.get("/api/v1/master-items")
+    assert res_list.status_code == 200
+    listed_kg = [x for x in res_list.json()["data"] if x["id"] == kg_id][0]
+    assert listed_kg["last_unit_price"] == 18000.0
+    assert listed_kg["satuan_resep"] == "Gram"
+    assert listed_kg["konversi_resep"] == 1000.0
+    assert listed_kg["recipe_unit_price"] == 18.0
+
+    # 2. PUT ubah satuan_resep & konversi_resep (misal butter 227g per bungkus)
+    res_butter = await client.post(
+        "/api/v1/master-items",
+        json={
+            "item_name": "Mentega Anchor Salted",
+            "category": "Bahan Kue",
+            "satuan_beli": "Bungkus",
+            "satuan_ecer": "Bungkus",
+        },
+    )
+    assert res_butter.status_code == 201
+    butter_id = res_butter.json()["id"]
+
+    res_put = await client.put(
+        f"/api/v1/master-items/{butter_id}",
+        json={"satuan_resep": "gr", "konversi_resep": 227},
+    )
+    assert res_put.status_code == 200
+    assert res_put.json()["satuan_resep"] == "Gram"
+    assert res_put.json()["konversi_resep"] == 227.0
+
+    # 3. Item lama di DB tanpa satuan_resep vs item yang sudah diatur manual -> auto-fill tidak menimpa manual
+    legacy_liter = MasterItem(
+        item_name="Susu UHT Full Cream Legacy",
+        category="Bahan Kue",
+        satuan_beli="Liter",
+        satuan_ecer="Liter",
+        isi_paket="",
+        satuan_resep=None,
+        konversi_resep=None,
+    )
+    manual_custom = MasterItem(
+        item_name="Butter Custom Legacy",
+        category="Bahan Kue",
+        satuan_beli="Kg",
+        satuan_ecer="Kg",
+        isi_paket="",
+        satuan_resep="Gram",
+        konversi_resep=950.0,
+    )
+    db.add(legacy_liter)
+    db.add(manual_custom)
+    await db.commit()
+    await db.refresh(legacy_liter)
+    await db.refresh(manual_custom)
+
+    res_autofill = await client.post("/api/v1/master-items/auto-fill-recipe-units")
+    assert res_autofill.status_code == 200
+    assert res_autofill.json()["ok"] is True
+    assert res_autofill.json()["updated"] >= 1
+
+    db.expire_all()
+    await db.refresh(legacy_liter)
+    await db.refresh(manual_custom)
+    assert legacy_liter.satuan_resep == "ml"
+    assert legacy_liter.konversi_resep == 1000.0
+    assert manual_custom.konversi_resep == 950.0
+
+    # 4. /api/v1/menus/conversion-hint memprioritaskan satuan_resep & konversi_resep (termasuk konversi silang)
+    res_hint_gram = await client.get(
+        f"/api/v1/menus/conversion-hint?master_item_id={butter_id}&recipe_unit=Gram"
+    )
+    assert res_hint_gram.status_code == 200
+    assert res_hint_gram.json()["yield_factor"] == 227.0
+    assert res_hint_gram.json()["satuan_resep"] == "Gram"
+    assert res_hint_gram.json()["konversi_resep"] == 227.0
+
+    res_hint_kg = await client.get(
+        f"/api/v1/menus/conversion-hint?master_item_id={butter_id}&recipe_unit=Kg"
+    )
+    assert res_hint_kg.status_code == 200
+    assert res_hint_kg.json()["yield_factor"] == 0.227

@@ -380,6 +380,8 @@ async def api_conversion_hint(
         master.satuan_ecer,
         master.isi_paket,
         recipe_unit,
+        satuan_resep=master.satuan_resep,
+        konversi_resep=master.konversi_resep,
     )
     return {
         "ok": True,
@@ -387,6 +389,8 @@ async def api_conversion_hint(
         "satuan_beli": master.satuan_beli,
         "satuan_ecer": master.satuan_ecer,
         "isi_paket": master.isi_paket,
+        "satuan_resep": master.satuan_resep,
+        "konversi_resep": master.konversi_resep,
         "recipe_unit": recipe_unit,
         "yield_factor": factor,
         "reason": reason,

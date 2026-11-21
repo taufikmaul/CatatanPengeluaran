@@ -1405,6 +1405,8 @@ export async function bulkCreateMasterItemsStructured(
     tipe_satuan?: string;
     isi_paket?: string;
     satuan_ecer?: string;
+    satuan_resep?: string | null;
+    konversi_resep?: number | null;
   }>,
   defaultCategory = "Bahan Kue",
   updateExisting = true
@@ -1414,6 +1416,17 @@ export async function bulkCreateMasterItemsStructured(
     default_category: defaultCategory,
     update_existing: updateExisting,
   });
+  return res.data;
+}
+
+export async function autoFillMasterRecipeUnits(): Promise<{
+  ok: boolean;
+  updated: number;
+  skipped: number;
+  total: number;
+  message: string;
+}> {
+  const res = await api.post("/master-items/auto-fill-recipe-units");
   return res.data;
 }
 

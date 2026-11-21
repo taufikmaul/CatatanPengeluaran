@@ -669,6 +669,18 @@ export const RecipeQuickAddAutocomplete: React.FC<
                   if (opt.kind === "master") {
                     const item = opt.item;
                     const countInList = existingMasterCounts.get(item.id) || 0;
+                    const hasMasterRecipe = Boolean(
+                      item.satuan_resep &&
+                        item.konversi_resep !== null &&
+                        item.konversi_resep !== undefined &&
+                        item.konversi_resep > 0
+                    );
+                    const recipeUnitPrice = hasMasterRecipe
+                      ? item.recipe_unit_price ??
+                        (item.last_unit_price > 0 && item.konversi_resep
+                          ? item.last_unit_price / item.konversi_resep
+                          : 0)
+                      : 0;
                     return (
                       <button
                         key={opt.id}
@@ -717,11 +729,13 @@ export const RecipeQuickAddAutocomplete: React.FC<
                               </Badge>
                             )}
                           </div>
-                          <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5">
+                          <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5 tabular-nums">
                             {item.category || "Master Item"} | Beli:{" "}
                             {item.satuan_beli || "-"}
-                            {item.satuan_ecer &&
-                            item.satuan_ecer !== item.satuan_beli
+                            {hasMasterRecipe
+                              ? ` | 1 ${item.satuan_beli || "unit"} = ${item.konversi_resep} ${item.satuan_resep}`
+                              : item.satuan_ecer &&
+                                item.satuan_ecer !== item.satuan_beli
                               ? ` | Ecer: ${item.satuan_ecer}`
                               : ""}
                           </div>
@@ -739,7 +753,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
                           >
                             {targetIsPkg ? "Ke Kemasan" : "Ke Bahan"}
                           </Badge>
-                          <div className="text-right min-w-[68px]">
+                          <div className="text-right min-w-[78px]">
                             <span className="font-semibold tabular-nums text-blue-700 dark:text-blue-300">
                               {item.last_unit_price > 0
                                 ? formatRupiah(item.last_unit_price)
@@ -748,6 +762,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
                             <span className="block text-[10px] text-slate-600 dark:text-slate-400">
                               /{item.satuan_beli || "satuan"}
                             </span>
+                            {hasMasterRecipe && recipeUnitPrice > 0 && (
+                              <span className="block text-[10px] font-medium text-emerald-700 dark:text-emerald-400 tabular-nums">
+                                {formatRupiah(recipeUnitPrice)}/{item.satuan_resep}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </button>
