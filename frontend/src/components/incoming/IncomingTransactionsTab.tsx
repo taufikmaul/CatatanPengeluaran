@@ -20,6 +20,8 @@ import { IncomingAnalyticsPanel } from "./IncomingAnalyticsPanel";
 import { BankTransferPanel } from "./BankTransferPanel";
 import { ReconciliationPanel } from "./ReconciliationPanel";
 import { IncomingTransactionFormModal } from "./IncomingTransactionFormModal";
+import { AiBankAccountMappingModal } from "./AiBankAccountMappingModal";
+import { IncomingDuplicatesAuditModal } from "./IncomingDuplicatesAuditModal";
 import {
   BulkRowImportDialog,
   type BulkRowColumn,
@@ -46,6 +48,8 @@ import {
   FileSpreadsheet,
   Download,
   Pencil,
+  Route,
+  ShieldAlert,
 } from "lucide-react";
 import type { IncomingTransaction, BulkIncomingTxRow } from "@/types";
 
@@ -72,6 +76,8 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
   const [editingTx, setEditingTx] = useState<IncomingTransaction | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [csvTemplateOpen, setCsvTemplateOpen] = useState(false);
+  const [aiMapOpen, setAiMapOpen] = useState(false);
+  const [duplicateAuditOpen, setDuplicateAuditOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [subTab, setSubTab] = useState<string>("list");
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
@@ -226,6 +232,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
 
   const transactions = data?.transactions || [];
   const summary = data?.summary;
+  const unmappedCount = summary?.unmapped_count ?? 0;
   const orderTypes = data?.facets?.order_types || [];
   const paymentMethods = data?.facets?.payment_methods || [];
 
@@ -379,6 +386,37 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAiMapOpen(true)}
+            className={`gap-1.5 h-8 text-xs shadow-2xs font-medium ${
+              unmappedCount > 0
+                ? "bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100"
+                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+            }`}
+            title="Cocokkan dan isi rekening tujuan secara otomatis dengan AI berdasarkan tipe order dan metode bayar"
+          >
+            <Route className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />
+            <span>Set Rekening AI</span>
+            {unmappedCount > 0 && (
+              <span className="ml-0.5 rounded bg-blue-700 px-1.5 py-0.2 text-[10px] font-semibold text-white tabular-nums">
+                {unmappedCount}
+              </span>
+            )}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDuplicateAuditOpen(true)}
+            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            title="Pindai dan bersihkan transaksi masuk yang tercatat ganda atau duplikat"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
+            Analisa Duplikat
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -594,6 +632,27 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           </div>
         </CardContent>
       </Card>
+
+      {/* Unmapped Account Action Bar */}
+      {unmappedCount > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs text-amber-900">
+            <Landmark className="w-4 h-4 text-amber-800 shrink-0" aria-hidden="true" />
+            <span>
+              <strong className="font-semibold tabular-nums">{unmappedCount} transaksi</strong> pada filter aktif belum memiliki rekening tujuan.
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => setAiMapOpen(true)}
+            className="h-8 px-3 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white gap-1.5 self-start sm:self-auto"
+          >
+            <Route className="w-3.5 h-3.5" aria-hidden="true" />
+            Set Rekening AI Sekarang
+          </Button>
+        </div>
+      )}
 
       {/* Table */}
       <Card className="border-slate-200 shadow-xs overflow-hidden">
@@ -825,6 +884,43 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           <ReconciliationPanel accounts={accounts} />
         </TabsContent>
       </Tabs>
+
+      <AiBankAccountMappingModal
+        isOpen={aiMapOpen}
+        onClose={() => setAiMapOpen(false)}
+        accounts={accounts}
+        isAdmin={isAdmin}
+        filters={{
+          startDate,
+          endDate,
+          orderType,
+          statusFilter,
+          search,
+        }}
+        onApplied={() => {
+          queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
+          queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+        }}
+      />
+
+      <IncomingDuplicatesAuditModal
+        isOpen={duplicateAuditOpen}
+        onClose={() => setDuplicateAuditOpen(false)}
+        isAdmin={isAdmin}
+        filters={{
+          startDate,
+          endDate,
+          orderType,
+          statusFilter,
+          search,
+        }}
+        onDeleted={() => {
+          queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["incoming-analytics"] });
+          queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+        }}
+      />
 
       <SalesImportModal
         isOpen={importOpen}

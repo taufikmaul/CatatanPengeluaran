@@ -306,3 +306,81 @@ async def test_radar_menu_top_qty_vs_omset_and_cakeflow_in_stats_and_accounting(
     cf_daily = r_cf_daily.json()
     assert cf_daily["total_cash_in"] == 3114000.0
     assert cf_daily["saldo_akhir"] == 3614000.0
+
+
+@pytest.mark.asyncio
+async def test_radar_menu_labels_unique_for_shared_long_prefixes(client: AsyncClient, db: AsyncSession, auth_cookies):
+    client.cookies.update(auth_cookies)
+    """
+    Regresi: Menu dengan awalan panjang yang identik (mis. 'Kue Ulang Tahun Bogel ...' &
+    'Kue Ulang Tahun Bouquet ...') sebelumnya menghasilkan label radar duplikat setelah
+    pemotongan 22 karakter, menyebabkan Recharts PolarAngleAxis menghitung koordinat NaN
+    dan merender poligon radar kosong.
+    """
+    from datetime import date
+    from app.api.incoming_transactions import _build_unique_radar_labels
+    from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
+
+    sample_names = [
+        "💛Kue Ulang Tahun Mini 10cm",
+        "💛Kue Ulang Tahun Bogel 14cm",
+        "Kue Ulang Tahun Bogel 14cm Coklat",
+        "Kue Ulang Tahun Bogel 16cm Vanilla",
+        "Kue Ulang Tahun Bouquet Mini Pink",
+        "Kue Ulang Tahun Bouquet Medium Blue",
+        "Dubai Chewy Cookie",
+        "Fee Custom",
+    ]
+    labels = _build_unique_radar_labels(sample_names, max_len=24)
+    assert len(labels) == len(sample_names)
+    assert len({lbl.lower() for lbl in labels}) == len(sample_names)
+    assert all(len(lbl) <= 24 for lbl in labels)
+    # Pastikan pembeda ukuran/varian tetap muncul pada label yang bertabrakan
+    assert "14cm" in labels[2]
+    assert "16cm" in labels[3]
+    assert "Mini" in labels[4]
+    assert "Medium" in labels[5]
+
+    tx = IncomingTransaction(
+        transaction_date=date(2026, 10, 15),
+        transaction_time="11:00",
+        receipt_no="POS-RADAR-DUP-01",
+        order_type="Take Away",
+        payment_method="Cash",
+        gross_sales=1200000.0,
+        discount_amount=0.0,
+        net_sales=1200000.0,
+        platform_fee=0.0,
+        net_received=1200000.0,
+        status="paid",
+    )
+    db.add(tx)
+    await db.flush()
+
+    for idx, pname in enumerate(sample_names):
+        db.add(
+            IncomingTransactionItem(
+                transaction_id=tx.id,
+                product_name=pname,
+                category="Cake",
+                qty=float(10 - idx),
+                unit_price=50000.0 + idx * 15000.0,
+                gross_amount=(10 - idx) * (50000.0 + idx * 15000.0),
+                discount_amount=0.0,
+            )
+        )
+    await db.commit()
+
+    res = await client.get("/api/v1/incoming-transactions/analytics?month=10&year=2026")
+    assert res.status_code == 200
+    ana = res.json()["analytics"]
+
+    for key in ("radar_by_qty", "radar_by_revenue"):
+        pts = ana[key]
+        assert len(pts) == 8
+        lbls = [p["label"] for p in pts]
+        assert len({l.lower() for l in lbls}) == 8
+        assert all(0.0 <= p["qty_score"] <= 100.0 for p in pts)
+        assert all(0.0 <= p["revenue_score"] <= 100.0 for p in pts)
+        assert max(p["qty_score"] for p in pts) == 100.0
+        assert max(p["revenue_score"] for p in pts) == 100.0

@@ -857,6 +857,59 @@ export async function reassignIncomingTxBankAccount(
   return res.data.transaction;
 }
 
+export async function previewAiIncomingBankMapping(params: {
+  start_date?: string;
+  end_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  status?: string;
+  search?: string;
+  scope?: import("@/types").AiAccountMappingScope;
+}): Promise<import("@/types").AiBankAccountMappingPreview> {
+  const res = await api.post("/incoming-transactions/ai-map-accounts/preview", params);
+  return res.data;
+}
+
+export async function applyAiIncomingBankMapping(params: {
+  start_date?: string;
+  end_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  status?: string;
+  search?: string;
+  scope: import("@/types").AiAccountMappingScope;
+  mappings: Array<{
+    order_type: string;
+    payment_method: string;
+    bank_account_id: number;
+  }>;
+  save_channel_mappings?: boolean;
+}): Promise<import("@/types").AiBankAccountMappingApplyResult> {
+  const res = await api.post("/incoming-transactions/ai-map-accounts/apply", params);
+  return res.data;
+}
+
+export async function auditIncomingDuplicateTransactions(params?: {
+  start_date?: string;
+  end_date?: string;
+  order_type?: string;
+  payment_method?: string;
+  status?: string;
+  search?: string;
+  include_medium?: boolean;
+}): Promise<import("@/types").IncomingDuplicatesAuditResult> {
+  const res = await api.get("/incoming-transactions/audit-duplicates", { params });
+  return res.data;
+}
+
+export async function deleteIncomingDuplicateTransactions(params: {
+  transaction_ids: number[];
+  allow_reconciled?: boolean;
+}): Promise<import("@/types").DeleteIncomingDuplicatesResult> {
+  const res = await api.post("/incoming-transactions/audit-duplicates/delete", params);
+  return res.data;
+}
+
 export async function deleteIncomingTransaction(txId: number): Promise<void> {
   await api.delete(`/incoming-transactions/${txId}`);
 }

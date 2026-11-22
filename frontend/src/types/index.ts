@@ -1378,6 +1378,118 @@ export interface IncomingTransactionsSummary {
   net_received: number;
   void_count: number;
   cancellation_total: number;
+  unmapped_count?: number;
+}
+
+export type AiAccountMappingScope = "unmapped" | "all";
+export type AiAccountMappingConfidence = "high" | "medium" | "low";
+
+export interface AiBankAccountMappingSuggestion {
+  group_key: string;
+  order_type: string;
+  payment_method: string;
+  tx_count: number;
+  unmapped_count: number;
+  total_net_received: number;
+  current_account_names: string[];
+  suggested_bank_account_id: number | null;
+  suggested_bank_account_name: string | null;
+  confidence: AiAccountMappingConfidence;
+  reason: string;
+}
+
+export interface AiBankAccountMappingPreview {
+  ok: boolean;
+  engine: "ai" | "rules_fallback";
+  model: string | null;
+  fallback_reason: string | null;
+  scope: AiAccountMappingScope;
+  has_active_accounts: boolean;
+  total_groups: number;
+  total_transactions: number;
+  suggested_groups: number;
+  suggestions: AiBankAccountMappingSuggestion[];
+}
+
+export interface AiBankAccountMappingApplyResult {
+  ok: boolean;
+  updated_transactions: number;
+  applied_groups: number;
+  updated_accounts: number;
+  saved_mappings: Array<{
+    bank_account_id: number;
+    bank_account_name: string;
+    added_channels: string[];
+  }>;
+  message: string;
+}
+
+export type IncomingDuplicateReasonCode =
+  | "same_receipt_no"
+  | "same_order_no"
+  | "exact_timestamp_amount"
+  | "cross_source_match"
+  | "same_day_fingerprint";
+
+export type IncomingDuplicateSeverity = "high" | "medium";
+
+export interface IncomingDuplicateTxSummary {
+  id: number;
+  source_type: string;
+  receipt_no?: string | null;
+  order_no?: string | null;
+  transaction_date?: string | null;
+  transaction_time?: string | null;
+  order_type: string;
+  payment_method: string;
+  bank_account_id?: number | null;
+  bank_account_name?: string | null;
+  customer_name?: string | null;
+  cashier_name?: string | null;
+  gross_sales: number;
+  discount_amount: number;
+  platform_fee: number;
+  net_received: number;
+  status: string;
+  item_count: number;
+  reconciled_at?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+}
+
+export interface IncomingDuplicateGroup {
+  group_id: string;
+  reason_code: IncomingDuplicateReasonCode;
+  severity: IncomingDuplicateSeverity;
+  reason: string;
+  tx_count: number;
+  duplicate_count: number;
+  suggested_keep_id: number;
+  suggested_delete_ids: number[];
+  potential_overstated_gross: number;
+  potential_overstated_net_received: number;
+  transactions: IncomingDuplicateTxSummary[];
+}
+
+export interface IncomingDuplicatesAuditResult {
+  ok: boolean;
+  scanned_transactions: number;
+  duplicate_group_count: number;
+  duplicate_tx_count: number;
+  high_confidence_groups: number;
+  medium_confidence_groups: number;
+  potential_overstated_gross: number;
+  potential_overstated_net_received: number;
+  groups: IncomingDuplicateGroup[];
+}
+
+export interface DeleteIncomingDuplicatesResult {
+  ok: boolean;
+  deleted_count: number;
+  deleted_ids: number[];
+  skipped_reconciled_ids: number[];
+  not_found_ids: number[];
+  message: string;
 }
 
 export interface SalesAuditFinding {

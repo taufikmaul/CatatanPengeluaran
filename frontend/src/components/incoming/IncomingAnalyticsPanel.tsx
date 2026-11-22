@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
@@ -217,6 +217,39 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
       }),
   });
 
+  const rawRadarData = useMemo(() => {
+    if (!analytics) return [];
+    return radarBasis === "qty"
+      ? analytics.radar_by_qty || []
+      : analytics.radar_by_revenue || [];
+  }, [analytics, radarBasis]);
+
+  // Recharts PolarAngleAxis membutuhkan kategori dataKey yang unik agar Radar tidak menghasilkan koordinat NaN.
+  const { radarChartData, radarLabelByKey } = useMemo(() => {
+    const usedLabels = new Map<string, number>();
+    const labelMap = new Map<string, string>();
+    const normalized = rawRadarData.map((pt, idx) => {
+      const baseLabel = (pt.label || pt.product_name || `Menu ${idx + 1}`).trim();
+      const normKey = baseLabel.toLowerCase();
+      const count = (usedLabels.get(normKey) ?? 0) + 1;
+      usedLabels.set(normKey, count);
+      const displayLabel = count === 1 ? baseLabel : `${baseLabel} #${count}`;
+      const axisKey = `${idx}::${pt.product_name || baseLabel}`;
+      labelMap.set(axisKey, displayLabel);
+
+      const qtyScore = Number(pt.qty_score);
+      const revScore = Number(pt.revenue_score);
+      return {
+        ...pt,
+        axis_key: axisKey,
+        display_label: displayLabel,
+        qty_score: Number.isFinite(qtyScore) ? Math.max(0, Math.min(100, qtyScore)) : 0,
+        revenue_score: Number.isFinite(revScore) ? Math.max(0, Math.min(100, revScore)) : 0,
+      };
+    });
+    return { radarChartData: normalized, radarLabelByKey: labelMap };
+  }, [rawRadarData]);
+
   if (isLoading) {
     return (
       <div className="py-12 flex items-center justify-center gap-2 text-sm text-slate-600">
@@ -259,7 +292,6 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
 
   const topByQty = analytics.top_products_by_qty || analytics.top_products || [];
   const topByRevenue = analytics.top_products_by_revenue || analytics.top_products || [];
-  const radarData = radarBasis === "qty" ? (analytics.radar_by_qty || []) : (analytics.radar_by_revenue || []);
   const byChannel = analytics.by_channel || [];
   const availableOrderTypes = analytics.available_order_types || [];
 
@@ -411,12 +443,13 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                   <div
                     role="group"
                     aria-label="Pilih basis pemeringkatan radar menu"
-                    className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 self-start sm:self-auto"
+                    className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5 self-start sm:self-auto"
                   >
                     <button
                       type="button"
+                      aria-pressed={radarBasis === "qty"}
                       onClick={() => setRadarBasis("qty")}
-                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+                      className={`whitespace-nowrap px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         radarBasis === "qty"
                           ? "bg-white text-blue-700 shadow-2xs"
                           : "text-slate-600 hover:text-slate-900"
@@ -426,8 +459,9 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                     </button>
                     <button
                       type="button"
+                      aria-pressed={radarBasis === "revenue"}
                       onClick={() => setRadarBasis("revenue")}
-                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+                      className={`whitespace-nowrap px-3 py-1.5 text-xs font-medium rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
                         radarBasis === "revenue"
                           ? "bg-white text-emerald-700 shadow-2xs"
                           : "text-slate-600 hover:text-slate-900"
@@ -439,21 +473,30 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                 </div>
               </CardHeader>
               <CardContent>
-                {radarData.length >= 3 ? (
+                {radarChartData.length >= 3 ? (
                   <>
-                    <div className="w-full h-[300px] sm:h-[320px]">
+                    <div className="w-full h-[310px] sm:h-[330px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <RadarChart cx="50%" cy="50%" outerRadius="72%" data={radarData}>
+                        <RadarChart
+                          key={radarBasis}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius="68%"
+                          margin={{ top: 18, right: 28, bottom: 18, left: 28 }}
+                          data={radarChartData}
+                        >
                           <PolarGrid stroke="#e2e8f0" />
                           <PolarAngleAxis
-                            dataKey="label"
+                            dataKey="axis_key"
+                            tickFormatter={(val: string) => radarLabelByKey.get(val) ?? val}
                             tick={{ fill: "#334155", fontSize: 11 }}
                           />
                           <PolarRadiusAxis
-                            angle={90}
+                            angle={67.5}
                             domain={[0, 100]}
                             tick={{ fill: "#64748b", fontSize: 10 }}
                             tickCount={5}
+                            axisLine={false}
                           />
                           <Radar
                             name="Indeks Qty"
@@ -462,6 +505,9 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                             fill="#2563eb"
                             fillOpacity={0.22}
                             strokeWidth={2}
+                            dot={{ r: 3, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 1.5 }}
+                            activeDot={{ r: 5, fill: "#2563eb", stroke: "#ffffff", strokeWidth: 2 }}
+                            isAnimationActive={false}
                           />
                           <Radar
                             name="Indeks Omset"
@@ -470,6 +516,9 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                             fill="#059669"
                             fillOpacity={0.22}
                             strokeWidth={2}
+                            dot={{ r: 3, fill: "#059669", stroke: "#ffffff", strokeWidth: 1.5 }}
+                            activeDot={{ r: 5, fill: "#059669", stroke: "#ffffff", strokeWidth: 2 }}
+                            isAnimationActive={false}
                           />
                           <Tooltip content={<RadarMenuTooltip />} />
                         </RadarChart>
@@ -477,22 +526,26 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-4 pt-2 text-[11px] text-slate-600">
                       <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-blue-600 inline-block" />
+                        <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
                         Indeks Qty (Volume Terjual)
                       </span>
                       <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600 inline-block" />
+                        <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
                         Indeks Omset Net (Rupiah)
                       </span>
                     </div>
                   </>
+                ) : radarChartData.length === 0 ? (
+                  <div className="py-10 px-4 text-center text-xs text-slate-500">
+                    Belum ada data rincian menu pada periode dan filter ini. Tambahkan item transaksi atau ubah filter tipe order untuk menampilkan Radar Menu.
+                  </div>
                 ) : (
                   <div className="space-y-3 py-2">
                     <p className="text-xs text-slate-500">
                       Grafik radar membutuhkan minimal 3 menu unik. Menampilkan perbandingan langsung Qty dan Omset:
                     </p>
-                    {radarData.map((pt) => (
-                      <div key={pt.product_name} className="space-y-1 text-xs border-b border-slate-100 pb-2 last:border-0">
+                    {radarChartData.map((pt) => (
+                      <div key={pt.axis_key} className="space-y-1 text-xs border-b border-slate-100 pb-2 last:border-0">
                         <div className="flex justify-between gap-2">
                           <span className="font-medium text-slate-900">{pt.product_name}</span>
                           <span className="tabular-nums text-slate-600">

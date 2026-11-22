@@ -3,20 +3,28 @@ app/api/incoming_transactions.py — REST API for Daftar Transaksi Masuk & Impor
 """
 from datetime import date, timedelta
 import json
-from typing import Any, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Query, Response, status
+from typing import Any, Literal, Optional
+from fastapi import APIRouter, Depends, Request, UploadFile, File, Form, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select, func, and_, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.connection import get_db
-from app.api.deps import require_admin_role, require_roles, validate_upload_file
+from app.api.deps import get_current_role, require_admin_role, require_roles, validate_upload_file
 from app.models.incoming_transaction import IncomingTransaction, IncomingTransactionItem
 from app.models.bank_account import BankAccount
 from app.services.bank_account_service import (
     build_channel_account_map,
     resolve_bank_account_for_tx,
     is_cakeflow_order_type,
+)
+from app.services.incoming_account_ai_service import (
+    preview_ai_account_mappings,
+    apply_ai_account_mappings,
+)
+from app.services.incoming_duplicate_audit_service import (
+    audit_duplicate_incoming_transactions,
+    delete_duplicate_incoming_transactions,
 )
 from app.services.sales_import_service import (
     parse_sales_csv,
@@ -146,6 +154,45 @@ class ReassignBankAccountPayload(BaseModel):
     bank_account_id: Optional[int] = None
 
 
+class AiMapAccountsPreviewRequest(BaseModel):
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    month: Optional[int] = Field(None, ge=1, le=12)
+    month_end: Optional[int] = Field(None, ge=1, le=12)
+    year: Optional[int] = Field(None, ge=2000, le=2100)
+    order_type: Optional[str] = None
+    payment_method: Optional[str] = None
+    status: Optional[str] = None
+    search: Optional[str] = None
+    scope: Literal["unmapped", "all"] = "unmapped"
+
+
+class AiAccountMappingItem(BaseModel):
+    order_type: str = Field(..., min_length=1, max_length=60)
+    payment_method: str = Field(..., min_length=1, max_length=60)
+    bank_account_id: int = Field(..., ge=1)
+
+
+class AiMapAccountsApplyRequest(BaseModel):
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    month: Optional[int] = Field(None, ge=1, le=12)
+    month_end: Optional[int] = Field(None, ge=1, le=12)
+    year: Optional[int] = Field(None, ge=2000, le=2100)
+    order_type: Optional[str] = None
+    payment_method: Optional[str] = None
+    status: Optional[str] = None
+    search: Optional[str] = None
+    scope: Literal["unmapped", "all"] = "unmapped"
+    mappings: list[AiAccountMappingItem] = Field(..., min_length=1)
+    save_channel_mappings: bool = False
+
+
+class DeleteIncomingDuplicatesRequest(BaseModel):
+    transaction_ids: list[int] = Field(..., min_length=1)
+    allow_reconciled: bool = False
+
+
 def _build_incoming_tx_filter(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
@@ -258,6 +305,10 @@ async def api_list_incoming_transactions(
     )
     v_row = void_agg_res.fetchone()
 
+    unmapped_cond = and_(where_clause, IncomingTransaction.bank_account_id.is_(None))
+    unmapped_count_res = await db.execute(select(func.count(IncomingTransaction.id)).where(unmapped_cond))
+    unmapped_count = int(unmapped_count_res.scalar() or 0)
+
     # Distinct order_types & payment_methods for filter dropdowns
     ot_res = await db.execute(select(IncomingTransaction.order_type).distinct().order_by(IncomingTransaction.order_type))
     pm_res = await db.execute(select(IncomingTransaction.payment_method).distinct().order_by(IncomingTransaction.payment_method))
@@ -275,6 +326,7 @@ async def api_list_incoming_transactions(
             "net_received": float(p_row[5] or 0.0) if p_row else 0.0,
             "void_count": int(v_row[0] or 0) if v_row else 0,
             "cancellation_total": float(v_row[1] or 0.0) if v_row else 0.0,
+            "unmapped_count": unmapped_count,
         },
         "facets": {
             "order_types": [r[0] for r in ot_res.fetchall() if r[0]],
@@ -308,6 +360,83 @@ def _short_radar_label(name: str, max_len: int = 22) -> str:
     if len(clean) <= max_len:
         return clean
     return clean[: max_len - 1].rstrip() + "…"
+
+
+def _build_unique_radar_labels(names: list[str], max_len: int = 24) -> list[str]:
+    """
+    Buat label radar yang ringkas, mudah dibedakan antar varian/ukuran,
+    dan dijamin unik (case-insensitive) agar PolarAngleAxis Recharts tidak
+    pernah menerima kategori duplikat.
+    """
+    cleaned = [(n or "").strip() or f"Menu {idx + 1}" for idx, n in enumerate(names)]
+    labels = [_short_radar_label(n, max_len=max_len) for n in cleaned]
+
+    # Deteksi grup label yang bertabrakan setelah pemotongan awal
+    groups: dict[str, list[int]] = {}
+    for idx, lbl in enumerate(labels):
+        groups.setdefault(lbl.lower(), []).append(idx)
+
+    for idxs in groups.values():
+        if len(idxs) <= 1:
+            continue
+
+        group_names = [cleaned[i] for i in idxs]
+        # Cari panjang common prefix antar nama yang bertabrakan
+        min_len = min(len(n) for n in group_names)
+        prefix_len = 0
+        while prefix_len < min_len and len({n[prefix_len].lower() for n in group_names}) == 1:
+            prefix_len += 1
+
+        # Mundurkan ke batas kata/pemisah agar bagian pembeda (mis. "14cm" vs "16cm") utuh
+        if prefix_len > 0:
+            boundary = prefix_len
+            while boundary > 0 and group_names[0][boundary - 1].isalnum():
+                boundary -= 1
+            if boundary > 0:
+                prefix_len = boundary
+
+        for i in idxs:
+            full = cleaned[i]
+            suffix = full[prefix_len:].strip()
+            if not suffix:
+                continue
+            # Sediakan ruang untuk pembeda varian/ukuran di belakang
+            max_suffix_len = max(8, max_len // 2)
+            if len(suffix) > max_suffix_len:
+                suffix_part = suffix[: max_suffix_len - 1].rstrip() + "…"
+            else:
+                suffix_part = suffix
+
+            head_budget = max_len - len(suffix_part) - 2  # "… "
+            if head_budget >= 5:
+                head_part = full[:head_budget].rstrip()
+                labels[i] = f"{head_part}… {suffix_part}"
+            else:
+                labels[i] = _short_radar_label(suffix, max_len=max_len)
+
+    # Jaminan akhir: pastikan 100% unik (case-insensitive)
+    seen: dict[str, int] = {}
+    final_labels: list[str] = []
+    for lbl in labels:
+        base = lbl.strip() or "Menu"
+        key = base.lower()
+        count = seen.get(key, 0) + 1
+        seen[key] = count
+        if count == 1:
+            final_labels.append(base)
+        else:
+            tag = f" #{count}"
+            trimmed = base[: max(1, max_len - len(tag))].rstrip()
+            candidate = f"{trimmed}{tag}"
+            while candidate.lower() in seen:
+                count += 1
+                tag = f" #{count}"
+                trimmed = base[: max(1, max_len - len(tag))].rstrip()
+                candidate = f"{trimmed}{tag}"
+            seen[candidate.lower()] = 1
+            final_labels.append(candidate)
+
+    return final_labels
 
 
 @router.get("/analytics")
@@ -491,19 +620,20 @@ async def api_incoming_analytics(
         sliced = rows[:limit]
         if not sliced:
             return []
-        max_q = max((r["total_qty"] for r in sliced), default=1.0) or 1.0
-        max_r = max((r["net_sales"] for r in sliced), default=1.0) or 1.0
+        max_q = max((float(r["total_qty"] or 0.0) for r in sliced), default=0.0)
+        max_r = max((float(r["net_sales"] or 0.0) for r in sliced), default=0.0)
+        unique_labels = _build_unique_radar_labels([str(r["product_name"]) for r in sliced], max_len=24)
         return [
             {
-                "label": _short_radar_label(r["product_name"]),
+                "label": unique_labels[idx],
                 "product_name": r["product_name"],
                 "category": r["category"],
                 "total_qty": r["total_qty"],
                 "net_sales": r["net_sales"],
-                "qty_score": round((r["total_qty"] / max_q) * 100.0, 1),
-                "revenue_score": round((r["net_sales"] / max_r) * 100.0, 1),
+                "qty_score": round((max(0.0, float(r["total_qty"] or 0.0)) / max_q) * 100.0, 1) if max_q > 0 else 0.0,
+                "revenue_score": round((max(0.0, float(r["net_sales"] or 0.0)) / max_r) * 100.0, 1) if max_r > 0 else 0.0,
             }
-            for r in sliced
+            for idx, r in enumerate(sliced)
         ]
 
     radar_by_qty = _build_radar_dataset(top_products_by_qty, limit=8)
@@ -1368,6 +1498,129 @@ async def api_update_incoming_transaction(
     await db.commit()
     await db.refresh(tx)
     return {"ok": True, "transaction": _serialize_tx(tx)}
+
+
+@router.post("/ai-map-accounts/preview")
+async def api_preview_ai_bank_account_mapping(
+    payload: AiMapAccountsPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Analisis AI untuk merekomendasikan rekening tujuan berdasarkan tipe order dan metode pembayaran."""
+    where_clause = _build_incoming_tx_filter(
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        order_type=payload.order_type,
+        payment_method=payload.payment_method,
+        status_filter=payload.status,
+        search=payload.search,
+        month=payload.month,
+        month_end=payload.month_end,
+        year=payload.year,
+    )
+    result = await preview_ai_account_mappings(db, where_clause=where_clause, scope=payload.scope)
+    return {"ok": True, **result}
+
+
+@router.post("/ai-map-accounts/apply")
+async def api_apply_ai_bank_account_mapping(
+    payload: AiMapAccountsApplyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Terapkan hasil pemetaan rekening tujuan AI ke transaksi masuk yang cocok dengan filter."""
+    role = get_current_role(request)
+    if payload.save_channel_mappings and role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Hanya Owner / Super Admin yang dapat menyimpan aturan channel_mappings rekening.",
+        )
+
+    where_clause = _build_incoming_tx_filter(
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        order_type=payload.order_type,
+        payment_method=payload.payment_method,
+        status_filter=payload.status,
+        search=payload.search,
+        month=payload.month,
+        month_end=payload.month_end,
+        year=payload.year,
+    )
+    try:
+        res = await apply_ai_account_mappings(
+            db,
+            where_clause=where_clause,
+            scope=payload.scope,
+            mappings=[m.model_dump() for m in payload.mappings],
+            save_channel_mappings=payload.save_channel_mappings,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    msg = f"Berhasil memetakan {res['updated_transactions']} transaksi dari {res['applied_groups']} kombinasi order dan metode bayar."
+    if res["updated_accounts"] > 0:
+        msg += f" {res['updated_accounts']} aturan rekening diperbarui."
+
+    return {
+        "ok": True,
+        **res,
+        "message": msg,
+    }
+
+
+@router.get("/audit-duplicates")
+async def api_audit_duplicate_incoming_transactions(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    month_end: Optional[int] = Query(None, ge=1, le=12),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
+    order_type: Optional[str] = Query(None),
+    payment_method: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    search: Optional[str] = Query(None),
+    include_medium: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pindai dan analisa potensi transaksi masuk duplikat sesuai filter atau seluruh database."""
+    where_clause = _build_incoming_tx_filter(
+        start_date=start_date,
+        end_date=end_date,
+        order_type=order_type,
+        payment_method=payment_method,
+        status_filter=status_filter,
+        search=search,
+        month=month,
+        month_end=month_end,
+        year=year,
+    )
+    result = await audit_duplicate_incoming_transactions(
+        db,
+        where_clause=where_clause,
+        include_medium=include_medium,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/audit-duplicates/delete", dependencies=[Depends(require_admin_role)])
+async def api_delete_duplicate_incoming_transactions(
+    payload: DeleteIncomingDuplicatesRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Hapus transaksi masuk duplikat yang dipilih oleh Owner / Super Admin."""
+    res = await delete_duplicate_incoming_transactions(
+        db,
+        transaction_ids=payload.transaction_ids,
+        allow_reconciled=payload.allow_reconciled,
+    )
+    msg = f"Berhasil menghapus {res['deleted_count']} transaksi duplikat."
+    if res["skipped_reconciled_ids"]:
+        msg += f" {len(res['skipped_reconciled_ids'])} transaksi dilewati karena sudah direkonsiliasi."
+    return {
+        "ok": True,
+        **res,
+        "message": msg,
+    }
 
 
 @router.patch("/{tx_id}/bank-account")
