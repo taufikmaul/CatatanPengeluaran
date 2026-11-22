@@ -34,7 +34,7 @@ ENV_MAP: dict[str, str] = {
     "ai_analysis_model": "AI_ANALYSIS_MODEL",
     "ai_chat_default_provider": "AI_CHAT_DEFAULT_PROVIDER",
     "ai_chat_default_model": "AI_CHAT_DEFAULT_MODEL",
-    "ai_chat_classai_models": "AI_CHAT_CLASSAI_MODELS",
+    "ai_chat_openrouter_models": "AI_CHAT_OPENROUTER_MODELS",
     "ai_chat_sumopod_models": "AI_CHAT_SUMOPOD_MODELS",
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
@@ -124,6 +124,18 @@ def apply_settings_to_runtime(settings_map: dict[str, Any]) -> None:
             elif isinstance(raw_val, str) and raw_val.strip():
                 settings.category_budgets_json = raw_val
                 os.environ["CATEGORY_BUDGETS_JSON"] = raw_val
+            continue
+
+        # Kompatibilitas legacy key lama sebelum migrasi ke OpenRouter
+        if key == "ai_chat_classai_models" and "ai_chat_openrouter_models" not in settings_map:
+            settings.ai_chat_openrouter_models = str_val
+            os.environ["AI_CHAT_OPENROUTER_MODELS"] = str_val
+            continue
+
+        if key == "ai_chat_default_provider":
+            norm = settings.normalize_ai_provider(str_val)
+            settings.ai_chat_default_provider = norm
+            os.environ["AI_CHAT_DEFAULT_PROVIDER"] = norm
             continue
 
         # Update objek settings pydantic di memori

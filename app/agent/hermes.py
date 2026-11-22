@@ -859,7 +859,7 @@ class HermesAgent:
         msg = (
             f"⚙️ *Konfigurasi Aktif:*\n"
             f"- AI Ekstraksi Struk: *Sumopod AI* (`{settings.sumopod_model}`)\n"
-            f"- AI Analisis Keuangan: *ClassAI / DeepSeek* (`{settings.ai_analysis_model}`)\n"
+            f"- AI Analisis & Chat Keuangan: *OpenRouter* (`{settings.ai_analysis_model}`)\n"
             f"- Database: *PostgreSQL / SQLite*"
         )
         await tg.send_message(self.chat_id, msg, self.thread_id)

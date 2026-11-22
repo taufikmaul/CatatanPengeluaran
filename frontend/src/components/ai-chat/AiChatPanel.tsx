@@ -93,7 +93,7 @@ export function AiChatPanel({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastFailedPrompt, setLastFailedPrompt] = useState<string | null>(null);
 
-  const [selectedProvider, setSelectedProvider] = useState<AiChatProviderId>("classai");
+  const [selectedProvider, setSelectedProvider] = useState<AiChatProviderId>("openrouter");
   const [selectedModel, setSelectedModel] = useState<string>("");
 
   const abortRef = useRef<AbortController | null>(null);
@@ -127,7 +127,7 @@ export function AiChatPanel({
     if (status === "submitted" || status === "streaming") return;
 
     if (sessionDetail) {
-      const prov = sessionDetail.provider === "sumopod" ? "sumopod" : "classai";
+      const prov = sessionDetail.provider === "sumopod" ? "sumopod" : "openrouter";
       setSelectedProvider(prov);
       if (sessionDetail.model_id) {
         setSelectedModel(sessionDetail.model_id);
@@ -136,7 +136,7 @@ export function AiChatPanel({
     }
 
     if (modelsCatalog) {
-      setSelectedProvider(modelsCatalog.default_provider || "classai");
+      setSelectedProvider(modelsCatalog.default_provider || "openrouter");
       setSelectedModel(modelsCatalog.default_model || "");
     }
   }, [modelsCatalog, sessionDetail, status]);
@@ -180,7 +180,7 @@ export function AiChatPanel({
   const handleModelSelectionChange = (encodedValue: string) => {
     const sepIdx = encodedValue.indexOf("::");
     if (sepIdx === -1) return;
-    const nextProv = encodedValue.slice(0, sepIdx) === "sumopod" ? "sumopod" : "classai";
+    const nextProv = encodedValue.slice(0, sepIdx) === "sumopod" ? "sumopod" : "openrouter";
     const nextModel = encodedValue.slice(sepIdx + 2);
     setSelectedProvider(nextProv);
     setSelectedModel(nextModel);
@@ -402,7 +402,7 @@ export function AiChatPanel({
       : "Menulis jawaban..."
     : status === "error"
     ? "Terjadi kendala"
-    : `${selectedProvider === "classai" ? "ClassAI" : "Sumopod"} siap`;
+    : `${selectedProvider === "openrouter" ? "OpenRouter" : "Sumopod"} siap`;
 
   return (
     <div className={cn("flex h-full w-full flex-col overflow-hidden bg-card text-card-foreground", className)}>
@@ -543,7 +543,7 @@ export function AiChatPanel({
               {!hasAnyConfiguredProvider && !isModelsLoading && (
                 <div className="w-full rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs space-y-2">
                   <p className="font-semibold text-foreground">
-                    API Key ClassAI atau Sumopod belum diisi
+                    API Key OpenRouter atau Sumopod belum diisi
                   </p>
                   <p className="text-muted-foreground">
                     Lengkapi API key terlebih dahulu agar asisten dapat menjawab pertanyaan Anda.
@@ -632,7 +632,7 @@ export function AiChatPanel({
 
                 {message.role === "assistant" && message.model_used && message.content && !isLast && (
                   <span className="text-[11px] text-muted-foreground">
-                    {message.provider === "sumopod" ? "Sumopod" : "ClassAI"} / {message.model_used}
+                    {message.provider === "sumopod" ? "Sumopod" : "OpenRouter"} / {message.model_used}
                   </span>
                 )}
               </Message>
@@ -749,7 +749,7 @@ export function AiChatPanel({
                       </optgroup>
                     ))}
                     {!modelsCatalog && (
-                      <option value="classai::deepseek-v4.1-flash-1017">Memuat model...</option>
+                      <option value="openrouter::openai/gpt-4o-mini">Memuat model...</option>
                     )}
                   </select>
                 </div>

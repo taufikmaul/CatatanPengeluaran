@@ -81,15 +81,20 @@ def resolve_provider_config(
     Melempar ValueError jika provider tidak valid atau API key belum diatur.
     """
     catalog = settings.get_ai_chat_catalog()
-    target_provider = (provider or "").strip().lower() or catalog["default_provider"]
-    if target_provider not in ("classai", "sumopod"):
-        raise ValueError("Provider AI harus 'classai' atau 'sumopod'.")
+    raw_provider = (provider or "").strip().lower()
+    if raw_provider and raw_provider not in ("openrouter", "classai", "sumopod"):
+        raise ValueError("Provider AI harus 'openrouter' atau 'sumopod'.")
+    target_provider = (
+        settings.normalize_ai_provider(raw_provider)
+        if raw_provider
+        else catalog["default_provider"]
+    )
 
-    if target_provider == "classai":
-        url = (settings.ai_analysis_url or "https://router.classai.id/v1/chat/completions").strip()
+    if target_provider == "openrouter":
+        url = (settings.ai_analysis_url or "https://openrouter.ai/api/v1/chat/completions").strip()
         api_key = (settings.ai_analysis_api_key or "").strip()
-        default_model = (settings.ai_analysis_model or "deepseek-v4.1-flash-1017").strip()
-        label = "ClassAI"
+        default_model = (settings.ai_analysis_model or "openai/gpt-4o-mini").strip()
+        label = "OpenRouter"
     else:
         url = (settings.sumopod_url or "https://ai.sumopod.com/v1/chat/completions").strip()
         api_key = (settings.sumopod_api_key or "").strip()
@@ -154,8 +159,10 @@ async def create_session(
 ) -> dict[str, Any]:
     """Buat sesi chat baru dengan default provider & model dari katalog."""
     catalog = settings.get_ai_chat_catalog()
-    target_provider = (provider or "").strip().lower() or catalog["default_provider"]
-    if target_provider not in ("classai", "sumopod"):
+    raw_provider = (provider or "").strip().lower()
+    if raw_provider in ("openrouter", "classai", "sumopod"):
+        target_provider = settings.normalize_ai_provider(raw_provider)
+    else:
         target_provider = catalog["default_provider"]
 
     provider_info = next(
@@ -241,8 +248,8 @@ async def update_session(
 
     if title is not None and title.strip():
         session.title = title.strip()[:200]
-    if provider is not None and provider.strip().lower() in ("classai", "sumopod"):
-        session.provider = provider.strip().lower()
+    if provider is not None and provider.strip().lower() in ("openrouter", "classai", "sumopod"):
+        session.provider = settings.normalize_ai_provider(provider)
     if model_id is not None:
         session.model_id = model_id.strip()[:120]
     session.updated_at = _utc_now()
@@ -323,10 +330,7 @@ async def _stream_completion_round(
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = settings.build_ai_headers(api_key, url)
 
     full_content_parts: list[str] = []
     tool_calls_acc: dict[int, dict[str, Any]] = {}

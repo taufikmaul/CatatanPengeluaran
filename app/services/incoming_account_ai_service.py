@@ -285,9 +285,14 @@ async def _call_llm_for_account_mapping(
     Panggil LLM untuk memetakan setiap kombinasi (order_type, payment_method) ke bank_account_id.
     Mengembalikan (parsed_map_by_group_key | None, model_used | None, error_reason | None).
     """
-    api_key = (settings.ai_analysis_api_key or settings.sumopod_api_key or "").strip()
-    url = (settings.ai_analysis_url if settings.ai_analysis_api_key else settings.sumopod_url).strip()
-    model = (settings.ai_analysis_model if settings.ai_analysis_api_key else settings.sumopod_model).strip()
+    if settings._is_api_key_configured(settings.ai_analysis_api_key):
+        api_key = settings.ai_analysis_api_key.strip()
+        url = (settings.ai_analysis_url or "https://openrouter.ai/api/v1/chat/completions").strip()
+        model = (settings.ai_analysis_model or "openai/gpt-4o-mini").strip()
+    else:
+        api_key = (settings.sumopod_api_key or "").strip()
+        url = (settings.sumopod_url or "https://ai.sumopod.com/v1/chat/completions").strip()
+        model = (settings.sumopod_model or "seed-2-0-mini").strip()
 
     if not api_key or not url or not model:
         return None, None, "Kunci API AI belum dikonfigurasi, menggunakan aturan pencocokan otomatis."
@@ -364,10 +369,7 @@ async def _call_llm_for_account_mapping(
         ],
         "temperature": 0.1,
     }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = settings.build_ai_headers(api_key, url)
 
     try:
         async with httpx.AsyncClient(timeout=40.0) as client:

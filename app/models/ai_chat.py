@@ -19,7 +19,7 @@ class AiChatSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), default="Percakapan Baru", nullable=False)
-    provider: Mapped[str] = mapped_column(String(32), default="classai", nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="openrouter", nullable=False)
     model_id: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

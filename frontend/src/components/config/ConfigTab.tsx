@@ -69,12 +69,14 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [sumopodUrl, setSumopodUrl] = useState("https://ai.sumopod.com/v1/chat/completions");
 
   const [aiAnalysisApiKey, setAiAnalysisApiKey] = useState("");
-  const [aiAnalysisUrl, setAiAnalysisUrl] = useState("https://router.classai.id/v1/chat/completions");
-  const [aiAnalysisModel, setAiAnalysisModel] = useState("deepseek-v4.1-flash-1017");
+  const [aiAnalysisUrl, setAiAnalysisUrl] = useState("https://openrouter.ai/api/v1/chat/completions");
+  const [aiAnalysisModel, setAiAnalysisModel] = useState("openai/gpt-4o-mini");
 
-  const [aiChatDefaultProvider, setAiChatDefaultProvider] = useState<"classai" | "sumopod">("classai");
+  const [aiChatDefaultProvider, setAiChatDefaultProvider] = useState<"openrouter" | "sumopod">("openrouter");
   const [aiChatDefaultModel, setAiChatDefaultModel] = useState("");
-  const [aiChatClassaiModels, setAiChatClassaiModels] = useState("deepseek-v4.1-flash-1017");
+  const [aiChatOpenrouterModels, setAiChatOpenrouterModels] = useState(
+    "openai/gpt-4o-mini,google/gemini-2.5-flash,anthropic/claude-3.5-sonnet,deepseek/deepseek-chat-v3-0324"
+  );
   const [aiChatSumopodModels, setAiChatSumopodModels] = useState("seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet");
 
   const [spreadsheetId, setSpreadsheetId] = useState("");
@@ -135,12 +137,15 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setSumopodUrl(config.ai_url || "https://ai.sumopod.com/v1/chat/completions");
 
       setAiAnalysisApiKey("");
-      setAiAnalysisUrl(config.ai_analysis_url || "https://router.classai.id/v1/chat/completions");
-      setAiAnalysisModel(config.ai_analysis_model || "deepseek-v4.1-flash-1017");
-      const rawDefProv = (config.ai_chat_default_provider || "classai").toLowerCase();
-      setAiChatDefaultProvider(rawDefProv === "sumopod" ? "sumopod" : "classai");
+      setAiAnalysisUrl(config.ai_analysis_url || "https://openrouter.ai/api/v1/chat/completions");
+      setAiAnalysisModel(config.ai_analysis_model || "openai/gpt-4o-mini");
+      const rawDefProv = (config.ai_chat_default_provider || "openrouter").toLowerCase();
+      setAiChatDefaultProvider(rawDefProv === "sumopod" ? "sumopod" : "openrouter");
       setAiChatDefaultModel(config.ai_chat_default_model || "");
-      setAiChatClassaiModels(config.ai_chat_classai_models || "deepseek-v4.1-flash-1017");
+      setAiChatOpenrouterModels(
+        config.ai_chat_openrouter_models ||
+          "openai/gpt-4o-mini,google/gemini-2.5-flash,anthropic/claude-3.5-sonnet,deepseek/deepseek-chat-v3-0324"
+      );
       setAiChatSumopodModels(
         config.ai_chat_sumopod_models || "seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet"
       );
@@ -170,7 +175,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         ai_analysis_model: aiAnalysisModel.trim(),
         ai_chat_default_provider: aiChatDefaultProvider,
         ai_chat_default_model: aiChatDefaultModel.trim(),
-        ai_chat_classai_models: aiChatClassaiModels.trim(),
+        ai_chat_openrouter_models: aiChatOpenrouterModels.trim(),
         ai_chat_sumopod_models: aiChatSumopodModels.trim(),
         spreadsheet_id: spreadsheetId.trim(),
         request_belanja_chat_id: requestBelanjaChatId.trim(),
@@ -863,13 +868,13 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
           </CardContent>
         </Card>
 
-        {/* 3. ClassAI / DeepSeek Router Settings */}
+        {/* 3. OpenRouter Settings */}
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
           <CardHeader className="p-4 md:p-5 pb-3">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Cpu className="w-5 h-5 text-emerald-600" />
-                ClassAI / DeepSeek Router Configuration
+                OpenRouter Configuration
               </CardTitle>
               <Badge
                 variant="outline"
@@ -883,20 +888,20 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               </Badge>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Digunakan untuk Analisis Keuangan Bulanan dan sebagai salah satu provider pilihan pada AI Chatbot.
+              Digunakan untuk Analisis Keuangan Bulanan, Pemetaan Rekening Masuk AI, dan sebagai provider pilihan pada AI Chatbot.
             </p>
           </CardHeader>
           <CardContent className="p-4 md:p-5 pt-0 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  ClassAI API Key
+                  OpenRouter API Key
                 </label>
                 <Input
                   type={showTokens ? "text" : "password"}
                   value={aiAnalysisApiKey}
                   onChange={(e) => setAiAnalysisApiKey(e.target.value)}
-                  placeholder={config.ai_analysis_key_masked || "sk-your-classai-api-key"}
+                  placeholder={config.ai_analysis_key_masked || "sk-or-v1-..."}
                   className="h-10 text-xs rounded-xl"
                 />
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
@@ -906,29 +911,47 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Model Default ClassAI
+                  Model Default OpenRouter
                 </label>
                 <Input
                   type="text"
                   value={aiAnalysisModel}
                   onChange={(e) => setAiAnalysisModel(e.target.value)}
-                  placeholder="deepseek-v4.1-flash-1017"
+                  placeholder="openai/gpt-4o-mini"
                   className="h-10 text-xs rounded-xl"
                 />
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
-                  Nama model aktif di router ClassAI
+                  Gunakan format ID model OpenRouter (misal: openai/gpt-4o-mini)
                 </span>
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  ClassAI Chat Completions Endpoint URL
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                    OpenRouter Chat Completions Endpoint URL
+                  </label>
+                  {aiAnalysisUrl.includes("classai") && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setAiAnalysisUrl("https://openrouter.ai/api/v1/chat/completions");
+                        if (aiAnalysisModel === "deepseek-v4.1-flash-1017") {
+                          setAiAnalysisModel("openai/gpt-4o-mini");
+                        }
+                      }}
+                      className="h-7 px-2.5 text-[11px] rounded-lg"
+                    >
+                      Gunakan URL OpenRouter
+                    </Button>
+                  )}
+                </div>
                 <Input
                   type="text"
                   value={aiAnalysisUrl}
                   onChange={(e) => setAiAnalysisUrl(e.target.value)}
-                  placeholder="https://router.classai.id/v1/chat/completions"
+                  placeholder="https://openrouter.ai/api/v1/chat/completions"
                   className="h-10 text-xs rounded-xl"
                 />
               </div>
@@ -956,11 +979,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                 <select
                   value={aiChatDefaultProvider}
                   onChange={(e) =>
-                    setAiChatDefaultProvider(e.target.value === "sumopod" ? "sumopod" : "classai")
+                    setAiChatDefaultProvider(e.target.value === "sumopod" ? "sumopod" : "openrouter")
                   }
                   className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="classai">ClassAI ({aiAnalysisModel || "deepseek"})</option>
+                  <option value="openrouter">OpenRouter ({aiAnalysisModel || "openai/gpt-4o-mini"})</option>
                   <option value="sumopod">Sumopod ({sumopodModel || "seed-2-0-mini"})</option>
                 </select>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
@@ -986,17 +1009,17 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                  Pilihan Model ClassAI di Chat
+                  Pilihan Model OpenRouter di Chat
                 </label>
                 <Input
                   type="text"
-                  value={aiChatClassaiModels}
-                  onChange={(e) => setAiChatClassaiModels(e.target.value)}
-                  placeholder="deepseek-v4.1-flash-1017"
+                  value={aiChatOpenrouterModels}
+                  onChange={(e) => setAiChatOpenrouterModels(e.target.value)}
+                  placeholder="openai/gpt-4o-mini,google/gemini-2.5-flash,anthropic/claude-3.5-sonnet"
                   className="h-10 text-xs rounded-xl"
                 />
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
-                  Pisahkan beberapa model dengan koma
+                  Pisahkan beberapa slug model OpenRouter dengan koma
                 </span>
               </div>
 

@@ -161,9 +161,14 @@ async def _aggregate_financial_data(
 
 async def _call_ai_engine(data: dict[str, Any]) -> dict[str, Any]:
     """Mengirim prompt ke AI endpoint dan memproses respons."""
-    api_key = settings.ai_analysis_api_key or settings.sumopod_api_key
-    url = settings.ai_analysis_url or settings.sumopod_url
-    model = settings.ai_analysis_model or settings.sumopod_model
+    if settings._is_api_key_configured(settings.ai_analysis_api_key):
+        api_key = settings.ai_analysis_api_key.strip()
+        url = (settings.ai_analysis_url or "https://openrouter.ai/api/v1/chat/completions").strip()
+        model = (settings.ai_analysis_model or "openai/gpt-4o-mini").strip()
+    else:
+        api_key = (settings.sumopod_api_key or "").strip()
+        url = (settings.sumopod_url or "https://ai.sumopod.com/v1/chat/completions").strip()
+        model = (settings.sumopod_model or "seed-2-0-mini").strip()
 
     prompt = _build_prompt(data)
 
@@ -185,10 +190,7 @@ async def _call_ai_engine(data: dict[str, Any]) -> dict[str, Any]:
         "messages": messages,
         "temperature": 0.2,
     }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = settings.build_ai_headers(api_key, url)
 
     try:
         async with httpx.AsyncClient(timeout=45.0) as client:

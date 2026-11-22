@@ -33,7 +33,7 @@ def preserve_ai_settings():
         "sumopod_model": settings.sumopod_model,
         "ai_chat_default_provider": settings.ai_chat_default_provider,
         "ai_chat_default_model": settings.ai_chat_default_model,
-        "ai_chat_classai_models": settings.ai_chat_classai_models,
+        "ai_chat_openrouter_models": settings.ai_chat_openrouter_models,
         "ai_chat_sumopod_models": settings.ai_chat_sumopod_models,
     }
     yield
@@ -140,7 +140,7 @@ async def test_ai_chat_rbac_owner_only(chat_client):
     assert r_ok.status_code == 200
     data = r_ok.json()
     assert data["ok"] is True
-    assert {p["id"] for p in data["providers"]} == {"classai", "sumopod"}
+    assert {p["id"] for p in data["providers"]} == {"openrouter", "sumopod"}
 
 
 @pytest.mark.anyio
@@ -150,12 +150,12 @@ async def test_config_multi_provider_and_secret_masking(chat_client, preserve_ai
     put_res = await chat_client.put(
         "/api/v1/config",
         json={
-            "ai_analysis_api_key": "sk-classai-secret-99887766",
-            "ai_analysis_url": "https://router.classai.id/v1/chat/completions",
-            "ai_analysis_model": "deepseek-v4.1-flash-1017",
-            "ai_chat_default_provider": "classai",
-            "ai_chat_default_model": "deepseek-v4.1-flash-1017",
-            "ai_chat_classai_models": "deepseek-v4.1-flash-1017,qwen-3-max",
+            "ai_analysis_api_key": "sk-or-v1-secret-99887766",
+            "ai_analysis_url": "https://openrouter.ai/api/v1/chat/completions",
+            "ai_analysis_model": "openai/gpt-4o-mini",
+            "ai_chat_default_provider": "openrouter",
+            "ai_chat_default_model": "openai/gpt-4o-mini",
+            "ai_chat_openrouter_models": "openai/gpt-4o-mini,google/gemini-2.5-flash",
             "ai_chat_sumopod_models": "seed-2-0-mini,gpt-4o",
         },
     )
@@ -165,20 +165,29 @@ async def test_config_multi_provider_and_secret_masking(chat_client, preserve_ai
     assert cfg_res.status_code == 200
     cfg = cfg_res.json()
     # Pastikan plaintext API key tidak pernah dikembalikan
-    assert "sk-classai-secret-99887766" not in json.dumps(cfg)
+    assert "sk-or-v1-secret-99887766" not in json.dumps(cfg)
     assert cfg["ai_analysis_api_key_configured"] is True
-    assert cfg["ai_analysis_key_masked"].startswith("sk-clas")
-    assert cfg["ai_chat_default_provider"] == "classai"
-    assert cfg["ai_chat_classai_models"] == "deepseek-v4.1-flash-1017,qwen-3-max"
+    assert cfg["ai_analysis_key_masked"].startswith("sk-or-v")
+    assert cfg["ai_chat_default_provider"] == "openrouter"
+    assert cfg["ai_chat_openrouter_models"] == "openai/gpt-4o-mini,google/gemini-2.5-flash"
     assert cfg["ai_chat_sumopod_models"] == "seed-2-0-mini,gpt-4o"
 
     # Cek /ai-chat/models ikut mencerminkan katalog terbaru
     models_res = await chat_client.get("/api/v1/ai-chat/models")
     assert models_res.status_code == 200
     catalog = models_res.json()
-    classai_p = next(p for p in catalog["providers"] if p["id"] == "classai")
-    assert classai_p["configured"] is True
-    assert "qwen-3-max" in classai_p["models"]
+    openrouter_p = next(p for p in catalog["providers"] if p["id"] == "openrouter")
+    assert openrouter_p["label"] == "OpenRouter"
+    assert openrouter_p["configured"] is True
+    assert "google/gemini-2.5-flash" in openrouter_p["models"]
+
+    # Uji normalisasi legacy 'classai' -> 'openrouter'
+    put_legacy = await chat_client.put(
+        "/api/v1/config",
+        json={"ai_chat_default_provider": "classai"},
+    )
+    assert put_legacy.status_code == 200
+    assert (await chat_client.get("/api/v1/config")).json()["ai_chat_default_provider"] == "openrouter"
 
 
 @pytest.mark.anyio
@@ -233,9 +242,9 @@ async def test_session_crud_and_cascade_delete(chat_client, db, preserve_ai_sett
 async def test_sse_stream_with_tool_calling_and_persistence(
     chat_client, db, monkeypatch, preserve_ai_settings
 ):
-    settings.ai_analysis_api_key = "sk-classai-live-test"
-    settings.ai_analysis_url = "https://router.classai.id/v1/chat/completions"
-    settings.ai_analysis_model = "deepseek-v4.1-flash-1017"
+    settings.ai_analysis_api_key = "sk-or-v1-live-test"
+    settings.ai_analysis_url = "https://openrouter.ai/api/v1/chat/completions"
+    settings.ai_analysis_model = "openai/gpt-4o-mini"
 
     # Seed satu transaksi pengeluaran agar tool mengembalikan data real
     db.add(
@@ -257,7 +266,7 @@ async def test_sse_stream_with_tool_calling_and_persistence(
     captured_requests: list[dict] = []
 
     def fake_stream_handler(method, url, json_payload, headers):
-        captured_requests.append({"url": url, "payload": json_payload})
+        captured_requests.append({"url": url, "payload": json_payload, "headers": headers})
         if len(captured_requests) == 1:
             lines = [
                 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"get_monthly_expense_summary","arguments":"{\\"year\\":2026,"}}]}}]}',
@@ -282,7 +291,7 @@ async def test_sse_stream_with_tool_calling_and_persistence(
     chat_client.cookies.set(SESSION_COOKIE_NAME, create_session_token(role="admin"))
     sess_res = await chat_client.post(
         "/api/v1/ai-chat/sessions",
-        json={"provider": "classai", "model_id": "deepseek-v4.1-flash-1017"},
+        json={"provider": "openrouter", "model_id": "openai/gpt-4o-mini"},
     )
     sess_id = sess_res.json()["session"]["id"]
 
@@ -290,8 +299,8 @@ async def test_sse_stream_with_tool_calling_and_persistence(
         f"/api/v1/ai-chat/sessions/{sess_id}/messages/stream",
         json={
             "content": "Berapa total pengeluaran November 2026?",
-            "provider": "classai",
-            "model_id": "deepseek-v4.1-flash-1017",
+            "provider": "openrouter",
+            "model_id": "openai/gpt-4o-mini",
         },
     )
     assert stream_res.status_code == 200
@@ -307,12 +316,15 @@ async def test_sse_stream_with_tool_calling_and_persistence(
     assert "500.000" in tool_end_payload["summary"]
 
     done_payload = events[-1][1]
-    assert done_payload["provider"] == "classai"
-    assert done_payload["model_used"] == "deepseek-v4.1-flash-1017"
+    assert done_payload["provider"] == "openrouter"
+    assert done_payload["model_used"] == "openai/gpt-4o-mini"
     assert len(done_payload["tool_calls"]) == 1
 
-    # Pastikan hasil tool ikut diteruskan ke round 2 LLM
+    # Pastikan OpenRouter URL dan header HTTP-Referer/X-Title dikirim serta hasil tool diteruskan ke round 2
     assert len(captured_requests) == 2
+    assert captured_requests[0]["url"] == "https://openrouter.ai/api/v1/chat/completions"
+    assert "HTTP-Referer" in captured_requests[0]["headers"]
+    assert captured_requests[0]["headers"].get("X-Title") == "CatatanPengeluaran Historycake"
     round2_messages = captured_requests[1]["payload"]["messages"]
     assert any(m.get("role") == "tool" and "500000.0" in m.get("content", "") for m in round2_messages)
 
@@ -324,7 +336,7 @@ async def test_sse_stream_with_tool_calling_and_persistence(
     assistant_msg = session_data["messages"][1]
     assert assistant_msg["role"] == "assistant"
     assert "Rp500.000" in assistant_msg["content"]
-    assert assistant_msg["model_used"] == "deepseek-v4.1-flash-1017"
+    assert assistant_msg["model_used"] == "openai/gpt-4o-mini"
     assert len(assistant_msg["tool_calls"]) == 1
 
 
@@ -373,12 +385,21 @@ async def test_sse_fallback_when_tools_unsupported_and_error_handling(
     assert [e[0] for e in events_fb] == ["tool_start", "tool_end", "delta", "done"]
     assert events_fb[0][1]["tool"] == "financial_snapshot"
 
-    # 2. Uji error terkendali saat memilih provider yang API key-nya belum diisi
+    # 2. Uji error terkendali saat memilih provider yang API key-nya belum diisi (termasuk legacy 'classai')
     res_missing_key = await chat_client.post(
         f"/api/v1/ai-chat/sessions/{sess_id}/messages/stream",
-        json={"content": "Tes tanpa key", "provider": "classai", "model_id": "deepseek-v4.1-flash-1017"},
+        json={"content": "Tes tanpa key", "provider": "openrouter", "model_id": "openai/gpt-4o-mini"},
     )
     assert res_missing_key.status_code == 200
     events_err = _parse_sse_text(res_missing_key.text)
     assert events_err[0][0] == "error"
-    assert "ClassAI" in events_err[0][1]["message"]
+    assert "OpenRouter" in events_err[0][1]["message"]
+
+    res_legacy_missing = await chat_client.post(
+        f"/api/v1/ai-chat/sessions/{sess_id}/messages/stream",
+        json={"content": "Tes legacy", "provider": "classai", "model_id": "openai/gpt-4o-mini"},
+    )
+    assert res_legacy_missing.status_code == 200
+    events_legacy = _parse_sse_text(res_legacy_missing.text)
+    assert events_legacy[0][0] == "error"
+    assert "OpenRouter" in events_legacy[0][1]["message"]

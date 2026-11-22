@@ -55,7 +55,7 @@ class AiChatMessageStreamRequest(BaseModel):
 
 @router.get("/models")
 async def api_get_ai_chat_models():
-    """Ambil katalog provider (ClassAI & Sumopod) dan opsi model yang tersedia untuk AI Chat."""
+    """Ambil katalog provider (OpenRouter & Sumopod) dan opsi model yang tersedia untuk AI Chat."""
     return settings.get_ai_chat_catalog()
 
 

@@ -64,7 +64,7 @@ ENV_MAP = {
     "ai_analysis_model": "AI_ANALYSIS_MODEL",
     "ai_chat_default_provider": "AI_CHAT_DEFAULT_PROVIDER",
     "ai_chat_default_model": "AI_CHAT_DEFAULT_MODEL",
-    "ai_chat_classai_models": "AI_CHAT_CLASSAI_MODELS",
+    "ai_chat_openrouter_models": "AI_CHAT_OPENROUTER_MODELS",
     "ai_chat_sumopod_models": "AI_CHAT_SUMOPOD_MODELS",
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
@@ -204,9 +204,9 @@ async def get_system_config(
         "ai_analysis_api_key_configured": settings._is_api_key_configured(analysis_key),
         "ai_analysis_url": settings.ai_analysis_url,
         "ai_analysis_model": settings.ai_analysis_model,
-        "ai_chat_default_provider": settings.ai_chat_default_provider,
+        "ai_chat_default_provider": settings.normalize_ai_provider(settings.ai_chat_default_provider),
         "ai_chat_default_model": settings.ai_chat_default_model,
-        "ai_chat_classai_models": settings.ai_chat_classai_models,
+        "ai_chat_openrouter_models": settings.ai_chat_openrouter_models,
         "ai_chat_sumopod_models": settings.ai_chat_sumopod_models,
         "system_prompt": get_system_prompt(),
         # Sheets
@@ -233,14 +233,17 @@ async def update_system_config(
     if not updates:
         return {"ok": True, "message": "Tidak ada perubahan"}
 
+    if "ai_chat_classai_models" in updates and "ai_chat_openrouter_models" not in updates:
+        updates["ai_chat_openrouter_models"] = updates.pop("ai_chat_classai_models")
+
     if "ai_chat_default_provider" in updates and updates["ai_chat_default_provider"] is not None:
-        normalized_provider = str(updates["ai_chat_default_provider"]).strip().lower()
-        if normalized_provider not in ("classai", "sumopod"):
+        raw_provider = str(updates["ai_chat_default_provider"]).strip().lower()
+        if raw_provider not in ("openrouter", "classai", "sumopod"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Provider default AI Chat harus 'classai' atau 'sumopod'.",
+                detail="Provider default AI Chat harus 'openrouter' atau 'sumopod'.",
             )
-        updates["ai_chat_default_provider"] = normalized_provider
+        updates["ai_chat_default_provider"] = settings.normalize_ai_provider(raw_provider)
 
     env_updates: dict[str, str] = {}
     db_updates: dict[str, Any] = {}

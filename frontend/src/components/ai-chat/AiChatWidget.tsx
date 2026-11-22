@@ -172,7 +172,7 @@ export function AiChatWidget({
                         >
                           <p className="truncate font-medium text-foreground">{s.title}</p>
                           <p className="truncate text-[11px] text-muted-foreground">
-                            {s.provider === "sumopod" ? "Sumopod" : "ClassAI"} / {s.model_id || "default"} ({s.message_count} pesan)
+                            {s.provider === "sumopod" ? "Sumopod" : "OpenRouter"} / {s.model_id || "default"} ({s.message_count} pesan)
                           </p>
                         </button>
 

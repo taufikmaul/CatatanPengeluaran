@@ -685,7 +685,7 @@ export interface SystemConfig {
   ai_analysis_model?: string;
   ai_chat_default_provider?: string;
   ai_chat_default_model?: string;
-  ai_chat_classai_models?: string;
+  ai_chat_openrouter_models?: string;
   ai_chat_sumopod_models?: string;
   system_prompt: string;
   spreadsheet_id: string;
@@ -2032,7 +2032,7 @@ export interface DailyCashflowResponse {
   daily_rows: DailyCashflowRow[];
 }
 
-export type AiChatProviderId = "classai" | "sumopod";
+export type AiChatProviderId = "openrouter" | "sumopod";
 
 export interface AiChatProviderOption {
   id: AiChatProviderId;

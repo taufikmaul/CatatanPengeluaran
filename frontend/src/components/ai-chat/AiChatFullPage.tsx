@@ -214,7 +214,7 @@ export function AiChatFullPage({
                   >
                     <p className="truncate font-semibold text-foreground">{s.title}</p>
                     <p className="truncate text-[11px] text-muted-foreground">
-                      {s.provider === "sumopod" ? "Sumopod" : "ClassAI"} / {s.model_id || "default"}
+                      {s.provider === "sumopod" ? "Sumopod" : "OpenRouter"} / {s.model_id || "default"}
                     </p>
                   </button>
 

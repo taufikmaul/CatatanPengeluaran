@@ -5,7 +5,7 @@ Semua env vars dibaca dari .env file
 from functools import lru_cache
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,15 +35,27 @@ class Settings(BaseSettings):
     sumopod_url: str = Field("https://ai.sumopod.com/v1/chat/completions", validation_alias="SUMOPOD_URL")
     sumopod_model: str = Field("seed-2-0-mini", validation_alias="SUMOPOD_MODEL")
 
-    # AI - Financial Analysis (ClassAI / DeepSeek / Custom Router)
-    ai_analysis_api_key: str = Field("", validation_alias="AI_ANALYSIS_API_KEY")
-    ai_analysis_url: str = Field("https://router.classai.id/v1/chat/completions", validation_alias="AI_ANALYSIS_URL")
-    ai_analysis_model: str = Field("deepseek-v4.1-flash-1017", validation_alias="AI_ANALYSIS_MODEL")
+    # AI - Financial Analysis (OpenRouter / Custom OpenAI-Compatible Router)
+    ai_analysis_api_key: str = Field(
+        "",
+        validation_alias=AliasChoices("OPENROUTER_API_KEY", "AI_ANALYSIS_API_KEY"),
+    )
+    ai_analysis_url: str = Field(
+        "https://openrouter.ai/api/v1/chat/completions",
+        validation_alias=AliasChoices("OPENROUTER_URL", "AI_ANALYSIS_URL"),
+    )
+    ai_analysis_model: str = Field(
+        "openai/gpt-4o-mini",
+        validation_alias=AliasChoices("OPENROUTER_MODEL", "AI_ANALYSIS_MODEL"),
+    )
 
-    # AI - Financial Chatbot (Multi-provider: ClassAI & Sumopod)
-    ai_chat_default_provider: str = Field("classai", validation_alias="AI_CHAT_DEFAULT_PROVIDER")
+    # AI - Financial Chatbot (Multi-provider: OpenRouter & Sumopod)
+    ai_chat_default_provider: str = Field("openrouter", validation_alias="AI_CHAT_DEFAULT_PROVIDER")
     ai_chat_default_model: str = Field("", validation_alias="AI_CHAT_DEFAULT_MODEL")
-    ai_chat_classai_models: str = Field("deepseek-v4.1-flash-1017", validation_alias="AI_CHAT_CLASSAI_MODELS")
+    ai_chat_openrouter_models: str = Field(
+        "openai/gpt-4o-mini,google/gemini-2.5-flash,anthropic/claude-3.5-sonnet,deepseek/deepseek-chat-v3-0324",
+        validation_alias=AliasChoices("AI_CHAT_OPENROUTER_MODELS", "AI_CHAT_CLASSAI_MODELS"),
+    )
     ai_chat_sumopod_models: str = Field(
         "seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet",
         validation_alias="AI_CHAT_SUMOPOD_MODELS",
@@ -205,39 +217,59 @@ class Settings(BaseSettings):
         return bool(
             cleaned
             and not cleaned.startswith("sk-your-")
+            and not cleaned.startswith("sk-or-your-")
             and cleaned != "sk-test-sumopod-key"
         )
 
+    @staticmethod
+    def normalize_ai_provider(provider: str | None, fallback: str = "openrouter") -> str:
+        """Normalisasi ID provider (memetakan legacy 'classai' ke 'openrouter')."""
+        cleaned = (provider or "").strip().lower()
+        if cleaned in ("openrouter", "classai"):
+            return "openrouter"
+        if cleaned == "sumopod":
+            return "sumopod"
+        return fallback
+
+    def build_ai_headers(self, api_key: str, url: str = "") -> dict[str, str]:
+        """Susun HTTP headers untuk OpenAI-compatible AI router termasuk header OpenRouter."""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        if "openrouter.ai" in (url or "").lower():
+            headers["HTTP-Referer"] = self.public_dashboard_url
+            headers["X-Title"] = "CatatanPengeluaran Historycake"
+        return headers
+
     def get_ai_chat_catalog(self) -> dict[str, Any]:
-        """Bangun katalog provider (ClassAI & Sumopod) dan opsi model untuk AI Chat."""
-        classai_models = self._parse_model_list(
-            self.ai_chat_classai_models, self.ai_analysis_model
+        """Bangun katalog provider (OpenRouter & Sumopod) dan opsi model untuk AI Chat."""
+        openrouter_models = self._parse_model_list(
+            self.ai_chat_openrouter_models, self.ai_analysis_model
         )
         sumopod_models = self._parse_model_list(
             self.ai_chat_sumopod_models, self.sumopod_model
         )
-        classai_configured = self._is_api_key_configured(self.ai_analysis_api_key)
+        openrouter_configured = self._is_api_key_configured(self.ai_analysis_api_key)
         sumopod_configured = self._is_api_key_configured(self.sumopod_api_key)
 
-        default_provider = (self.ai_chat_default_provider or "classai").strip().lower()
-        if default_provider not in ("classai", "sumopod"):
-            default_provider = "classai"
+        default_provider = self.normalize_ai_provider(self.ai_chat_default_provider, fallback="openrouter")
 
         # Jika provider default belum punya key tapi provider lain punya, pakai yang siap dipakai
         effective_provider = default_provider
-        if default_provider == "classai" and not classai_configured and sumopod_configured:
+        if default_provider == "openrouter" and not openrouter_configured and sumopod_configured:
             effective_provider = "sumopod"
-        elif default_provider == "sumopod" and not sumopod_configured and classai_configured:
-            effective_provider = "classai"
+        elif default_provider == "sumopod" and not sumopod_configured and openrouter_configured:
+            effective_provider = "openrouter"
 
         providers = [
             {
-                "id": "classai",
-                "label": "ClassAI",
-                "configured": classai_configured,
+                "id": "openrouter",
+                "label": "OpenRouter",
+                "configured": openrouter_configured,
                 "url": self.ai_analysis_url,
-                "default_model": self.ai_analysis_model or (classai_models[0] if classai_models else ""),
-                "models": classai_models,
+                "default_model": self.ai_analysis_model or (openrouter_models[0] if openrouter_models else ""),
+                "models": openrouter_models,
             },
             {
                 "id": "sumopod",
