@@ -7,7 +7,7 @@ import re
 from typing import Any
 from uuid import uuid4
 from difflib import SequenceMatcher
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.master_item import MasterItem
 from app.models.expense import Expense
@@ -1016,60 +1016,177 @@ async def import_master_items_from_history(db: AsyncSession) -> dict:
     }
 
 
+def resolve_effective_unit_price(
+    unit_price: Any,
+    total_price: Any = None,
+    qty: Any = None,
+) -> float:
+    """
+    Hitung harga satuan efektif dari sebuah transaksi pengeluaran.
+    Prioritas utama: unit_price jika > 0; jika 0 (mis. data lama/impor),
+    turunkan dari total_price / qty agar harga terbaru tetap terbaca akurat.
+    """
+    up = float(unit_price or 0)
+    if up > 0:
+        return round(up, 2)
+    tp = float(total_price or 0)
+    if tp > 0:
+        q = float(qty or 0)
+        if q > 0:
+            return round(tp / q, 2)
+        return round(tp, 2)
+    return 0.0
+
+
+def _is_excluded_suggestion_expense(category: str | None, item_name: str | None) -> bool:
+    cat_l = (category or "").strip().lower()
+    name_l = (item_name or "").strip().lower()
+    return (
+        cat_l in ("ongkir", "tukar cash")
+        or name_l.startswith("ongkir")
+        or "tukar cash" in name_l
+        or "tarik tunai" in name_l
+    )
+
+
+async def get_master_items_latest_stats(
+    db: AsyncSession,
+    master_items: list[MasterItem] | None = None,
+) -> dict[int, dict[str, Any]]:
+    """
+    Hitung statistik harga & transaksi terbaru dari SELURUH tabel expenses
+    untuk setiap MasterItem (diurutkan expense_date DESC, id DESC):
+    - `last_unit_price`: harga satuan dari transaksi paling baru
+    - `last_supplier`: supplier dari transaksi paling baru
+    - `last_date`: tanggal transaksi paling baru (ISO string)
+    - `tx_count`: jumlah seluruh transaksi yang terhubung ke item ini
+    - `prev_unit_price` / `prev_date`: harga & tanggal transaksi kedua terbaru
+    """
+    if master_items is None:
+        master_items = await list_master_items(db)
+    if not master_items:
+        return {}
+
+    target_ids = {m.id for m in master_items}
+    name_to_mid: dict[str, int] = {}
+    for m in master_items:
+        clean_nm = (m.item_name or "").strip().lower()
+        if clean_nm and clean_nm not in name_to_mid:
+            name_to_mid[clean_nm] = m.id
+
+    stmt = select(
+        Expense.id,
+        Expense.master_item_id,
+        Expense.item_name,
+        Expense.unit_price,
+        Expense.total_price,
+        Expense.qty,
+        Expense.supplier,
+        Expense.expense_date,
+        Expense.category,
+    )
+    if len(master_items) <= 20:
+        conds = [Expense.master_item_id.in_(target_ids)]
+        if name_to_mid:
+            conds.append(
+                and_(
+                    Expense.master_item_id.is_(None),
+                    func.lower(func.trim(Expense.item_name)).in_(list(name_to_mid.keys())),
+                )
+            )
+        stmt = stmt.where(or_(*conds))
+
+    stmt = stmt.order_by(Expense.expense_date.desc(), Expense.id.desc())
+    rows = (await db.execute(stmt)).all()
+
+    stats: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        mid: int | None = None
+        if row.master_item_id is not None:
+            if row.master_item_id in target_ids:
+                mid = int(row.master_item_id)
+        else:
+            if _is_excluded_suggestion_expense(row.category, row.item_name):
+                continue
+            name_key = (row.item_name or "").strip().lower()
+            mid = name_to_mid.get(name_key)
+
+        if mid is None:
+            continue
+
+        eff_price = resolve_effective_unit_price(row.unit_price, row.total_price, row.qty)
+        sup_clean = (row.supplier or "").strip()
+        dt_str = row.expense_date.isoformat() if row.expense_date else None
+
+        entry = stats.get(mid)
+        if entry is None:
+            entry = {
+                "last_unit_price": 0.0,
+                "latest_price_date": None,
+                "prev_unit_price": None,
+                "prev_date": None,
+                "last_supplier": "",
+                "last_date": dt_str,
+                "tx_count": 0,
+            }
+            stats[mid] = entry
+
+        entry["tx_count"] += 1
+        if entry["last_date"] is None and dt_str:
+            entry["last_date"] = dt_str
+        if not entry["last_supplier"] and sup_clean and sup_clean != "-":
+            entry["last_supplier"] = sup_clean
+
+        if eff_price > 0:
+            if entry["last_unit_price"] <= 0:
+                entry["last_unit_price"] = eff_price
+                entry["latest_price_date"] = dt_str
+            elif entry["prev_unit_price"] is None:
+                entry["prev_unit_price"] = eff_price
+                entry["prev_date"] = dt_str
+
+    return stats
+
+
 async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     """
     Kembalikan daftar saran autocomplete untuk form tambah/edit pengeluaran:
     - `items`: gabungan MasterItem + item unik dari histori Expense beserta harga terakhir,
-      kategori, dan supplier terakhir.
+      kategori, dan supplier terakhir (diambil dari transaksi paling baru).
     - `suppliers`: daftar nama toko/supplier unik yang paling sering digunakan.
     """
     master_items = await list_master_items(db)
+    master_stats = await get_master_items_latest_stats(db, master_items)
 
-    # Ambil transaksi terbaru untuk mengetahui harga terakhir & supplier terakhir tiap item
+    # Query ringan kolom skalar atas seluruh transaksi (tanpa limit 600) agar harga terbaru selalu akurat
     result = await db.execute(
-        select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc()).limit(600)
+        select(
+            Expense.master_item_id,
+            Expense.item_name,
+            Expense.category,
+            Expense.unit_price,
+            Expense.total_price,
+            Expense.qty,
+            Expense.supplier,
+            Expense.expense_date,
+        ).order_by(Expense.expense_date.desc(), Expense.id.desc())
     )
-    recent_expenses = result.scalars().all()
+    all_expenses = result.all()
 
-    history_by_master_id: dict[int, dict] = {}
     history_by_name: dict[str, dict] = {}
     supplier_counts: dict[str, dict] = {}
 
-    for e in recent_expenses:
+    for e in all_expenses:
         name = (e.item_name or "").strip()
         sup = (e.supplier or "").strip()
-        price = float(e.unit_price or 0)
-        dt_str = str(e.expense_date)
+        price = resolve_effective_unit_price(e.unit_price, e.total_price, e.qty)
+        dt_str = str(e.expense_date) if e.expense_date else None
 
         # Abaikan transaksi Ongkir & Tukar Cash agar tidak mengotori saran belanja barang umum
-        cat_l = (e.category or "").strip().lower()
-        name_l = name.lower()
-        if (
-            cat_l in ("ongkir", "tukar cash")
-            or name_l.startswith("ongkir")
-            or "tukar cash" in name_l
-            or "tarik tunai" in name_l
-        ):
+        if _is_excluded_suggestion_expense(e.category, name):
             continue
 
-        # 1. Catat histori berdasarkan master_item_id (produk id)
-        if e.master_item_id:
-            mid = e.master_item_id
-            if mid not in history_by_master_id:
-                history_by_master_id[mid] = {
-                    "item_name": name,
-                    "category": e.category or "Bahan Kue",
-                    "last_unit_price": price,
-                    "last_supplier": sup or "-",
-                    "last_date": dt_str,
-                    "tx_count": 1,
-                }
-            else:
-                history_by_master_id[mid]["tx_count"] += 1
-                if history_by_master_id[mid]["last_unit_price"] <= 0 and price > 0:
-                    history_by_master_id[mid]["last_unit_price"] = price
-
-        # 2. Catat histori berdasarkan nama item
+        # Catat histori berdasarkan nama item untuk item non-master
         if name and name != "-":
             key = name.lower()
             if key not in history_by_name:
@@ -1085,6 +1202,12 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
                 history_by_name[key]["tx_count"] += 1
                 if history_by_name[key]["last_unit_price"] <= 0 and price > 0:
                     history_by_name[key]["last_unit_price"] = price
+                if (
+                    history_by_name[key]["last_supplier"] in ("", "-")
+                    and sup
+                    and sup != "-"
+                ):
+                    history_by_name[key]["last_supplier"] = sup
 
         if sup and sup != "-":
             skey = sup.lower()
@@ -1095,10 +1218,15 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
 
     suggestions_map: dict[str, dict] = {}
 
-    # 1. Masukkan semua MasterItem terlebih dahulu (prioritas utama, dicocokkan via ID lalu nama)
+    # 1. Masukkan semua MasterItem terlebih dahulu menggunakan statistik akurat dari transaksi terbaru
     for m in master_items:
         key = m.item_name.strip().lower()
-        hist = history_by_master_id.get(m.id) or history_by_name.get(key)
+        hist = master_stats.get(m.id)
+        last_sup = (
+            hist["last_supplier"]
+            if hist and hist.get("last_supplier") and hist["last_supplier"] != "-"
+            else (m.default_supplier or "-")
+        )
         suggestions_map[key] = {
             "id": m.id,
             "item_name": m.item_name,
@@ -1108,14 +1236,10 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
             "tipe_satuan": m.tipe_satuan or "keduanya",
             "isi_paket": m.isi_paket or "",
             "satuan_ecer": m.satuan_ecer or "Pcs",
-            "last_unit_price": hist["last_unit_price"] if hist else 0.0,
-            "last_supplier": (
-                hist["last_supplier"]
-                if hist and hist["last_supplier"] != "-"
-                else (m.default_supplier or "-")
-            ),
+            "last_unit_price": float(hist["last_unit_price"]) if hist else 0.0,
+            "last_supplier": last_sup,
             "last_date": hist["last_date"] if hist else None,
-            "tx_count": hist["tx_count"] if hist else 0,
+            "tx_count": int(hist["tx_count"]) if hist else 0,
             "is_master": True,
         }
 
@@ -1138,11 +1262,16 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
                 "is_master": False,
             }
 
-    # Urutkan: MasterItem dulu, lalu berdasarkan frekuensi pembelian & abjad
-    sorted_items = sorted(
-        suggestions_map.values(),
-        key=lambda x: (not x["is_master"], -x["tx_count"], x["item_name"].lower()),
+    # Urutkan: MasterItem dulu (tidak terpotong), lalu item histori non-master
+    master_sorted = sorted(
+        [v for v in suggestions_map.values() if v["is_master"]],
+        key=lambda x: (-x["tx_count"], x["item_name"].lower()),
     )
+    non_master_sorted = sorted(
+        [v for v in suggestions_map.values() if not v["is_master"]],
+        key=lambda x: (-x["tx_count"], x["item_name"].lower()),
+    )
+    sorted_items = master_sorted + non_master_sorted[:250]
 
     # Ambil master supplier aktif dari tabel suppliers agar toko baru yang didaftarkan langsung muncul
     from app.models.supplier import Supplier
@@ -1169,7 +1298,7 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     valid_units = await get_valid_units(db)
 
     return {
-        "items": sorted_items[:250],
+        "items": sorted_items,
         "suppliers": combined_suppliers[:150],
         "units": valid_units,
     }
@@ -1435,40 +1564,12 @@ async def audit_duplicate_master_items(
     if len(master_items) < 2:
         return {"ok": True, "total_duplicates": 0, "pairs": []}
 
-    # Ambil statistik transaksi belanja sekaligus dengan agregasi SQL cepat
-    stats_query = (
-        select(
-            Expense.master_item_id,
-            func.lower(Expense.item_name).label("name_lower"),
-            func.count(Expense.id).label("tx_count"),
-            func.max(Expense.unit_price).label("last_unit_price"),
-            func.max(Expense.supplier).label("last_supplier"),
-        )
-        .where(Expense.category != "Tukar Cash")
-        .group_by(Expense.master_item_id, func.lower(Expense.item_name))
-    )
-    stats_res = await db.execute(stats_query)
-    hist_by_id: dict[int, dict] = {}
-    hist_by_name: dict[str, dict] = {}
-
-    for row in stats_res.all():
-        data = {
-            "tx_count": int(row.tx_count or 0),
-            "last_unit_price": float(row.last_unit_price or 0.0),
-            "last_supplier": row.last_supplier or "-",
-        }
-        if row.master_item_id:
-            if row.master_item_id not in hist_by_id:
-                hist_by_id[row.master_item_id] = data
-            else:
-                hist_by_id[row.master_item_id]["tx_count"] += data["tx_count"]
-                if data["last_unit_price"] > 0:
-                    hist_by_id[row.master_item_id]["last_unit_price"] = data["last_unit_price"]
-        if row.name_lower:
-            hist_by_name[row.name_lower] = data
+    # Ambil statistik harga & transaksi terbaru yang akurat (ORDER BY expense_date DESC, id DESC)
+    latest_stats = await get_master_items_latest_stats(db, master_items)
 
     def _get_item_stats(m: MasterItem) -> dict:
-        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
+        h = latest_stats.get(m.id, {})
+        last_sup = h.get("last_supplier") or m.default_supplier or "-"
         return {
             "id": m.id,
             "item_name": m.item_name,
@@ -1480,7 +1581,7 @@ async def audit_duplicate_master_items(
             "isi_paket": m.isi_paket or "",
             "satuan_ecer": m.satuan_ecer or "Pcs",
             "last_unit_price": float(h.get("last_unit_price") or 0.0),
-            "last_supplier": h.get("last_supplier") or m.default_supplier or "-",
+            "last_supplier": last_sup,
             "tx_count": int(h.get("tx_count") or 0),
             "created_at": m.created_at,
         }
@@ -1709,18 +1810,12 @@ async def merge_master_items(
 
     await db.flush()
 
-    # Ambil ulang stats target secara langsung tanpa scan seluruh katalog
-    target_stats_res = await db.execute(
-        select(
-            func.count(Expense.id).label("tx_count"),
-            func.max(Expense.unit_price).label("last_unit_price"),
-            func.max(Expense.supplier).label("last_supplier"),
-        ).where(Expense.master_item_id == target.id)
-    )
-    t_stats = target_stats_res.one_or_none()
-    tx_count = int(t_stats.tx_count or 0) if t_stats else 0
-    last_unit_price = float(t_stats.last_unit_price or 0.0) if t_stats else 0.0
-    last_supplier = (t_stats.last_supplier if t_stats and t_stats.last_supplier else None) or target.default_supplier or "-"
+    # Ambil ulang stats target dari transaksi paling baru secara akurat
+    t_stats_map = await get_master_items_latest_stats(db, [target])
+    t_stats = t_stats_map.get(target.id, {})
+    tx_count = int(t_stats.get("tx_count") or 0)
+    last_unit_price = float(t_stats.get("last_unit_price") or 0.0)
+    last_supplier = t_stats.get("last_supplier") or target.default_supplier or "-"
 
     # Catat audit log penggabungan item baku
     log = ExpenseLog(

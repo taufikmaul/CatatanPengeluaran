@@ -68,18 +68,23 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
       return res.data;
     },
     enabled: !!(itemName || itemId),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
-  // Urutkan data secara kronologis (dari tanggal terlama ke terbaru) untuk chart inflasi harga
+  // Urutkan data secara kronologis (dari tanggal terlama ke terbaru, tie-break ID) untuk chart inflasi harga
   const chartData = useMemo(() => {
     if (!data?.history || data.history.length === 0) return [];
 
     const validHistory = data.history.filter((h) => (h.unit_price || 0) > 0);
     if (validHistory.length === 0) return [];
 
-    const sorted = [...validHistory].sort(
-      (a, b) => new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime()
-    );
+    const sorted = [...validHistory].sort((a, b) => {
+      const dateDiff =
+        new Date(a.expense_date).getTime() - new Date(b.expense_date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return a.id - b.id;
+    });
 
     const baselinePrice = sorted[0].unit_price;
 

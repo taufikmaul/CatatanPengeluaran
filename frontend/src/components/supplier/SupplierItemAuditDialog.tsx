@@ -109,6 +109,9 @@ export const SupplierItemAuditDialog: React.FC<SupplierItemAuditDialogProps> = (
     queryClient.invalidateQueries({ queryKey: ["master-items"] });
     queryClient.invalidateQueries({ queryKey: ["master-items-audit"] });
     queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+    queryClient.invalidateQueries({ queryKey: ["price-history"] });
+    queryClient.invalidateQueries({ queryKey: ["menus"] });
+    queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     if (onSuccess) onSuccess();
   };

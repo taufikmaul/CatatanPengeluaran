@@ -975,7 +975,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                     <Input
                       placeholder={catProfile.itemPlaceholder}
                       autoComplete="off"
-                      {...register("item_name", { required: "Kolom ini wajib diisi" })}
+                      {...register("item_name", {
+                        required: "Kolom ini wajib diisi",
+                        onChange: () => {
+                          setValue("master_item_id", null);
+                          setSelectedSuggestionHint(null);
+                        },
+                      })}
                       onFocus={() => {
                         if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
                       }}

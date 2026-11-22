@@ -66,6 +66,9 @@ export const DataHygieneModal: React.FC<DataHygieneModalProps> = ({
       queryClient.invalidateQueries({ queryKey: ["monthly-report"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
       refetch();
     },
     onError: (err: any) => {

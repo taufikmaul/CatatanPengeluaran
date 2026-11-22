@@ -265,6 +265,12 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       queryClient.invalidateQueries({ queryKey: ["supplier-top-items", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menambah catatan belanja.");
@@ -280,6 +286,12 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       queryClient.invalidateQueries({ queryKey: ["supplier-top-items", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items", supplierId] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Gagal menghapus catatan.");

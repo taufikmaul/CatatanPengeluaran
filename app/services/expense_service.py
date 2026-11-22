@@ -1102,13 +1102,13 @@ async def get_price_inflation_summary(
 
 async def search_last_price(db: AsyncSession, keyword: str) -> Expense | None:
     """
-    Cari harga terakhir suatu barang berdasarkan keyword.
+    Cari harga terakhir suatu barang berdasarkan keyword dari transaksi paling baru.
     Port dari cekHargaTerakhir di GAS.
     """
     result = await db.execute(
         select(Expense)
         .where(Expense.item_name.ilike(f"%{keyword}%"))
-        .order_by(Expense.id.desc())
+        .order_by(Expense.expense_date.desc(), Expense.id.desc())
         .limit(1)
     )
     return result.scalar_one_or_none()
@@ -1125,6 +1125,7 @@ async def get_item_price_history(
     Mendukung pencarian via ID Item Baku (produk ID) maupun nama barang/alias.
     """
     from app.models.master_item import MasterItem
+    from app.services.master_item_service import resolve_effective_unit_price
 
     matched_master = None
     if master_item_id:
@@ -1135,7 +1136,7 @@ async def get_item_price_history(
     if not matched_master and clean_q:
         # Cari MasterItem berdasarkan nama baku atau alias
         m_res = await db.execute(
-            select(MasterItem).where(func.lower(MasterItem.item_name) == clean_q.lower())
+            select(MasterItem).where(func.lower(func.trim(MasterItem.item_name)) == clean_q.lower())
         )
         matched_master = m_res.scalar_one_or_none()
         if not matched_master:
@@ -1164,14 +1165,30 @@ async def get_item_price_history(
             "history": [],
         }
 
-    # Cari data transaksi: prioritaskan relasi master_item_id dan nama item
+    # Cari data transaksi:
+    # - Jika item terdaftar sebagai MasterItem (target_master_id ada), ambil transaksi yang
+    #   terhubung langsung via master_item_id ATAU transaksi yang belum ter-link (master_item_id IS NULL)
+    #   dengan nama persis sama — agar tidak menarik transaksi milik MasterItem lain.
     conditions = []
     if target_master_id:
         conditions.append(Expense.master_item_id == target_master_id)
-    if display_name:
-        conditions.append(func.lower(Expense.item_name) == display_name.lower())
-    if clean_q and clean_q.lower() != display_name.lower():
-        conditions.append(func.lower(Expense.item_name) == clean_q.lower())
+        name_candidates = set()
+        if display_name:
+            name_candidates.add(display_name.strip().lower())
+        if clean_q:
+            name_candidates.add(clean_q.lower())
+        for nm in name_candidates:
+            conditions.append(
+                and_(
+                    Expense.master_item_id.is_(None),
+                    func.lower(func.trim(Expense.item_name)) == nm,
+                )
+            )
+    else:
+        if display_name:
+            conditions.append(func.lower(func.trim(Expense.item_name)) == display_name.strip().lower())
+        if clean_q and clean_q.lower() != (display_name or "").strip().lower():
+            conditions.append(func.lower(func.trim(Expense.item_name)) == clean_q.lower())
 
     exact_res = await db.execute(
         select(Expense)
@@ -1180,8 +1197,8 @@ async def get_item_price_history(
     )
     rows = list(exact_res.scalars().all())
 
-    # Jika belum ada hasil dan terdapat clean_q, coba substring (ilike)
-    if not rows and clean_q:
+    # Fallback substring (ilike) HANYA untuk pencarian teks bebas non-MasterItem
+    if not rows and not target_master_id and clean_q:
         like_res = await db.execute(
             select(Expense)
             .where(Expense.item_name.ilike(f"%{clean_q}%"))
@@ -1203,21 +1220,24 @@ async def get_item_price_history(
             "history": [],
         }
 
-    priced_rows = [r for r in rows if float(r.unit_price or 0) > 0]
-    prices = [float(r.unit_price) for r in priced_rows]
+    priced_rows = [
+        (r, resolve_effective_unit_price(r.unit_price, r.total_price, r.qty))
+        for r in rows
+    ]
+    priced_rows = [(r, up) for r, up in priced_rows if up > 0]
+    prices = [up for _, up in priced_rows]
 
     min_price = min(prices) if prices else 0.0
     max_price = max(prices) if prices else 0.0
     avg_price = round(sum(prices) / len(prices), 2) if prices else 0.0
-    latest_price = float(priced_rows[0].unit_price) if priced_rows else 0.0
+    latest_price = priced_rows[0][1] if priced_rows else 0.0
 
     # Perbandingan harga per toko/supplier
     sup_map: dict[str, dict] = {}
     cheapest_supplier = "-"
     cheapest_val = None
 
-    for r in priced_rows:
-        up = float(r.unit_price or 0)
+    for r, up in priced_rows:
         sup_raw = (r.supplier or "-").strip() or "-"
         if cheapest_val is None or up < cheapest_val:
             cheapest_val = up
@@ -1254,7 +1274,7 @@ async def get_item_price_history(
             "item_name": r.item_name,
             "qty": float(r.qty or 1),
             "unit": getattr(r, "unit", "Pcs") or "Pcs",
-            "unit_price": float(r.unit_price or 0),
+            "unit_price": resolve_effective_unit_price(r.unit_price, r.total_price, r.qty),
             "total_price": float(r.total_price or 0),
             "category": r.category or "Operasional",
             "notes": r.notes or "-",
@@ -1469,9 +1489,10 @@ async def update_expense(
     if not expense:
         return None
 
-    # Catat status dan pembayaran awal sebelum updates diaplikasikan
+    # Catat status, pembayaran, dan master_item_id awal sebelum updates diaplikasikan
     old_pay_status = expense.pay_status
     old_paid_amount = Decimal(str(expense.paid_amount or 0))
+    old_master_item_id = expense.master_item_id
     was_lunas = is_paid_status(old_pay_status)
     was_dp = is_dp_status(old_pay_status)
 
@@ -1499,6 +1520,28 @@ async def update_expense(
                     "new": float(val) if isinstance(val, Decimal) else str(val),
                 }
             setattr(expense, field, val)
+
+    # Sinkronisasi unit_price <-> total_price saat salah satunya diedit terpisah
+    qty_dec = Decimal(str(expense.qty or 0))
+    ship_dec = Decimal(str(expense.shipping_fee or 0))
+    tax_dec = Decimal(str(expense.tax or 0))
+    other_dec = Decimal(str(expense.other_fee or 0))
+    disc_dec = Decimal(str(expense.discount or 0))
+    if "total_price" in updates and "unit_price" not in updates and qty_dec > 0:
+        base_amount = Decimal(str(expense.total_price or 0)) - ship_dec - tax_dec - other_dec + disc_dec
+        if base_amount > 0:
+            new_up = (base_amount / qty_dec).quantize(Decimal("0.01"))
+            old_up = Decimal(str(expense.unit_price or 0))
+            if new_up != old_up:
+                changes["unit_price"] = {"old": float(old_up), "new": float(new_up)}
+                expense.unit_price = new_up
+    elif ("unit_price" in updates or "qty" in updates) and "total_price" not in updates and qty_dec > 0:
+        calc_total = (qty_dec * Decimal(str(expense.unit_price or 0))) + ship_dec + tax_dec + other_dec - disc_dec
+        if calc_total > 0:
+            old_tp = Decimal(str(expense.total_price or 0))
+            if calc_total != old_tp:
+                changes["total_price"] = {"old": float(old_tp), "new": float(calc_total)}
+                expense.total_price = calc_total
 
     # Sinkronisasi konsistensi paid_amount & ExpensePayment saat pay_status / total_price berubah
     total_dec = Decimal(str(expense.total_price or 0))
@@ -1665,10 +1708,13 @@ async def update_expense(
         from app.services.master_item_service import list_master_items, find_best_master_match, extract_derivative, sync_derivative_to_isi_paket
         master_items = await list_master_items(db)
 
-        # Cek apakah master_item_id eksplisit yang dikirim masih valid untuk item_name ini
+        # Jika user mengganti master_item_id secara eksplisit ke ID baru, prioritaskan kandidat tersebut;
+        # jika item_name berubah sementara master_item_id masih ID lama/kosong, lakukan pencocokan ulang penuh
+        # agar perubahan mis. 'Gula' -> 'Gula Halus' berpindah ke MasterItem yang tepat.
         req_mid = updates.get("master_item_id")
+        explicit_new_mid = req_mid is not None and req_mid != old_master_item_id
         matched = None
-        if req_mid:
+        if explicit_new_mid:
             cand = next((m for m in master_items if m.id == req_mid), None)
             if cand:
                 c_name = cand.item_name.lower()

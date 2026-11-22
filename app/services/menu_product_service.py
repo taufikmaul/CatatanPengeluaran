@@ -299,30 +299,20 @@ async def get_existing_anonymous_codes(db: AsyncSession) -> set[str]:
 async def build_master_price_history_map(db: AsyncSession) -> dict[int, dict[str, Any]]:
     """
     Ambil 2 harga beli unit terbaru dari tabel expenses untuk setiap master_item_id
-    guna mendeteksi kenaikan harga bahan baku (Price Drift).
+    guna mendeteksi kenaikan harga bahan baku (Price Drift) — konsisten dengan
+    statistik latest price MasterItem & Riwayat Harga.
     """
-    res = await db.execute(
-        select(Expense.master_item_id, Expense.unit_price, Expense.expense_date)
-        .where(
-            Expense.master_item_id.is_not(None),
-            Expense.unit_price > 0,
-        )
-        .order_by(Expense.expense_date.desc(), Expense.id.desc())
-    )
-    grouped: dict[int, list[tuple[float, str | None]]] = {}
-    for mid, unit_price, exp_date in res.fetchall():
-        if mid is None:
-            continue
-        key = int(mid)
-        entries = grouped.setdefault(key, [])
-        if len(entries) < 2:
-            entries.append((float(unit_price or 0.0), exp_date.isoformat() if exp_date else None))
+    from app.services.master_item_service import get_master_items_latest_stats
 
+    latest_stats = await get_master_items_latest_stats(db)
     history_map: dict[int, dict[str, Any]] = {}
-    for mid, entries in grouped.items():
-        latest_price, latest_date = entries[0]
-        prev_price = entries[1][0] if len(entries) > 1 else None
-        prev_date = entries[1][1] if len(entries) > 1 else None
+    for mid, st in latest_stats.items():
+        latest_price = float(st.get("last_unit_price") or 0.0)
+        if latest_price <= 0:
+            continue
+        latest_date = st.get("latest_price_date") or st.get("last_date")
+        prev_price = st.get("prev_unit_price")
+        prev_date = st.get("prev_date")
         change_pct: float | None = None
         has_increase = False
         if prev_price is not None and prev_price > 0:
@@ -331,7 +321,7 @@ async def build_master_price_history_map(db: AsyncSession) -> dict[int, dict[str
         history_map[mid] = {
             "latest_price": round(latest_price, 2),
             "latest_date": latest_date,
-            "prev_price": round(prev_price, 2) if prev_price is not None else None,
+            "prev_price": round(float(prev_price), 2) if prev_price is not None else None,
             "prev_date": prev_date,
             "price_change_pct": change_pct,
             "has_price_increase": has_increase,

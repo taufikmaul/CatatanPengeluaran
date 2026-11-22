@@ -30,6 +30,7 @@ from app.services.master_item_service import (
     import_master_items_from_csv,
     sync_existing_expenses_to_master,
     import_master_items_from_history,
+    get_master_items_latest_stats,
     get_item_and_supplier_suggestions,
     audit_duplicate_master_items,
     merge_master_items,
@@ -55,33 +56,13 @@ def _compute_recipe_unit_price(
 
 @router.get("", dependencies=[Depends(require_roles("admin", "purchasing", "warehouse", "admin_input"))])
 async def get_master_items(db: AsyncSession = Depends(get_db)):
-    """Ambil semua daftar Master Item beserta statistik histori harga & transaksi."""
+    """Ambil semua daftar Master Item beserta statistik histori harga terbaru & jumlah transaksi."""
     items = await list_master_items(db)
-    suggestions = await get_item_and_supplier_suggestions(db)
-
-    # Ambil agregasi tx_count akurat dari database untuk seluruh master_item_id
-    from sqlalchemy import func
-    tx_count_res = await db.execute(
-        select(Expense.master_item_id, func.count(Expense.id))
-        .where(Expense.master_item_id.is_not(None))
-        .group_by(Expense.master_item_id)
-    )
-    total_tx_by_mid = dict(tx_count_res.all())
-
-    # Indeks histori berdasarkan ID MasterItem (produk ID) dan fallback nama
-    hist_by_id = {
-        s["id"]: s
-        for s in suggestions.get("items", [])
-        if s.get("id") is not None
-    }
-    hist_by_name = {
-        s["item_name"].strip().lower(): s
-        for s in suggestions.get("items", [])
-    }
+    latest_stats = await get_master_items_latest_stats(db, items)
 
     data = []
     for m in items:
-        h = hist_by_id.get(m.id) or hist_by_name.get(m.item_name.strip().lower(), {})
+        h = latest_stats.get(m.id, {})
         last_price = float(h.get("last_unit_price") or 0.0)
         data.append(
             MasterItemResponse(
@@ -99,7 +80,7 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
                 recipe_unit_price=_compute_recipe_unit_price(last_price, m.konversi_resep),
                 last_unit_price=last_price,
                 last_supplier=h.get("last_supplier") or m.default_supplier or "-",
-                tx_count=int(total_tx_by_mid.get(m.id) if m.id in total_tx_by_mid else (h.get("tx_count") or 0)),
+                tx_count=int(h.get("tx_count") or 0),
                 created_at=m.created_at,
             )
         )
@@ -167,6 +148,9 @@ async def add_master_item(
     )
     await db.commit()
     await db.refresh(item)
+    latest_stats = await get_master_items_latest_stats(db, [item])
+    h = latest_stats.get(item.id, {})
+    last_unit_price = float(h.get("last_unit_price") or 0.0)
     return MasterItemResponse(
         id=item.id,
         item_name=item.item_name,
@@ -179,7 +163,10 @@ async def add_master_item(
         satuan_ecer=item.satuan_ecer or "Pcs",
         satuan_resep=item.satuan_resep,
         konversi_resep=item.konversi_resep,
-        recipe_unit_price=_compute_recipe_unit_price(0.0, item.konversi_resep),
+        recipe_unit_price=_compute_recipe_unit_price(last_unit_price, item.konversi_resep),
+        last_unit_price=last_unit_price,
+        last_supplier=h.get("last_supplier") or item.default_supplier or "-",
+        tx_count=int(h.get("tx_count") or 0),
         created_at=item.created_at,
     )
 
@@ -456,13 +443,9 @@ async def update_master_item(
 
     await db.commit()
     await db.refresh(item)
-    latest_exp_res = await db.execute(
-        select(Expense.unit_price)
-        .where(Expense.master_item_id == item.id, Expense.unit_price > 0)
-        .order_by(Expense.expense_date.desc(), Expense.id.desc())
-        .limit(1)
-    )
-    last_unit_price = float(latest_exp_res.scalar() or 0.0)
+    latest_stats = await get_master_items_latest_stats(db, [item])
+    h = latest_stats.get(item.id, {})
+    last_unit_price = float(h.get("last_unit_price") or 0.0)
     return MasterItemResponse(
         id=item.id,
         item_name=item.item_name,
@@ -477,6 +460,8 @@ async def update_master_item(
         konversi_resep=item.konversi_resep,
         recipe_unit_price=_compute_recipe_unit_price(last_unit_price, item.konversi_resep),
         last_unit_price=last_unit_price,
+        last_supplier=h.get("last_supplier") or item.default_supplier or "-",
+        tx_count=int(h.get("tx_count") or 0),
         created_at=item.created_at,
     )
 

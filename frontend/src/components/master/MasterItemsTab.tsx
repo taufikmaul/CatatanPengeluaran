@@ -383,6 +383,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["master-items"] });
     queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+    queryClient.invalidateQueries({ queryKey: ["price-history"] });
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
     queryClient.invalidateQueries({ queryKey: ["report"] });
     queryClient.invalidateQueries({ queryKey: ["master-items-audit"] });

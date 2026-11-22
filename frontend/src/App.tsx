@@ -576,6 +576,9 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["supplier-top-items"] });
@@ -602,6 +605,9 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["supplier-top-items"] });
@@ -660,6 +666,7 @@ function MainDashboardApp() {
       }
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
@@ -692,8 +699,14 @@ function MainDashboardApp() {
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
+      queryClient.invalidateQueries({ queryKey: ["price-history"] });
+      queryClient.invalidateQueries({ queryKey: ["menus"] });
+      queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-top-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-priciest-items"] });
+      queryClient.invalidateQueries({ queryKey: ["supplier-expenses"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
@@ -2024,6 +2037,11 @@ function MainDashboardApp() {
               onImportSuccess={() => {
                 refetchExpenses();
                 refetchReport();
+                queryClient.invalidateQueries({ queryKey: ["master-items"] });
+                queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+                queryClient.invalidateQueries({ queryKey: ["price-history"] });
+                queryClient.invalidateQueries({ queryKey: ["menus"] });
+                queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
               }}
             />
           </React.Suspense>
@@ -2041,6 +2059,11 @@ function MainDashboardApp() {
               onExpenseRestored={() => {
                 refetchExpenses();
                 refetchReport();
+                queryClient.invalidateQueries({ queryKey: ["master-items"] });
+                queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+                queryClient.invalidateQueries({ queryKey: ["price-history"] });
+                queryClient.invalidateQueries({ queryKey: ["menus"] });
+                queryClient.invalidateQueries({ queryKey: ["menus-all-for-recipe"] });
               }}
             />
           </React.Suspense>
