@@ -418,6 +418,69 @@ def validate_recipe_graph(
         )
 
 
+def validate_bundle_composition(
+    item_type: str | None,
+    ingredients_payload: list[dict[str, Any]],
+    menus_by_id: dict[int, MenuProduct],
+) -> None:
+    """
+    Validasi aturan khusus menu Paket / Hampers (`item_type == "bundle"`):
+    - Item penyusun (`cost_group != "packaging"`) HANYA boleh berupa Menu Jual yang sudah jadi (`item_type == "finished"`).
+      Tidak boleh berupa bahan baku (`master_item_id`), input bahan manual, item 1/2 jadi (`prepared`), atau paket lain (`bundle`).
+    - Kemasan (`cost_group == "packaging"`) tetap diperbolehkan dari Master Item kemasan atau input manual kemasan,
+      tetapi tidak boleh merujuk sub-menu / sub-resep.
+    """
+    if (item_type or "finished").strip().lower() != "bundle":
+        return
+
+    for item in ingredients_payload:
+        mid = item.get("master_item_id")
+        sid = item.get("sub_menu_id")
+        raw_name = (item.get("ingredient_name") or "").strip()
+        if mid is None and sid is None and not raw_name:
+            continue
+
+        cost_group = (item.get("cost_group") or "ingredient").strip().lower()
+        if cost_group not in ("ingredient", "packaging"):
+            cost_group = "ingredient"
+
+        if cost_group == "packaging":
+            if sid is not None:
+                raise ValueError(
+                    "Kemasan pada Paket / Hampers hanya boleh diisi dari Master Item kemasan atau input manual kemasan (bukan menu atau sub-resep)."
+                )
+            continue
+
+        if mid is not None:
+            label = f" '{raw_name}'" if raw_name else ""
+            raise ValueError(
+                f"Paket / Hampers tidak boleh menggunakan bahan baku{label} sebagai item penyusun. "
+                "Pilih Menu Jual yang sudah jadi, atau masukkan ke kelompok Kemasan."
+            )
+        if sid is None:
+            label = f" '{raw_name}'" if raw_name else ""
+            raise ValueError(
+                f"Item penyusun{label} pada Paket / Hampers wajib dipilih dari Menu Jual yang sudah jadi "
+                "(tidak boleh input bahan manual)."
+            )
+
+        sub_menu = menus_by_id.get(int(sid))
+        if sub_menu is None:
+            raise ValueError(f"Menu penyusun dengan ID {sid} tidak ditemukan.")
+
+        sub_type = (getattr(sub_menu, "item_type", None) or "finished").strip().lower()
+        if sub_type == "prepared":
+            raise ValueError(
+                f"Paket / Hampers tidak boleh menggunakan item 1/2 jadi (Prepared) '{sub_menu.name}' "
+                "sebagai item penyusun. Hanya Menu Jual yang sudah jadi yang diperbolehkan."
+            )
+        if sub_type != "finished":
+            raise ValueError(
+                f"Paket / Hampers tidak boleh menggunakan paket lain '{sub_menu.name}' "
+                "sebagai item penyusun. Hanya Menu Jual yang sudah jadi yang diperbolehkan."
+            )
+
+
 def _build_sub_breakdown(
     sub_ingredients: list[dict[str, Any]],
     depth: int = 1,
@@ -926,6 +989,8 @@ async def sync_menu_ingredients(
     if sub_menu_ids:
         res_sub = await db.execute(select(MenuProduct).where(MenuProduct.id.in_(sub_menu_ids)))
         sub_menu_map = {s.id: s for s in res_sub.scalars().all()}
+
+    validate_bundle_composition(menu.item_type, ingredients_payload, sub_menu_map)
 
     await db.execute(delete(MenuIngredient).where(MenuIngredient.menu_id == menu.id))
     await db.flush()

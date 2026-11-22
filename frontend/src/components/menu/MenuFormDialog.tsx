@@ -94,6 +94,8 @@ interface IngredientRowCardProps {
   isSubMenu: boolean;
   subMenuType?: MenuItemType;
   isRecentlyAdded?: boolean;
+  allowToggleCostGroup?: boolean;
+  isInvalidForBundle?: boolean;
   onUpdateRow: (rowKey: string, patch: Partial<IngredientDraftRow>) => void;
   onUnitChange: (
     rowKey: string,
@@ -113,6 +115,8 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
   isSubMenu,
   subMenuType,
   isRecentlyAdded = false,
+  allowToggleCostGroup = true,
+  isInvalidForBundle = false,
   onUpdateRow,
   onUnitChange,
   onToggleCostGroup,
@@ -124,7 +128,9 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
     <div
       className={cn(
         "rounded-xl border p-2.5 space-y-2 transition-all duration-300",
-        isRecentlyAdded
+        isInvalidForBundle
+          ? "border-rose-300 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/30"
+          : isRecentlyAdded
           ? isPackaging
             ? "border-amber-500 ring-2 ring-amber-400/40 bg-amber-50/70 dark:bg-amber-950/40"
             : "border-blue-500 ring-2 ring-blue-500/35 bg-blue-50/60 dark:bg-blue-950/40"
@@ -136,14 +142,16 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
           <Badge
             variant="outline"
             className={
-              isSubMenu
+              isInvalidForBundle
+                ? "text-[10px] px-1.5 py-0 shrink-0 bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/70 dark:text-rose-200 dark:border-rose-800"
+                : isSubMenu
                 ? "text-[10px] px-1.5 py-0 shrink-0 bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800"
                 : row.master_item_id !== null
                 ? "text-[10px] px-1.5 py-0 shrink-0 bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-800"
                 : "text-[10px] px-1.5 py-0 shrink-0 bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
             }
           >
-            {sourceLabel}
+            {isInvalidForBundle ? `${sourceLabel} (Tidak Valid)` : sourceLabel}
           </Badge>
           <Input
             value={row.ingredient_name}
@@ -161,21 +169,23 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-1 shrink-0">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => onToggleCostGroup(row.key)}
-            aria-label={
-              isPackaging
-                ? `Pindahkan ${row.ingredient_name || "item"} ke Bahan Resep`
-                : `Pindahkan ${row.ingredient_name || "item"} ke Kemasan`
-            }
-            className="h-9 sm:h-7 px-2 text-[11px] gap-1 text-slate-700 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
-          >
-            <ArrowRightLeft className="w-3 h-3 shrink-0" />
-            <span>{isPackaging ? "Ke Bahan" : "Ke Kemasan"}</span>
-          </Button>
+          {allowToggleCostGroup && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onToggleCostGroup(row.key)}
+              aria-label={
+                isPackaging
+                  ? `Pindahkan ${row.ingredient_name || "item"} ke Bahan Resep`
+                  : `Pindahkan ${row.ingredient_name || "item"} ke Kemasan`
+              }
+              className="h-9 sm:h-7 px-2 text-[11px] gap-1 text-slate-700 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
+            >
+              <ArrowRightLeft className="w-3 h-3 shrink-0" />
+              <span>{isPackaging ? "Ke Bahan" : "Ke Kemasan"}</span>
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -889,9 +899,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
 
   const handleQuickAddItem = (selection: QuickAddSelection) => {
     const newKey = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setFormError(null);
 
     if (selection.kind === "master") {
       const item = selection.item;
+      const effectiveGroup: IngredientCostGroup =
+        itemType === "bundle" ? "packaging" : selection.targetGroup;
       const hasMasterRecipe = Boolean(
         item.satuan_resep &&
           item.konversi_resep !== null &&
@@ -902,11 +915,11 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
         item.satuan_resep ||
         item.satuan_ecer ||
         item.satuan_beli ||
-        (selection.targetGroup === "packaging" ? "Pcs" : "Gram");
+        (effectiveGroup === "packaging" ? "Pcs" : "Gram");
 
       const newRow: IngredientDraftRow = {
         key: newKey,
-        cost_group: selection.targetGroup,
+        cost_group: effectiveGroup,
         master_item_id: item.id,
         sub_menu_id: null,
         include_sub_packaging: false,
@@ -926,7 +939,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       flashRowHighlight(newKey);
       setLastAddedNotice({
         label: item.item_name,
-        group: selection.targetGroup,
+        group: effectiveGroup,
       });
       if (!hasMasterRecipe) {
         void applyConversionHint(newKey, { masterId: item.id }, nextUnit);
@@ -936,12 +949,23 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
 
     if (selection.kind === "submenu") {
       const sub = selection.menu;
+      const subType = sub.item_type || "finished";
+      if (itemType === "bundle" && subType !== "finished") {
+        setFormError(
+          `Paket / Hampers hanya dapat disusun dari Menu Jual yang sudah jadi. "${sub.name}" bertipe ${
+            subType === "prepared" ? "Prepared (1/2 jadi)" : "Paket / Bundling"
+          }.`
+        );
+        return;
+      }
+      const effectiveGroup: IngredientCostGroup =
+        itemType === "bundle" ? "ingredient" : selection.targetGroup;
       const nextUnit = sub.batch_yield_unit || sub.unit || "Porsi";
-      const defaultIncludePkg = (sub.item_type || "finished") !== "prepared";
+      const defaultIncludePkg = subType !== "prepared";
 
       const newRow: IngredientDraftRow = {
         key: newKey,
-        cost_group: selection.targetGroup,
+        cost_group: effectiveGroup,
         master_item_id: null,
         sub_menu_id: sub.id,
         include_sub_packaging: defaultIncludePkg,
@@ -961,7 +985,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       flashRowHighlight(newKey);
       setLastAddedNotice({
         label: sub.name,
-        group: selection.targetGroup,
+        group: effectiveGroup,
       });
       void applyConversionHint(newKey, { subMenuId: sub.id }, nextUnit);
       return;
@@ -970,15 +994,18 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     const cleanName = selection.name.trim();
     if (!cleanName) return;
 
+    const effectiveGroup: IngredientCostGroup =
+      itemType === "bundle" ? "packaging" : selection.targetGroup;
+
     const manualRow: IngredientDraftRow = {
       key: newKey,
-      cost_group: selection.targetGroup,
+      cost_group: effectiveGroup,
       master_item_id: null,
       sub_menu_id: null,
       include_sub_packaging: false,
       ingredient_name: cleanName,
       qty: "1",
-      unit: selection.targetGroup === "packaging" ? "Pcs" : "Gram",
+      unit: effectiveGroup === "packaging" ? "Pcs" : "Gram",
       waste_pct: "0",
       unit_cost_override: "",
       yield_factor: "1",
@@ -989,11 +1016,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     flashRowHighlight(newKey);
     setLastAddedNotice({
       label: cleanName,
-      group: selection.targetGroup,
+      group: effectiveGroup,
     });
   };
 
   const handleToggleCostGroup = (rowKey: string) => {
+    if (itemType === "bundle") return;
     setIngredients((prev) =>
       prev.map((r) =>
         r.key === rowKey
@@ -1023,6 +1051,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     }
   };
 
+  const isBundle = itemType === "bundle";
+
   const ingredientRows = useMemo(
     () => ingredients.filter((r) => r.cost_group !== "packaging"),
     [ingredients]
@@ -1031,6 +1061,35 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     () => ingredients.filter((r) => r.cost_group === "packaging"),
     [ingredients]
   );
+
+  const invalidBundleRowKeys = useMemo(() => {
+    const invalid = new Set<string>();
+    if (!isBundle) return invalid;
+    for (const row of ingredients) {
+      const hasContent =
+        row.ingredient_name.trim() !== "" ||
+        row.master_item_id !== null ||
+        row.sub_menu_id !== null;
+      if (!hasContent) continue;
+
+      if (row.cost_group === "packaging") {
+        if (row.sub_menu_id !== null) {
+          invalid.add(row.key);
+        }
+        continue;
+      }
+
+      if (row.master_item_id !== null || row.sub_menu_id === null) {
+        invalid.add(row.key);
+        continue;
+      }
+      const sub = subMenuMap.get(row.sub_menu_id);
+      if (sub && (sub.item_type || "finished") !== "finished") {
+        invalid.add(row.key);
+      }
+    }
+    return invalid;
+  }, [isBundle, ingredients, subMenuMap]);
 
   const renderIngredientRowCard = (row: IngredientDraftRow) => {
     const calc = recipeSummary.rowMap.get(row.key) || {
@@ -1067,6 +1126,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
           isSubMenu={row.sub_menu_id !== null}
           subMenuType={subMenu?.item_type}
           isRecentlyAdded={recentlyAddedKey === row.key}
+          allowToggleCostGroup={!isBundle}
+          isInvalidForBundle={invalidBundleRowKeys.has(row.key)}
           onUpdateRow={handleUpdateRow}
           onUnitChange={handleUnitChange}
           onToggleCostGroup={handleToggleCostGroup}
@@ -1097,6 +1158,32 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       if (!ingName && row.master_item_id === null && row.sub_menu_id === null) {
         continue;
       }
+
+      if (itemType === "bundle") {
+        if (row.cost_group === "packaging") {
+          if (row.sub_menu_id !== null) {
+            setFormError(
+              `Kemasan "${ingName || "tanpa nama"}" pada Paket / Hampers harus berupa Master Item kemasan atau kemasan manual (bukan menu atau sub-resep).`
+            );
+            return;
+          }
+        } else {
+          if (row.master_item_id !== null || row.sub_menu_id === null) {
+            setFormError(
+              `Paket / Hampers hanya boleh disusun dari Menu Jual yang sudah jadi. Hapus "${ingName || "item"}" dari penyusun (atau masukkan ke Kemasan jika berupa kemasan).`
+            );
+            return;
+          }
+          const sub = subMenuMap.get(row.sub_menu_id);
+          if (sub && (sub.item_type || "finished") !== "finished") {
+            setFormError(
+              `Paket / Hampers tidak boleh menggunakan "${sub.name}" karena bukan Menu Jual yang sudah jadi (bukan 1/2 jadi atau paket lain).`
+            );
+            return;
+          }
+        }
+      }
+
       const qtyVal = Number(row.qty);
       const yieldVal = Number(row.yield_factor) || 1;
       const wasteVal = Number(row.waste_pct) || 0;
@@ -1250,7 +1337,9 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   </Badge>
                 </div>
                 <DialogDescription className="text-xs">
-                  Cari bahan atau kemasan lalu tekan Enter, pantau komposisi HPP dan margin secara langsung.
+                  {isBundle
+                    ? "Susun Paket / Hampers dari Menu Jual yang sudah jadi, tambahkan kemasan dan biaya lainnya, lalu pantau HPP dan margin secara langsung."
+                    : "Cari bahan atau kemasan lalu tekan Enter, pantau komposisi HPP dan margin secara langsung."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -1686,6 +1775,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   <RecipeQuickAddAutocomplete
                     masterItems={masterItems}
                     menuOptions={allMenus}
+                    parentItemType={itemType}
                     excludeMenuId={editingMenu?.id}
                     existingMasterCounts={existingMasterCounts}
                     existingSubMenuCounts={existingSubMenuCounts}
@@ -1693,24 +1783,50 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     lastAddedNotice={lastAddedNotice}
                   />
 
+                  {isBundle && invalidBundleRowKeys.size > 0 && (
+                    <div className="rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/90 dark:bg-rose-950/40 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-rose-900 dark:text-rose-200">
+                      <span>
+                        Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> yang bukan Menu Jual (bahan mentah, 1/2 jadi, atau manual). Paket / Hampers hanya memperbolehkan Menu Jual yang sudah jadi sebagai item penyusun.
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setIngredients((prev) =>
+                            prev.filter((r) => !invalidBundleRowKeys.has(r.key))
+                          )
+                        }
+                        className="h-8 text-xs shrink-0 border-rose-300 text-rose-900 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-100 dark:hover:bg-rose-900/60"
+                      >
+                        Hapus item tidak sesuai
+                      </Button>
+                    </div>
+                  )}
+
                   {/* SECTION 1: BAHAN RESEP / ISI PRODUK */}
                   <div className="space-y-2.5">
                     <div>
                       <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                         <Calculator className="w-3.5 h-3.5 text-blue-600" />
                         <span>
-                          1. Bahan Resep / Isi Produk ({ingredientRows.length}{" "}
-                          item)
+                          {isBundle
+                            ? `1. Item Penyusun Paket / Menu Jadi (${ingredientRows.length} item)`
+                            : `1. Bahan Resep / Isi Produk (${ingredientRows.length} item)`}
                         </span>
                       </h3>
                       <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                        Biaya bahan mentah dan Sub-Resep dihitung per batch lalu dibagi hasil bersih ({Number(netYieldQty.toFixed(2))} {batchYieldUnit || unit}).
+                        {isBundle
+                          ? "Hanya dapat diisi Menu Jual yang sudah jadi (bukan 1/2 jadi / Prepared dan bukan bahan mentah). Kemasan serta biaya lainnya tetap dapat ditambahkan di bawah."
+                          : `Biaya bahan mentah dan Sub-Resep dihitung per batch lalu dibagi hasil bersih (${Number(netYieldQty.toFixed(2))} ${batchYieldUnit || unit}).`}
                       </p>
                     </div>
 
                     {ingredientRows.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-4 px-3 text-center text-xs text-slate-600 dark:text-slate-400">
-                        Belum ada bahan resep / isi produk. Ketik nama bahan di kolom pencarian di atas lalu tekan Enter.
+                        {isBundle
+                          ? "Belum ada menu penyusun paket. Ketik nama Menu Jual yang sudah jadi di kolom pencarian di atas lalu tekan Enter."
+                          : "Belum ada bahan resep / isi produk. Ketik nama bahan di kolom pencarian di atas lalu tekan Enter."}
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -1989,7 +2105,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                           <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                          <span>Bahan / Isi</span>
+                          <span>{isBundle ? "Menu Penyusun" : "Bahan / Isi"}</span>
                         </div>
                         <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                           {formatRupiah(recipeSummary.unitIngredientCost)}
@@ -2283,7 +2399,8 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   <div className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
                     Komposisi:{" "}
                     <strong className="text-slate-900 dark:text-slate-100">
-                      {ingredientRows.length} bahan
+                      {ingredientRows.length}{" "}
+                      {isBundle ? "menu jadi" : "bahan"}
                     </strong>{" "}
                     |{" "}
                     <strong className="text-slate-900 dark:text-slate-100">

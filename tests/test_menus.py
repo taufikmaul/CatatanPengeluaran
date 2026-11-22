@@ -1011,3 +1011,238 @@ async def test_cycle_detection_clone_scale_simulator_and_channels(
     assert res_bulk_upd.json()["updated"] == 1
 
 
+@pytest.mark.asyncio
+async def test_bundle_composition_only_finished_menus_plus_packaging_and_fees(
+    client: AsyncClient, db: AsyncSession, auth_cookies: dict
+):
+    """
+    Menu Paket / Hampers (item_type='bundle'):
+    - Item penyusun HANYA boleh Menu Jual yang sudah jadi (item_type='finished')
+    - Menolak item 1/2 jadi (prepared), bahan mentah (master_item), input bahan manual, dan paket lain (bundle)
+    - Tetap memperbolehkan kemasan (master_item & manual packaging) serta labor_cost & other_fee
+    """
+    client.cookies.update(auth_cookies)
+
+    tepung = MasterItem(item_name="Tepung Bundle Test", category="Bahan Kue", satuan_beli="Kg", satuan_ecer="Gram")
+    box_hampers = MasterItem(item_name="Box Hampers Eksklusif", category="Kemasan", satuan_beli="Pcs", satuan_ecer="Pcs")
+    db.add_all([tepung, box_hampers])
+    await db.flush()
+    db.add_all(
+        [
+            Expense(
+                expense_date=date(2026, 11, 15),
+                supplier="Toko Bahan",
+                item_name="Tepung Bundle Test",
+                qty=1,
+                unit="Kg",
+                category="Bahan Kue",
+                unit_price=15000,
+                total_price=15000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=tepung.id,
+            ),
+            Expense(
+                expense_date=date(2026, 11, 15),
+                supplier="Toko Box",
+                item_name="Box Hampers Eksklusif",
+                qty=1,
+                unit="Pcs",
+                category="Kemasan",
+                unit_price=20000,
+                total_price=20000,
+                pay_method="Tunai",
+                pay_status="Lunas",
+                master_item_id=box_hampers.id,
+            ),
+        ]
+    )
+    await db.commit()
+
+    # Siapkan 1 item Prepared (1/2 jadi, bahkan yang dual-use sellable) & 1 Menu Jual Finished
+    prep_item = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Saus Coklat 1/2 Jadi",
+                "item_type": "prepared",
+                "is_sellable": True,
+                "unit": "Jar",
+                "selling_price": 30000,
+                "ingredients": [
+                    {"master_item_id": tepung.id, "cost_group": "ingredient", "qty": 200, "unit": "Gram", "yield_factor": 1000}
+                ],
+            },
+        )
+    ).json()["item"]
+
+    finished_cake = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Kue Nastar Jar",
+                "item_type": "finished",
+                "unit": "Toples",
+                "selling_price": 85000,
+                "hpp_manual": 35000,
+                "hpp_mode": "manual",
+            },
+        )
+    ).json()["item"]
+
+    # 1. VALID: Bundle dari Menu Jual (finished) + Kemasan Master Item + Kemasan Manual + Labor & Biaya Lainnya
+    res_ok = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Spesial A",
+            "item_type": "bundle",
+            "category": "Hampers / Bundling",
+            "unit": "Paket",
+            "selling_price": 250000,
+            "labor_cost": 5000,
+            "other_fee": 7500,
+            "other_fee_description": "Biaya dekorasi pita & kartu",
+            "ingredients": [
+                {"sub_menu_id": finished_cake["id"], "cost_group": "ingredient", "qty": 2, "unit": "Toples", "yield_factor": 1},
+                {"master_item_id": box_hampers.id, "cost_group": "packaging", "qty": 1, "unit": "Pcs", "yield_factor": 1},
+                {
+                    "cost_group": "packaging",
+                    "ingredient_name": "Kartu Ucapan Custom",
+                    "qty": 1,
+                    "unit": "Pcs",
+                    "yield_factor": 1,
+                    "unit_cost_override": 2500,
+                },
+            ],
+        },
+    )
+    assert res_ok.status_code == 201, res_ok.text
+    bundle_a = res_ok.json()["item"]
+    # 2 * 35000 = 70000 (isi) + 5000 (labor) + 7500 (other_fee) + 20000 (box) + 2500 (kartu) = 105000
+    assert bundle_a["subtotal_ingredients"] == 70000.0
+    assert bundle_a["subtotal_packaging"] == 22500.0
+    assert bundle_a["unit_labor_cost"] == 5000.0
+    assert bundle_a["unit_other_fee"] == 7500.0
+    assert bundle_a["effective_hpp"] == 105000.0
+
+    # 2. TOLAK: Bundle memakai item 1/2 jadi (Prepared)
+    res_prep_err = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Invalid Prepared",
+            "item_type": "bundle",
+            "unit": "Paket",
+            "ingredients": [
+                {"sub_menu_id": prep_item["id"], "cost_group": "ingredient", "qty": 1, "unit": "Jar", "yield_factor": 1},
+            ],
+        },
+    )
+    assert res_prep_err.status_code == 400
+    assert "1/2 jadi" in res_prep_err.json()["detail"].lower()
+
+    # 3. TOLAK: Bundle memakai bahan mentah (Master Item) sebagai penyusun (ingredient)
+    res_raw_err = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Invalid Bahan",
+            "item_type": "bundle",
+            "unit": "Paket",
+            "ingredients": [
+                {"master_item_id": tepung.id, "cost_group": "ingredient", "qty": 100, "unit": "Gram", "yield_factor": 1000},
+            ],
+        },
+    )
+    assert res_raw_err.status_code == 400
+    assert "bahan baku" in res_raw_err.json()["detail"].lower()
+
+    # 4. TOLAK: Bundle memakai input bahan manual sebagai penyusun (ingredient)
+    res_manual_err = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Invalid Manual",
+            "item_type": "bundle",
+            "unit": "Paket",
+            "ingredients": [
+                {
+                    "cost_group": "ingredient",
+                    "ingredient_name": "Kacang Mete Mentah",
+                    "qty": 100,
+                    "unit": "Gram",
+                    "yield_factor": 1,
+                    "unit_cost_override": 200,
+                },
+            ],
+        },
+    )
+    assert res_manual_err.status_code == 400
+    assert "menu jual" in res_manual_err.json()["detail"].lower()
+
+    # 5. TOLAK: Bundle memakai bundle lain sebagai penyusun
+    res_nested_bundle = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Invalid Nested",
+            "item_type": "bundle",
+            "unit": "Paket",
+            "ingredients": [
+                {"sub_menu_id": bundle_a["id"], "cost_group": "ingredient", "qty": 1, "unit": "Paket", "yield_factor": 1},
+            ],
+        },
+    )
+    assert res_nested_bundle.status_code == 400
+    assert "paket lain" in res_nested_bundle.json()["detail"].lower()
+
+    # 6. TOLAK: Bundle memakai sub_menu di kelompok kemasan
+    res_sub_pkg = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Hampers Invalid Sub Pkg",
+            "item_type": "bundle",
+            "unit": "Paket",
+            "ingredients": [
+                {"sub_menu_id": finished_cake["id"], "cost_group": "ingredient", "qty": 1, "unit": "Toples", "yield_factor": 1},
+                {"sub_menu_id": prep_item["id"], "cost_group": "packaging", "qty": 1, "unit": "Jar", "yield_factor": 1},
+            ],
+        },
+    )
+    assert res_sub_pkg.status_code == 400
+    assert "kemasan" in res_sub_pkg.json()["detail"].lower()
+
+    # 7. TOLAK: Mengubah item_type menu finished yang punya bahan mentah menjadi bundle (tanpa kirim ingredients)
+    finished_with_raw = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Bolu Bahan Mentah",
+                "item_type": "finished",
+                "unit": "Box",
+                "ingredients": [
+                    {"master_item_id": tepung.id, "cost_group": "ingredient", "qty": 500, "unit": "Gram", "yield_factor": 1000}
+                ],
+            },
+        )
+    ).json()["item"]
+
+    res_convert = await client.put(
+        f"/api/v1/menus/{finished_with_raw['id']}",
+        json={"item_type": "bundle"},
+    )
+    assert res_convert.status_code == 400
+
+    # 8. TOLAK: Clone menu finished berbahan mentah menjadi bundle
+    res_clone_bundle = await client.post(
+        f"/api/v1/menus/{finished_with_raw['id']}/clone",
+        json={"new_name": "Clone Invalid Bundle", "scale_factor": 1.0, "item_type": "bundle"},
+    )
+    assert res_clone_bundle.status_code == 400
+
+    # 9. TOLAK: Mengubah Menu Jual yang sedang dipakai di Bundle menjadi Prepared (1/2 jadi)
+    res_demote = await client.put(
+        f"/api/v1/menus/{finished_cake['id']}",
+        json={"item_type": "prepared"},
+    )
+    assert res_demote.status_code == 400
+    assert "hampers spesial a" in res_demote.json()["detail"].lower()
+
+
+

@@ -43,6 +43,7 @@ export type QuickAddSelection =
 export interface RecipeQuickAddAutocompleteProps {
   masterItems: MasterItem[];
   menuOptions: MenuProduct[];
+  parentItemType?: MenuItemType;
   excludeMenuId?: number;
   existingMasterCounts: Map<number, number>;
   existingSubMenuCounts: Map<number, number>;
@@ -53,6 +54,14 @@ export interface RecipeQuickAddAutocompleteProps {
 export const PACKAGING_KEYWORDS = [
   "kemasan",
   "packaging",
+  "hampers",
+  "keranjang",
+  "rotan",
+  "hardbox",
+  "goodie",
+  "sleeve",
+  "amplop",
+  "bubble",
   "box",
   "dus",
   "kardus",
@@ -147,12 +156,14 @@ export const RecipeQuickAddAutocomplete: React.FC<
 > = ({
   masterItems,
   menuOptions,
+  parentItemType = "finished",
   excludeMenuId,
   existingMasterCounts,
   existingSubMenuCounts,
   onAddItem,
   lastAddedNotice,
 }) => {
+  const isBundle = parentItemType === "bundle";
   const [targetMode, setTargetMode] = useState<QuickAddTargetMode>("auto");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -190,7 +201,10 @@ export const RecipeQuickAddAutocomplete: React.FC<
 
     for (const menu of menuOptions) {
       if (excludeMenuId !== undefined && menu.id === excludeMenuId) continue;
-      if (targetMode === "packaging" && menu.item_type !== "prepared") {
+      if (isBundle) {
+        if (targetMode === "packaging") continue;
+        if ((menu.item_type || "finished") !== "finished") continue;
+      } else if (targetMode === "packaging" && menu.item_type !== "prepared") {
         continue;
       }
 
@@ -206,11 +220,16 @@ export const RecipeQuickAddAutocomplete: React.FC<
       const score = scoreTextMatch(menu.name, metaHay, trimmed);
       if (score === null) continue;
 
-      const targetGroup: IngredientCostGroup =
-        targetMode === "packaging" ? "packaging" : "ingredient";
+      const targetGroup: IngredientCostGroup = isBundle
+        ? "ingredient"
+        : targetMode === "packaging"
+        ? "packaging"
+        : "ingredient";
 
       let modePriority = 1;
-      if (targetMode === "auto") {
+      if (isBundle) {
+        modePriority = 0;
+      } else if (targetMode === "auto") {
         modePriority = menu.item_type === "prepared" ? 0 : 2;
       } else if (targetMode === "ingredient") {
         modePriority = menu.item_type === "prepared" ? 0 : 1;
@@ -233,6 +252,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
 
     for (const item of masterItems) {
       const isPkgMaster = isLikelyPackagingMaster(item);
+      if (isBundle) {
+        if (targetMode === "ingredient") continue;
+        if (targetMode === "auto" && !isPkgMaster) continue;
+      }
+
       const metaHay = [
         item.category,
         item.satuan_beli,
@@ -246,15 +270,18 @@ export const RecipeQuickAddAutocomplete: React.FC<
       const score = scoreTextMatch(item.item_name, metaHay, trimmed);
       if (score === null) continue;
 
-      const targetGroup: IngredientCostGroup =
-        targetMode === "auto"
-          ? isPkgMaster
-            ? "packaging"
-            : "ingredient"
-          : targetMode;
+      const targetGroup: IngredientCostGroup = isBundle
+        ? "packaging"
+        : targetMode === "auto"
+        ? isPkgMaster
+          ? "packaging"
+          : "ingredient"
+        : targetMode;
 
       let modePriority = 1;
-      if (targetMode === "packaging") {
+      if (isBundle) {
+        modePriority = targetMode === "packaging" ? (isPkgMaster ? 0 : 1) : 1;
+      } else if (targetMode === "packaging") {
         modePriority = isPkgMaster ? 0 : 1;
       } else if (targetMode === "ingredient") {
         modePriority = isPkgMaster ? 2 : 0;
@@ -294,11 +321,23 @@ export const RecipeQuickAddAutocomplete: React.FC<
       dbOptions: candidates.slice(0, MAX_DB_OPTIONS).map((c) => c.opt),
       totalMatchedCount: candidates.length,
     };
-  }, [masterItems, menuOptions, excludeMenuId, targetMode, query]);
+  }, [masterItems, menuOptions, isBundle, excludeMenuId, targetMode, query]);
 
   const manualOptions = useMemo<DropdownOption[]>(() => {
     const trimmed = query.trim();
     if (!trimmed) return [];
+
+    if (isBundle) {
+      if (targetMode === "ingredient") return [];
+      return [
+        {
+          id: "manual-packaging",
+          kind: "manual",
+          name: trimmed,
+          targetGroup: "packaging",
+        },
+      ];
+    }
 
     if (targetMode === "auto") {
       const predicted: IngredientCostGroup = isLikelyPackagingText(trimmed)
@@ -330,7 +369,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
         targetGroup: targetMode,
       },
     ];
-  }, [query, targetMode]);
+  }, [query, targetMode, isBundle]);
 
   const options = useMemo<DropdownOption[]>(
     () => [...dbOptions, ...manualOptions],
@@ -451,7 +490,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
     label: string;
   }> = [
     { value: "auto", label: "Auto" },
-    { value: "ingredient", label: "Bahan" },
+    { value: "ingredient", label: isBundle ? "Menu Jadi" : "Bahan" },
     { value: "packaging", label: "Kemasan" },
   ];
 
@@ -468,7 +507,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
           className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5"
         >
           <Search className="w-3.5 h-3.5 text-blue-700 dark:text-blue-300 shrink-0" />
-          <span>Cari &amp; Tambah Bahan / Kemasan (Tekan Enter)</span>
+          <span>
+            {isBundle
+              ? "Cari & Tambah Menu Jadi / Kemasan (Tekan Enter)"
+              : "Cari & Tambah Bahan / Kemasan (Tekan Enter)"}
+          </span>
         </label>
 
         <div
@@ -537,7 +580,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
             setOpen(true);
           }}
           onKeyDown={handleInputKeyDown}
-          placeholder="Ketik nama bahan, sub-resep prepared, atau kemasan... lalu Enter"
+          placeholder={
+            isBundle
+              ? "Ketik nama Menu Jual (sudah jadi) atau kemasan... lalu Enter"
+              : "Ketik nama bahan, sub-resep prepared, atau kemasan... lalu Enter"
+          }
           className="h-10 sm:h-9 pl-9 pr-24 sm:pr-28 text-xs bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus-visible:ring-1 focus-visible:ring-blue-600"
         />
 
@@ -577,8 +624,13 @@ export const RecipeQuickAddAutocomplete: React.FC<
             >
             {options.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-slate-600 dark:text-slate-400">
-                Belum ada data Master Item atau Sub-Resep. Ketik nama bahan atau
-                kemasan lalu tekan Enter untuk menambahkan secara manual.
+                {isBundle
+                  ? targetMode === "ingredient"
+                    ? "Tidak ada Menu Jual (sudah jadi) yang cocok. Paket / Hampers hanya dapat disusun dari Menu Jual yang sudah terdaftar (bukan 1/2 jadi atau bahan)."
+                    : targetMode === "packaging"
+                    ? "Belum ada Master Item kemasan yang cocok. Ketik nama kemasan lalu tekan Enter untuk menambahkan kemasan manual."
+                    : "Tidak ada Menu Jual atau kemasan yang cocok. Pilih tab Kemasan untuk mencari seluruh Master Item atau ketik nama kemasan lalu tekan Enter."
+                  : "Belum ada data Master Item atau Sub-Resep. Ketik nama bahan atau kemasan lalu tekan Enter untuk menambahkan secara manual."}
               </div>
             ) : (
               <>
@@ -651,7 +703,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
                                 : "bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800"
                             )}
                           >
-                            {targetIsPkg ? "Ke Kemasan" : "Ke Bahan"}
+                            {targetIsPkg
+                              ? "Ke Kemasan"
+                              : isBundle
+                              ? "Ke Isi Paket"
+                              : "Ke Bahan"}
                           </Badge>
                           <div className="text-right min-w-[68px]">
                             <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
@@ -848,6 +904,8 @@ export const RecipeQuickAddAutocomplete: React.FC<
               Ditambahkan ke{" "}
               {lastAddedNotice.group === "packaging"
                 ? "Kemasan & Packaging"
+                : isBundle
+                ? "Isi Paket (Menu Jadi)"
                 : "Bahan Resep"}
               : <strong>{lastAddedNotice.label}</strong>
             </span>

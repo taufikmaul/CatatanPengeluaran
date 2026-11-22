@@ -38,6 +38,7 @@ from app.services.menu_product_service import (
     suggest_sub_menu_yield_factor,
     suggest_yield_factor,
     sync_menu_ingredients,
+    validate_bundle_composition,
     validate_recipe_graph,
     verify_menu_share_token,
 )
@@ -641,8 +642,24 @@ async def api_bulk_create_menus(
                 skipped += 1
                 continue
             if it.ingredients:
+                ing_dicts = [ing.model_dump() for ing in it.ingredients]
                 try:
                     validate_recipe_graph(existing.id, sub_ids, menus_by_id, target_name=clean_name)
+                    validate_bundle_composition(it.item_type, ing_dicts, menus_by_id)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+            elif it.item_type == "bundle":
+                existing_ing_dicts = [
+                    {
+                        "master_item_id": ing.master_item_id,
+                        "sub_menu_id": ing.sub_menu_id,
+                        "cost_group": ing.cost_group,
+                        "ingredient_name": ing.ingredient_name,
+                    }
+                    for ing in (existing.ingredients or [])
+                ]
+                try:
+                    validate_bundle_composition("bundle", existing_ing_dicts, menus_by_id)
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
             existing.category = it.category.strip() or existing.category
@@ -672,9 +689,12 @@ async def api_bulk_create_menus(
                 )
             updated += 1
         else:
-            if sub_ids:
+            if sub_ids or (it.item_type == "bundle" and it.ingredients):
+                ing_dicts = [ing.model_dump() for ing in it.ingredients]
                 try:
-                    validate_recipe_graph(None, sub_ids, menus_by_id, target_name=clean_name)
+                    if sub_ids:
+                        validate_recipe_graph(None, sub_ids, menus_by_id, target_name=clean_name)
+                    validate_bundle_composition(it.item_type, ing_dicts, menus_by_id)
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
             clean_anon = (it.anonymous_name or "").strip()
@@ -850,6 +870,22 @@ async def api_clone_menu(
     if not source:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu asal tidak ditemukan.")
 
+    target_type = (payload.item_type or source.item_type or "finished").strip().lower()
+    if target_type == "bundle":
+        source_ing_dicts = [
+            {
+                "master_item_id": ing.master_item_id,
+                "sub_menu_id": ing.sub_menu_id,
+                "cost_group": ing.cost_group,
+                "ingredient_name": ing.ingredient_name,
+            }
+            for ing in (source.ingredients or [])
+        ]
+        try:
+            validate_bundle_composition("bundle", source_ing_dicts, menus_by_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     cloned = await clone_menu_with_scale(
         db,
         source,
@@ -904,10 +940,16 @@ async def api_create_menu(
         for ing in payload.ingredients
         if ing.sub_menu_id is not None
     ]
-    if sub_ids:
+    if sub_ids or (payload.item_type == "bundle" and payload.ingredients):
         menus_by_id = await load_all_menus_graph(db)
         try:
-            validate_recipe_graph(None, sub_ids, menus_by_id, target_name=clean_name)
+            if sub_ids:
+                validate_recipe_graph(None, sub_ids, menus_by_id, target_name=clean_name)
+            validate_bundle_composition(
+                payload.item_type,
+                [ing.model_dump() for ing in payload.ingredients],
+                menus_by_id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -1004,18 +1046,41 @@ async def api_update_menu(
         next_name = clean_name
         menu.name = clean_name
 
+    next_item_type = (payload.item_type or menu.item_type or "finished").strip().lower()
     if payload.ingredients is not None:
         sub_ids = [
             int(ing.sub_menu_id)
             for ing in payload.ingredients
             if ing.sub_menu_id is not None
         ]
-        if sub_ids:
+        if sub_ids or (next_item_type == "bundle" and payload.ingredients):
             menus_by_id = await load_all_menus_graph(db)
             try:
-                validate_recipe_graph(menu_id, sub_ids, menus_by_id, target_name=next_name)
+                if sub_ids:
+                    validate_recipe_graph(menu_id, sub_ids, menus_by_id, target_name=next_name)
+                validate_bundle_composition(
+                    next_item_type,
+                    [ing.model_dump() for ing in payload.ingredients],
+                    menus_by_id,
+                )
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+    elif next_item_type == "bundle" and (menu.item_type or "finished").strip().lower() != "bundle":
+        menus_by_id = await load_all_menus_graph(db)
+        menu_in_graph = menus_by_id.get(menu_id)
+        existing_ing_dicts = [
+            {
+                "master_item_id": ing.master_item_id,
+                "sub_menu_id": ing.sub_menu_id,
+                "cost_group": ing.cost_group,
+                "ingredient_name": ing.ingredient_name,
+            }
+            for ing in (menu_in_graph.ingredients if menu_in_graph else [])
+        ]
+        try:
+            validate_bundle_composition("bundle", existing_ing_dicts, menus_by_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     if payload.anonymous_name is not None:
         clean_anon = payload.anonymous_name.strip()
@@ -1039,6 +1104,33 @@ async def api_update_menu(
                     detail=f"Kode/nama anonim '{clean_anon}' sudah dipakai menu lain.",
                 )
         menu.anonymous_name = clean_anon
+
+    if (
+        payload.item_type is not None
+        and next_item_type != "finished"
+        and (menu.item_type or "finished").strip().lower() == "finished"
+    ):
+        bundle_ref_res = await db.execute(
+            select(MenuProduct.name)
+            .join(MenuIngredient, MenuIngredient.menu_id == MenuProduct.id)
+            .where(
+                MenuIngredient.sub_menu_id == menu_id,
+                MenuProduct.item_type == "bundle",
+            )
+            .distinct()
+            .order_by(MenuProduct.name.asc())
+        )
+        bundle_parents = [row[0] for row in bundle_ref_res.fetchall() if row[0]]
+        if bundle_parents:
+            preview = ", ".join(bundle_parents[:5])
+            extra = f" (+{len(bundle_parents) - 5} lainnya)" if len(bundle_parents) > 5 else ""
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Tidak dapat mengubah tipe '{menu.name}' menjadi bukan Menu Jual karena masih menjadi "
+                    f"item penyusun di Paket / Hampers: {preview}{extra}."
+                ),
+            )
 
     if payload.sku is not None:
         menu.sku = payload.sku.strip() or None
