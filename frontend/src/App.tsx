@@ -47,6 +47,8 @@ const CashflowHubView = React.lazy(() => import("@/components/dashboard/Cashflow
 const UnifiedProcurementHub = React.lazy(() => import("@/components/requests/UnifiedProcurementHub").then(m => ({ default: m.UnifiedProcurementHub })));
 const CatalogHubView = React.lazy(() => import("@/components/master/CatalogHubView").then(m => ({ default: m.CatalogHubView })));
 const GovernanceHubView = React.lazy(() => import("@/components/accounting/GovernanceHubView").then(m => ({ default: m.GovernanceHubView })));
+const AiChatFullPage = React.lazy(() => import("@/components/ai-chat/AiChatFullPage").then(m => ({ default: m.AiChatFullPage })));
+const AiChatWidget = React.lazy(() => import("@/components/ai-chat/AiChatWidget").then(m => ({ default: m.AiChatWidget })));
 
 function TabLoadingFallback() {
   return (
@@ -137,7 +139,7 @@ function MainDashboardApp() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
@@ -170,11 +172,13 @@ function MainDashboardApp() {
     activeTab = "unpaid";
   } else if (pathname === "/config") {
     activeTab = "config";
+  } else if (pathname === "/ai-chat") {
+    activeTab = "ai-chat";
   } else {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -286,6 +290,7 @@ function MainDashboardApp() {
   const [isDataHygieneModalOpen, setIsDataHygieneModalOpen] = useState(false);
   const [paymentModalExpense, setPaymentModalExpense] = useState<Expense | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">("full");
+  const [activeAiChatSessionId, setActiveAiChatSessionId] = useState<number | null>(null);
 
   const handleOpenPaymentModal = (expense: Expense, mode: "full" | "percent" | "amount" = "full") => {
     setPaymentModalExpense(expense);
@@ -409,7 +414,8 @@ function MainDashboardApp() {
         activeTab === "suppliers" ||
         activeTab === "supplier-detail" ||
         activeTab === "master" ||
-        activeTab === "unpaid")
+        activeTab === "unpaid" ||
+        activeTab === "ai-chat")
     ) {
       navigate("/");
     }
@@ -1888,8 +1894,32 @@ function MainDashboardApp() {
                 </GovernanceHubView>
               </React.Suspense>
             )}
+
+            {/* Hub 5: Asisten AI Keuangan (Khusus Owner) */}
+            {activeTab === "ai-chat" && isOwner && authData?.authenticated && (
+              <React.Suspense fallback={<TabLoadingFallback />}>
+                <AiChatFullPage
+                  sessionId={activeAiChatSessionId}
+                  onSessionChange={setActiveAiChatSessionId}
+                  onNavigateConfig={() => navigate("/config")}
+                />
+              </React.Suspense>
+            )}
           </main>
         </SidebarInset>
+
+        {/* Floating AI Chat Popup (blocks-so/ai-05, Khusus Owner, tersembunyi di /ai-chat) */}
+        {isOwner && authData?.authenticated && (
+          <React.Suspense fallback={null}>
+            <AiChatWidget
+              sessionId={activeAiChatSessionId}
+              onSessionChange={setActiveAiChatSessionId}
+              onExpandFull={() => navigate("/ai-chat")}
+              onNavigateConfig={() => navigate("/config")}
+              hidden={activeTab === "ai-chat"}
+            />
+          </React.Suspense>
+        )}
 
         {/* Monthly Budget Setup Modal (Persentase per Kategori & Preview Rupiah) */}
         {isBudgetDialogOpen && (

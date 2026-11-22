@@ -18,6 +18,7 @@ from app.api.bank_transfers import router as bank_transfers_router
 from app.api.reconciliation import router as reconciliation_router
 from app.api.menus import router as menus_router, public_menus_router
 from app.api.assets import router as assets_router
+from app.api.ai_chat import router as ai_chat_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -38,4 +39,5 @@ api_router.include_router(reconciliation_router)
 api_router.include_router(menus_router)
 api_router.include_router(public_menus_router)
 api_router.include_router(assets_router)
+api_router.include_router(ai_chat_router)
 

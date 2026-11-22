@@ -659,6 +659,10 @@ class SystemConfigUpdate(BaseModel):
     ai_analysis_api_key: str | None = None
     ai_analysis_url: str | None = None
     ai_analysis_model: str | None = None
+    ai_chat_default_provider: str | None = None
+    ai_chat_default_model: str | None = None
+    ai_chat_classai_models: str | None = None
+    ai_chat_sumopod_models: str | None = None
     spreadsheet_id: str | None = None
     bot_password: str | None = None
     admin_input_password: str | None = None

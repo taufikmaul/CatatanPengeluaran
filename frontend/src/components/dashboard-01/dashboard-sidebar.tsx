@@ -25,6 +25,7 @@ import {
   ShoppingBasket,
   Truck,
   Boxes,
+  MessageSquareText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { getHubUrl } from "@/lib/hub";
@@ -55,8 +56,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatRupiah } from "@/lib/formatters";
 
 export interface DashboardSidebarProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
-  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => void;
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat";
+  onTabChange: (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat") => void;
   onOpenImport: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
@@ -99,7 +100,7 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
-  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config") => {
+  const handleSelectTab = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat") => {
     onTabChange(tab);
     if (isMobile) {
       setOpenMobile(false);
@@ -327,6 +328,25 @@ export function DashboardSidebar({
                         >
                           <Scale className="w-4 h-4 shrink-0 text-slate-700 dark:text-slate-300" />
                           <span className="truncate">Laporan &amp; Kontrol</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )}
+
+                    {/* Asisten AI Keuangan (Khusus Owner) */}
+                    {userRole === "admin" && (
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={activeTab === "ai-chat"}
+                          onClick={() => handleSelectTab("ai-chat")}
+                          tooltip="Asisten AI Keuangan (Tanya data keuangan via chat)"
+                          className={`h-10 rounded-xl font-medium text-sm transition-all ${
+                            activeTab === "ai-chat"
+                              ? "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 font-semibold"
+                              : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60"
+                          }`}
+                        >
+                          <MessageSquareText className="w-4 h-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                          <span className="truncate">Asisten AI</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     )}

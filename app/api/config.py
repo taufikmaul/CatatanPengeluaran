@@ -38,6 +38,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 _SECRET_CONFIG_FIELDS = {
     "telegram_token",
     "sumopod_api_key",
+    "ai_analysis_api_key",
     "bot_password",
     "admin_input_password",
     "purchasing_password",
@@ -58,6 +59,13 @@ ENV_MAP = {
     "sumopod_api_key": "SUMOPOD_API_KEY",
     "sumopod_model": "SUMOPOD_MODEL",
     "sumopod_url": "SUMOPOD_URL",
+    "ai_analysis_api_key": "AI_ANALYSIS_API_KEY",
+    "ai_analysis_url": "AI_ANALYSIS_URL",
+    "ai_analysis_model": "AI_ANALYSIS_MODEL",
+    "ai_chat_default_provider": "AI_CHAT_DEFAULT_PROVIDER",
+    "ai_chat_default_model": "AI_CHAT_DEFAULT_MODEL",
+    "ai_chat_classai_models": "AI_CHAT_CLASSAI_MODELS",
+    "ai_chat_sumopod_models": "AI_CHAT_SUMOPOD_MODELS",
     "spreadsheet_id": "SPREADSHEET_ID",
     "bot_password": "BOT_PASSWORD",
     "admin_input_password": "ADMIN_INPUT_PASSWORD",
@@ -127,6 +135,14 @@ async def get_system_config(
     ai_key = settings.sumopod_api_key
     ai_masked = f"{ai_key[:7]}...{ai_key[-4:]}" if len(ai_key) > 12 else "Terkonfigurasi"
 
+    analysis_key = settings.ai_analysis_api_key or ""
+    if len(analysis_key) > 12:
+        analysis_masked = f"{analysis_key[:7]}...{analysis_key[-4:]}"
+    elif analysis_key:
+        analysis_masked = "Terkonfigurasi"
+    else:
+        analysis_masked = "Belum diatur"
+
     creds_p = resolve_credentials_path(settings.google_credentials_json)
     creds_exist = creds_p.is_file()
     sa_email = None
@@ -184,6 +200,14 @@ async def get_system_config(
         "ai_provider": "Sumopod AI",
         "ai_url": settings.sumopod_url,
         "ai_model": settings.sumopod_model,
+        "ai_analysis_key_masked": analysis_masked,
+        "ai_analysis_api_key_configured": settings._is_api_key_configured(analysis_key),
+        "ai_analysis_url": settings.ai_analysis_url,
+        "ai_analysis_model": settings.ai_analysis_model,
+        "ai_chat_default_provider": settings.ai_chat_default_provider,
+        "ai_chat_default_model": settings.ai_chat_default_model,
+        "ai_chat_classai_models": settings.ai_chat_classai_models,
+        "ai_chat_sumopod_models": settings.ai_chat_sumopod_models,
         "system_prompt": get_system_prompt(),
         # Sheets
         "spreadsheet_id": settings.spreadsheet_id or "",
@@ -208,6 +232,15 @@ async def update_system_config(
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         return {"ok": True, "message": "Tidak ada perubahan"}
+
+    if "ai_chat_default_provider" in updates and updates["ai_chat_default_provider"] is not None:
+        normalized_provider = str(updates["ai_chat_default_provider"]).strip().lower()
+        if normalized_provider not in ("classai", "sumopod"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provider default AI Chat harus 'classai' atau 'sumopod'.",
+            )
+        updates["ai_chat_default_provider"] = normalized_provider
 
     env_updates: dict[str, str] = {}
     db_updates: dict[str, Any] = {}

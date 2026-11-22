@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { SystemConfig } from "@/types";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ import {
   Layers,
   Shield,
   Landmark,
+  MessageSquare,
 } from "lucide-react";
 
 interface ConfigTabProps {
@@ -43,6 +45,7 @@ interface ConfigTabProps {
 }
 
 export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig }) => {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<string>("master-data");
 
   // Form states
@@ -64,6 +67,15 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   const [sumopodApiKey, setSumopodApiKey] = useState("");
   const [sumopodModel, setSumopodModel] = useState("seed-2-0-mini");
   const [sumopodUrl, setSumopodUrl] = useState("https://ai.sumopod.com/v1/chat/completions");
+
+  const [aiAnalysisApiKey, setAiAnalysisApiKey] = useState("");
+  const [aiAnalysisUrl, setAiAnalysisUrl] = useState("https://router.classai.id/v1/chat/completions");
+  const [aiAnalysisModel, setAiAnalysisModel] = useState("deepseek-v4.1-flash-1017");
+
+  const [aiChatDefaultProvider, setAiChatDefaultProvider] = useState<"classai" | "sumopod">("classai");
+  const [aiChatDefaultModel, setAiChatDefaultModel] = useState("");
+  const [aiChatClassaiModels, setAiChatClassaiModels] = useState("deepseek-v4.1-flash-1017");
+  const [aiChatSumopodModels, setAiChatSumopodModels] = useState("seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet");
 
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [monthlyBudgetLimit, setMonthlyBudgetLimit] = useState<number>(0);
@@ -122,6 +134,17 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       setSumopodModel(config.ai_model || "seed-2-0-mini");
       setSumopodUrl(config.ai_url || "https://ai.sumopod.com/v1/chat/completions");
 
+      setAiAnalysisApiKey("");
+      setAiAnalysisUrl(config.ai_analysis_url || "https://router.classai.id/v1/chat/completions");
+      setAiAnalysisModel(config.ai_analysis_model || "deepseek-v4.1-flash-1017");
+      const rawDefProv = (config.ai_chat_default_provider || "classai").toLowerCase();
+      setAiChatDefaultProvider(rawDefProv === "sumopod" ? "sumopod" : "classai");
+      setAiChatDefaultModel(config.ai_chat_default_model || "");
+      setAiChatClassaiModels(config.ai_chat_classai_models || "deepseek-v4.1-flash-1017");
+      setAiChatSumopodModels(
+        config.ai_chat_sumopod_models || "seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet"
+      );
+
       setSpreadsheetId(config.spreadsheet_id || "");
       setMonthlyBudgetLimit(config.monthly_budget_limit || 0);
       setCategoryBudgets(config.category_budgets || {});
@@ -143,6 +166,12 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         dashboard_pin_thread_id: Number(allowedThreadId),
         sumopod_model: sumopodModel,
         sumopod_url: sumopodUrl,
+        ai_analysis_url: aiAnalysisUrl.trim(),
+        ai_analysis_model: aiAnalysisModel.trim(),
+        ai_chat_default_provider: aiChatDefaultProvider,
+        ai_chat_default_model: aiChatDefaultModel.trim(),
+        ai_chat_classai_models: aiChatClassaiModels.trim(),
+        ai_chat_sumopod_models: aiChatSumopodModels.trim(),
         spreadsheet_id: spreadsheetId.trim(),
         request_belanja_chat_id: requestBelanjaChatId.trim(),
         request_belanja_thread_id:
@@ -162,9 +191,11 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
       if (telegramToken.trim()) payload.telegram_token = telegramToken.trim();
       if (pinChatId.trim()) payload.dashboard_pin_chat_id = pinChatId.trim();
       if (sumopodApiKey.trim()) payload.sumopod_api_key = sumopodApiKey.trim();
+      if (aiAnalysisApiKey.trim()) payload.ai_analysis_api_key = aiAnalysisApiKey.trim();
 
       const res = await api.put("/config", payload);
       toast.success(res.data.message || "Pengaturan berhasil disimpan!");
+      queryClient.invalidateQueries({ queryKey: ["ai-chat-models"] });
       onRefreshConfig();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Gagal menyimpan pengaturan");
@@ -827,6 +858,162 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
                   placeholder="https://ai.sumopod.com/v1/chat/completions"
                   className="h-10 text-xs rounded-xl"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 3. ClassAI / DeepSeek Router Settings */}
+        <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
+          <CardHeader className="p-4 md:p-5 pb-3">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-emerald-600" />
+                ClassAI / DeepSeek Router Configuration
+              </CardTitle>
+              <Badge
+                variant="outline"
+                className={
+                  config.ai_analysis_api_key_configured
+                    ? "text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                    : "text-xs bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                }
+              >
+                {config.ai_analysis_api_key_configured ? "Terkonfigurasi" : "Belum Diatur"}
+              </Badge>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Digunakan untuk Analisis Keuangan Bulanan dan sebagai salah satu provider pilihan pada AI Chatbot.
+            </p>
+          </CardHeader>
+          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  ClassAI API Key
+                </label>
+                <Input
+                  type={showTokens ? "text" : "password"}
+                  value={aiAnalysisApiKey}
+                  onChange={(e) => setAiAnalysisApiKey(e.target.value)}
+                  placeholder={config.ai_analysis_key_masked || "sk-your-classai-api-key"}
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Kosongkan jika tidak ingin mengganti API key yang sudah tersimpan
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Model Default ClassAI
+                </label>
+                <Input
+                  type="text"
+                  value={aiAnalysisModel}
+                  onChange={(e) => setAiAnalysisModel(e.target.value)}
+                  placeholder="deepseek-v4.1-flash-1017"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Nama model aktif di router ClassAI
+                </span>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  ClassAI Chat Completions Endpoint URL
+                </label>
+                <Input
+                  type="text"
+                  value={aiAnalysisUrl}
+                  onChange={(e) => setAiAnalysisUrl(e.target.value)}
+                  placeholder="https://router.classai.id/v1/chat/completions"
+                  className="h-10 text-xs rounded-xl"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 4. AI Chatbot Keuangan Multi-Provider Settings */}
+        <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
+          <CardHeader className="p-4 md:p-5 pb-3">
+            <CardTitle className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-sky-600" />
+              Pengaturan AI Chatbot Keuangan (Khusus Owner)
+            </CardTitle>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Tentukan provider bawaan dan daftar model yang dapat dipilih Owner langsung saat chat berlangsung.
+            </p>
+          </CardHeader>
+          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Provider Bawaan AI Chat
+                </label>
+                <select
+                  value={aiChatDefaultProvider}
+                  onChange={(e) =>
+                    setAiChatDefaultProvider(e.target.value === "sumopod" ? "sumopod" : "classai")
+                  }
+                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-medium focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="classai">ClassAI ({aiAnalysisModel || "deepseek"})</option>
+                  <option value="sumopod">Sumopod ({sumopodModel || "seed-2-0-mini"})</option>
+                </select>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Provider awal saat membuka sesi chat baru
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Override Model Bawaan Chat (Opsional)
+                </label>
+                <Input
+                  type="text"
+                  value={aiChatDefaultModel}
+                  onChange={(e) => setAiChatDefaultModel(e.target.value)}
+                  placeholder="Kosongkan untuk pakai model default provider"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Jika kosong, otomatis memakai model utama dari provider terpilih
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Pilihan Model ClassAI di Chat
+                </label>
+                <Input
+                  type="text"
+                  value={aiChatClassaiModels}
+                  onChange={(e) => setAiChatClassaiModels(e.target.value)}
+                  placeholder="deepseek-v4.1-flash-1017"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Pisahkan beberapa model dengan koma
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Pilihan Model Sumopod di Chat
+                </label>
+                <Input
+                  type="text"
+                  value={aiChatSumopodModels}
+                  onChange={(e) => setAiChatSumopodModels(e.target.value)}
+                  placeholder="seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet"
+                  className="h-10 text-xs rounded-xl"
+                />
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 block">
+                  Pisahkan beberapa model dengan koma
+                </span>
               </div>
             </div>
           </CardContent>

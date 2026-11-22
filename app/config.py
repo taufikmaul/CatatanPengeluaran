@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     ai_analysis_url: str = Field("https://router.classai.id/v1/chat/completions", validation_alias="AI_ANALYSIS_URL")
     ai_analysis_model: str = Field("deepseek-v4.1-flash-1017", validation_alias="AI_ANALYSIS_MODEL")
 
+    # AI - Financial Chatbot (Multi-provider: ClassAI & Sumopod)
+    ai_chat_default_provider: str = Field("classai", validation_alias="AI_CHAT_DEFAULT_PROVIDER")
+    ai_chat_default_model: str = Field("", validation_alias="AI_CHAT_DEFAULT_MODEL")
+    ai_chat_classai_models: str = Field("deepseek-v4.1-flash-1017", validation_alias="AI_CHAT_CLASSAI_MODELS")
+    ai_chat_sumopod_models: str = Field(
+        "seed-2-0-mini,gpt-4o-mini,gpt-4o,claude-3-5-sonnet",
+        validation_alias="AI_CHAT_SUMOPOD_MODELS",
+    )
+
     # Google Sheets (optional)
     spreadsheet_id: str = Field("", validation_alias="SPREADSHEET_ID")
     google_credentials_json: str = Field("credentials.json", validation_alias="GOOGLE_CREDENTIALS_JSON")
@@ -176,6 +185,85 @@ class Settings(BaseSettings):
         raw = self.admin_telegram_ids or self.dashboard_pin_chat_id or ""
         ids = {p.strip() for p in str(raw).split(",") if p.strip()}
         return str(telegram_id).strip() in ids
+
+    @staticmethod
+    def _parse_model_list(raw: str, active_model: str = "") -> list[str]:
+        """Parse daftar model dipisah koma sambil menjaga urutan dan keunikan."""
+        seen: set[str] = set()
+        models: list[str] = []
+        for item in [active_model, *(str(raw or "").split(","))]:
+            cleaned = str(item or "").strip()
+            if cleaned and cleaned not in seen:
+                seen.add(cleaned)
+                models.append(cleaned)
+        return models
+
+    @staticmethod
+    def _is_api_key_configured(key: str | None) -> bool:
+        """Cek apakah API key terisi dengan nilai non-placeholder."""
+        cleaned = (key or "").strip()
+        return bool(
+            cleaned
+            and not cleaned.startswith("sk-your-")
+            and cleaned != "sk-test-sumopod-key"
+        )
+
+    def get_ai_chat_catalog(self) -> dict[str, Any]:
+        """Bangun katalog provider (ClassAI & Sumopod) dan opsi model untuk AI Chat."""
+        classai_models = self._parse_model_list(
+            self.ai_chat_classai_models, self.ai_analysis_model
+        )
+        sumopod_models = self._parse_model_list(
+            self.ai_chat_sumopod_models, self.sumopod_model
+        )
+        classai_configured = self._is_api_key_configured(self.ai_analysis_api_key)
+        sumopod_configured = self._is_api_key_configured(self.sumopod_api_key)
+
+        default_provider = (self.ai_chat_default_provider or "classai").strip().lower()
+        if default_provider not in ("classai", "sumopod"):
+            default_provider = "classai"
+
+        # Jika provider default belum punya key tapi provider lain punya, pakai yang siap dipakai
+        effective_provider = default_provider
+        if default_provider == "classai" and not classai_configured and sumopod_configured:
+            effective_provider = "sumopod"
+        elif default_provider == "sumopod" and not sumopod_configured and classai_configured:
+            effective_provider = "classai"
+
+        providers = [
+            {
+                "id": "classai",
+                "label": "ClassAI",
+                "configured": classai_configured,
+                "url": self.ai_analysis_url,
+                "default_model": self.ai_analysis_model or (classai_models[0] if classai_models else ""),
+                "models": classai_models,
+            },
+            {
+                "id": "sumopod",
+                "label": "Sumopod",
+                "configured": sumopod_configured,
+                "url": self.sumopod_url,
+                "default_model": self.sumopod_model or (sumopod_models[0] if sumopod_models else ""),
+                "models": sumopod_models,
+            },
+        ]
+
+        selected_provider_info = next(p for p in providers if p["id"] == effective_provider)
+        explicit_default_model = (self.ai_chat_default_model or "").strip()
+        default_model = (
+            explicit_default_model
+            if explicit_default_model and effective_provider == default_provider
+            else selected_provider_info["default_model"]
+        )
+
+        return {
+            "ok": True,
+            "default_provider": effective_provider,
+            "configured_default_provider": default_provider,
+            "default_model": default_model,
+            "providers": providers,
+        }
 
     # Kategori yang valid (fix, tidak perlu dari env)
     valid_categories: list[str] = [

@@ -679,6 +679,14 @@ export interface SystemConfig {
   ai_model: string;
   sumopod_api_key_configured?: boolean;
   ai_key_masked: string;
+  ai_analysis_key_masked?: string;
+  ai_analysis_api_key_configured?: boolean;
+  ai_analysis_url?: string;
+  ai_analysis_model?: string;
+  ai_chat_default_provider?: string;
+  ai_chat_default_model?: string;
+  ai_chat_classai_models?: string;
+  ai_chat_sumopod_models?: string;
   system_prompt: string;
   spreadsheet_id: string;
   sheets_creds_path: string;
@@ -2022,6 +2030,66 @@ export interface DailyCashflowResponse {
     opening_balance: number;
   }[];
   daily_rows: DailyCashflowRow[];
+}
+
+export type AiChatProviderId = "classai" | "sumopod";
+
+export interface AiChatProviderOption {
+  id: AiChatProviderId;
+  label: string;
+  configured: boolean;
+  url: string;
+  default_model: string;
+  models: string[];
+}
+
+export interface AiChatModelCatalog {
+  ok: boolean;
+  default_provider: AiChatProviderId;
+  configured_default_provider: AiChatProviderId;
+  default_model: string;
+  providers: AiChatProviderOption[];
+}
+
+export interface AiChatToolTrace {
+  tool: string;
+  label: string;
+  period: string;
+  status: string;
+  summary: string;
+  arguments?: Record<string, unknown>;
+}
+
+export interface AiChatMessage {
+  id: number | string;
+  session_id: number;
+  role: "user" | "assistant";
+  content: string;
+  provider?: string | null;
+  model_used?: string | null;
+  tool_calls?: AiChatToolTrace[];
+  created_at?: string | null;
+}
+
+export interface AiChatSessionSummary {
+  id: number;
+  title: string;
+  provider: AiChatProviderId | string;
+  model_id: string;
+  message_count: number;
+  last_message_preview?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AiChatSessionDetail {
+  id: number;
+  title: string;
+  provider: AiChatProviderId | string;
+  model_id: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  messages: AiChatMessage[];
 }
 
 

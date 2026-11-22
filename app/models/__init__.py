@@ -17,6 +17,7 @@ from app.models.bank_transfer import BankTransfer
 from app.models.menu_product import MenuProduct, MenuIngredient
 from app.models.expense_payment import ExpensePayment
 from app.models.fixed_asset import FixedAsset, AssetMaintenance, AssetLog
+from app.models.ai_chat import AiChatSession, AiChatMessage
 
 __all__ = [
     "User",
@@ -43,5 +44,7 @@ __all__ = [
     "BankTransfer",
     "MenuProduct",
     "MenuIngredient",
+    "AiChatSession",
+    "AiChatMessage",
 ]
 

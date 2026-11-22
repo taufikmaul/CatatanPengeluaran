@@ -109,4 +109,6 @@ class TestSchemaConsistency:
             "fixed_assets",
             "asset_maintenances",
             "asset_logs",
+            "ai_chat_sessions",
+            "ai_chat_messages",
         }

@@ -32,7 +32,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopover";
 
 export interface DashboardHeaderProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config";
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat";
   month: number;
   monthEnd?: number;
   year: number;
@@ -133,6 +133,7 @@ export function DashboardHeader({
     purchasing: "Purchasing & Order Supplier",
     gudang: "Gudang & Penerimaan Barang",
     config: "Konfigurasi Sistem",
+    "ai-chat": "Asisten AI Keuangan",
   };
 
   const breadcrumbMap: Record<string, { hub: string; sub: string }> = {
@@ -153,6 +154,7 @@ export function DashboardHeader({
     inventaris: { hub: "Katalog & Margin", sub: "Inventaris Aset" },
     accounting: { hub: "Laporan & Kontrol", sub: "Laporan Akuntansi" },
     config: { hub: "Laporan & Kontrol", sub: "Pengaturan Sistem" },
+    "ai-chat": { hub: "Asisten AI", sub: "Tanya Data Keuangan" },
   };
 
   const currentBreadcrumb = breadcrumbMap[activeTab] || { hub: "Dashboard", sub: titleMap[activeTab] || "Overview" };
