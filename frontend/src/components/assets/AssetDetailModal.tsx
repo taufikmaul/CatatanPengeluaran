@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -9,6 +9,10 @@ import {
 } from "@/lib/api";
 import { FixedAsset } from "@/types";
 import { formatDateId, formatRupiah } from "@/lib/formatters";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import {
   Dialog,
   DialogContent,
@@ -186,6 +190,78 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
       toast.error(err?.response?.data?.detail || "Gagal mencatat pelepasan aset.");
     },
   });
+
+  type DepRow = NonNullable<FixedAsset["depreciation_schedule"]>[number];
+  const depreciationColumns = useMemo<ColumnDef<DataGridFeatures, DepRow>[]>(
+    () => [
+      {
+        accessorKey: "period",
+        id: "period",
+        header: ({ column }) => <DataGridColumnHeader title="Bulan Ke" column={column} />,
+        cell: ({ row }) => <span className="font-mono">{row.original.period}</span>,
+        size: 85,
+      },
+      {
+        accessorKey: "period_label",
+        id: "period_label",
+        header: () => <span>Periode</span>,
+        cell: ({ row }) => <span>{row.original.period_label}</span>,
+        size: 130,
+      },
+      {
+        accessorKey: "depreciation_amount",
+        id: "depreciation_amount",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Beban Susut"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {formatRupiah(row.original.depreciation_amount)}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "accumulated_depreciation",
+        id: "accumulated_depreciation",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Akumulasi"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-amber-800 whitespace-nowrap">
+            {formatRupiah(row.original.accumulated_depreciation)}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "net_book_value",
+        id: "net_book_value",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Nilai Buku"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-semibold whitespace-nowrap">
+            {formatRupiah(row.original.net_book_value)}
+          </div>
+        ),
+        size: 120,
+      },
+    ],
+    []
+  );
 
   const labelUrl =
     asset && typeof window !== "undefined"
@@ -408,35 +484,20 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
               )}
 
               {asset.depreciation_schedule && asset.depreciation_schedule.length > 0 && (
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 font-bold text-slate-800">
-                    Jadwal Penyusutan Bulanan ({asset.depreciation_schedule.length} Bulan)
-                  </div>
-                  <div className="max-h-56 overflow-y-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead className="sticky top-0 bg-slate-100 text-slate-600">
-                        <tr>
-                          <th className="py-1.5 px-3">Bulan Ke</th>
-                          <th className="py-1.5 px-3">Periode</th>
-                          <th className="py-1.5 px-3 text-right">Beban Susut</th>
-                          <th className="py-1.5 px-3 text-right">Akumulasi</th>
-                          <th className="py-1.5 px-3 text-right">Nilai Buku</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {asset.depreciation_schedule.map((row) => (
-                          <tr key={row.period}>
-                            <td className="py-1.5 px-3 font-mono">{row.period}</td>
-                            <td className="py-1.5 px-3">{row.period_label}</td>
-                            <td className="py-1.5 px-3 text-right tabular-nums">{formatRupiah(row.depreciation_amount)}</td>
-                            <td className="py-1.5 px-3 text-right tabular-nums text-amber-800">{formatRupiah(row.accumulated_depreciation)}</td>
-                            <td className="py-1.5 px-3 text-right tabular-nums font-semibold">{formatRupiah(row.net_book_value)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <DataTable
+                  columns={depreciationColumns}
+                  data={asset.depreciation_schedule}
+                  getRowId={(r) => String(r.period)}
+                  defaultPageSize={10}
+                  scrollAreaClassName="max-h-[260px]"
+                  containerClassName="rounded-xl"
+                  headerClassName="px-3 py-2 bg-slate-50"
+                  header={
+                    <div className="font-bold text-slate-800 text-xs">
+                      Jadwal Penyusutan Bulanan ({asset.depreciation_schedule.length} Bulan)
+                    </div>
+                  }
+                />
               )}
             </TabsContent>
 

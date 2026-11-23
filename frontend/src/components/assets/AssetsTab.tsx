@@ -14,6 +14,10 @@ import {
   type BulkRowColumn,
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import { Table2, FileSpreadsheet } from "lucide-react";
 import { FixedAsset, AssetReanalyzeResult } from "@/types";
 import { formatDateId, formatRupiah } from "@/lib/formatters";
@@ -321,6 +325,204 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
     }
   };
 
+  const assetColumns = useMemo<ColumnDef<DataGridFeatures, FixedAsset>[]>(
+    () => [
+      {
+        id: "select",
+        header: () => (
+          <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selectedIds.length > 0 && selectedIds.length === assets.length}
+              onChange={toggleSelectAll}
+              aria-label="Pilih semua aset"
+              className="w-4 h-4 rounded"
+            />
+          </div>
+        ),
+        cell: ({ row }) => {
+          const ast = row.original;
+          return (
+            <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(ast.id)}
+                onChange={() => toggleSelect(ast.id)}
+                aria-label={`Pilih ${ast.asset_code}`}
+                className="w-4 h-4 rounded"
+              />
+            </div>
+          );
+        },
+        size: 42,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "name",
+        id: "name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Kode & Nama Aset" column={column} />
+        ),
+        cell: ({ row }) => {
+          const ast = row.original;
+          return (
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                  {ast.asset_code}
+                </span>
+                {ast.capitalization_status === "expensed_low_value" ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-600"
+                  >
+                    Nilai Rendah
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1.5 py-0 border-blue-200 bg-blue-50 text-blue-700"
+                  >
+                    Aset Tetap
+                  </Badge>
+                )}
+              </div>
+              <p className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+                {ast.name}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {ast.asset_group} • Beli {formatDateId(ast.purchase_date)}
+              </p>
+            </div>
+          );
+        },
+        size: 240,
+      },
+      {
+        accessorKey: "location",
+        id: "location",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Lokasi & Status" column={column} />
+        ),
+        cell: ({ row }) => {
+          const ast = row.original;
+          return (
+            <div>
+              <p className="font-medium text-slate-800 dark:text-slate-200">{ast.location}</p>
+              <Badge
+                variant="outline"
+                className={`mt-1 text-[10px] ${
+                  ast.status === "Aktif"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : ast.status === "Dalam Perbaikan"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-rose-200 bg-rose-50 text-rose-800"
+                }`}
+              >
+                {ast.status} • {ast.condition}
+              </Badge>
+            </div>
+          );
+        },
+        size: 170,
+      },
+      {
+        accessorKey: "warranty_status",
+        id: "warranty_status",
+        header: () => <span>Garansi &amp; Servis</span>,
+        cell: ({ row }) => {
+          const ast = row.original;
+          return (
+            <div>
+              <p className="text-slate-800 dark:text-slate-200 font-medium">
+                {ast.warranty_status}
+              </p>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                <Wrench className="w-3 h-3" />
+                {ast.maintenance_count} servis
+              </p>
+            </div>
+          );
+        },
+        size: 145,
+      },
+      {
+        accessorKey: "acquisition_cost",
+        id: "acquisition_cost",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Perolehan"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+            {formatRupiah(row.original.acquisition_cost || 0)}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        accessorKey: "accumulated_depreciation",
+        id: "accumulated_depreciation",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Akum. Susut"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-amber-800 dark:text-amber-400 whitespace-nowrap">
+            {formatRupiah(row.original.accumulated_depreciation || 0)}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        accessorKey: "net_book_value",
+        id: "net_book_value",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Nilai Buku"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-bold text-emerald-800 dark:text-emerald-400 whitespace-nowrap">
+            {formatRupiah(row.original.net_book_value || 0)}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right w-full">Aksi</div>,
+        cell: ({ row }) => {
+          const ast = row.original;
+          return (
+            <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPrintAssets([ast])}
+                className="h-8 px-2 text-xs gap-1"
+                title="Cetak Label QR"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          );
+        },
+        size: 70,
+      },
+    ],
+    [assets, selectedIds]
+  );
+
   const handleOpenBatchPrint = () => {
     const targets =
       selectedIds.length > 0
@@ -605,113 +807,15 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             <p>Catat pengeluaran berkategori <strong>Asset</strong> atau klik <strong>Sinkron Data Asset</strong> untuk memigrasi transaksi lama.</p>
           </div>
         ) : (
-          <>
-            {/* Desktop Table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-slate-600">
-                    <th className="py-2.5 px-3 w-9">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.length > 0 && selectedIds.length === assets.length}
-                        onChange={toggleSelectAll}
-                        aria-label="Pilih semua aset"
-                        className="w-4 h-4 rounded"
-                      />
-                    </th>
-                    <th className="py-2.5 px-3 font-semibold">Kode &amp; Nama Aset</th>
-                    <th className="py-2.5 px-3 font-semibold">Lokasi &amp; Status</th>
-                    <th className="py-2.5 px-3 font-semibold">Garansi &amp; Servis</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Perolehan</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Akum. Susut</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Nilai Buku</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {assets.map((ast) => (
-                    <tr
-                      key={ast.id}
-                      onClick={() => setDetailAssetId(ast.id)}
-                      className="hover:bg-slate-50/90 cursor-pointer transition-colors"
-                    >
-                      <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(ast.id)}
-                          onChange={() => toggleSelect(ast.id)}
-                          aria-label={`Pilih ${ast.asset_code}`}
-                          className="w-4 h-4 rounded"
-                        />
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-slate-900">{ast.asset_code}</span>
-                          {ast.capitalization_status === "expensed_low_value" ? (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-300 text-slate-600">
-                              Nilai Rendah
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-200 bg-blue-50 text-blue-700">
-                              Aset Tetap
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="font-semibold text-slate-900 mt-0.5">{ast.name}</p>
-                        <p className="text-[11px] text-slate-500">
-                          {ast.asset_group} • Beli {formatDateId(ast.purchase_date)}
-                        </p>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <p className="font-medium text-slate-800">{ast.location}</p>
-                        <Badge
-                          variant="outline"
-                          className={`mt-1 text-[10px] ${
-                            ast.status === "Aktif"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : ast.status === "Dalam Perbaikan"
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : "border-rose-200 bg-rose-50 text-rose-800"
-                          }`}
-                        >
-                          {ast.status} • {ast.condition}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <p className="text-slate-800 font-medium">{ast.warranty_status}</p>
-                        <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                          <Wrench className="w-3 h-3" />
-                          {ast.maintenance_count} servis
-                        </p>
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-semibold text-slate-900">
-                        {formatRupiah(ast.acquisition_cost || 0)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-amber-800">
-                        {formatRupiah(ast.accumulated_depreciation || 0)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums font-bold text-emerald-800">
-                        {formatRupiah(ast.net_book_value || 0)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPrintAssets([ast])}
-                          className="h-8 px-2 text-xs gap-1"
-                          title="Cetak Label QR"
-                        >
-                          <QrCode className="w-3.5 h-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
+          <DataTable
+            columns={assetColumns}
+            data={assets}
+            getRowId={(row) => String(row.id)}
+            defaultPageSize={10}
+            onRowClick={(ast) => setDetailAssetId(ast.id)}
+            containerClassName="border-0 rounded-none shadow-none"
+            tableWrapperClassName="hidden md:block"
+          >
             {/* Mobile Cards */}
             <div className="md:hidden divide-y divide-slate-100">
               {assets.map((ast) => (
@@ -746,7 +850,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                 </div>
               ))}
             </div>
-          </>
+          </DataTable>
         )}
       </Card>
 

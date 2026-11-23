@@ -24,15 +24,12 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/common/DataTable";
 import {
-  DataGrid,
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
 import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
@@ -46,6 +43,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -53,7 +57,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { toast } from "sonner";
 import {
   PackageCheck,
@@ -79,6 +83,14 @@ import {
   Table2,
   FileSpreadsheet,
   ChevronDown,
+  RotateCcw,
+  Store,
+  Receipt,
+  Scale,
+  TrendingUp,
+  TrendingDown,
+  Eye,
+  CheckCircle,
 } from "lucide-react";
 
 const RECIPE_UNIT_BASE = ["Gram", "ml", "Pcs", "Butir", "Lembar", "cm"] as const;
@@ -208,7 +220,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 }) => {
   const queryClient = useQueryClient();
 
-  // Form states for single add
+  // Form states for single add dialog
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState(categories[0] || "Bahan Kue");
   const [aliases, setAliases] = useState("");
@@ -310,9 +323,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
   const [filterRecipeStatus, setFilterRecipeStatus] = useState<"" | "configured" | "unconfigured">("");
+  const [filterTipeSatuan, setFilterTipeSatuan] = useState<"" | "keduanya" | "paket" | "ecer">("");
 
-  // Inline edit state
-  const [editingId, setEditingId] = useState<number | null>(null);
+  // Edit dialog state
+  const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     item_name: "",
     category: "",
@@ -325,6 +340,9 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     satuan_resep: "",
     konversi_resep: "",
   });
+
+  // Quick-Inspect Drawer state
+  const [inspectDrawerItem, setInspectDrawerItem] = useState<MasterItem | null>(null);
 
   // Audit & Merge state
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -364,6 +382,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       );
       if (filterRecipeStatus === "configured" && !isConfigured) return false;
       if (filterRecipeStatus === "unconfigured" && isConfigured) return false;
+      if (filterTipeSatuan && item.tipe_satuan !== filterTipeSatuan) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         return (
@@ -378,7 +397,78 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       }
       return true;
     });
-  }, [masterItems, filterCat, filterRecipeStatus, search]);
+  }, [masterItems, filterCat, filterRecipeStatus, filterTipeSatuan, search]);
+
+  // Bento living metrics computation
+  const bentoStats = useMemo(() => {
+    const total = masterItems.length;
+    if (total === 0) {
+      return {
+        total: 0,
+        configuredCount: 0,
+        unconfiguredCount: 0,
+        configuredPct: 0,
+        activeInTxCount: 0,
+        categoriesCount: 0,
+      };
+    }
+    let configuredCount = 0;
+    let activeInTxCount = 0;
+    const catSet = new Set<string>();
+
+    for (const item of masterItems) {
+      if (item.category) catSet.add(item.category);
+      if (item.satuan_resep && item.konversi_resep && item.konversi_resep > 0) {
+        configuredCount++;
+      }
+      if (item.tx_count && item.tx_count > 0) {
+        activeInTxCount++;
+      }
+    }
+
+    const unconfiguredCount = total - configuredCount;
+    const configuredPct = Math.round((configuredCount / total) * 100);
+
+    return {
+      total,
+      configuredCount,
+      unconfiguredCount,
+      configuredPct,
+      activeInTxCount,
+      categoriesCount: catSet.size,
+    };
+  }, [masterItems]);
+
+  // Quick-Inspect Drawer Query
+  const { data: drawerPriceHistory, isLoading: isDrawerLoading } = useQuery<{
+    item_name: string;
+    latest_price: number;
+    min_price: number;
+    max_price: number;
+    avg_price: number;
+    cheapest_supplier: string;
+    tx_count: number;
+    history?: Array<{
+      id: number;
+      expense_date: string;
+      supplier?: string;
+      qty: number;
+      unit?: string;
+      unit_price: number;
+      total_price: number;
+    }>;
+  }>({
+    queryKey: ["drawer-price-history", inspectDrawerItem?.id, inspectDrawerItem?.item_name],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (inspectDrawerItem?.id) params.append("item_id", String(inspectDrawerItem.id));
+      if (inspectDrawerItem?.item_name) params.append("item_name", inspectDrawerItem.item_name);
+      const res = await api.get(`/expenses/price-history?${params.toString()}`);
+      return res.data;
+    },
+    enabled: !!inspectDrawerItem,
+    staleTime: 30000,
+  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -411,6 +501,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     },
     onSuccess: () => {
       toast.success("Item baku berhasil disimpan!");
+      setIsAddDialogOpen(false);
       setItemName("");
       setAliases("");
       setDefaultSupplier("");
@@ -538,7 +629,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     },
     onSuccess: () => {
       toast.success("Item baku diperbarui");
-      setEditingId(null);
+      setEditingItem(null);
+      setIsEditDialogOpen(false);
       invalidateAll();
     },
     onError: (err: any) => {
@@ -737,7 +829,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   };
 
   const startEdit = (item: MasterItem) => {
-    setEditingId(item.id);
+    setEditingItem(item);
     setEditForm({
       item_name: item.item_name,
       category: item.category,
@@ -753,6 +845,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           ? String(item.konversi_resep)
           : "",
     });
+    setIsEditDialogOpen(true);
   };
 
   const [tablePagination, setTablePagination] = useState<PaginationState>({
@@ -806,19 +899,34 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         })
       );
     }
+    if (filterTipeSatuan) {
+      rules.push(
+        createFilterRule({
+          id: "rule-tipe-satuan",
+          path: ["tipe_satuan"],
+          operator: "is",
+          value: filterTipeSatuan,
+        })
+      );
+    }
     return createFilterQuery(rules, "and");
-  }, [filterCat, filterRecipeStatus]);
+  }, [filterCat, filterRecipeStatus, filterTipeSatuan]);
 
   const handleMasterQueryChange = (nextQuery: FilterQuery) => {
     let newCat = "";
     let newRecipeStatus: "" | "configured" | "unconfigured" = "";
+    let newTipeSatuan: "" | "keduanya" | "paket" | "ecer" = "";
     const traverse = (nodes: FilterNode[]) => {
       for (const node of nodes) {
         if (isFilterRule(node)) {
-          if (node.path[0] === "category") newCat = String(node.value ?? "");
-          if (node.path[0] === "recipe_status") {
-            const v = String(node.value ?? "");
-            if (v === "configured" || v === "unconfigured") newRecipeStatus = v;
+          const fieldId = node.path[0];
+          const val = String(node.value ?? "");
+          if (fieldId === "category") newCat = val;
+          if (fieldId === "recipe_status") {
+            if (val === "configured" || val === "unconfigured") newRecipeStatus = val;
+          }
+          if (fieldId === "tipe_satuan") {
+            if (val === "keduanya" || val === "paket" || val === "ecer") newTipeSatuan = val;
           }
         } else if (node.rules) {
           traverse(node.rules);
@@ -828,6 +936,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     if (nextQuery?.rules) traverse(nextQuery.rules);
     setFilterCat(newCat);
     setFilterRecipeStatus(newRecipeStatus);
+    setFilterTipeSatuan(newTipeSatuan);
   };
 
   const masterColumns = useMemo<ColumnDef<DataGridFeatures, MasterItem>[]>(
@@ -875,23 +984,25 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header: ({ column }) => <DataGridColumnHeader title="Nama Item Baku" column={column} />,
         cell: ({ row }) => {
           const item = row.original;
-          const isEditing = editingId === item.id;
-          return isEditing ? (
-            <Input
-              value={editForm.item_name}
-              onChange={(e) => setEditForm({ ...editForm, item_name: e.target.value })}
-              className="h-8 text-xs rounded-lg"
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => onInspectItemPrice?.(item.item_name, item.id)}
-              className="hover:text-blue-600 hover:underline inline-flex items-center gap-1.5 text-left font-semibold text-slate-900"
-              title="Klik untuk lihat riwayat harga & perbandingan toko"
-            >
-              <span>{item.item_name}</span>
-              <LineChart className="w-3 h-3 text-slate-300" />
-            </button>
+          const hasRecipe = Boolean(item.satuan_resep && item.konversi_resep && item.konversi_resep > 0);
+          return (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInspectDrawerItem(item)}
+                className="group/item inline-flex items-center gap-1.5 text-left font-semibold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                title="Buka panel ringkasan & riwayat harga item"
+              >
+                <span>{item.item_name}</span>
+                <Eye className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+              </button>
+              {!hasRecipe && (
+                <span
+                  title="Satuan resep belum diatur"
+                  className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
+                />
+              )}
+            </div>
           );
         },
         size: 200,
@@ -901,27 +1012,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         accessorKey: "category",
         id: "category",
         header: ({ column }) => <DataGridColumnHeader title="Kategori" column={column} />,
-        cell: ({ row }) => {
-          const item = row.original;
-          const isEditing = editingId === item.id;
-          return isEditing ? (
-            <select
-              value={editForm.category}
-              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-              className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <Badge variant="outline" className="text-[10px] font-medium">
-              {item.category}
-            </Badge>
-          );
-        },
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-[10px] font-medium">
+            {row.original.category}
+          </Badge>
+        ),
         size: 130,
         enableSorting: true,
       },
@@ -930,74 +1025,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header: () => <span>Satuan & Kemasan</span>,
         cell: ({ row }) => {
           const item = row.original;
-          const isEditing = editingId === item.id;
-          if (isEditing) {
-            return (
-              <div className="space-y-1.5 min-w-[210px]">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="text-[10px] text-slate-500 block">Tipe</label>
-                    <select
-                      value={editForm.tipe_satuan}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, tipe_satuan: e.target.value as any })
-                      }
-                      className="h-7 w-full rounded border border-slate-200 bg-white px-1.5 text-[11px]"
-                    >
-                      <option value="keduanya">Paket & Ecer</option>
-                      <option value="paket">Hanya Paket</option>
-                      <option value="ecer">Hanya Ecer</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-500 block">Satuan Beli</label>
-                    <select
-                      value={editForm.satuan_beli}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, satuan_beli: e.target.value })
-                      }
-                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px]"
-                    >
-                      {units.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="text-[10px] text-slate-500 block">Turunan / Isi Paket</label>
-                    <Input
-                      value={editForm.isi_paket}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, isi_paket: e.target.value })
-                      }
-                      placeholder="mis. 1Kg, 500g"
-                      className="h-7 text-[11px] rounded px-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-500 block">Satuan Ecer</label>
-                    <select
-                      value={editForm.satuan_ecer}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, satuan_ecer: e.target.value })
-                      }
-                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px]"
-                    >
-                      {units.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            );
-          }
           return (
             <div className="space-y-0.5 min-w-[140px]">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -1043,87 +1070,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header: () => <span>Satuan Resep (Terkecil)</span>,
         cell: ({ row }) => {
           const item = row.original;
-          const isEditing = editingId === item.id;
-          if (isEditing) {
-            const suggested = suggestLocalRecipeUnit(
-              editForm.satuan_beli,
-              editForm.isi_paket
-            );
-            const editKonvNum = Number(editForm.konversi_resep);
-            const previewUnitPrice =
-              item.last_unit_price > 0 && editKonvNum > 0
-                ? item.last_unit_price / editKonvNum
-                : 0;
-            return (
-              <div className="space-y-1.5 min-w-[205px]">
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="text-[10px] text-slate-600 block">
-                      Satuan Terkecil
-                    </label>
-                    <select
-                      value={editForm.satuan_resep}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, satuan_resep: e.target.value })
-                      }
-                      className="h-7 w-full rounded border border-slate-200 bg-white px-1 text-[11px] text-slate-900"
-                    >
-                      <option value="">Belum diatur</option>
-                      {recipeUnitOptions.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-600 block">
-                      Isi / 1 {editForm.satuan_beli || "beli"}
-                    </label>
-                    <Input
-                      type="number"
-                      min={0.0001}
-                      step="any"
-                      value={editForm.konversi_resep}
-                      onChange={(e) =>
-                        setEditForm({
-                          ...editForm,
-                          konversi_resep: e.target.value,
-                        })
-                      }
-                      placeholder={suggested ? suggested.factor : "mis. 1000"}
-                      className="h-7 text-[11px] rounded px-1.5 tabular-nums"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between gap-1 text-[10px]">
-                  {suggested ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          satuan_resep: suggested.unit,
-                          konversi_resep: suggested.factor,
-                        }))
-                      }
-                      className="text-blue-700 hover:underline font-medium"
-                    >
-                      Saran: {suggested.factor} {suggested.unit}
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  {previewUnitPrice > 0 && editForm.satuan_resep && (
-                    <span className="text-emerald-700 font-semibold tabular-nums">
-                      {formatRupiah(previewUnitPrice)}/{editForm.satuan_resep}
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
           const hasRecipe = Boolean(
             item.satuan_resep &&
               item.konversi_resep !== null &&
@@ -1182,19 +1128,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header: ({ column }) => <DataGridColumnHeader title="Kata Kunci / Alias Struk" column={column} />,
         cell: ({ row }) => {
           const item = row.original;
-          const isEditing = editingId === item.id;
-          if (isEditing) {
-            return (
-              <Input
-                value={editForm.aliases}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, aliases: e.target.value })
-                }
-                placeholder="alias1, alias2"
-                className="h-8 text-xs rounded-lg"
-              />
-            );
-          }
           return item.aliases ? (
             <div className="flex flex-wrap gap-1">
               {item.aliases.split(",").map((a) => (
@@ -1216,22 +1149,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         accessorKey: "default_supplier",
         id: "default_supplier",
         header: ({ column }) => <DataGridColumnHeader title="Toko Default" column={column} />,
-        cell: ({ row }) => {
-          const item = row.original;
-          const isEditing = editingId === item.id;
-          if (isEditing) {
-            return (
-              <Input
-                value={editForm.default_supplier}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, default_supplier: e.target.value })
-                }
-                className="h-8 text-xs rounded-lg"
-              />
-            );
-          }
-          return <span>{item.last_supplier || item.default_supplier || "-"}</span>;
-        },
+        cell: ({ row }) => <span>{row.original.last_supplier || row.original.default_supplier || "-"}</span>,
         size: 140,
         enableSorting: true,
       },
@@ -1266,50 +1184,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header: () => <div className="text-right">Aksi</div>,
         cell: ({ row }) => {
           const item = row.original;
-          const isEditing = editingId === item.id;
-          if (isEditing) {
-            return (
-              <div className="flex items-center justify-end gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    const cleanUnit = editForm.satuan_resep.trim();
-                    const cleanKonv = Number(editForm.konversi_resep);
-                    if (cleanUnit && !(cleanKonv > 0)) {
-                      toast.error("Isi faktor konversi resep lebih dari 0.");
-                      return;
-                    }
-                    if (!cleanUnit && editForm.konversi_resep.trim() !== "") {
-                      toast.error("Pilih satuan resep terkecil.");
-                      return;
-                    }
-                    updateMutation.mutate({
-                      id: item.id,
-                      payload: {
-                        ...editForm,
-                        satuan_resep: cleanUnit || null,
-                        konversi_resep: cleanUnit && cleanKonv > 0 ? cleanKonv : null,
-                      },
-                    });
-                  }}
-                  className="h-7 w-7 p-0 text-emerald-600 hover:bg-emerald-50"
-                  title="Simpan"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setEditingId(null)}
-                  className="h-7 w-7 p-0 text-slate-500 hover:bg-slate-100"
-                  title="Batal"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-            );
-          }
           return (
             <div className="flex items-center justify-end gap-1">
               {canDelete && (
@@ -1336,7 +1210,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   variant="ghost"
                   onClick={() => startEdit(item)}
                   className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                  title="Edit"
+                  title="Edit item"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                 </Button>
@@ -1358,7 +1232,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         size: 110,
       },
     ],
-    [filteredItems, selectedIds, editingId, editForm, categories, units, recipeUnitOptions, canEdit, canDelete, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, updateMutation, deleteMutation]
+    [filteredItems, selectedIds, categories, units, recipeUnitOptions, canEdit, canDelete, handleToggleSelectAllVisible, toggleSelectItem, onInspectItemPrice, deleteMutation]
   );
 
   const masterTable = useTable({
@@ -1375,6 +1249,107 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* ── Bento Metrics Strip (Living Overview) ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Card 1: Total Catalog */}
+        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-[11px] font-medium">Total Item Baku</span>
+            <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <PackageCheck className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
+              {bentoStats.total}
+            </span>
+            <span className="text-[11px] text-slate-400">
+              di {bentoStats.categoriesCount} kategori
+            </span>
+          </div>
+        </div>
+
+        {/* Card 2: Kelengkapan Resep (Interactive Pill) */}
+        <button
+          type="button"
+          onClick={() => {
+            setFilterRecipeStatus((prev) => (prev === "configured" ? "" : "configured"));
+          }}
+          className={`p-3.5 rounded-2xl border text-left transition-all ${
+            filterRecipeStatus === "configured"
+              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-xs ring-2 ring-emerald-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-emerald-200 shadow-2xs"
+          }`}
+          title="Klik untuk filter: Item sudah diatur satuan resep"
+        >
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+              Resep Terkonfigurasi
+            </span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <Scale className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold tracking-tight text-emerald-800 dark:text-emerald-300 tabular-nums">
+              {bentoStats.configuredCount}
+            </span>
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+              ({bentoStats.configuredPct}%)
+            </span>
+          </div>
+        </button>
+
+        {/* Card 3: Perlu Dilengkapi (Interactive Alert Pill) */}
+        <button
+          type="button"
+          onClick={() => {
+            setFilterRecipeStatus((prev) => (prev === "unconfigured" ? "" : "unconfigured"));
+          }}
+          className={`p-3.5 rounded-2xl border text-left transition-all ${
+            filterRecipeStatus === "unconfigured"
+              ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 shadow-xs ring-2 ring-amber-500/20"
+              : "bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-amber-200 shadow-2xs"
+          }`}
+          title="Klik untuk filter: Item belum punya satuan resep"
+        >
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
+              Belum Diatur Resep
+            </span>
+            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <AlertTriangle className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold tracking-tight text-amber-900 dark:text-amber-300 tabular-nums">
+              {bentoStats.unconfiguredCount}
+            </span>
+            <span className="text-[11px] text-amber-600 dark:text-amber-400">
+              perlu dikonversi
+            </span>
+          </div>
+        </button>
+
+        {/* Card 4: Aktif Digunakan Transaksi */}
+        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-[11px] font-medium">Aktif di Transaksi</span>
+            <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <Receipt className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
+              {bentoStats.activeInTxCount}
+            </span>
+            <span className="text-[11px] text-slate-400">
+              pernah dibeli di struk
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Action Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div className="flex items-center gap-2">
@@ -1386,8 +1361,30 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           </span>
         </div>
 
-        {canDelete && (
-          <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+          {canEdit && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setItemName("");
+                setAliases("");
+                setDefaultSupplier("");
+                setIsiPaket("");
+                setRecipeUnitTouched(false);
+                const nextHint = suggestLocalRecipeUnit(satuanBeli, "");
+                setSatuanResep(nextHint ? nextHint.unit : "");
+                setKonversiResep(nextHint ? nextHint.factor : "");
+                setIsAddDialogOpen(true);
+              }}
+              className="h-8 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tambah Item</span>
+            </Button>
+          )}
+
+          {canDelete && (
+            <>
             {/* Dropdown: Alat & Audit */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1515,8 +1512,9 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               />
               <span className="hidden sm:inline">Cocokkan ({masterItems.length})</span>
             </Button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Bulk Paste Box */}
@@ -1584,36 +1582,44 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         </Card>
       )}
 
-      {/* Quick Add Single Item Form (Owner & Purchasing only) */}
-      {canEdit && (
-      <Card className="border-slate-200/90 bg-white rounded-2xl shadow-xs">
-        <CardContent className="p-4">
+      {/* Dialog Tambah Master Item */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <PackageCheck className="w-5 h-5 text-blue-600" />
+              Tambah Master Item Baku
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Daftarkan item bahan baku atau kemasan baru untuk standardisasi transaksi &amp; resep menu.
+            </DialogDescription>
+          </DialogHeader>
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
               if (!itemName.trim()) return;
               addMutation.mutate();
             }}
-            className="space-y-3"
+            className="space-y-4 pt-2"
           >
-            {/* Baris 1: Nama, Kategori, Tipe Satuan, Satuan Beli, Toko */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-              <div className="md:col-span-4">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Nama Item Baku *
-                </label>
-                <Input
-                  placeholder="Contoh: Susu Carnation"
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                  required
-                />
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Nama Item Baku <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                placeholder="Contoh: Susu Carnation"
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+                className="h-9 text-xs rounded-xl"
+                required
+              />
+            </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Kategori Default
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Kategori
                 </label>
                 <select
                   value={category}
@@ -1628,8 +1634,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 </select>
               </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
                   Tipe Satuan
                 </label>
                 <select
@@ -1637,14 +1643,16 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   onChange={(e) => setTipeSatuan(e.target.value as any)}
                   className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
                 >
-                  <option value="keduanya">Paket & Ecer</option>
+                  <option value="keduanya">Paket &amp; Ecer</option>
                   <option value="paket">Hanya Paket</option>
                   <option value="ecer">Hanya Ecer</option>
                 </select>
               </div>
+            </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
                   Satuan Beli / Kemasan
                 </label>
                 <select
@@ -1668,24 +1676,29 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 </select>
               </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Toko Default
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Satuan Eceran
                 </label>
-                <Input
-                  placeholder="Opsional"
-                  value={defaultSupplier}
-                  onChange={(e) => setDefaultSupplier(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                />
+                <select
+                  value={satuanEcer}
+                  onChange={(e) => setSatuanEcer(e.target.value)}
+                  disabled={tipeSatuan === "paket"}
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
+                >
+                  {units.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Baris 2: Isi Paket/Kemasan, Satuan Ecer, Alias di Struk */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
-              <div className="md:col-span-4">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Turunan / Isi Kemasan (Pisahkan Koma)
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Turunan / Isi Kemasan
                 </label>
                 <Input
                   placeholder="Contoh: 1Kg, 500g atau 1 box isi 6 pouch 2kg"
@@ -1703,15 +1716,218 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 />
               </div>
 
-              <div className="md:col-span-3">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Satuan Eceran
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Supplier / Toko Default
+                </label>
+                <Input
+                  placeholder="Opsional (mis. Toko Makmur)"
+                  value={defaultSupplier}
+                  onChange={(e) => setDefaultSupplier(e.target.value)}
+                  className="h-9 text-xs rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Kata Kunci / Alias di Struk (Opsional)
+              </label>
+              <Input
+                placeholder="Pisahkan koma: carnation pouch, skm carnation"
+                value={aliases}
+                onChange={(e) => setAliases(e.target.value)}
+                className="h-9 text-xs rounded-xl"
+              />
+            </div>
+
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                Konfigurasi Satuan Resep (Terkecil)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Satuan Resep (Terkecil)
+                  </label>
+                  <select
+                    value={satuanResep}
+                    onChange={(e) => {
+                      setRecipeUnitTouched(true);
+                      setSatuanResep(e.target.value);
+                    }}
+                    className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="">Auto dari satuan beli / isi paket</option>
+                    {recipeUnitOptions.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Isi / 1 {satuanBeli || "Satuan Beli"}
+                  </label>
+                  <Input
+                    type="number"
+                    min={0.0001}
+                    step="any"
+                    placeholder="Contoh: 1000"
+                    value={konversiResep}
+                    onChange={(e) => {
+                      setRecipeUnitTouched(true);
+                      setKonversiResep(e.target.value);
+                    }}
+                    className="h-9 text-xs rounded-xl tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                {satuanResep && Number(konversiResep) > 0 ? (
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 font-medium">
+                    <span className="font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                      1 {satuanBeli || "Pcs"}
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    {isiPaket ? (
+                      <span className="text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800">
+                        ({isiPaket})
+                      </span>
+                    ) : null}
+                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                      {konversiResep} {satuanResep}
+                    </span>
+                  </div>
+                ) : (
+                  <span>Kosongkan jika ingin sistem mendeteksi otomatis (mis. 1 Kg = 1000 Gram).</span>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 border-t border-slate-100 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAddDialogOpen(false)}
+                className="rounded-xl text-xs"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={addMutation.isPending || !itemName.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {addMutation.isPending ? "Menyimpan..." : "Simpan Item Baku"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Edit Master Item */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Edit3 className="w-5 h-5 text-blue-600" />
+              Edit Master Item Baku
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Perbarui rincian, satuan beli/ecer, konversi resep, dan supplier item baku.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!editingItem || !editForm.item_name.trim()) return;
+              const cleanUnit = editForm.satuan_resep.trim();
+              const cleanKonv = Number(editForm.konversi_resep);
+              if (cleanUnit && !(cleanKonv > 0)) {
+                toast.error("Isi faktor konversi resep lebih dari 0.");
+                return;
+              }
+              if (!cleanUnit && editForm.konversi_resep.trim() !== "") {
+                toast.error("Pilih satuan resep terkecil.");
+                return;
+              }
+              updateMutation.mutate({
+                id: editingItem.id,
+                payload: {
+                  ...editForm,
+                  default_supplier: editForm.default_supplier.trim() || "-",
+                  satuan_resep: cleanUnit || null,
+                  konversi_resep: cleanUnit && cleanKonv > 0 ? cleanKonv : null,
+                },
+              });
+            }}
+            className="space-y-4 pt-2"
+          >
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Nama Item Baku <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                placeholder="Contoh: Susu Carnation"
+                value={editForm.item_name}
+                onChange={(e) => setEditForm({ ...editForm, item_name: e.target.value })}
+                className="h-9 text-xs rounded-xl"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Kategori
                 </label>
                 <select
-                  value={satuanEcer}
-                  onChange={(e) => setSatuanEcer(e.target.value)}
-                  disabled={tipeSatuan === "paket"}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
+                  value={editForm.category}
+                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                >
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Tipe Satuan
+                </label>
+                <select
+                  value={editForm.tipe_satuan}
+                  onChange={(e) => setEditForm({ ...editForm, tipe_satuan: e.target.value as any })}
+                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
+                >
+                  <option value="keduanya">Paket &amp; Ecer</option>
+                  <option value="paket">Hanya Paket</option>
+                  <option value="ecer">Hanya Ecer</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Satuan Beli / Kemasan
+                </label>
+                <select
+                  value={editForm.satuan_beli}
+                  onChange={(e) => setEditForm({ ...editForm, satuan_beli: e.target.value })}
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 >
                   {units.map((u) => (
                     <option key={u} value={u}>
@@ -1721,97 +1937,221 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 </select>
               </div>
 
-              <div className="md:col-span-5">
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Kata Kunci / Alias di Struk (Opsional)
-                </label>
-                <Input
-                  placeholder="Pisahkan koma: carnation pouch, skm carnation"
-                  value={aliases}
-                  onChange={(e) => setAliases(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
-                />
-              </div>
-            </div>
-
-            {/* Baris 3: Turunan Satuan Resep (Satuan Terkecil) & Tombol Simpan */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end pt-1 border-t border-slate-100">
-              <div className="md:col-span-3">
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                  Satuan Resep (Terkecil)
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Satuan Eceran
                 </label>
                 <select
-                  value={satuanResep}
-                  onChange={(e) => {
-                    setRecipeUnitTouched(true);
-                    setSatuanResep(e.target.value);
-                  }}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  value={editForm.satuan_ecer}
+                  onChange={(e) => setEditForm({ ...editForm, satuan_ecer: e.target.value })}
+                  disabled={editForm.tipe_satuan === "paket"}
+                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
                 >
-                  <option value="">Auto dari satuan beli / isi paket</option>
-                  {recipeUnitOptions.map((u) => (
+                  {units.map((u) => (
                     <option key={u} value={u}>
                       {u}
                     </option>
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div className="md:col-span-3">
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                  Isi / 1 {satuanBeli || "Satuan Beli"}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Turunan / Isi Kemasan
                 </label>
                 <Input
-                  type="number"
-                  min={0.0001}
-                  step="any"
-                  placeholder="Contoh: 1000"
-                  value={konversiResep}
-                  onChange={(e) => {
-                    setRecipeUnitTouched(true);
-                    setKonversiResep(e.target.value);
-                  }}
-                  className="h-9 text-xs rounded-xl tabular-nums"
+                  placeholder="Contoh: 1Kg, 500g"
+                  value={editForm.isi_paket}
+                  onChange={(e) => setEditForm({ ...editForm, isi_paket: e.target.value })}
+                  className="h-9 text-xs rounded-xl"
                 />
               </div>
 
-              <div className="md:col-span-4 flex items-center h-9 text-[11px] text-slate-600">
-                {satuanResep && Number(konversiResep) > 0 ? (
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 font-medium tabular-nums truncate">
-                    1 {satuanBeli || "Pcs"} = {konversiResep} {satuanResep}
-                  </span>
-                ) : (
-                  <span>
-                    Kosongkan untuk auto-deteksi (mis. 1 Kg = 1000 Gram).
-                  </span>
-                )}
-              </div>
-
-              <div className="md:col-span-2">
-                <Button
-                  type="submit"
-                  disabled={addMutation.isPending || !itemName.trim()}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl h-9 px-3.5 text-xs font-semibold gap-1 shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Tambah Item
-                </Button>
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Supplier / Toko Default
+                </label>
+                <Input
+                  placeholder="Opsional (mis. Toko Makmur)"
+                  value={editForm.default_supplier}
+                  onChange={(e) => setEditForm({ ...editForm, default_supplier: e.target.value })}
+                  className="h-9 text-xs rounded-xl"
+                />
               </div>
             </div>
-          </form>
-        </CardContent>
-      </Card>
-      )}
 
-      {/* Filter & ReUI DataGrid List */}
-      <DataGrid
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Kata Kunci / Alias di Struk (Opsional)
+              </label>
+              <Input
+                placeholder="Pisahkan koma: alias1, alias2"
+                value={editForm.aliases}
+                onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
+                className="h-9 text-xs rounded-xl"
+              />
+            </div>
+
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Konfigurasi Satuan Resep (Terkecil)
+                </span>
+                {(() => {
+                  const suggested = suggestLocalRecipeUnit(editForm.satuan_beli, editForm.isi_paket);
+                  return suggested ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          satuan_resep: suggested.unit,
+                          konversi_resep: suggested.factor,
+                        }))
+                      }
+                      className="text-[11px] text-blue-700 dark:text-blue-400 hover:underline font-medium"
+                    >
+                      Saran: {suggested.factor} {suggested.unit}
+                    </button>
+                  ) : null;
+                })()}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Satuan Resep (Terkecil)
+                  </label>
+                  <select
+                    value={editForm.satuan_resep}
+                    onChange={(e) => setEditForm({ ...editForm, satuan_resep: e.target.value })}
+                    className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="">Belum diatur</option>
+                    {recipeUnitOptions.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Isi / 1 {editForm.satuan_beli || "Beli"}
+                  </label>
+                  <Input
+                    type="number"
+                    min={0.0001}
+                    step="any"
+                    placeholder="mis. 1000"
+                    value={editForm.konversi_resep}
+                    onChange={(e) => setEditForm({ ...editForm, konversi_resep: e.target.value })}
+                    className="h-9 text-xs rounded-xl tabular-nums"
+                  />
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                {editForm.satuan_resep && Number(editForm.konversi_resep) > 0 ? (
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 font-medium">
+                    <span className="font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                      1 {editForm.satuan_beli || "Pcs"}
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    {editForm.isi_paket ? (
+                      <span className="text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800">
+                        ({editForm.isi_paket})
+                      </span>
+                    ) : null}
+                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                      {editForm.konversi_resep} {editForm.satuan_resep}
+                    </span>
+                  </div>
+                ) : (
+                  <span>Belum ada konversi resep.</span>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 border-t border-slate-100 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditDialogOpen(false)}
+                className="rounded-xl text-xs"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={updateMutation.isPending || !editForm.item_name.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
+              >
+                <Check className="w-3.5 h-3.5" />
+                {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Filter & DataTable List */}
+      <DataTable
         table={masterTable}
         recordCount={filteredItems.length}
         isLoading={isLoading}
-        tableLayout={{ columnsResizable: true }}
-      >
-        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        headerClassName="p-0"
+        emptyMessage={
+          <div className="py-12 flex flex-col items-center justify-center text-center px-4 max-w-md mx-auto">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-3 border border-slate-200 dark:border-slate-700">
+              <PackageCheck className="w-6 h-6 stroke-[1.5]" />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
+              Tidak Ada Item yang Cocok
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
+              {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan)
+                ? "Tidak ada item master yang sesuai dengan kriteria filter atau pencarian saat ini."
+                : "Belum ada item bahan baku yang terdaftar di katalog master."}
+            </p>
+            <div className="flex items-center gap-2">
+              {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setFilterCat("");
+                    setFilterRecipeStatus("");
+                    setFilterTipeSatuan("");
+                  }}
+                  className="rounded-xl text-xs h-8"
+                >
+                  Reset Filter
+                </Button>
+              )}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  onClick={() => setIsAddDialogOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-8 font-medium gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Tambah Item Baru
+                </Button>
+              )}
+            </div>
+          </div>
+        }
+        header={
+          <>
+            <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <Input
@@ -1859,8 +2199,104 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 <option value="configured">Resep: Sudah Diatur</option>
                 <option value="unconfigured">Resep: Belum Diatur</option>
               </select>
+              <select
+                value={filterTipeSatuan}
+                onChange={(e) =>
+                  setFilterTipeSatuan(
+                    e.target.value as "" | "keduanya" | "paket" | "ecer"
+                  )
+                }
+                aria-label="Filter tipe satuan master item"
+                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
+              >
+                <option value="">Semua Tipe Satuan</option>
+                <option value="keduanya">Paket & Ecer</option>
+                <option value="paket">Hanya Paket</option>
+                <option value="ecer">Hanya Ecer</option>
+              </select>
             </div>
           </div>
+
+          {/* Active Filter Chips / Pills */}
+          {(Boolean(search) || Boolean(filterCat) || Boolean(filterRecipeStatus) || Boolean(filterTipeSatuan)) && (
+            <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center gap-2 flex-wrap text-xs">
+              <span className="text-[11px] font-medium text-slate-500">Filter Aktif:</span>
+              {search && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-medium">
+                  <span>Cari: "{search}"</span>
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="hover:text-blue-900 rounded-full p-0.5"
+                    title="Hapus pencarian"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {filterCat && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
+                  <span>Kategori: {filterCat}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterCat("")}
+                    className="hover:text-slate-900 rounded-full p-0.5"
+                    title="Hapus filter kategori"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {filterRecipeStatus && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
+                  <span>
+                    Resep: {filterRecipeStatus === "configured" ? "Sudah Diatur" : "Belum Diatur"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterRecipeStatus("")}
+                    className="hover:text-slate-900 rounded-full p-0.5"
+                    title="Hapus filter resep"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {filterTipeSatuan && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
+                  <span>
+                    Tipe:{" "}
+                    {filterTipeSatuan === "keduanya"
+                      ? "Paket & Ecer"
+                      : filterTipeSatuan === "paket"
+                      ? "Paket"
+                      : "Ecer"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterTipeSatuan("")}
+                    className="hover:text-slate-900 rounded-full p-0.5"
+                    title="Hapus filter tipe satuan"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setFilterCat("");
+                  setFilterRecipeStatus("");
+                  setFilterTipeSatuan("");
+                }}
+                className="h-6 text-[11px] text-slate-500 hover:text-rose-600 px-2 py-0 ml-1"
+              >
+                Reset Semua Filter
+              </Button>
+            </div>
+          )}
 
           {/* Selected Items Merge Action Bar */}
           {selectedIds.length > 0 && (
@@ -1902,18 +2338,9 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
           )}
-
-          <CardContent className="p-0">
-            <DataGridScrollArea>
-              <DataGridTable />
-            </DataGridScrollArea>
-          </CardContent>
-
-          <CardFooter className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 bg-slate-50/50 dark:bg-slate-900/50">
-            <DataGridPagination />
-          </CardFooter>
-        </Card>
-      </DataGrid>
+          </>
+        }
+      />
 
       {/* Floating Action Bar ketika item dipilih */}
       {selectedIds.length >= 2 && (
@@ -2429,6 +2856,222 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           await csvImportMutation.mutateAsync({ file, updateExisting });
         }}
       />
+
+      {/* Quick-Inspect Slide-Over Sheet (Right Drawer) */}
+      <Sheet
+        open={Boolean(inspectDrawerItem)}
+        onOpenChange={(open) => {
+          if (!open) setInspectDrawerItem(null);
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-6 space-y-6">
+          {inspectDrawerItem && (
+            <>
+              <SheetHeader className="text-left space-y-1.5 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wider">
+                    {inspectDrawerItem.category}
+                  </Badge>
+                  {inspectDrawerItem.satuan_resep &&
+                  inspectDrawerItem.konversi_resep &&
+                  inspectDrawerItem.konversi_resep > 0 ? (
+                    <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-medium">
+                      Resep Aktif
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-medium">
+                      Resep Belum Diatur
+                    </Badge>
+                  )}
+                </div>
+                <SheetTitle className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  {inspectDrawerItem.item_name}
+                </SheetTitle>
+                <SheetDescription className="text-xs text-slate-500 dark:text-slate-400">
+                  Ringkasan spesifikasi satuan, konversi resep, dan pergerakan harga belanja.
+                </SheetDescription>
+              </SheetHeader>
+
+              {/* Detail Spesifikasi Satuan */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Konfigurasi Satuan & Konversi
+                </h4>
+                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Satuan Pembelian:</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {inspectDrawerItem.satuan_beli || "Pcs"}
+                    </span>
+                  </div>
+                  {inspectDrawerItem.isi_paket && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Isi / Kemasan:</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {inspectDrawerItem.isi_paket}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Tipe Satuan:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      {inspectDrawerItem.tipe_satuan === "keduanya"
+                        ? "Paket & Ecer"
+                        : inspectDrawerItem.tipe_satuan === "paket"
+                        ? "Hanya Paket"
+                        : "Hanya Ecer"}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                    <span className="text-slate-500 block mb-1">Formula Konversi Resep:</span>
+                    {inspectDrawerItem.satuan_resep &&
+                    inspectDrawerItem.konversi_resep &&
+                    inspectDrawerItem.konversi_resep > 0 ? (
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs border border-emerald-200/60 dark:border-emerald-800">
+                        <span>1 {inspectDrawerItem.satuan_beli || "Pcs"}</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="tabular-nums">
+                          {inspectDrawerItem.konversi_resep} {inspectDrawerItem.satuan_resep}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-600 font-medium">
+                        Belum dikonfigurasi (HPP resep menu belum dapat dihitung presisi).
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Price & Supplier Intelligence */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+                  <Receipt className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  Metrik Harga & Belanja
+                </h4>
+
+                {isDrawerLoading ? (
+                  <div className="py-6 text-center text-xs text-slate-400">
+                    Memuat data histori harga...
+                  </div>
+                ) : drawerPriceHistory ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 font-medium block">
+                          Harga Terakhir
+                        </span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {formatRupiah(drawerPriceHistory.latest_price)}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] text-slate-500 font-medium block">
+                          Rata-rata Harga
+                        </span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          {formatRupiah(drawerPriceHistory.avg_price)}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900">
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <TrendingDown className="w-3 h-3" /> Termurah
+                        </span>
+                        <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300 tabular-nums">
+                          {formatRupiah(drawerPriceHistory.min_price)}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900">
+                        <span className="text-[10px] text-rose-700 dark:text-rose-400 font-medium flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" /> Tertinggi
+                        </span>
+                        <span className="text-sm font-bold text-rose-800 dark:text-rose-300 tabular-nums">
+                          {formatRupiah(drawerPriceHistory.max_price)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                      <span className="text-slate-500 flex items-center gap-1.5">
+                        <Store className="w-3.5 h-3.5 text-slate-400" /> Supplier Termurah:
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {drawerPriceHistory.cheapest_supplier || inspectDrawerItem.default_supplier || "-"}
+                      </span>
+                    </div>
+
+                    {/* Riwayat Transaksi Terakhir */}
+                    {drawerPriceHistory.history && drawerPriceHistory.history.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                          5 Pembelian Terakhir ({drawerPriceHistory.tx_count} transaksi tercatat)
+                        </span>
+                        <div className="space-y-1.5">
+                          {drawerPriceHistory.history.slice(0, 5).map((h) => (
+                            <div
+                              key={h.id}
+                              className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs flex items-center justify-between"
+                            >
+                              <div>
+                                <span className="font-medium text-slate-900 dark:text-slate-100 block">
+                                  {h.supplier || "Supplier Umum"}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {formatDateId(h.expense_date)} • {h.qty} {h.unit || inspectDrawerItem.satuan_beli || "Pcs"}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums block">
+                                  {formatRupiah(h.unit_price)}
+                                </span>
+                                <span className="text-[10px] text-slate-400 tabular-nums">
+                                  Total: {formatRupiah(h.total_price)}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-center text-xs text-slate-500">
+                    Belum ada riwayat transaksi pengeluaran untuk item ini.
+                  </div>
+                )}
+              </div>
+
+              {/* Action Footer */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const item = inspectDrawerItem;
+                      setInspectDrawerItem(null);
+                      startEdit(item);
+                    }}
+                    className="rounded-xl text-xs flex-1 gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Edit Item Ini
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setInspectDrawerItem(null)}
+                  className="rounded-xl text-xs px-4"
+                >
+                  Tutup
+                </Button>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

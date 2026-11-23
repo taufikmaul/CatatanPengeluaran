@@ -14,6 +14,10 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import {
   Loader2,
   AlertCircle,
@@ -86,8 +90,123 @@ const ProductRankTable: React.FC<ProductRankTableProps> = ({ title, subtitle, mo
     1
   );
 
+  const columns = useMemo<ColumnDef<DataGridFeatures, IncomingAnalyticsProductRow>[]>(
+    () => [
+      {
+        id: "rank",
+        header: () => <span>#</span>,
+        cell: ({ row }) => (
+          <span className="text-slate-500 font-mono tabular-nums">{row.index + 1}</span>
+        ),
+        size: 40,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "product_name",
+        id: "product_name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Menu & Channel" column={column} />
+        ),
+        cell: ({ row }) => {
+          const p = row.original;
+          const primaryVal = mode === "qty" ? p.total_qty : p.net_sales;
+          const barWidth = Math.max(4, Math.round((primaryVal / maxVal) * 100));
+          const orderTypes = p.order_types || [];
+          return (
+            <div>
+              <div className="font-medium text-slate-900 leading-snug">{p.product_name}</div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                <span className="text-[11px] text-slate-500">{p.category}</span>
+                {orderTypes.slice(0, 3).map((ot) => {
+                  const isCf = ot.toLowerCase().replace(/[\s_-]+/g, "").includes("cakeflow");
+                  return (
+                    <span
+                      key={ot}
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                        isCf
+                          ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : "bg-slate-50 text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      {ot}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="mt-1.5 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    mode === "qty" ? "bg-blue-600" : "bg-emerald-600"
+                  }`}
+                  style={{ width: `${barWidth}%` }}
+                />
+              </div>
+            </div>
+          );
+        },
+        size: 240,
+      },
+      {
+        accessorKey: mode === "qty" ? "total_qty" : "net_sales",
+        id: "primary_metric",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title={mode === "qty" ? "Qty (Pcs)" : "Omset Net"}
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const p = row.original;
+          const sharePct = mode === "qty" ? (p.qty_share_pct ?? 0) : (p.revenue_share_pct ?? 0);
+          return (
+            <div className="text-right tabular-nums whitespace-nowrap">
+              <div
+                className={`font-semibold ${
+                  mode === "qty" ? "text-blue-700" : "text-emerald-700"
+                }`}
+              >
+                {mode === "qty" ? formatQty(p.total_qty) : formatRupiah(p.net_sales)}
+              </div>
+              <div className="text-[10px] text-slate-500">{sharePct}% porsi</div>
+            </div>
+          );
+        },
+        size: 120,
+      },
+      {
+        accessorKey: mode === "qty" ? "net_sales" : "total_qty",
+        id: "secondary_metric",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title={mode === "qty" ? "Omset Net" : "Qty (Pcs)"}
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <div className="text-right tabular-nums text-slate-700 whitespace-nowrap">
+              <div className="font-medium">
+                {mode === "qty" ? formatRupiah(p.net_sales) : `${formatQty(p.total_qty)} pcs`}
+              </div>
+              {p.avg_price !== undefined && p.avg_price > 0 && (
+                <div className="text-[10px] text-slate-500">
+                  avg {formatRupiah(p.avg_price)}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 120,
+      },
+    ],
+    [mode, maxVal]
+  );
+
   return (
-    <Card className="border-slate-200 shadow-xs">
+    <Card className="border-slate-200 shadow-xs overflow-hidden">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -112,87 +231,13 @@ const ProductRankTable: React.FC<ProductRankTableProps> = ({ title, subtitle, mo
             Belum ada data menu pada periode dan filter tipe order ini.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-y border-slate-200 text-slate-600">
-                <tr>
-                  <th className="text-left px-3 py-2 font-medium w-9">#</th>
-                  <th className="text-left px-3 py-2 font-medium">Menu &amp; Channel</th>
-                  <th className="text-right px-3 py-2 font-medium">
-                    {mode === "qty" ? "Qty (Pcs)" : "Omset Net"}
-                  </th>
-                  <th className="text-right px-3 py-2 font-medium">
-                    {mode === "qty" ? "Omset Net" : "Qty (Pcs)"}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((p, idx) => {
-                  const primaryVal = mode === "qty" ? p.total_qty : p.net_sales;
-                  const barWidth = Math.max(4, Math.round((primaryVal / maxVal) * 100));
-                  const sharePct = mode === "qty" ? (p.qty_share_pct ?? 0) : (p.revenue_share_pct ?? 0);
-                  const orderTypes = p.order_types || [];
-
-                  return (
-                    <tr key={`${mode}-${p.product_name}`} className="hover:bg-slate-50/70 align-top">
-                      <td className="px-3 py-2.5 text-slate-500 font-mono tabular-nums">
-                        {idx + 1}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="font-medium text-slate-900 leading-snug">{p.product_name}</div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          <span className="text-[11px] text-slate-500">{p.category}</span>
-                          {orderTypes.slice(0, 3).map((ot) => {
-                            const isCf = ot.toLowerCase().replace(/[\s_-]+/g, "").includes("cakeflow");
-                            return (
-                              <span
-                                key={ot}
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
-                                  isCf
-                                    ? "bg-amber-50 text-amber-800 border-amber-200"
-                                    : "bg-slate-50 text-slate-600 border-slate-200"
-                                }`}
-                              >
-                                {ot}
-                              </span>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-1.5 w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              mode === "qty" ? "bg-blue-600" : "bg-emerald-600"
-                            }`}
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
-                        <div
-                          className={`font-semibold ${
-                            mode === "qty" ? "text-blue-700" : "text-emerald-700"
-                          }`}
-                        >
-                          {mode === "qty" ? formatQty(p.total_qty) : formatRupiah(p.net_sales)}
-                        </div>
-                        <div className="text-[10px] text-slate-500">{sharePct}% porsi</div>
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
-                        <div className="font-medium">
-                          {mode === "qty" ? formatRupiah(p.net_sales) : `${formatQty(p.total_qty)} pcs`}
-                        </div>
-                        {p.avg_price !== undefined && p.avg_price > 0 && (
-                          <div className="text-[10px] text-slate-500">
-                            avg {formatRupiah(p.avg_price)}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={columns}
+            data={rows}
+            getRowId={(r, i) => `${mode}-${r.product_name}-${i}`}
+            defaultPageSize={10}
+            containerClassName="border-0 rounded-none shadow-none border-t border-slate-200"
+          />
         )}
       </CardContent>
     </Card>

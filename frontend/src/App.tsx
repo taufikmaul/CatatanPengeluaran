@@ -258,6 +258,7 @@ function MainDashboardApp() {
   const [isReimbursement, setIsReimbursement] = useState<boolean | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number>(25);
 
   // Modal & Drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -454,11 +455,11 @@ function MainDashboardApp() {
     isLoading: isExpensesLoading,
     refetch: refetchExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
+    queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
-        per_page: "30",
+        per_page: String(perPage),
         month: String(monthStart),
         year: String(year),
       });
@@ -1185,9 +1186,14 @@ function MainDashboardApp() {
                       expenses={expensesData?.data || []}
                       isLoading={isExpensesLoading}
                       page={page}
+                      pageSize={perPage}
                       totalPages={expensesData?.total_pages || 1}
                       totalCount={expensesData?.total || 0}
                       onPageChange={setPage}
+                      onPageSizeChange={(size) => {
+                        setPerPage(size);
+                        setPage(1);
+                      }}
                       onToggleStatus={handleToggleStatus}
                       onOpenPaymentModal={handleOpenPaymentModal}
                       onEditExpense={(item) => {
@@ -1401,9 +1407,14 @@ function MainDashboardApp() {
                         expenses={expensesData?.data || []}
                         isLoading={isExpensesLoading}
                         page={page}
+                        pageSize={perPage}
                         totalPages={expensesData?.total_pages || 1}
                         totalCount={expensesData?.total || 0}
                         onPageChange={setPage}
+                        onPageSizeChange={(size) => {
+                          setPerPage(size);
+                          setPage(1);
+                        }}
                         onToggleStatus={handleToggleStatus}
                         onOpenPaymentModal={handleOpenPaymentModal}
                         onEditExpense={(item) => {
@@ -1563,9 +1574,14 @@ function MainDashboardApp() {
                       expenses={expensesData?.data || []}
                       isLoading={isExpensesLoading}
                       page={page}
+                      pageSize={perPage}
                       totalPages={expensesData?.total_pages || 1}
                       totalCount={expensesData?.total || 0}
                       onPageChange={setPage}
+                      onPageSizeChange={(size) => {
+                        setPerPage(size);
+                        setPage(1);
+                      }}
                       onToggleStatus={handleToggleStatus}
                       onOpenPaymentModal={handleOpenPaymentModal}
                       onEditExpense={(item) => {

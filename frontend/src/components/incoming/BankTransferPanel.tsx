@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BankAccount } from "@/types";
 import { getBankTransfers, createBankTransfer, deleteBankTransfer } from "@/lib/api";
@@ -7,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { ArrowRightLeft, Plus, Trash2, Loader2 } from "lucide-react";
 
@@ -76,6 +80,113 @@ export const BankTransferPanel: React.FC<BankTransferPanelProps> = ({
   });
 
   const activeAccounts = accounts.filter((a) => a.is_active);
+
+  type TransferRow = (typeof transfers)[number];
+  const transferColumns = useMemo<ColumnDef<DataGridFeatures, TransferRow>[]>(() => {
+    const cols: ColumnDef<DataGridFeatures, TransferRow>[] = [
+      {
+        accessorKey: "transfer_date",
+        id: "transfer_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => (
+          <span className="font-medium text-slate-800 whitespace-nowrap">
+            {row.original.transfer_date}
+          </span>
+        ),
+        size: 110,
+      },
+      {
+        accessorKey: "transfer_type",
+        id: "transfer_type",
+        header: ({ column }) => <DataGridColumnHeader title="Jenis" column={column} />,
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-[10px]">
+            {TRANSFER_TYPE_LABELS[row.original.transfer_type] || row.original.transfer_type}
+          </Badge>
+        ),
+        size: 185,
+      },
+      {
+        id: "route",
+        header: () => <span>Dari → Ke</span>,
+        cell: ({ row }) => (
+          <span>
+            <span className="font-medium text-rose-700">{row.original.from_account_name}</span>{" "}
+            <span className="text-slate-400">→</span>{" "}
+            <span className="font-medium text-emerald-700">{row.original.to_account_name}</span>
+          </span>
+        ),
+        size: 220,
+      },
+      {
+        accessorKey: "amount",
+        id: "amount",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Nominal"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right font-semibold tabular-nums text-slate-900 whitespace-nowrap">
+            {formatRupiah(row.original.amount)}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        accessorKey: "admin_fee",
+        id: "admin_fee",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Admin"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-500 whitespace-nowrap">
+            {row.original.admin_fee > 0 ? formatRupiah(row.original.admin_fee) : "-"}
+          </div>
+        ),
+        size: 100,
+      },
+      {
+        accessorKey: "notes",
+        id: "notes",
+        header: () => <span>Catatan</span>,
+        cell: ({ row }) => (
+          <span className="text-slate-500">{row.original.notes || "-"}</span>
+        ),
+        size: 180,
+      },
+    ];
+    if (isAdmin) {
+      cols.push({
+        id: "actions",
+        header: () => <div className="text-center w-full">Aksi</div>,
+        cell: ({ row }) => (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Hapus catatan transfer ini?")) {
+                  deleteMutation.mutate(row.original.id);
+                }
+              }}
+              className="p-1 text-slate-400 hover:text-rose-600"
+              aria-label="Hapus catatan transfer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ),
+        size: 64,
+      });
+    }
+    return cols;
+  }, [isAdmin, deleteMutation]);
 
   return (
     <div className="space-y-4">
@@ -201,60 +312,13 @@ export const BankTransferPanel: React.FC<BankTransferPanelProps> = ({
             Belum ada mutasi transfer antar rekening.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                <tr>
-                  <th className="text-left px-3 py-2.5 font-medium">Tanggal</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Jenis</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Dari → Ke</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Nominal</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Admin</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Catatan</th>
-                  {isAdmin && <th className="w-10 px-2 py-2.5" />}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {transfers.map((tr) => (
-                  <tr key={tr.id} className="hover:bg-slate-50/70">
-                    <td className="px-3 py-2.5 font-medium text-slate-800">{tr.transfer_date}</td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant="outline" className="text-[10px]">
-                        {TRANSFER_TYPE_LABELS[tr.transfer_type] || tr.transfer_type}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span className="font-medium text-rose-700">{tr.from_account_name}</span>{" "}
-                      <span className="text-slate-400">→</span>{" "}
-                      <span className="font-medium text-emerald-700">{tr.to_account_name}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
-                      {formatRupiah(tr.amount)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
-                      {tr.admin_fee > 0 ? formatRupiah(tr.admin_fee) : "-"}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-500">{tr.notes || "-"}</td>
-                    {isAdmin && (
-                      <td className="px-2 py-2.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm("Hapus catatan transfer ini?")) {
-                              deleteMutation.mutate(tr.id);
-                            }
-                          }}
-                          className="p-1 text-slate-400 hover:text-rose-600"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={transferColumns}
+            data={transfers}
+            getRowId={(row) => String(row.id)}
+            defaultPageSize={10}
+            containerClassName="border-0 rounded-none shadow-none"
+          />
         )}
       </Card>
     </div>

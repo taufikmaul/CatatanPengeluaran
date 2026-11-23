@@ -19,6 +19,13 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DataTable } from "@/components/common/DataTable";
+import {
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef, PaginationState, useTable } from "@tanstack/react-table";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import {
@@ -94,7 +101,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   }, [currentMonth, currentMonthEnd, currentYear]);
 
   const [page, setPage] = useState<number>(1);
-  const perPage = 25;
+  const [perPage, setPerPage] = useState<number>(25);
 
   // Batch selection & modal states
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -340,6 +347,414 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   const dpRemainingNominal = summaryData?.dp_remaining_nominal ?? 0;
   const activeSuppliersCount =
     summaryData?.by_supplier?.filter((s) => s.unpaid_count > 0).length || 0;
+
+  const unpaidColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
+    () => [
+      {
+        id: "select",
+        header: () => (
+          <div className="flex justify-center">
+            <Checkbox
+              checked={
+                expenses.length > 0 && expenses.every((e) => selectedIds.includes(e.id))
+              }
+              onCheckedChange={handleSelectAll}
+              aria-label="Pilih semua baris"
+            />
+          </div>
+        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          const isSelected = selectedIds.includes(expense.id);
+          return (
+            <div className="flex justify-center">
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => handleToggleSelect(expense.id)}
+                aria-label={`Pilih transaksi #${expense.id}`}
+              />
+            </div>
+          );
+        },
+        size: 44,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <div className="whitespace-nowrap">
+              <div className="font-semibold text-slate-900 dark:text-slate-100">
+                {formatDateId(expense.expense_date)}
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                ID: #{expense.id}
+              </div>
+            </div>
+          );
+        },
+        size: 110,
+      },
+      {
+        accessorKey: "due_date",
+        id: "due_date",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tempo Pelunasan" column={column} />
+        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          const bd = getExpensePaymentBreakdown(expense);
+          const dueInfo = getDueUrgencyInfo(expense.due_date);
+          return bd.isPaid ? (
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
+              {expense.due_date && expense.due_date !== "-"
+                ? formatDateId(expense.due_date)
+                : "Selesai"}
+            </span>
+          ) : (
+            <div className="space-y-1 whitespace-nowrap">
+              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                {formatDateId(expense.due_date)}
+              </div>
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-2 py-0.5 rounded-md ${dueInfo.badgeClass}`}
+              >
+                {dueInfo.label}
+              </Badge>
+            </div>
+          );
+        },
+        size: 140,
+      },
+      {
+        accessorKey: "supplier",
+        id: "supplier",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Toko / Supplier" column={column} />
+        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span
+                  className="truncate max-w-[150px] lg:max-w-[190px]"
+                  title={expense.supplier}
+                >
+                  {expense.supplier || "Tanpa Supplier"}
+                </span>
+              </div>
+              {expense.invoice_number && expense.invoice_number !== "-" && (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">
+                  No: {expense.invoice_number}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 175,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Barang & Kategori" column={column} />
+        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          const catColor = getCategoryColor(expense.category);
+          return (
+            <div>
+              <div
+                className="font-medium text-slate-900 dark:text-slate-100 max-w-[190px] truncate"
+                title={expense.item_name}
+              >
+                {expense.item_name}
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                >
+                  {expense.category || "Umum"}
+                </Badge>
+                <span className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                  {expense.qty} {expense.unit || "pcs"}
+                </span>
+              </div>
+              {expense.notes && expense.notes !== "-" && (
+                <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5 truncate max-w-[190px]">
+                  {expense.notes}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 205,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Tagihan & DP"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          const bd = getExpensePaymentBreakdown(expense);
+          return (
+            <div className="text-right whitespace-nowrap">
+              {bd.isPaid ? (
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                    {formatRupiah(bd.total)}
+                  </div>
+                  {(expense.payments_count || 0) > 0 && (
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      {expense.payments_count}x pembayaran
+                    </div>
+                  )}
+                </div>
+              ) : bd.isDp || bd.paid > 0 ? (
+                <div className="space-y-1 min-w-[145px]">
+                  <div className="font-bold text-rose-700 dark:text-rose-400 tabular-nums text-sm">
+                    Sisa {formatRupiah(bd.remaining)}
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-amber-500"
+                      style={{ width: `${Math.min(100, bd.progressPct)}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                    DP {formatRupiah(bd.paid)} / {formatRupiah(bd.total)}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                    {formatRupiah(bd.total)}
+                  </div>
+                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                    @{formatRupiah(expense.unit_price)}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 165,
+      },
+      {
+        accessorKey: "pay_status",
+        id: "pay_status",
+        header: () => <div className="text-center w-full">Status</div>,
+        cell: ({ row }) => {
+          const bd = getExpensePaymentBreakdown(row.original);
+          return (
+            <div className="text-center whitespace-nowrap">
+              {bd.isPaid ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
+                >
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Lunas
+                </Badge>
+              ) : bd.isDp ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
+                >
+                  <Wallet className="w-3 h-3 mr-1" />
+                  DP {Math.round(bd.progressPct)}%
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
+                >
+                  <Clock className="w-3 h-3 mr-1" />
+                  Belum Lunas
+                </Badge>
+              )}
+            </div>
+          );
+        },
+        size: 120,
+      },
+      {
+        id: "nota",
+        header: () => <div className="text-center w-full">Nota</div>,
+        cell: ({ row }) => {
+          const tgLink = parseTelegramLink(row.original.msg_link);
+          return (
+            <div className="text-center whitespace-nowrap">
+              {tgLink?.isUrl && tgLink.url ? (
+                <a
+                  href={tgLink.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
+                  title="Buka pesan nota di Telegram"
+                >
+                  <TelegramIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Nota</span>
+                  <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                </a>
+              ) : (
+                <span className="text-slate-500 dark:text-slate-400">-</span>
+              )}
+            </div>
+          );
+        },
+        size: 95,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-center w-full">Aksi</div>,
+        cell: ({ row }) => {
+          const expense = row.original;
+          const bd = getExpensePaymentBreakdown(expense);
+          return (
+            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+              {!bd.isPaid ? (
+                <>
+                  <Button
+                    size="sm"
+                    onClick={() => openPaymentModal(expense, bd.isDp ? "full" : "percent")}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white shadow-2xs"
+                    title={
+                      bd.isDp
+                        ? "Catat cicilan atau pelunasan sisa DP"
+                        : "Catat pembayaran DP atau cicilan"
+                    }
+                  >
+                    <Wallet className="w-3 h-3 mr-1" />
+                    {bd.isDp ? "Bayar / Lunasi" : "DP"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleTogglePaid(expense)}
+                    disabled={settleMutation.isPending}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs"
+                    title="Langsung lunasi seluruh sisa tagihan"
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Lunas
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {(expense.payments_count || 0) > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openPaymentModal(expense, "full")}
+                      className="h-8 px-2.5 text-[11px] font-semibold rounded-lg border-slate-300 text-slate-700 dark:text-slate-200"
+                      title="Lihat riwayat DP dan pelunasan"
+                    >
+                      <History className="w-3 h-3 mr-1" />
+                      Riwayat
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleTogglePaid(expense)}
+                    disabled={settleMutation.isPending}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200"
+                    title="Batalkan status Lunas"
+                  >
+                    Batal
+                  </Button>
+                </>
+              )}
+              {onViewExpense && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onViewExpense(expense)}
+                  className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                  title="Lihat Detail"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onEditExpense(expense)}
+                className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                title="Edit Transaksi"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </Button>
+              {canDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDelete(expense.id)}
+                  disabled={deletingId === expense.id}
+                  className="h-8 w-8 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg"
+                  title="Hapus Transaksi"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
+          );
+        },
+        size: 250,
+      },
+    ],
+    [
+      expenses,
+      selectedIds,
+      settleMutation.isPending,
+      onViewExpense,
+      onEditExpense,
+      canDelete,
+      deletingId,
+    ]
+  );
+
+  const unpaidPagination = useMemo<PaginationState>(
+    () => ({
+      pageIndex: Math.max(0, page - 1),
+      pageSize: perPage,
+    }),
+    [page, perPage]
+  );
+
+  const unpaidTable = useTable({
+    features: dataGridFeatures,
+    columns: unpaidColumns,
+    data: expenses,
+    manualPagination: true,
+    rowCount: totalItems,
+    getRowId: (row: Expense) => String(row.id),
+    state: {
+      pagination: unpaidPagination,
+    },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === "function" ? updater(unpaidPagination) : updater;
+      if (next.pageSize !== perPage) {
+        setPerPage(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
+    },
+  });
 
   return (
     <div className="space-y-5">
@@ -1101,7 +1516,13 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             )}
           </div>
         ) : (
-          <>
+          <DataTable
+            table={unpaidTable}
+            recordCount={totalItems}
+            isLoading={isExpensesLoading}
+            containerClassName="border-0 rounded-none shadow-none"
+            tableWrapperClassName="hidden md:block"
+          >
             {/* Mobile Card Layout (< md) */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
               {expenses.map((expense) => {
@@ -1318,354 +1739,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                 );
               })}
             </div>
-
-            {/* Desktop Table View (>= md) */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200/90 dark:border-slate-800 text-slate-600 dark:text-slate-300">
-                  <tr>
-                    <th className="py-3 px-3.5 w-10">
-                      <Checkbox
-                        checked={
-                          expenses.length > 0 &&
-                          expenses.every((e) => selectedIds.includes(e.id))
-                        }
-                        onCheckedChange={handleSelectAll}
-                        aria-label="Pilih semua baris"
-                      />
-                    </th>
-                    <th className="py-3 px-3 font-semibold">Tanggal</th>
-                    <th className="py-3 px-3 font-semibold">Tempo Pelunasan</th>
-                    <th className="py-3 px-3 font-semibold">Toko / Supplier</th>
-                    <th className="py-3 px-3 font-semibold">Barang & Kategori</th>
-                    <th className="py-3 px-3 font-semibold text-right">Tagihan & DP</th>
-                    <th className="py-3 px-3 font-semibold text-center">Status</th>
-                    <th className="py-3 px-3 font-semibold text-center">Nota</th>
-                    <th className="py-3 px-3 font-semibold text-center">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {expenses.map((expense) => {
-                    const isSelected = selectedIds.includes(expense.id);
-                    const bd = getExpensePaymentBreakdown(expense);
-                    const dueInfo = getDueUrgencyInfo(expense.due_date);
-                    const catColor = getCategoryColor(expense.category);
-                    const tgLink = parseTelegramLink(expense.msg_link);
-
-                    return (
-                      <tr
-                        key={expense.id}
-                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                          isSelected
-                            ? "bg-rose-50/40 dark:bg-rose-950/20"
-                            : dueInfo.urgency === "overdue" && !bd.isPaid
-                            ? "bg-red-50/20 dark:bg-red-950/10"
-                            : ""
-                        }`}
-                      >
-                        <td className="py-3 px-3.5">
-                          <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={() => handleToggleSelect(expense.id)}
-                            aria-label={`Pilih transaksi #${expense.id}`}
-                          />
-                        </td>
-
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100">
-                            {formatDateId(expense.expense_date)}
-                          </div>
-                          <div className="text-[11px] text-slate-600 dark:text-slate-300">
-                            ID: #{expense.id}
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          {bd.isPaid ? (
-                            <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                              {expense.due_date && expense.due_date !== "-"
-                                ? formatDateId(expense.due_date)
-                                : "Selesai"}
-                            </span>
-                          ) : (
-                            <div className="space-y-1">
-                              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
-                                {formatDateId(expense.due_date)}
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] px-2 py-0.5 rounded-md ${dueInfo.badgeClass}`}
-                              >
-                                {dueInfo.label}
-                              </Badge>
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                            <span
-                              className="truncate max-w-[150px] lg:max-w-[190px]"
-                              title={expense.supplier}
-                            >
-                              {expense.supplier || "Tanpa Supplier"}
-                            </span>
-                          </div>
-                          {expense.invoice_number && expense.invoice_number !== "-" && (
-                            <div className="text-[11px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">
-                              No: {expense.invoice_number}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <div
-                            className="font-medium text-slate-900 dark:text-slate-100 max-w-[190px] truncate"
-                            title={expense.item_name}
-                          >
-                            {expense.item_name}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
-                            >
-                              {expense.category || "Umum"}
-                            </Badge>
-                            <span className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
-                              {expense.qty} {expense.unit || "pcs"}
-                            </span>
-                          </div>
-                          {expense.notes && expense.notes !== "-" && (
-                            <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5 truncate max-w-[190px]">
-                              {expense.notes}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Tagihan & DP Breakdown */}
-                        <td className="py-3 px-3 text-right whitespace-nowrap">
-                          {bd.isPaid ? (
-                            <div>
-                              <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
-                                {formatRupiah(bd.total)}
-                              </div>
-                              {(expense.payments_count || 0) > 0 && (
-                                <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                                  {expense.payments_count}x pembayaran
-                                </div>
-                              )}
-                            </div>
-                          ) : bd.isDp || bd.paid > 0 ? (
-                            <div className="space-y-1 min-w-[145px]">
-                              <div className="font-bold text-rose-700 dark:text-rose-400 tabular-nums text-sm">
-                                Sisa {formatRupiah(bd.remaining)}
-                              </div>
-                              <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-amber-500"
-                                  style={{ width: `${Math.min(100, bd.progressPct)}%` }}
-                                />
-                              </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
-                                DP {formatRupiah(bd.paid)} / {formatRupiah(bd.total)}
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
-                                {formatRupiah(bd.total)}
-                              </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
-                                @{formatRupiah(expense.unit_price)}
-                              </div>
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Status Bayar */}
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          {bd.isPaid ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
-                            >
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              Lunas
-                            </Badge>
-                          ) : bd.isDp ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-                            >
-                              <Wallet className="w-3 h-3 mr-1" />
-                              DP {Math.round(bd.progressPct)}%
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
-                            >
-                              <Clock className="w-3 h-3 mr-1" />
-                              Belum Lunas
-                            </Badge>
-                          )}
-                        </td>
-
-                        {/* Nota / Telegram Link */}
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          {tgLink?.isUrl && tgLink.url ? (
-                            <a
-                              href={tgLink.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
-                              title="Buka pesan nota di Telegram"
-                            >
-                              <TelegramIcon className="w-3.5 h-3.5 text-blue-600" />
-                              <span>Nota</span>
-                              <ExternalLink className="w-2.5 h-2.5 opacity-80" />
-                            </a>
-                          ) : (
-                            <span className="text-slate-500 dark:text-slate-400">-</span>
-                          )}
-                        </td>
-
-                        {/* Aksi */}
-                        <td className="py-3 px-3 text-center whitespace-nowrap">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {!bd.isPaid ? (
-                              <>
-                                <Button
-                                  size="sm"
-                                  onClick={() =>
-                                    openPaymentModal(expense, bd.isDp ? "full" : "percent")
-                                  }
-                                  className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white shadow-2xs"
-                                  title={
-                                    bd.isDp
-                                      ? "Catat cicilan atau pelunasan sisa DP"
-                                      : "Catat pembayaran DP atau cicilan"
-                                  }
-                                >
-                                  <Wallet className="w-3 h-3 mr-1" />
-                                  {bd.isDp ? "Bayar / Lunasi" : "DP"}
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleTogglePaid(expense)}
-                                  disabled={settleMutation.isPending}
-                                  className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs"
-                                  title="Langsung lunasi seluruh sisa tagihan"
-                                >
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  Lunas
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                {(expense.payments_count || 0) > 0 && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => openPaymentModal(expense, "full")}
-                                    className="h-8 px-2.5 text-[11px] font-semibold rounded-lg border-slate-300 text-slate-700 dark:text-slate-200"
-                                    title="Lihat riwayat DP dan pelunasan"
-                                  >
-                                    <History className="w-3 h-3 mr-1" />
-                                    Riwayat
-                                  </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleTogglePaid(expense)}
-                                  disabled={settleMutation.isPending}
-                                  className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200"
-                                  title="Batalkan status Lunas"
-                                >
-                                  Batal
-                                </Button>
-                              </>
-                            )}
-
-                            {onViewExpense && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => onViewExpense(expense)}
-                                className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
-                                title="Lihat Detail"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onEditExpense(expense)}
-                              className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
-                              title="Edit Transaksi"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-
-                            {canDelete && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDelete(expense.id)}
-                                disabled={deletingId === expense.id}
-                                className="h-8 w-8 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg"
-                                title="Hapus Transaksi"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {/* 7. Pagination Footer */}
-        {totalPages > 1 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 text-xs">
-            <span className="text-slate-600 dark:text-slate-300">
-              Menampilkan {expenses.length} dari {totalItems} total tagihan
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="min-h-[38px] rounded-lg text-xs"
-              >
-                Sebelumnya
-              </Button>
-              <span className="px-2 font-medium text-slate-800 dark:text-slate-200">
-                Halaman {page} dari {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="min-h-[38px] rounded-lg text-xs"
-              >
-                Berikutnya
-              </Button>
-            </div>
-          </div>
+          </DataTable>
         )}
       </div>
 

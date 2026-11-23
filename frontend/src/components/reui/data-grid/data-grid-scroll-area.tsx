@@ -470,13 +470,13 @@ function DataGridScrollArea({
           data-overflow-vertical={
             hasCustomVerticalOverflow ? "true" : undefined
           }
-          className={cn("relative", className)}
+          className={cn("relative overflow-hidden", className)}
           {...props}
         >
           <ScrollAreaPrimitive.Viewport
             ref={viewportRef}
             data-slot="scroll-area-viewport"
-            className="size-full"
+            className="size-full max-h-[inherit]"
           >
             <ScrollAreaPrimitive.Content data-slot="scroll-area-content">
               {children}

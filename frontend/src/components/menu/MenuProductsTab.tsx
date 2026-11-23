@@ -41,6 +41,13 @@ import {
   BulkRowImportDialog,
   type BulkRowColumn,
 } from "@/components/common/BulkRowImportDialog";
+import { DataTable } from "@/components/common/DataTable";
+import {
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef, PaginationState, useTable } from "@tanstack/react-table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -509,6 +516,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
   const [expandedSubIds, setExpandedSubIds] = useState<Record<string, boolean>>({});
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   // Quick-edit massal state
   const [quickEditMode, setQuickEditMode] = useState(false);
@@ -713,12 +721,12 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
     }
   }, [isLockedReadOnly]);
 
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedItems = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return items.slice(start, start + PAGE_SIZE);
-  }, [items, safePage]);
+    const start = (safePage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, safePage, pageSize]);
 
   const invalidateMenus = () => {
     queryClient.invalidateQueries({ queryKey: ["menus"] });
@@ -1049,6 +1057,365 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
   const displayedTotal = useMemo(() => summary?.total_menus || 0, [summary]);
+
+  const menuColumns = useMemo<ColumnDef<DataGridFeatures, MenuProduct>[]>(
+    () => [
+      {
+        id: "expand",
+        header: () => null,
+        cell: ({ row }) => {
+          const menu = row.original;
+          return row.getCanExpand() ? (
+            <button
+              type="button"
+              onClick={row.getToggleExpandedHandler()}
+              className="p-1 rounded hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
+              aria-label={`Lihat rincian resep ${menu.display_name}`}
+              aria-expanded={row.getIsExpanded()}
+            >
+              {row.getIsExpanded() ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+          ) : null;
+        },
+        size: 38,
+        enableSorting: false,
+        meta: {
+          expandedContent: (menu: MenuProduct) => (
+            <div className="bg-slate-50/80 dark:bg-slate-900/60 px-8 py-3">
+              <MenuExpandedRecipePanel
+                menu={menu}
+                expandedSubIds={expandedSubIds}
+                onToggleSub={toggleSubExpand}
+              />
+            </div>
+          ),
+        },
+      },
+      {
+        accessorKey: "display_name",
+        id: "display_name",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title={effectiveAnonymized ? "Kode Anonim Menu" : "Nama Menu / Produk"}
+            column={column}
+          />
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          const unitLabel = menu.batch_yield_unit || menu.unit;
+          return (
+            <div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {menu.display_name}
+                </span>
+                <MenuItemBadges
+                  menu={menu}
+                  effectiveAnonymized={effectiveAnonymized}
+                  onOpenUsages={(m) => setUsageTarget(m)}
+                />
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                Satuan: {menu.unit}
+                {menu.item_type === "prepared" && (menu.batch_yield_qty || 1) > 1
+                  ? ` | Batch: ${menu.batch_yield_qty} ${unitLabel}`
+                  : ""}
+                {!effectiveAnonymized && menu.sku ? ` | SKU: ${menu.sku}` : ""}
+                {menu.product_group ? ` | Grup: ${menu.product_group}` : ""}
+              </div>
+            </div>
+          );
+        },
+        size: 260,
+      },
+      {
+        accessorKey: "category",
+        id: "category",
+        header: ({ column }) => <DataGridColumnHeader title="Kategori" column={column} />,
+        cell: ({ row }) => (
+          <Badge variant="outline" className="text-[10px] font-medium">
+            {row.original.category}
+          </Badge>
+        ),
+        size: 130,
+      },
+      {
+        accessorKey: "selling_price",
+        id: "selling_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Harga Jual"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          const qRow = getQuickRow(menu);
+          return (
+            <div className="text-right tabular-nums font-medium text-slate-900 dark:text-slate-100">
+              {quickEditMode ? (
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={qRow.selling_price}
+                  onChange={(e) => setQuickField(menu, "selling_price", e.target.value)}
+                  aria-label={`Harga jual ${menu.display_name}`}
+                  className="h-8 w-28 ml-auto text-right text-xs tabular-nums"
+                />
+              ) : !menu.is_sellable ? (
+                <span className="text-[11px] text-slate-600 dark:text-slate-400 font-normal">
+                  Pemakaian Internal
+                </span>
+              ) : menu.selling_price > 0 ? (
+                formatRupiah(menu.selling_price)
+              ) : (
+                "-"
+              )}
+            </div>
+          );
+        },
+        size: 135,
+      },
+      {
+        accessorKey: "effective_hpp",
+        id: "effective_hpp",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title={quickEditMode ? "HPP Manual & Mode" : "HPP / Food Cost"}
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          const qRow = getQuickRow(menu);
+          const unitLabel = menu.batch_yield_unit || menu.unit;
+          return (
+            <div className="text-right tabular-nums">
+              {quickEditMode ? (
+                <div className="flex items-center justify-end gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={qRow.hpp_manual}
+                    onChange={(e) => setQuickField(menu, "hpp_manual", e.target.value)}
+                    aria-label={`HPP manual ${menu.display_name}`}
+                    className="h-8 w-28 text-right text-xs tabular-nums"
+                  />
+                  <select
+                    value={qRow.hpp_mode}
+                    onChange={(e) =>
+                      setQuickField(menu, "hpp_mode", e.target.value as MenuHppMode)
+                    }
+                    aria-label={`Mode HPP ${menu.display_name}`}
+                    className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-1.5 text-[11px]"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="manual">Manual</option>
+                    <option value="recipe">Resep</option>
+                  </select>
+                </div>
+              ) : (
+                <>
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">
+                    {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
+                  </div>
+                  <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                    {menu.active_hpp_source === "recipe"
+                      ? (menu.subtotal_packaging || 0) > 0
+                        ? `Bahan ${formatRupiah(menu.subtotal_ingredients || 0)} + Kemasan ${formatRupiah(menu.subtotal_packaging || 0)}`
+                        : (menu.batch_yield_qty || 1) > 1
+                        ? `/${unitLabel} (Batch ${menu.batch_yield_qty})`
+                        : `Resep (${menu.ingredient_count} bahan${menu.other_fee > 0 ? " + lain" : ""})`
+                      : "Input Manual"}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        },
+        size: 195,
+      },
+      {
+        accessorKey: "food_cost_pct",
+        id: "food_cost_pct",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Food Cost %"
+            column={column}
+            className="justify-center text-center"
+          />
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          const fcBadge = getFoodCostBadge(menu.food_cost_status);
+          return (
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                {menu.is_sellable && menu.selling_price > 0 && menu.effective_hpp > 0
+                  ? `${menu.food_cost_pct.toFixed(1)}%`
+                  : "-"}
+              </span>
+              <Badge variant="outline" className={`text-[10px] ${fcBadge.className}`}>
+                {fcBadge.label}
+              </Badge>
+            </div>
+          );
+        },
+        size: 120,
+      },
+      {
+        accessorKey: "gross_margin",
+        id: "gross_margin",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Margin Kotor"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          return (
+            <div className="text-right tabular-nums">
+              <div
+                className={`font-semibold ${
+                  !menu.is_sellable
+                    ? "text-slate-600 dark:text-slate-400"
+                    : menu.gross_margin >= 0
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : "text-rose-700 dark:text-rose-400"
+                }`}
+              >
+                {menu.is_sellable && menu.selling_price > 0
+                  ? formatRupiah(menu.gross_margin)
+                  : "-"}
+              </div>
+              {menu.is_sellable && menu.selling_price > 0 && (
+                <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                  {menu.margin_pct.toFixed(1)}%
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 125,
+      },
+      {
+        id: "actions",
+        header: () => (
+          <div className="text-right w-full">{quickEditMode ? "Aktif" : "Aksi"}</div>
+        ),
+        cell: ({ row }) => {
+          const menu = row.original;
+          const qRow = getQuickRow(menu);
+          return (
+            <div className="flex justify-end">
+              {quickEditMode ? (
+                <input
+                  type="checkbox"
+                  checked={qRow.is_active}
+                  onChange={(e) => setQuickField(menu, "is_active", e.target.checked)}
+                  aria-label={`Status aktif ${menu.display_name}`}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                />
+              ) : (
+                <div className="inline-flex items-center justify-end gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCloneTarget(menu)}
+                    disabled={effectiveAnonymized}
+                    aria-label={`Duplikasi ${menu.display_name}`}
+                    title="Duplikasi & Skala Resep"
+                    className="h-8 w-8 p-0 text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-indigo-300"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEditModal(menu)}
+                    disabled={effectiveAnonymized}
+                    aria-label={`Edit ${menu.display_name}`}
+                    className="h-8 w-8 p-0 text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isLockedReadOnly}
+                      onClick={() => setDeleteTarget(menu)}
+                      aria-label={`Hapus ${menu.display_name}`}
+                      className="h-8 w-8 p-0 text-slate-600 hover:text-rose-700 dark:text-slate-400 dark:hover:text-rose-400"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 115,
+      },
+    ],
+    [
+      effectiveAnonymized,
+      quickEditMode,
+      quickEdits,
+      isAdmin,
+      isLockedReadOnly,
+      expandedSubIds,
+    ]
+  );
+
+  const menuPagination = useMemo<PaginationState>(
+    () => ({
+      pageIndex: Math.max(0, safePage - 1),
+      pageSize,
+    }),
+    [safePage, pageSize]
+  );
+
+  const menuTable = useTable({
+    features: dataGridFeatures,
+    columns: menuColumns,
+    data: items,
+    getRowId: (row: MenuProduct) => String(row.id),
+    getRowCanExpand: (row) => {
+      const m = row.original;
+      return Boolean(
+        m.ingredient_count > 0 ||
+          (m.other_fee && m.other_fee > 0) ||
+          (m.labor_cost && m.labor_cost > 0)
+      );
+    },
+    state: {
+      pagination: menuPagination,
+    },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === "function" ? updater(menuPagination) : updater;
+      if (next.pageSize !== pageSize) {
+        setPageSize(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -1758,265 +2125,12 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             )}
           </div>
         ) : (
-          <>
-            {/* Desktop Table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                  <tr>
-                    <th className="w-9 px-2 py-2.5" aria-label="Expand resep" />
-                    <th className="text-left px-3 py-2.5 font-semibold">
-                      {effectiveAnonymized ? "Kode Anonim Menu" : "Nama Menu / Produk"}
-                    </th>
-                    <th className="text-left px-3 py-2.5 font-semibold">Kategori</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">Harga Jual</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">
-                      {quickEditMode ? "HPP Manual & Mode" : "HPP / Food Cost"}
-                    </th>
-                    <th className="text-center px-3 py-2.5 font-semibold">Food Cost %</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">Margin Kotor</th>
-                    <th className="text-right px-3 py-2.5 font-semibold">
-                      {quickEditMode ? "Aktif" : "Aksi"}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {pagedItems.map((menu) => {
-                    const isExpanded = !!expandedIds[menu.id];
-                    const fcBadge = getFoodCostBadge(menu.food_cost_status);
-                    const qRow = getQuickRow(menu);
-                    const isDirty = !!quickEdits[menu.id];
-                    const hasExpandable =
-                      menu.ingredient_count > 0 ||
-                      (menu.other_fee && menu.other_fee > 0) ||
-                      (menu.labor_cost && menu.labor_cost > 0);
-                    const unitLabel = menu.batch_yield_unit || menu.unit;
-
-                    return (
-                      <React.Fragment key={menu.id}>
-                        <tr
-                          className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 ${
-                            isDirty ? "bg-blue-50/40 dark:bg-blue-950/20" : ""
-                          }`}
-                        >
-                          <td className="px-2 py-2.5 text-center">
-                            {hasExpandable && (
-                              <button
-                                type="button"
-                                onClick={() => toggleExpand(menu.id)}
-                                className="p-1 rounded hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400"
-                                aria-label={`Lihat rincian resep ${menu.display_name}`}
-                                aria-expanded={isExpanded}
-                              >
-                                {isExpanded ? (
-                                  <ChevronDown className="w-3.5 h-3.5" />
-                                ) : (
-                                  <ChevronRight className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                                {menu.display_name}
-                              </span>
-                              <MenuItemBadges
-                                menu={menu}
-                                effectiveAnonymized={effectiveAnonymized}
-                                onOpenUsages={(m) => setUsageTarget(m)}
-                              />
-                            </div>
-                            <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                              Satuan: {menu.unit}
-                              {menu.item_type === "prepared" &&
-                              (menu.batch_yield_qty || 1) > 1
-                                ? ` | Batch: ${menu.batch_yield_qty} ${unitLabel}`
-                                : ""}
-                              {!effectiveAnonymized && menu.sku ? ` | SKU: ${menu.sku}` : ""}
-                              {menu.product_group ? ` | Grup: ${menu.product_group}` : ""}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <Badge variant="outline" className="text-[10px] font-medium">
-                              {menu.category}
-                            </Badge>
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums font-medium text-slate-900 dark:text-slate-100">
-                            {quickEditMode ? (
-                              <Input
-                                type="number"
-                                min={0}
-                                step="any"
-                                value={qRow.selling_price}
-                                onChange={(e) =>
-                                  setQuickField(menu, "selling_price", e.target.value)
-                                }
-                                aria-label={`Harga jual ${menu.display_name}`}
-                                className="h-8 w-28 ml-auto text-right text-xs tabular-nums"
-                              />
-                            ) : !menu.is_sellable ? (
-                              <span className="text-[11px] text-slate-600 dark:text-slate-400 font-normal">
-                                Pemakaian Internal
-                              </span>
-                            ) : menu.selling_price > 0 ? (
-                              formatRupiah(menu.selling_price)
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
-                            {quickEditMode ? (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step="any"
-                                  value={qRow.hpp_manual}
-                                  onChange={(e) =>
-                                    setQuickField(menu, "hpp_manual", e.target.value)
-                                  }
-                                  aria-label={`HPP manual ${menu.display_name}`}
-                                  className="h-8 w-28 text-right text-xs tabular-nums"
-                                />
-                                <select
-                                  value={qRow.hpp_mode}
-                                  onChange={(e) =>
-                                    setQuickField(
-                                      menu,
-                                      "hpp_mode",
-                                      e.target.value as MenuHppMode
-                                    )
-                                  }
-                                  aria-label={`Mode HPP ${menu.display_name}`}
-                                  className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-1.5 text-[11px]"
-                                >
-                                  <option value="auto">Auto</option>
-                                  <option value="manual">Manual</option>
-                                  <option value="recipe">Resep</option>
-                                </select>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="font-semibold text-slate-900 dark:text-slate-100">
-                                  {menu.effective_hpp > 0 ? formatRupiah(menu.effective_hpp) : "-"}
-                                </div>
-                                <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                                  {menu.active_hpp_source === "recipe"
-                                    ? (menu.subtotal_packaging || 0) > 0
-                                      ? `Bahan ${formatRupiah(menu.subtotal_ingredients || 0)} + Kemasan ${formatRupiah(menu.subtotal_packaging || 0)}`
-                                      : (menu.batch_yield_qty || 1) > 1
-                                      ? `/${unitLabel} (Batch ${menu.batch_yield_qty})`
-                                      : `Resep (${menu.ingredient_count} bahan${menu.other_fee > 0 ? " + lain" : ""})`
-                                    : "Input Manual"}
-                                </div>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-center">
-                            <div className="inline-flex flex-col items-center gap-0.5">
-                              <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                                {menu.is_sellable && menu.selling_price > 0 && menu.effective_hpp > 0
-                                  ? `${menu.food_cost_pct.toFixed(1)}%`
-                                  : "-"}
-                              </span>
-                              <Badge variant="outline" className={`text-[10px] ${fcBadge.className}`}>
-                                {fcBadge.label}
-                              </Badge>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
-                            <div
-                              className={`font-semibold ${
-                                !menu.is_sellable
-                                  ? "text-slate-600 dark:text-slate-400"
-                                  : menu.gross_margin >= 0
-                                  ? "text-emerald-700 dark:text-emerald-400"
-                                  : "text-rose-700 dark:text-rose-400"
-                              }`}
-                            >
-                              {menu.is_sellable && menu.selling_price > 0
-                                ? formatRupiah(menu.gross_margin)
-                                : "-"}
-                            </div>
-                            {menu.is_sellable && menu.selling_price > 0 && (
-                              <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                                {menu.margin_pct.toFixed(1)}%
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-right">
-                            {quickEditMode ? (
-                              <input
-                                type="checkbox"
-                                checked={qRow.is_active}
-                                onChange={(e) =>
-                                  setQuickField(menu, "is_active", e.target.checked)
-                                }
-                                aria-label={`Status aktif ${menu.display_name}`}
-                                className="h-4 w-4 rounded border-slate-300 text-blue-600"
-                              />
-                            ) : (
-                              <div className="inline-flex items-center justify-end gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setCloneTarget(menu)}
-                                  disabled={effectiveAnonymized}
-                                  aria-label={`Duplikasi ${menu.display_name}`}
-                                  title="Duplikasi & Skala Resep"
-                                  className="h-8 w-8 p-0 text-slate-600 hover:text-indigo-700 dark:text-slate-400 dark:hover:text-indigo-300"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEditModal(menu)}
-                                  disabled={effectiveAnonymized}
-                                  aria-label={`Edit ${menu.display_name}`}
-                                  className="h-8 w-8 p-0 text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-300"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </Button>
-                                {isAdmin && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled={isLockedReadOnly}
-                                    onClick={() => setDeleteTarget(menu)}
-                                    aria-label={`Hapus ${menu.display_name}`}
-                                    className="h-8 w-8 p-0 text-slate-600 hover:text-rose-700 dark:text-slate-400 dark:hover:text-rose-400"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-
-                        {isExpanded && hasExpandable && (
-                          <tr className="bg-slate-50/80 dark:bg-slate-900/60">
-                            <td colSpan={8} className="px-8 py-3">
-                              <MenuExpandedRecipePanel
-                                menu={menu}
-                                expandedSubIds={expandedSubIds}
-                                onToggleSub={toggleSubExpand}
-                              />
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
+          <DataTable
+            table={menuTable}
+            recordCount={items.length}
+            containerClassName="border-0 rounded-none shadow-none"
+            tableWrapperClassName="hidden md:block"
+          >
             {/* Mobile Reflow Cards */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
               {pagedItems.map((menu) => {
@@ -2228,40 +2342,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 );
               })}
             </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
-                <span>
-                  Halaman {safePage} dari {totalPages} ({items.length} menu)
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    className="h-8 px-2.5 text-xs gap-1"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>Sebelumnya</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    className="h-8 px-2.5 text-xs gap-1"
-                  >
-                    <span>Berikutnya</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
+          </DataTable>
         )}
       </Card>
 

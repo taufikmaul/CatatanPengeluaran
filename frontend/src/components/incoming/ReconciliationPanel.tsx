@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { BankAccount, ReconciliationPreview } from "@/types";
 import { previewReconciliation, applyReconciliation } from "@/lib/api";
@@ -6,6 +6,10 @@ import { formatRupiah } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { CheckCircle2, Upload, Loader2, GitCompareArrows } from "lucide-react";
 
@@ -77,6 +81,138 @@ export const ReconciliationPanel: React.FC<ReconciliationPanelProps> = ({
       setIsApplying(false);
     }
   };
+
+  type MatchedIncomingRow = ReconciliationPreview["matched_incoming"][number];
+  type MatchedExpenseRow = ReconciliationPreview["matched_expenses"][number];
+
+  const matchedIncomingColumns = useMemo<ColumnDef<DataGridFeatures, MatchedIncomingRow>[]>(
+    () => [
+      {
+        accessorKey: "receipt_no",
+        id: "receipt_no",
+        header: () => <span>Receipt / Order</span>,
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px]">
+            {row.original.receipt_no || "-"}{" "}
+            {row.original.order_no ? `• ${row.original.order_no}` : ""}
+          </span>
+        ),
+        size: 180,
+      },
+      {
+        accessorKey: "order_type",
+        id: "order_type",
+        header: ({ column }) => <DataGridColumnHeader title="Channel" column={column} />,
+        cell: ({ row }) => <span>{row.original.order_type}</span>,
+        size: 130,
+      },
+      {
+        accessorKey: "old_net_received",
+        id: "old_net_received",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Net POS"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {formatRupiah(row.original.old_net_received)}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "new_platform_fee",
+        id: "new_platform_fee",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Fee Baru"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-rose-600 whitespace-nowrap">
+            {formatRupiah(row.original.new_platform_fee)}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "new_net_received",
+        id: "new_net_received",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Net Settlement"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
+            {formatRupiah(row.original.new_net_received)}
+          </div>
+        ),
+        size: 130,
+      },
+    ],
+    []
+  );
+
+  const matchedExpenseColumns = useMemo<ColumnDef<DataGridFeatures, MatchedExpenseRow>[]>(
+    () => [
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tgl Belanja" column={column} />,
+        cell: ({ row }) => <span className="whitespace-nowrap">{row.original.expense_date}</span>,
+        size: 110,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Item & Supplier" column={column} />
+        ),
+        cell: ({ row }) => (
+          <div>
+            <span className="font-medium text-slate-900">{row.original.item_name}</span>
+            <span className="text-slate-400 block text-[11px]">{row.original.supplier}</span>
+          </div>
+        ),
+        size: 200,
+      },
+      {
+        accessorKey: "bank_desc",
+        id: "bank_desc",
+        header: () => <span>Keterangan Bank</span>,
+        cell: ({ row }) => (
+          <span className="text-slate-600">{row.original.bank_desc || "-"}</span>
+        ),
+        size: 200,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Nominal"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right font-semibold tabular-nums whitespace-nowrap">
+            {formatRupiah(row.original.total_price)}
+          </div>
+        ),
+        size: 125,
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-4">
@@ -192,82 +328,33 @@ export const ReconciliationPanel: React.FC<ReconciliationPanelProps> = ({
           </div>
 
           {preview.matched_incoming.length > 0 && (
-            <Card className="border-slate-200 shadow-xs overflow-hidden">
-              <CardHeader className="py-2.5 px-4 bg-emerald-50/60 border-b border-emerald-200/70">
-                <CardTitle className="text-xs font-semibold text-emerald-900">
+            <DataTable
+              columns={matchedIncomingColumns}
+              data={preview.matched_incoming}
+              getRowId={(m) => String(m.tx_id)}
+              defaultPageSize={10}
+              headerClassName="py-2.5 px-4 bg-emerald-50/60 border-b border-emerald-200/70"
+              header={
+                <h4 className="text-xs font-semibold text-emerald-900">
                   Transaksi Masuk Cocok ({preview.matched_incoming.length})
-                </CardTitle>
-              </CardHeader>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left px-3 py-2">Receipt / Order</th>
-                      <th className="text-left px-3 py-2">Channel</th>
-                      <th className="text-right px-3 py-2">Net POS</th>
-                      <th className="text-right px-3 py-2">Fee Baru</th>
-                      <th className="text-right px-3 py-2">Net Settlement</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {preview.matched_incoming.map((m) => (
-                      <tr key={m.tx_id}>
-                        <td className="px-3 py-2 font-mono text-[11px]">
-                          {m.receipt_no || "-"} {m.order_no ? `• ${m.order_no}` : ""}
-                        </td>
-                        <td className="px-3 py-2">{m.order_type}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">
-                          {formatRupiah(m.old_net_received)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-rose-600">
-                          {formatRupiah(m.new_platform_fee)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-emerald-700">
-                          {formatRupiah(m.new_net_received)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+                </h4>
+              }
+            />
           )}
 
           {preview.matched_expenses.length > 0 && (
-            <Card className="border-slate-200 shadow-xs overflow-hidden">
-              <CardHeader className="py-2.5 px-4 bg-blue-50/60 border-b border-blue-200/70">
-                <CardTitle className="text-xs font-semibold text-blue-900">
+            <DataTable
+              columns={matchedExpenseColumns}
+              data={preview.matched_expenses}
+              getRowId={(m) => String(m.expense_id)}
+              defaultPageSize={10}
+              headerClassName="py-2.5 px-4 bg-blue-50/60 border-b border-blue-200/70"
+              header={
+                <h4 className="text-xs font-semibold text-blue-900">
                   Pengeluaran Cocok ({preview.matched_expenses.length})
-                </CardTitle>
-              </CardHeader>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left px-3 py-2">Tgl Belanja</th>
-                      <th className="text-left px-3 py-2">Item &amp; Supplier</th>
-                      <th className="text-left px-3 py-2">Keterangan Bank</th>
-                      <th className="text-right px-3 py-2">Nominal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {preview.matched_expenses.map((m) => (
-                      <tr key={m.expense_id}>
-                        <td className="px-3 py-2">{m.expense_date}</td>
-                        <td className="px-3 py-2">
-                          <span className="font-medium text-slate-900">{m.item_name}</span>
-                          <span className="text-slate-400 block text-[11px]">{m.supplier}</span>
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">{m.bank_desc || "-"}</td>
-                        <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                          {formatRupiah(m.total_price)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+                </h4>
+              }
+            />
           )}
 
           {preview.unmatched_rows.length > 0 && (

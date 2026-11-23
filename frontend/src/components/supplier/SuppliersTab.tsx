@@ -31,15 +31,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DataTable } from "@/components/common/DataTable";
 import {
-  DataGrid,
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
 import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
@@ -104,6 +101,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   const [sortBy, setSortBy] = useState<string>("total_spent");
   const [sortOrder, setSortOrder] = useState<string>("desc");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
 
   // Modal Dialogs
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -231,6 +229,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
       sortBy,
       sortOrder,
       page,
+      perPage,
     ],
     queryFn: () =>
       getSuppliers({
@@ -243,7 +242,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         sort_by: sortBy,
         sort_order: sortOrder,
         page,
-        limit: 20,
+        limit: perPage,
       }),
   });
 
@@ -708,9 +707,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   const supplierPagination = useMemo<PaginationState>(
     () => ({
       pageIndex: Math.max(0, page - 1),
-      pageSize: 20,
+      pageSize: perPage,
     }),
-    [page]
+    [page, perPage]
   );
 
   const supplierTable = useTable({
@@ -726,7 +725,12 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(supplierPagination) : updater;
-      setPage(next.pageIndex + 1);
+      if (next.pageSize !== perPage) {
+        setPerPage(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
     },
   });
 
@@ -986,15 +990,15 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         </div>
       </div>
 
-      {/* Filter and ReUI DataGrid */}
-      <DataGrid
+      {/* Filter and DataTable */}
+      <DataTable
         table={supplierTable}
         recordCount={total}
         isLoading={isLoading}
-        tableLayout={{ columnsResizable: true }}
-      >
-        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
-          <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-3">
+        scrollAreaClassName="min-h-[300px]"
+        headerClassName="p-0"
+        header={
+          <div className="p-3.5 flex flex-col md:flex-row items-center justify-between gap-3">
             {/* Search */}
             <div className="relative w-full md:w-80">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1104,14 +1108,8 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
               </Button>
             </div>
           </div>
-
-          <DataGridScrollArea className="min-h-[300px]">
-            <DataGridTable />
-          </DataGridScrollArea>
-
-          <DataGridPagination />
-        </Card>
-      </DataGrid>
+        }
+      />
 
       {/* Modal Tambah Supplier */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>

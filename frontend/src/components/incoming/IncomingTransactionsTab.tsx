@@ -27,6 +27,10 @@ import {
   type BulkRowColumn,
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
@@ -80,7 +84,6 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
   const [duplicateAuditOpen, setDuplicateAuditOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [subTab, setSubTab] = useState<string>("list");
-  const [expandedIds, setExpandedIds] = useState<Record<number, boolean>>({});
 
   // Filters — default ke periode header bila tersedia
   const [startDate, setStartDate] = useState(headerStartDate || "");
@@ -226,10 +229,6 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     setFormOpen(true);
   };
 
-  const toggleExpand = (id: number) => {
-    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const transactions = data?.transactions || [];
   const summary = data?.summary;
   const unmappedCount = summary?.unmapped_count ?? 0;
@@ -367,6 +366,261 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     status: "paid",
     notes: "",
   });
+
+  type IncomingTxRow = (typeof transactions)[number];
+  const incomingColumns = useMemo<ColumnDef<DataGridFeatures, IncomingTxRow>[]>(
+    () => [
+      {
+        id: "expand",
+        header: () => null,
+        cell: ({ row }) =>
+          row.getCanExpand() ? (
+            <button
+              type="button"
+              onClick={row.getToggleExpandedHandler()}
+              className="p-1 rounded hover:bg-slate-200/60 text-slate-500"
+              aria-label="Lihat rincian item"
+            >
+              {row.getIsExpanded() ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+          ) : null,
+        size: 38,
+        enableSorting: false,
+        meta: {
+          expandedContent: (tx: IncomingTxRow) => (
+            <div className="bg-slate-50/80 px-6 py-2.5">
+              <div className="text-[11px] font-medium text-slate-600 mb-1.5">
+                Rincian Produk ({tx.items.length} item)
+              </div>
+              <div className="space-y-1">
+                {tx.items.map((it) => (
+                  <div
+                    key={it.id}
+                    className="flex items-center justify-between text-[11px] text-slate-700 border-b border-slate-200/60 pb-1 last:border-0"
+                  >
+                    <div>
+                      <span className="font-medium">{it.product_name}</span>
+                      {it.sku && (
+                        <span className="text-slate-400 ml-1.5 font-mono">[{it.sku}]</span>
+                      )}
+                      {it.modifier && (
+                        <span className="text-slate-500 block">+ {it.modifier}</span>
+                      )}
+                    </div>
+                    <div className="tabular-nums text-right shrink-0 ml-4">
+                      {it.qty} × {formatRupiah(it.unit_price + it.extra_price)} ={" "}
+                      <span className="font-medium">{formatRupiah(it.gross_amount)}</span>
+                      {it.discount_amount > 0 && (
+                        <span className="text-rose-600 ml-1.5">
+                          (-{formatRupiah(it.discount_amount)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ),
+        },
+      },
+      {
+        accessorKey: "transaction_date",
+        id: "transaction_date",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tanggal & Struk" column={column} />
+        ),
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div>
+              <div className="font-medium text-slate-900 whitespace-nowrap">
+                {tx.transaction_date}{" "}
+                <span className="text-slate-400 font-normal">{tx.transaction_time || ""}</span>
+              </div>
+              <div className="font-mono text-[11px] text-slate-500">
+                {tx.receipt_no || "-"}
+                {tx.order_no ? ` • ${tx.order_no}` : ""}
+              </div>
+              {tx.customer_name && (
+                <div className="text-[11px] text-slate-500">{tx.customer_name}</div>
+              )}
+            </div>
+          );
+        },
+        size: 185,
+      },
+      {
+        accessorKey: "order_type",
+        id: "order_type",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Tipe Order & Bayar" column={column} />
+        ),
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div>
+              <Badge variant="outline" className="text-[10px] font-medium">
+                {tx.order_type}
+              </Badge>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {tx.payment_method} • {tx.items.length} item
+              </div>
+            </div>
+          );
+        },
+        size: 155,
+      },
+      {
+        id: "bank_account",
+        header: () => <span>Rekening Tujuan</span>,
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div className="flex items-center gap-1">
+              <Landmark className="w-3 h-3 text-slate-400 shrink-0" />
+              <select
+                className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700 max-w-[150px]"
+                value={tx.bank_account_id ? String(tx.bank_account_id) : ""}
+                onChange={(e) =>
+                  reassignMutation.mutate({
+                    txId: tx.id,
+                    accId: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              >
+                <option value="">-- Belum dipetakan --</option>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={String(acc.id)}>
+                    {acc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        },
+        size: 175,
+      },
+      {
+        accessorKey: "gross_sales",
+        id: "gross_sales",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Kotor"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-700 whitespace-nowrap">
+            {formatRupiah(row.original.gross_sales)}
+          </div>
+        ),
+        size: 110,
+      },
+      {
+        id: "discount_fee",
+        header: () => <div className="text-right w-full">Diskon / Fee</div>,
+        cell: ({ row }) => {
+          const tx = row.original;
+          const totalDed = tx.discount_amount + tx.platform_fee;
+          return (
+            <div className="text-right tabular-nums text-rose-600 whitespace-nowrap">
+              {totalDed > 0 ? `-${formatRupiah(totalDed)}` : "-"}
+            </div>
+          );
+        },
+        size: 110,
+      },
+      {
+        accessorKey: "net_received",
+        id: "net_received",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Bersih Diterima"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div className="text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+              {tx.status === "paid" ? formatRupiah(tx.net_received) : formatRupiah(0)}
+            </div>
+          );
+        },
+        size: 125,
+      },
+      {
+        accessorKey: "status",
+        id: "status",
+        header: () => <div className="text-center w-full">Status</div>,
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div className="text-center">
+              {tx.status === "paid" ? (
+                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                  Dibayar
+                </Badge>
+              ) : (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">
+                  Void
+                </Badge>
+              )}
+              {tx.reconciled_at && (
+                <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-blue-700">
+                  <CheckCircle2 className="w-3 h-3" /> Cocok
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 95,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-center w-full">Aksi</div>,
+        cell: ({ row }) => {
+          const tx = row.original;
+          return (
+            <div className="flex items-center justify-center gap-1">
+              <button
+                type="button"
+                onClick={() => handleEditTx(tx)}
+                className="p-1 text-slate-400 hover:text-blue-600 transition-colors rounded hover:bg-slate-100"
+                aria-label={`Edit transaksi ${tx.receipt_no || tx.id}`}
+                title="Edit Transaksi"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Hapus transaksi ${tx.receipt_no || tx.id}?`)) {
+                      deleteMutation.mutate(tx.id);
+                    }
+                  }}
+                  className="p-1 text-slate-400 hover:text-rose-600 transition-colors rounded hover:bg-slate-100"
+                  aria-label="Hapus transaksi"
+                  title="Hapus Transaksi"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          );
+        },
+        size: 80,
+      },
+    ],
+    [accounts, isAdmin, reassignMutation, deleteMutation]
+  );
 
   return (
     <div className="space-y-4">
@@ -679,195 +933,14 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                <tr>
-                  <th className="w-8 px-2 py-2.5" />
-                  <th className="text-left px-3 py-2.5 font-medium">Tanggal &amp; Struk</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Tipe Order &amp; Bayar</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Rekening Tujuan</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Kotor</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Diskon / Fee</th>
-                  <th className="text-right px-3 py-2.5 font-medium">Bersih Diterima</th>
-                  <th className="text-center px-3 py-2.5 font-medium">Status</th>
-                  <th className="w-16 px-2 py-2.5 text-center font-medium">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {transactions.map((tx) => {
-                  const isExpanded = !!expandedIds[tx.id];
-                  return (
-                    <React.Fragment key={tx.id}>
-                      <tr className="hover:bg-slate-50/70">
-                        <td className="px-2 py-2.5 text-center">
-                          {tx.items.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => toggleExpand(tx.id)}
-                              className="p-1 rounded hover:bg-slate-200/60 text-slate-500"
-                              aria-label="Lihat rincian item"
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="w-3.5 h-3.5" />
-                              ) : (
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="font-medium text-slate-900">
-                            {tx.transaction_date}{" "}
-                            <span className="text-slate-400 font-normal">
-                              {tx.transaction_time || ""}
-                            </span>
-                          </div>
-                          <div className="font-mono text-[11px] text-slate-500">
-                            {tx.receipt_no || "-"}
-                            {tx.order_no ? ` • ${tx.order_no}` : ""}
-                          </div>
-                          {tx.customer_name && (
-                            <div className="text-[11px] text-slate-500">{tx.customer_name}</div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <Badge variant="outline" className="text-[10px] font-medium">
-                            {tx.order_type}
-                          </Badge>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            {tx.payment_method} • {tx.items.length} item
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-1">
-                            <Landmark className="w-3 h-3 text-slate-400 shrink-0" />
-                            <select
-                              className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700 max-w-[150px]"
-                              value={tx.bank_account_id ? String(tx.bank_account_id) : ""}
-                              onChange={(e) =>
-                                reassignMutation.mutate({
-                                  txId: tx.id,
-                                  accId: e.target.value ? Number(e.target.value) : null,
-                                })
-                              }
-                            >
-                              <option value="">-- Belum dipetakan --</option>
-                              {accounts.map((acc) => (
-                                <option key={acc.id} value={String(acc.id)}>
-                                  {acc.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                          {formatRupiah(tx.gross_sales)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-rose-600">
-                          {tx.discount_amount + tx.platform_fee > 0
-                            ? `-${formatRupiah(tx.discount_amount + tx.platform_fee)}`
-                            : "-"}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">
-                          {tx.status === "paid"
-                            ? formatRupiah(tx.net_received)
-                            : formatRupiah(0)}
-                        </td>
-                        <td className="px-3 py-2.5 text-center">
-                          {tx.status === "paid" ? (
-                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
-                              Dibayar
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">
-                              Void
-                            </Badge>
-                          )}
-                          {tx.reconciled_at && (
-                            <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-blue-700">
-                              <CheckCircle2 className="w-3 h-3" /> Cocok
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 py-2.5 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleEditTx(tx)}
-                              className="p-1 text-slate-400 hover:text-blue-600 transition-colors rounded hover:bg-slate-100"
-                              aria-label={`Edit transaksi ${tx.receipt_no || tx.id}`}
-                              title="Edit Transaksi"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            {isAdmin && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm(`Hapus transaksi ${tx.receipt_no || tx.id}?`)) {
-                                    deleteMutation.mutate(tx.id);
-                                  }
-                                }}
-                                className="p-1 text-slate-400 hover:text-rose-600 transition-colors rounded hover:bg-slate-100"
-                                aria-label="Hapus transaksi"
-                                title="Hapus Transaksi"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-
-                      {isExpanded && tx.items.length > 0 && (
-                        <tr className="bg-slate-50/80">
-                          <td colSpan={9} className="px-6 py-2.5">
-                            <div className="text-[11px] font-medium text-slate-600 mb-1.5">
-                              Rincian Produk ({tx.items.length} item)
-                            </div>
-                            <div className="space-y-1">
-                              {tx.items.map((it) => (
-                                <div
-                                  key={it.id}
-                                  className="flex items-center justify-between text-[11px] text-slate-700 border-b border-slate-200/60 pb-1 last:border-0"
-                                >
-                                  <div>
-                                    <span className="font-medium">{it.product_name}</span>
-                                    {it.sku && (
-                                      <span className="text-slate-400 ml-1.5 font-mono">
-                                        [{it.sku}]
-                                      </span>
-                                    )}
-                                    {it.modifier && (
-                                      <span className="text-slate-500 block">
-                                        + {it.modifier}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="tabular-nums text-right shrink-0 ml-4">
-                                    {it.qty} × {formatRupiah(it.unit_price + it.extra_price)} ={" "}
-                                    <span className="font-medium">
-                                      {formatRupiah(it.gross_amount)}
-                                    </span>
-                                    {it.discount_amount > 0 && (
-                                      <span className="text-rose-600 ml-1.5">
-                                        (-{formatRupiah(it.discount_amount)})
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={incomingColumns}
+            data={transactions}
+            getRowId={(tx) => String(tx.id)}
+            getRowCanExpand={(row) => row.original.items.length > 0}
+            defaultPageSize={20}
+            containerClassName="border-0 rounded-none shadow-none"
+          />
         )}
       </Card>
         </TabsContent>

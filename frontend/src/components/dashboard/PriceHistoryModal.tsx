@@ -11,15 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DataGrid,
-  dataGridFeatures,
-  type DataGridFeatures,
-} from "@/components/reui/data-grid/data-grid";
+import { DataTable } from "@/components/common/DataTable";
+import { dataGridFeatures, type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import { ColumnDef, useTable } from "@tanstack/react-table";
 import {
   Award,
@@ -524,19 +518,13 @@ export const PriceHistoryModal: React.FC<PriceHistoryModalProps> = ({
                 <History className="w-3.5 h-3.5 text-slate-500" />
                 Riwayat Pembelian Terakhir ({data.history.length} transaksi)
               </h4>
-              <DataGrid
+              <DataTable
                 table={priceHistoryTable}
                 recordCount={data.history.length}
                 isLoading={isLoading}
-                tableLayout={{ columnsResizable: true }}
-              >
-                <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
-                  <DataGridScrollArea className="max-h-[260px]">
-                    <DataGridTable />
-                  </DataGridScrollArea>
-                  {data.history.length > 10 && <DataGridPagination />}
-                </div>
-              </DataGrid>
+                scrollAreaClassName="max-h-[260px]"
+                showPagination={data.history.length > 10}
+              />
             </div>
           </div>
         )}

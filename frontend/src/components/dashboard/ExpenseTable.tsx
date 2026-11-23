@@ -14,23 +14,12 @@ import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DataTable } from "@/components/common/DataTable";
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  DataGrid,
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import {
   ColumnDef,
   PaginationState,
@@ -58,9 +47,11 @@ interface ExpenseTableProps {
   expenses: Expense[];
   isLoading: boolean;
   page: number;
+  pageSize?: number;
   totalPages: number;
   totalCount: number;
   onPageChange: (newPage: number) => void;
+  onPageSizeChange?: (newSize: number) => void;
   onToggleStatus: (expense: Expense) => void;
   onEditExpense: (expense: Expense) => void;
   onRepeatExpense?: (expense: Expense) => void;
@@ -80,9 +71,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   expenses,
   isLoading,
   page,
+  pageSize = 25,
   totalPages,
   totalCount,
   onPageChange,
+  onPageSizeChange,
   onToggleStatus,
   onEditExpense,
   onRepeatExpense,
@@ -520,9 +513,9 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   const pagination = useMemo<PaginationState>(
     () => ({
       pageIndex: Math.max(0, page - 1),
-      pageSize: 20,
+      pageSize,
     }),
-    [page]
+    [page, pageSize]
   );
 
   const table = useTable({
@@ -538,7 +531,11 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(pagination) : updater;
-      onPageChange(next.pageIndex + 1);
+      if (next.pageSize !== pageSize && onPageSizeChange) {
+        onPageSizeChange(next.pageSize);
+      } else {
+        onPageChange(next.pageIndex + 1);
+      }
     },
   });
 
@@ -592,76 +589,72 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     );
   }
 
+  const tableHeader = (
+    <div className="flex flex-row items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Daftar Transaksi
+        </h3>
+        <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
+          {totalCount} item
+        </Badge>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {onOpenDataHygiene && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenDataHygiene}
+            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            title="Cek kesehatan & rapikan data transaksi secara otomatis"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Rapikan Data</span>
+          </Button>
+        )}
+        {onOpenAuditDuplicates && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenAuditDuplicates}
+            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>Audit Duplikat</span>
+          </Button>
+        )}
+        {onOpenActivityLog && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenActivityLog}
+            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <History className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Log Aktivitas Belanja</span>
+          </Button>
+        )}
+        <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+          Halaman {page} dari {totalPages}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
-    <DataGrid
+    <DataTable
       table={table}
       recordCount={totalCount}
       isLoading={isLoading}
-      tableLayout={{ columnsResizable: true }}
+      header={tableHeader}
+      containerClassName="shadow-sm"
+      tableWrapperClassName="hidden md:block"
     >
-      <Card className="w-full gap-0 p-0 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden bg-white dark:bg-slate-900">
-        <CardHeader className="flex flex-row items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800 flex-wrap gap-2">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-              Daftar Transaksi
-            </CardTitle>
-            <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
-              {totalCount} item
-            </Badge>
-          </div>
-          <CardAction className="flex items-center gap-2">
-            {onOpenDataHygiene && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onOpenDataHygiene}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                title="Cek kesehatan & rapikan data transaksi secara otomatis"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span>Rapikan Data</span>
-              </Button>
-            )}
-            {onOpenAuditDuplicates && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onOpenAuditDuplicates}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                <span>Audit Duplikat</span>
-              </Button>
-            )}
-            {onOpenActivityLog && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onOpenActivityLog}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <History className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Log Aktivitas Belanja</span>
-              </Button>
-            )}
-            <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-              Halaman {page} dari {totalPages}
-            </span>
-          </CardAction>
-        </CardHeader>
-
-        {/* Desktop View Table via ReUI DataGrid */}
-        <CardContent className="p-0 hidden md:block">
-          <DataGridScrollArea>
-            <DataGridTable />
-          </DataGridScrollArea>
-        </CardContent>
-
-        {/* Mobile View: Cards */}
-        <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+      {/* Mobile View: Cards */}
+      <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
           {expenses.map((e) => {
             const catColor = getCategoryColor(e.category);
             const bd = getExpensePaymentBreakdown(e);
@@ -854,12 +847,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
               </div>
             );
           })}
-        </div>
-
-        <CardFooter className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 bg-slate-50/50 dark:bg-slate-900/50">
-          <DataGridPagination />
-        </CardFooter>
-      </Card>
-    </DataGrid>
+      </div>
+    </DataTable>
   );
 };

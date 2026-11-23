@@ -31,15 +31,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DataTable } from "@/components/common/DataTable";
 import {
-  DataGrid,
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
 import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
@@ -109,6 +106,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
 
   // State filter & pagination riwayat
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(15);
   const [searchCategory, setSearchCategory] = useState("");
   const [searchPayStatus, setSearchPayStatus] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -192,6 +190,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       "supplier-expenses",
       supplierId,
       page,
+      perPage,
       searchCategory,
       searchPayStatus,
       startDate,
@@ -204,7 +203,7 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         page,
-        limit: 15,
+        limit: perPage,
       }),
   });
 
@@ -614,9 +613,9 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
   const supplierExpensePagination = useMemo<PaginationState>(
     () => ({
       pageIndex: Math.max(0, page - 1),
-      pageSize: 15,
+      pageSize: perPage,
     }),
-    [page]
+    [page, perPage]
   );
 
   const supplierExpenseTable = useTable({
@@ -631,9 +630,160 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(supplierExpensePagination) : updater;
-      setPage(next.pageIndex + 1);
+      if (next.pageSize !== perPage) {
+        setPerPage(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
     },
   });
+
+  type UnpaidBillRow = NonNullable<typeof supplier>["unpaid_bills"][number];
+  const unpaidBillColumns = useMemo<ColumnDef<DataGridFeatures, UnpaidBillRow>[]>(
+    () => [
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal Belanja" column={column} />,
+        cell: ({ row }) => (
+          <span className="font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">
+            {formatDateId(row.original.expense_date)}
+          </span>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => <DataGridColumnHeader title="Nama Barang" column={column} />,
+        cell: ({ row }) => {
+          const bill = row.original;
+          return (
+            <div>
+              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+                {bill.item_name}
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {bill.category}{" "}
+                {bill.notes && bill.notes !== "-" ? `• ${bill.notes}` : ""}
+              </span>
+            </div>
+          );
+        },
+        size: 220,
+      },
+      {
+        accessorKey: "invoice_number",
+        id: "invoice_number",
+        header: () => <span>No. Invoice / Nota</span>,
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
+            {row.original.invoice_number && row.original.invoice_number !== "-"
+              ? row.original.invoice_number
+              : "-"}
+          </span>
+        ),
+        size: 140,
+      },
+      {
+        accessorKey: "due_date",
+        id: "due_date",
+        header: ({ column }) => <DataGridColumnHeader title="Jatuh Tempo" column={column} />,
+        cell: ({ row }) => (
+          <span className="text-slate-600 dark:text-slate-400 whitespace-nowrap">
+            {row.original.due_date && row.original.due_date !== "-"
+              ? formatDateId(row.original.due_date)
+              : "-"}
+          </span>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Nominal Tagihan"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const bill = row.original;
+          return (
+            <div className="text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
+              <div>
+                {formatRupiah(
+                  bill.remaining_amount !== undefined
+                    ? bill.remaining_amount
+                    : bill.total_price
+                )}
+              </div>
+              {bill.paid_amount !== undefined && bill.paid_amount > 0 && (
+                <div className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                  DP {formatRupiah(bill.paid_amount)} / {formatRupiah(bill.total_price)}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 140,
+      },
+      {
+        accessorKey: "pay_status",
+        id: "pay_status",
+        header: () => <div className="text-center w-full">Status</div>,
+        cell: ({ row }) => (
+          <div className="text-center">
+            <Badge
+              variant="outline"
+              className="text-[10px] text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300"
+            >
+              {row.original.pay_status}
+            </Badge>
+          </div>
+        ),
+        size: 110,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right w-full">Aksi Cepat</div>,
+        cell: ({ row }) => {
+          const bill = row.original;
+          return (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={updatePayStatusMutation.isPending}
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Tandai tagihan '${bill.item_name}' (${formatRupiah(
+                        bill.total_price
+                      )}) sebagai Lunas?`
+                    )
+                  ) {
+                    updatePayStatusMutation.mutate({
+                      expenseId: bill.id,
+                      payStatus: "Lunas",
+                    });
+                  }
+                }}
+                className="h-7 px-2.5 text-[11px] font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-950/50 gap-1 rounded-lg shadow-xs"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Tandai Lunas
+              </Button>
+            </div>
+          );
+        },
+        size: 135,
+      },
+    ],
+    [updatePayStatusMutation]
+  );
 
   if (isSupplierLoading) {
     return (
@@ -907,99 +1057,13 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-white dark:bg-slate-900 shadow-xs">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="py-2.5 px-3">Tanggal Belanja</th>
-                  <th className="py-2.5 px-3">Nama Barang</th>
-                  <th className="py-2.5 px-3">No. Invoice / Nota</th>
-                  <th className="py-2.5 px-3">Jatuh Tempo</th>
-                  <th className="py-2.5 px-3 text-right">Nominal Tagihan</th>
-                  <th className="py-2.5 px-3 text-center">Status</th>
-                  <th className="py-2.5 px-3 text-right">Aksi Cepat</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {supplier.unpaid_bills.map((bill) => (
-                  <tr
-                    key={bill.id}
-                    className="hover:bg-amber-50/30 dark:hover:bg-amber-950/10 transition-colors"
-                  >
-                    <td className="py-2.5 px-3 font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                      {formatDateId(bill.expense_date)}
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <span className="font-semibold text-slate-900 dark:text-slate-100 block">
-                        {bill.item_name}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {bill.category}{" "}
-                        {bill.notes && bill.notes !== "-" ? `• ${bill.notes}` : ""}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                      {bill.invoice_number && bill.invoice_number !== "-"
-                        ? bill.invoice_number
-                        : "-"}
-                    </td>
-                    <td className="py-2.5 px-3 text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                      {bill.due_date && bill.due_date !== "-"
-                        ? formatDateId(bill.due_date)
-                        : "-"}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                      <div>
-                        {formatRupiah(
-                          bill.remaining_amount !== undefined
-                            ? bill.remaining_amount
-                            : bill.total_price
-                        )}
-                      </div>
-                      {bill.paid_amount !== undefined && bill.paid_amount > 0 && (
-                        <div className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                          DP {formatRupiah(bill.paid_amount)} / {formatRupiah(bill.total_price)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300"
-                      >
-                        {bill.pay_status}
-                      </Badge>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={updatePayStatusMutation.isPending}
-                        onClick={() => {
-                          if (
-                            confirm(
-                              `Tandai tagihan '${bill.item_name}' (${formatRupiah(
-                                bill.total_price
-                              )}) sebagai Lunas?`
-                            )
-                          ) {
-                            updatePayStatusMutation.mutate({
-                              expenseId: bill.id,
-                              payStatus: "Lunas",
-                            });
-                          }
-                        }}
-                        className="h-7 px-2.5 text-[11px] font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:border-emerald-800 dark:hover:bg-emerald-950/50 gap-1 rounded-lg shadow-xs"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Tandai Lunas
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={unpaidBillColumns}
+            data={supplier.unpaid_bills}
+            getRowId={(row) => String(row.id)}
+            defaultPageSize={10}
+            containerClassName="rounded-xl border-amber-200/80 dark:border-amber-900/40"
+          />
         </div>
       )}
 
@@ -1160,14 +1224,14 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
       </div>
 
       {/* Riwayat Belanja di Toko Ini */}
-      <DataGrid
+      <DataTable
         table={supplierExpenseTable}
         recordCount={expenseData?.total || 0}
         isLoading={isExpensesLoading}
-        tableLayout={{ columnsResizable: true }}
-      >
-        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        scrollAreaClassName="min-h-[250px]"
+        headerClassName="p-0"
+        header={
+          <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
                 Riwayat Belanja di {supplier.name}
@@ -1257,14 +1321,8 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
               )}
             </div>
           </div>
-
-          <DataGridScrollArea className="min-h-[250px]">
-            <DataGridTable />
-          </DataGridScrollArea>
-
-          <DataGridPagination />
-        </Card>
-      </DataGrid>
+        }
+      />
 
       {/* Modal Edit Informasi Toko */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>

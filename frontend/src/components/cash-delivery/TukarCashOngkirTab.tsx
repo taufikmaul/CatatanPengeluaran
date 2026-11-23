@@ -10,15 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DataTable } from "@/components/common/DataTable";
 import {
-  DataGrid,
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { DataGridPagination } from "@/components/reui/data-grid/data-grid-pagination";
-import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll-area";
-import { DataGridTable } from "@/components/reui/data-grid/data-grid-table";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
 import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
@@ -83,6 +80,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number>(25);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -103,6 +101,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
     queryKey: [
       "expenses-cash-delivery",
       page,
+      perPage,
       selectedMonth,
       selectedMonthEnd,
       selectedYear,
@@ -113,7 +112,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
-        per_page: "30",
+        per_page: String(perPage),
         month: String(selectedMonth),
         year: String(selectedYear),
         special_type: specialTypeParam,
@@ -400,9 +399,9 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   const cashDeliveryPagination = useMemo<PaginationState>(
     () => ({
       pageIndex: Math.max(0, page - 1),
-      pageSize: 30,
+      pageSize: perPage,
     }),
-    [page]
+    [page, perPage]
   );
 
   const cashDeliveryTable = useTable({
@@ -417,7 +416,12 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
     },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(cashDeliveryPagination) : updater;
-      setPage(next.pageIndex + 1);
+      if (next.pageSize !== perPage) {
+        setPerPage(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
     },
   });
 
@@ -683,21 +687,13 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
         </div>
       </div>
 
-      {/* ReUI DataGrid Data Transaksi */}
-      <DataGrid
+      {/* DataTable Data Transaksi */}
+      <DataTable
         table={cashDeliveryTable}
         recordCount={totalCount}
         isLoading={isLoading}
-        tableLayout={{ columnsResizable: true }}
-      >
-        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl shadow-xs overflow-hidden">
-          <DataGridScrollArea className="min-h-[300px]">
-            <DataGridTable />
-          </DataGridScrollArea>
-
-          <DataGridPagination />
-        </Card>
-      </DataGrid>
+        scrollAreaClassName="min-h-[300px]"
+      />
     </div>
   );
 };

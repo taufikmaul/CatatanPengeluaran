@@ -7,6 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DataTable } from "@/components/common/DataTable";
+import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
+import { ColumnDef } from "@tanstack/react-table";
 import {
   Scale,
   TrendingUp,
@@ -235,6 +239,563 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
   const handlePrint = () => {
     window.print();
   };
+
+  const buildLabaRugiColumns = (
+    pctTitle: string,
+    pctColorClass: string
+  ): ColumnDef<DataGridFeatures, AccountLineItem>[] => [
+    {
+      accessorKey: "account_code",
+      id: "account_code",
+      header: ({ column }) => <DataGridColumnHeader title="Kode Akun" column={column} />,
+      cell: ({ row }) => (
+        <span className="font-mono font-medium text-slate-600 dark:text-slate-300">
+          {row.original.account_code}
+        </span>
+      ),
+      size: 95,
+    },
+    {
+      accessorKey: "account_name",
+      id: "account_name",
+      header: ({ column }) => (
+        <DataGridColumnHeader title="Nama Akun Akuntansi" column={column} />
+      ),
+      cell: ({ row }) => (
+        <div>
+          <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+            {row.original.account_name}
+          </span>
+          <span className="text-[11px] text-slate-400 block truncate max-w-xs">
+            {row.original.description}
+          </span>
+        </div>
+      ),
+      size: 220,
+    },
+    {
+      accessorKey: "category",
+      id: "category",
+      header: ({ column }) => (
+        <DataGridColumnHeader title="Kategori Belanja" column={column} />
+      ),
+      cell: ({ row }) => {
+        const color = getCategoryColor(row.original.category);
+        return (
+          <span
+            className={`inline-flex px-2 py-0.5 rounded text-[11px] font-medium border ${color.bg} ${color.border}`}
+          >
+            {row.original.category}
+          </span>
+        );
+      },
+      size: 145,
+    },
+    {
+      accessorKey: "total",
+      id: "total",
+      header: ({ column }) => (
+        <DataGridColumnHeader
+          title="Bulan Ini"
+          column={column}
+          className="justify-end text-right"
+        />
+      ),
+      cell: ({ row }) => (
+        <div className="text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums whitespace-nowrap">
+          {formatRupiah(row.original.total)}
+        </div>
+      ),
+      size: 125,
+    },
+    {
+      accessorKey: "prev_total",
+      id: "prev_total",
+      header: ({ column }) => (
+        <DataGridColumnHeader
+          title="Bulan Lalu"
+          column={column}
+          className="justify-end text-right"
+        />
+      ),
+      cell: ({ row }) => (
+        <div className="text-right text-slate-500 tabular-nums whitespace-nowrap">
+          {formatRupiah(row.original.prev_total)}
+        </div>
+      ),
+      size: 120,
+    },
+    {
+      accessorKey: "mom_change_pct",
+      id: "mom_change_pct",
+      header: ({ column }) => (
+        <DataGridColumnHeader
+          title="Perubahan MoM"
+          column={column}
+          className="justify-end text-right"
+        />
+      ),
+      cell: ({ row }) => {
+        const pct = row.original.mom_change_pct;
+        return (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {pct !== null && pct !== undefined ? (
+              <span
+                className={`font-semibold ${
+                  pct > 0
+                    ? "text-rose-600 dark:text-rose-400"
+                    : "text-emerald-600 dark:text-emerald-400"
+                }`}
+              >
+                {pct > 0 ? `+` : ``}
+                {pct}%
+              </span>
+            ) : (
+              <span className="text-slate-400">-</span>
+            )}
+          </div>
+        );
+      },
+      size: 120,
+    },
+    {
+      accessorKey: "percentage_of_group",
+      id: "percentage_of_group",
+      header: ({ column }) => (
+        <DataGridColumnHeader
+          title={pctTitle}
+          column={column}
+          className="justify-end text-right"
+        />
+      ),
+      cell: ({ row }) => (
+        <div className="text-right tabular-nums whitespace-nowrap">
+          <span className={`font-semibold ${pctColorClass}`}>
+            {row.original.percentage_of_group}%
+          </span>
+        </div>
+      ),
+      size: 95,
+    },
+    {
+      id: "actions",
+      header: () => <div className="text-center w-full">Aksi</div>,
+      cell: ({ row }) => (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSelectedLedgerAccount(row.original.account_code);
+              setActiveSubTab("buku_besar");
+            }}
+            className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
+            title="Lihat Rincian Buku Besar"
+          >
+            <Eye className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      ),
+      size: 70,
+    },
+  ];
+
+  const hppColumns = useMemo(
+    () => buildLabaRugiColumns("% HPP", "text-amber-700 dark:text-amber-400"),
+    []
+  );
+
+  const opexColumns = useMemo(
+    () => buildLabaRugiColumns("% OPEX", "text-blue-700 dark:text-blue-400"),
+    []
+  );
+
+  type RekeningPosRow = NonNullable<
+    NonNullable<AccountingReportData["neraca"]>["rekening_positions"]
+  >[number];
+  const rekeningColumns = useMemo<ColumnDef<DataGridFeatures, RekeningPosRow>[]>(
+    () => [
+      {
+        accessorKey: "account_code",
+        id: "account_code",
+        header: ({ column }) => <DataGridColumnHeader title="Kode COA" column={column} />,
+        cell: ({ row }) => (
+          <span className="font-mono text-slate-600 dark:text-slate-300">
+            {row.original.account_code}
+          </span>
+        ),
+        size: 100,
+      },
+      {
+        accessorKey: "name",
+        id: "name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Rekening / Akun Kas" column={column} />
+        ),
+        cell: ({ row }) => (
+          <div>
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              {row.original.name}
+            </span>
+            <span className="text-[11px] text-slate-400 ml-1.5">
+              ({row.original.bank_name})
+            </span>
+          </div>
+        ),
+        size: 220,
+      },
+      {
+        accessorKey: "opening_balance",
+        id: "opening_balance",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Saldo Awal"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-600 whitespace-nowrap">
+            {formatRupiah(row.original.opening_balance)}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        accessorKey: "incoming_month",
+        id: "incoming_month",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Masuk (Bulan Ini)"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-emerald-700 font-medium whitespace-nowrap">
+            +{formatRupiah(row.original.incoming_month)}
+          </div>
+        ),
+        size: 135,
+      },
+      {
+        accessorKey: "outgoing_month",
+        id: "outgoing_month",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Keluar (Bulan Ini)"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-rose-600 font-medium whitespace-nowrap">
+            -{formatRupiah(row.original.outgoing_month)}
+          </div>
+        ),
+        size: 135,
+      },
+      {
+        accessorKey: "estimated_balance",
+        id: "estimated_balance",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Estimasi Saldo"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+            {formatRupiah(row.original.estimated_balance)}
+          </div>
+        ),
+        size: 135,
+      },
+    ],
+    []
+  );
+
+  type DailyCashflowRow = DailyCashflowResponse["daily_rows"][number];
+  const dailyCashflowColumns = useMemo<ColumnDef<DataGridFeatures, DailyCashflowRow>[]>(
+    () => [
+      {
+        accessorKey: "date",
+        id: "date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => (
+          <span className="font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
+            {formatDateId(row.original.date)}
+          </span>
+        ),
+        size: 135,
+      },
+      {
+        accessorKey: "cash_in",
+        id: "cash_in",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Kas Masuk (Cash In)"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {row.original.cash_in > 0 ? (
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                +{formatRupiah(row.original.cash_in)}
+              </span>
+            ) : (
+              <span className="text-slate-400">-</span>
+            )}
+          </div>
+        ),
+        size: 145,
+      },
+      {
+        accessorKey: "cash_out",
+        id: "cash_out",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Kas Keluar (Cash Out)"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {row.original.cash_out > 0 ? (
+              <span className="font-semibold text-rose-600 dark:text-rose-400">
+                -{formatRupiah(row.original.cash_out)}
+              </span>
+            ) : (
+              <span className="text-slate-400">-</span>
+            )}
+          </div>
+        ),
+        size: 145,
+      },
+      {
+        accessorKey: "net_flow",
+        id: "net_flow",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Arus Bersih (Net)"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => {
+          const nf = row.original.net_flow;
+          return (
+            <div className="text-right tabular-nums whitespace-nowrap">
+              {nf !== 0 ? (
+                <span
+                  className={`font-semibold ${
+                    nf > 0
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  {nf > 0 ? "+" : ""}
+                  {formatRupiah(nf)}
+                </span>
+              ) : (
+                <span className="text-slate-400">-</span>
+              )}
+            </div>
+          );
+        },
+        size: 140,
+      },
+      {
+        accessorKey: "saldo",
+        id: "saldo",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Saldo Berjalan"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+            {formatRupiah(row.original.saldo)}
+          </div>
+        ),
+        size: 140,
+      },
+      {
+        id: "tx_count",
+        header: () => <div className="text-center w-full">Transaksi</div>,
+        cell: ({ row }) => {
+          const r = row.original;
+          const hasActivity = r.cash_in > 0 || r.cash_out > 0;
+          return (
+            <div className="text-center">
+              {hasActivity ? (
+                <div className="inline-flex items-center gap-1">
+                  {r.cash_in_count > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
+                      title={`${r.cash_in_count} transaksi uang masuk`}
+                    >
+                      +{r.cash_in_count}
+                    </Badge>
+                  )}
+                  {r.cash_out_count > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
+                      title={`${r.cash_out_count} transaksi kas keluar`}
+                    >
+                      -{r.cash_out_count}
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <span className="text-slate-300 dark:text-slate-600 text-[11px]">-</span>
+              )}
+            </div>
+          );
+        },
+        size: 105,
+      },
+    ],
+    []
+  );
+
+  const ledgerColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
+    () => [
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
+        cell: ({ row }) => (
+          <span className="text-slate-600 dark:text-slate-300 font-mono whitespace-nowrap">
+            {row.original.expense_date}
+          </span>
+        ),
+        size: 105,
+      },
+      {
+        accessorKey: "item_name",
+        id: "item_name",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Nama Item / Transaksi" column={column} />
+        ),
+        cell: ({ row }) => {
+          const exp = row.original;
+          return (
+            <div>
+              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
+                {exp.item_name}
+              </span>
+              {exp.notes && exp.notes !== "-" && (
+                <span className="text-[10px] text-slate-400 block truncate max-w-xs">
+                  {exp.notes}
+                </span>
+              )}
+            </div>
+          );
+        },
+        size: 220,
+      },
+      {
+        accessorKey: "supplier",
+        id: "supplier",
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Toko / Supplier" column={column} />
+        ),
+        cell: ({ row }) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {row.original.supplier || "-"}
+          </span>
+        ),
+        size: 145,
+      },
+      {
+        accessorKey: "qty",
+        id: "qty",
+        header: () => <div className="text-center w-full">Qty</div>,
+        cell: ({ row }) => (
+          <div className="text-center tabular-nums whitespace-nowrap">
+            {row.original.qty} {row.original.unit}
+          </div>
+        ),
+        size: 85,
+      },
+      {
+        accessorKey: "unit_price",
+        id: "unit_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Harga Satuan"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right tabular-nums text-slate-600 dark:text-slate-400 whitespace-nowrap">
+            {formatRupiah(Number(row.original.unit_price || 0))}
+          </div>
+        ),
+        size: 120,
+      },
+      {
+        accessorKey: "total_price",
+        id: "total_price",
+        header: ({ column }) => (
+          <DataGridColumnHeader
+            title="Total Nominal"
+            column={column}
+            className="justify-end text-right"
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums whitespace-nowrap">
+            {formatRupiah(Number(row.original.total_price || 0))}
+          </div>
+        ),
+        size: 125,
+      },
+      {
+        accessorKey: "pay_method",
+        id: "pay_method",
+        header: () => <span>Metode</span>,
+        cell: ({ row }) => (
+          <span className="text-slate-600 dark:text-slate-300">
+            {row.original.pay_method || "Tunai"}
+          </span>
+        ),
+        size: 100,
+      },
+      {
+        accessorKey: "pay_status",
+        id: "pay_status",
+        header: () => <span>Status</span>,
+        cell: ({ row }) => {
+          const st = row.original.pay_status || "Lunas";
+          return (
+            <Badge
+              variant="outline"
+              className={`text-[10px] py-0 ${
+                st === "Lunas"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-rose-50 text-rose-700 border-rose-200"
+              }`}
+            >
+              {st}
+            </Badge>
+          );
+        },
+        size: 95,
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-6 pb-12 print:p-0">
@@ -680,114 +1241,37 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-800/40">
-                        <th className="py-2.5 px-4 font-semibold w-24">Kode Akun</th>
-                        <th className="py-2.5 px-4 font-semibold">Nama Akun Akuntansi</th>
-                        <th className="py-2.5 px-4 font-semibold">Kategori Belanja</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Bulan Ini</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Bulan Lalu</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Perubahan MoM</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">% HPP</th>
-                        <th className="py-2.5 px-4 font-semibold text-center w-20">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {accountingData.laba_rugi.hpp_items.map((row) => {
-                        const color = getCategoryColor(row.category);
-                        return (
-                          <tr
-                            key={row.account_code}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                          >
-                            <td className="py-3 px-4 font-mono font-medium text-slate-600 dark:text-slate-300">
-                              {row.account_code}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
-                                {row.account_name}
-                              </span>
-                              <span className="text-[11px] text-slate-400 block truncate max-w-xs">
-                                {row.description}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-medium border ${color.bg} ${color.border}`}>
-                                {row.category}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                              {formatRupiah(row.total)}
-                            </td>
-                            <td className="py-3 px-4 text-right text-slate-500 tabular-nums">
-                              {formatRupiah(row.prev_total)}
-                            </td>
-                            <td className="py-3 px-4 text-right tabular-nums">
-                              {row.mom_change_pct !== null && row.mom_change_pct !== undefined ? (
-                                <span
-                                  className={`font-semibold ${
-                                    row.mom_change_pct > 0
-                                      ? "text-rose-600 dark:text-rose-400"
-                                      : "text-emerald-600 dark:text-emerald-400"
-                                  }`}
-                                >
-                                  {row.mom_change_pct > 0 ? `+` : ``}
-                                  {row.mom_change_pct}%
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">-</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-right tabular-nums">
-                              <span className="font-semibold text-amber-700 dark:text-amber-400">
-                                {row.percentage_of_group}%
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedLedgerAccount(row.account_code);
-                                  setActiveSubTab("buku_besar");
-                                }}
-                                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                                title="Lihat Rincian Buku Besar"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-amber-50/50 dark:bg-amber-950/20 font-bold border-t border-amber-200 dark:border-amber-900 text-slate-900 dark:text-slate-100">
-                        <td colSpan={3} className="py-3 px-4">
-                          Subtotal Harga Pokok Penjualan (HPP)
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums text-amber-800 dark:text-amber-300">
-                          {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                          {formatRupiah(accountingData.laba_rugi.prev_subtotal_hpp)}
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums">
-                          {accountingData.laba_rugi.mom_hpp_change_pct !== null && (
-                            <span className={accountingData.laba_rugi.mom_hpp_change_pct > 0 ? "text-rose-600" : "text-emerald-600"}>
-                              {accountingData.laba_rugi.mom_hpp_change_pct > 0 ? `+` : ``}
-                              {accountingData.laba_rugi.mom_hpp_change_pct}%
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">100.0%</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                <DataTable
+                  columns={hppColumns}
+                  data={accountingData.laba_rugi.hpp_items}
+                  getRowId={(r) => r.account_code}
+                  defaultPageSize={10}
+                  containerClassName="border-0 rounded-none shadow-none"
+                >
+                  <div className="bg-amber-50/50 dark:bg-amber-950/20 border-t border-amber-200 dark:border-amber-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                    <span>Subtotal Harga Pokok Penjualan (HPP)</span>
+                    <div className="flex items-center gap-4 tabular-nums">
+                      <span className="text-amber-800 dark:text-amber-300">
+                        {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                        Lalu: {formatRupiah(accountingData.laba_rugi.prev_subtotal_hpp)}
+                      </span>
+                      {accountingData.laba_rugi.mom_hpp_change_pct !== null && (
+                        <span
+                          className={
+                            accountingData.laba_rugi.mom_hpp_change_pct > 0
+                              ? "text-rose-600"
+                              : "text-emerald-600"
+                          }
+                        >
+                          {accountingData.laba_rugi.mom_hpp_change_pct > 0 ? `+` : ``}
+                          {accountingData.laba_rugi.mom_hpp_change_pct}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </DataTable>
               </Card>
 
               {/* 2. SECTION OPEX (Akun Kepala 6) */}
@@ -809,114 +1293,37 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-800/40">
-                        <th className="py-2.5 px-4 font-semibold w-24">Kode Akun</th>
-                        <th className="py-2.5 px-4 font-semibold">Nama Akun Akuntansi</th>
-                        <th className="py-2.5 px-4 font-semibold">Kategori Belanja</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Bulan Ini</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Bulan Lalu</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">Perubahan MoM</th>
-                        <th className="py-2.5 px-4 font-semibold text-right">% OPEX</th>
-                        <th className="py-2.5 px-4 font-semibold text-center w-20">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {accountingData.laba_rugi.opex_items.map((row) => {
-                        const color = getCategoryColor(row.category);
-                        return (
-                          <tr
-                            key={row.account_code}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                          >
-                            <td className="py-3 px-4 font-mono font-medium text-slate-600 dark:text-slate-300">
-                              {row.account_code}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
-                                {row.account_name}
-                              </span>
-                              <span className="text-[11px] text-slate-400 block truncate max-w-xs">
-                                {row.description}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-medium border ${color.bg} ${color.border}`}>
-                                {row.category}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                              {formatRupiah(row.total)}
-                            </td>
-                            <td className="py-3 px-4 text-right text-slate-500 tabular-nums">
-                              {formatRupiah(row.prev_total)}
-                            </td>
-                            <td className="py-3 px-4 text-right tabular-nums">
-                              {row.mom_change_pct !== null && row.mom_change_pct !== undefined ? (
-                                <span
-                                  className={`font-semibold ${
-                                    row.mom_change_pct > 0
-                                      ? "text-rose-600 dark:text-rose-400"
-                                      : "text-emerald-600 dark:text-emerald-400"
-                                  }`}
-                                >
-                                  {row.mom_change_pct > 0 ? `+` : ``}
-                                  {row.mom_change_pct}%
-                                </span>
-                              ) : (
-                                <span className="text-slate-400">-</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-right tabular-nums">
-                              <span className="font-semibold text-blue-700 dark:text-blue-400">
-                                {row.percentage_of_group}%
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedLedgerAccount(row.account_code);
-                                  setActiveSubTab("buku_besar");
-                                }}
-                                className="h-7 w-7 p-0 text-slate-500 hover:text-blue-600"
-                                title="Lihat Rincian Buku Besar"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-blue-50/50 dark:bg-blue-950/20 font-bold border-t border-blue-200 dark:border-blue-900 text-slate-900 dark:text-slate-100">
-                        <td colSpan={3} className="py-3 px-4">
-                          Subtotal Beban Operasional & Umum (OPEX)
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums text-blue-800 dark:text-blue-300">
-                          {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                          {formatRupiah(accountingData.laba_rugi.prev_subtotal_opex)}
-                        </td>
-                        <td className="py-3 px-4 text-right tabular-nums">
-                          {accountingData.laba_rugi.mom_opex_change_pct !== null && (
-                            <span className={accountingData.laba_rugi.mom_opex_change_pct > 0 ? "text-rose-600" : "text-emerald-600"}>
-                              {accountingData.laba_rugi.mom_opex_change_pct > 0 ? `+` : ``}
-                              {accountingData.laba_rugi.mom_opex_change_pct}%
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">100.0%</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                <DataTable
+                  columns={opexColumns}
+                  data={accountingData.laba_rugi.opex_items}
+                  getRowId={(r) => r.account_code}
+                  defaultPageSize={10}
+                  containerClassName="border-0 rounded-none shadow-none"
+                >
+                  <div className="bg-blue-50/50 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                    <span>Subtotal Beban Operasional &amp; Umum (OPEX)</span>
+                    <div className="flex items-center gap-4 tabular-nums">
+                      <span className="text-blue-800 dark:text-blue-300">
+                        {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                        Lalu: {formatRupiah(accountingData.laba_rugi.prev_subtotal_opex)}
+                      </span>
+                      {accountingData.laba_rugi.mom_opex_change_pct !== null && (
+                        <span
+                          className={
+                            accountingData.laba_rugi.mom_opex_change_pct > 0
+                              ? "text-rose-600"
+                              : "text-emerald-600"
+                          }
+                        >
+                          {accountingData.laba_rugi.mom_opex_change_pct > 0 ? `+` : ``}
+                          {accountingData.laba_rugi.mom_opex_change_pct}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </DataTable>
               </Card>
 
               {/* 3. GRAND TOTAL BEBAN USAHA */}
@@ -971,49 +1378,13 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       Total Estimasi: {formatRupiah(accountingData.neraca.total_rekening_balance || 0)}
                     </span>
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 bg-slate-50/60 dark:bg-slate-800/40">
-                          <th className="py-2.5 px-4 font-semibold w-24">Kode COA</th>
-                          <th className="py-2.5 px-4 font-semibold">Rekening / Akun Kas</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Saldo Awal</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Masuk (Bulan Ini)</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Keluar (Bulan Ini)</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Estimasi Saldo</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                        {accountingData.neraca.rekening_positions.map((rek) => (
-                          <tr key={rek.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                            <td className="py-2.5 px-4 font-mono text-slate-600 dark:text-slate-300">
-                              {rek.account_code}
-                            </td>
-                            <td className="py-2.5 px-4">
-                              <span className="font-semibold text-slate-900 dark:text-slate-100">
-                                {rek.name}
-                              </span>
-                              <span className="text-[11px] text-slate-400 ml-1.5">
-                                ({rek.bank_name})
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-4 text-right tabular-nums text-slate-600">
-                              {formatRupiah(rek.opening_balance)}
-                            </td>
-                            <td className="py-2.5 px-4 text-right tabular-nums text-emerald-700 font-medium">
-                              +{formatRupiah(rek.incoming_month)}
-                            </td>
-                            <td className="py-2.5 px-4 text-right tabular-nums text-rose-600 font-medium">
-                              -{formatRupiah(rek.outgoing_month)}
-                            </td>
-                            <td className="py-2.5 px-4 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
-                              {formatRupiah(rek.estimated_balance)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DataTable
+                    columns={rekeningColumns}
+                    data={accountingData.neraca.rekening_positions}
+                    getRowId={(r) => String(r.id)}
+                    defaultPageSize={10}
+                    containerClassName="border-0 rounded-none shadow-none"
+                  />
                 </Card>
               )}
 
@@ -1470,123 +1841,41 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </Button>
                     </div>
                   ) : dailyCashflowData?.daily_rows?.length ? (
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 bg-slate-50/60 dark:bg-slate-800/40">
-                          <th className="py-2.5 px-4 font-semibold w-36">Tanggal</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Kas Masuk (Cash In)</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Kas Keluar (Cash Out)</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Arus Bersih (Net)</th>
-                          <th className="py-2.5 px-4 font-semibold text-right">Saldo Berjalan</th>
-                          <th className="py-2.5 px-4 font-semibold text-center w-28">Transaksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                        {dailyCashflowData.daily_rows.map((row) => {
-                          const hasActivity = row.cash_in > 0 || row.cash_out > 0;
-                          return (
-                            <tr
-                              key={row.date}
-                              className={`transition-colors ${
-                                hasActivity
-                                  ? "hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                  : "opacity-60 hover:opacity-100 hover:bg-slate-50/50"
-                              }`}
-                            >
-                              <td className="py-2.5 px-4 font-mono text-slate-700 dark:text-slate-300">
-                                {formatDateId(row.date)}
-                              </td>
-                              <td className="py-2.5 px-4 text-right tabular-nums">
-                                {row.cash_in > 0 ? (
-                                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
-                                    +{formatRupiah(row.cash_in)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-4 text-right tabular-nums">
-                                {row.cash_out > 0 ? (
-                                  <span className="font-semibold text-rose-600 dark:text-rose-400">
-                                    -{formatRupiah(row.cash_out)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-4 text-right tabular-nums">
-                                {row.net_flow !== 0 ? (
-                                  <span
-                                    className={`font-semibold ${
-                                      row.net_flow > 0
-                                        ? "text-emerald-700 dark:text-emerald-400"
-                                        : "text-rose-600 dark:text-rose-400"
-                                    }`}
-                                  >
-                                    {row.net_flow > 0 ? "+" : ""}
-                                    {formatRupiah(row.net_flow)}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">-</span>
-                                )}
-                              </td>
-                              <td className="py-2.5 px-4 text-right tabular-nums font-bold text-slate-900 dark:text-slate-100">
-                                {formatRupiah(row.saldo)}
-                              </td>
-                              <td className="py-2.5 px-4 text-center">
-                                {hasActivity ? (
-                                  <div className="inline-flex items-center gap-1">
-                                    {row.cash_in_count > 0 && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800"
-                                        title={`${row.cash_in_count} transaksi uang masuk`}
-                                      >
-                                        +{row.cash_in_count}
-                                      </Badge>
-                                    )}
-                                    {row.cash_out_count > 0 && (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-[10px] px-1.5 py-0 bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800"
-                                        title={`${row.cash_out_count} transaksi kas keluar`}
-                                      >
-                                        -{row.cash_out_count}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 dark:text-slate-600 text-[11px]">-</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-bold text-slate-900 dark:text-slate-100">
-                          <td className="py-3 px-4">TOTAL &amp; SALDO AKHIR</td>
-                          <td className="py-3 px-4 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
-                            +{formatRupiah(dailyCashflowData.total_cash_in)}
-                          </td>
-                          <td className="py-3 px-4 text-right tabular-nums text-rose-600 dark:text-rose-400">
-                            -{formatRupiah(dailyCashflowData.total_cash_out)}
-                          </td>
-                          <td className={`py-3 px-4 text-right tabular-nums ${
-                            dailyCashflowData.net_cash_flow >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                          }`}>
-                            {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
+                    <DataTable
+                      columns={dailyCashflowColumns}
+                      data={dailyCashflowData.daily_rows}
+                      getRowId={(r) => r.date}
+                      defaultPageSize={10}
+                      containerClassName="border-0 rounded-none shadow-none"
+                    >
+                      <div className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-900 dark:text-slate-100">
+                        <span>TOTAL &amp; SALDO AKHIR</span>
+                        <div className="flex flex-wrap items-center gap-4 tabular-nums">
+                          <span className="text-emerald-700 dark:text-emerald-400">
+                            Masuk: +{formatRupiah(dailyCashflowData.total_cash_in)}
+                          </span>
+                          <span className="text-rose-600 dark:text-rose-400">
+                            Keluar: -{formatRupiah(dailyCashflowData.total_cash_out)}
+                          </span>
+                          <span
+                            className={
+                              dailyCashflowData.net_cash_flow >= 0
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }
+                          >
+                            Net: {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
                             {formatRupiah(dailyCashflowData.net_cash_flow)}
-                          </td>
-                          <td className="py-3 px-4 text-right tabular-nums text-blue-900 dark:text-blue-200 text-sm">
-                            {formatRupiah(dailyCashflowData.saldo_akhir)}
-                          </td>
-                          <td className="py-3 px-4 text-center text-[11px] text-slate-500">
-                            {dailyCashflowData.total_tx_in + dailyCashflowData.total_tx_out} tx
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                          </span>
+                          <span className="text-blue-900 dark:text-blue-200 text-sm">
+                            Saldo: {formatRupiah(dailyCashflowData.saldo_akhir)}
+                          </span>
+                          <span className="text-[11px] font-medium text-slate-500">
+                            ({dailyCashflowData.total_tx_in + dailyCashflowData.total_tx_out} tx)
+                          </span>
+                        </div>
+                      </div>
+                    </DataTable>
                   ) : (
                     <div className="p-8 text-center text-xs text-slate-500">
                       Tidak ada data arus kas untuk periode ini.
@@ -1875,84 +2164,21 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </div>
 
                 {/* Ledger Transactions Table */}
-                <div className="mt-3 overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-50/70 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 text-slate-500">
-                        <th className="py-2.5 px-3 font-semibold w-24">Tanggal</th>
-                        <th className="py-2.5 px-3 font-semibold">Nama Item / Transaksi</th>
-                        <th className="py-2.5 px-3 font-semibold">Toko / Supplier</th>
-                        <th className="py-2.5 px-3 font-semibold text-center w-20">Qty</th>
-                        <th className="py-2.5 px-3 font-semibold text-right">Harga Satuan</th>
-                        <th className="py-2.5 px-3 font-semibold text-right">Total Nominal</th>
-                        <th className="py-2.5 px-3 font-semibold">Metode</th>
-                        <th className="py-2.5 px-3 font-semibold">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                      {isLoadingLedger ? (
-                        <tr>
-                          <td colSpan={8} className="py-8 text-center text-slate-400">
-                            Memuat transaksi buku besar...
-                          </td>
-                        </tr>
-                      ) : filteredLedgerExpenses.length > 0 ? (
-                        filteredLedgerExpenses.map((exp) => (
-                          <tr
-                            key={exp.id}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                          >
-                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300 font-mono">
-                              {exp.expense_date}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <span className="font-semibold text-slate-900 dark:text-slate-100 block">
-                                {exp.item_name}
-                              </span>
-                              {exp.notes && exp.notes !== "-" && (
-                                <span className="text-[10px] text-slate-400 block truncate max-w-xs">
-                                  {exp.notes}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
-                              {exp.supplier || "-"}
-                            </td>
-                            <td className="py-2.5 px-3 text-center tabular-nums">
-                              {exp.qty} {exp.unit}
-                            </td>
-                            <td className="py-2.5 px-3 text-right tabular-nums text-slate-600 dark:text-slate-400">
-                              {formatRupiah(Number(exp.unit_price || 0))}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                              {formatRupiah(Number(exp.total_price || 0))}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 dark:text-slate-300">
-                              {exp.pay_method || "Tunai"}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] py-0 ${
-                                  exp.pay_status === "Lunas"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-rose-50 text-rose-700 border-rose-200"
-                                }`}
-                              >
-                                {exp.pay_status || "Lunas"}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
-                            Tidak ada transaksi untuk akun ini pada periode {accountingData.month_name} {accountingData.year}.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="mt-3">
+                  <DataTable
+                    columns={ledgerColumns}
+                    data={filteredLedgerExpenses}
+                    getRowId={(exp) => String(exp.id)}
+                    isLoading={isLoadingLedger}
+                    defaultPageSize={10}
+                    containerClassName="rounded-lg"
+                    emptyState={
+                      <div className="py-8 text-center text-slate-400 text-xs">
+                        Tidak ada transaksi untuk akun ini pada periode{" "}
+                        {accountingData.month_name} {accountingData.year}.
+                      </div>
+                    }
+                  />
                 </div>
               </Card>
             </div>
