@@ -131,6 +131,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Tailwind v4 transform-3d utility compatibility for Velora Card3D */
+@layer utilities {
+  .transform-3d {
+    transform-style: preserve-3d;
+  }
+}
+
 /* Glassmorphism utility */
 .glass-panel {
   background: rgba(255, 255, 255, 0.85);
