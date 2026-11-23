@@ -34,9 +34,10 @@ import {
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { formatRupiah, formatDateId } from "@/lib/formatters";
+import { formatRupiah, formatDateId, toIsoDate } from "@/lib/formatters";
 import { PurchaseRequestDrawer } from "@/components/forms/PurchaseRequestDrawer";
 import {
   Dialog,
@@ -2570,11 +2571,11 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                   <Calendar className="w-3.5 h-3.5 text-purple-500" />
                   Tanggal Kedaluwarsa (Exp Date)
                 </label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={receiveExpDate}
-                  onChange={(e) => setReceiveExpDate(e.target.value)}
-                  className="text-xs h-10"
+                  onChange={(d) => setReceiveExpDate(toIsoDate(d))}
+                  placeholder="Pilih tanggal kedaluwarsa..."
+                  className="w-full text-xs h-10"
                 />
                 <span className="text-[10px] text-zinc-400">
                   Wajib diperhatikan untuk bahan baku kue & produk yang memiliki masa simpan.

@@ -20,6 +20,7 @@ import {
   UnpaidSummaryResponse,
   DailyCashflowResponse,
   SalesImportAuditSummary,
+  MonthlyBudgetDetailResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -104,7 +105,10 @@ export async function getExpenseUsers() {
   return res.data;
 }
 
-export async function getMonthlyBudget(year?: number, month?: number) {
+export async function getMonthlyBudget(
+  year?: number,
+  month?: number
+): Promise<MonthlyBudgetDetailResponse> {
   const params = new URLSearchParams();
   if (year) params.append("year", String(year));
   if (month) params.append("month", String(month));
@@ -117,7 +121,7 @@ export async function saveMonthlyBudget(payload: {
   month: number;
   total_budget: number;
   category_percentages: Record<string, number>;
-}) {
+}): Promise<MonthlyBudgetDetailResponse> {
   const res = await api.post("/budgets", payload);
   return res.data;
 }
@@ -126,13 +130,15 @@ export async function copyMonthlyBudget(
   targetYear: number,
   targetMonth: number,
   sourceYear?: number,
-  sourceMonth?: number
-) {
+  sourceMonth?: number,
+  usePreviousCashBalance: boolean = false
+): Promise<MonthlyBudgetDetailResponse> {
   const res = await api.post("/budgets/copy", {
     target_year: targetYear,
     target_month: targetMonth,
     source_year: sourceYear,
     source_month: sourceMonth,
+    use_previous_cash_balance: usePreviousCashBalance,
   });
   return res.data;
 }

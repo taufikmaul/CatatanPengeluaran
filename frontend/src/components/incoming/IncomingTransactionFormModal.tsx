@@ -14,7 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, PlusCircle, Pencil, Receipt, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
+import { DatePicker } from "@/components/ui/date-picker";
 import { createManualIncomingTransaction, updateIncomingTransaction } from "@/lib/api";
 import type { IncomingTransaction, BankAccount, ManualIncomingTxFormData } from "@/types";
 
@@ -184,16 +185,13 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
           {/* Identitas Struk & Tanggal */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60">
             <div className="space-y-1.5">
-              <Label htmlFor="tx-date" className="text-xs font-medium text-slate-700">
+              <Label className="text-xs font-medium text-slate-700">
                 Tanggal Transaksi <span className="text-rose-500">*</span>
               </Label>
-              <Input
-                id="tx-date"
-                type="date"
+              <DatePicker
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
-                required
-                className="h-8 text-xs bg-white"
+                onChange={(d) => setDate(toIsoDate(d))}
+                className="w-full h-8 text-xs bg-white dark:bg-slate-900"
               />
             </div>
 

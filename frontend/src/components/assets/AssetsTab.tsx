@@ -20,10 +20,11 @@ import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-colu
 import { ColumnDef } from "@tanstack/react-table";
 import { Table2, FileSpreadsheet } from "lucide-react";
 import { FixedAsset, AssetReanalyzeResult } from "@/types";
-import { formatDateId, formatRupiah } from "@/lib/formatters";
+import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -957,7 +958,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
               </div>
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Tanggal Perolehan</label>
-                <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} required className="h-9 text-xs" />
+                <DatePicker value={newDate} onChange={(d) => setNewDate(toIsoDate(d))} className="w-full h-9 text-xs" />
               </div>
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Harga Perolehan (Rp) *</label>

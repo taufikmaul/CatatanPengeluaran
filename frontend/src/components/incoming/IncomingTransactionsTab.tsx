@@ -10,10 +10,11 @@ import {
   bulkCreateIncomingTransactions,
   importIncomingTransactionsCsv,
 } from "@/lib/api";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Badge } from "@/components/ui/badge";
 import { SalesImportModal } from "./SalesImportModal";
 import { IncomingAnalyticsPanel } from "./IncomingAnalyticsPanel";
@@ -853,19 +854,14 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </select>
 
             <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-9 text-xs"
-                aria-label="Tanggal mulai"
-              />
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-9 text-xs"
-                aria-label="Tanggal selesai"
+              <DateRangePicker
+                initialDateFrom={startDate}
+                initialDateTo={endDate}
+                onUpdate={({ range }) => {
+                  if (range.from) setStartDate(toIsoDate(range.from));
+                  if (range.to) setEndDate(toIsoDate(range.to));
+                  else if (range.from) setEndDate(toIsoDate(range.from));
+                }}
               />
               {headerStartDate && headerEndDate && (startDate !== headerStartDate || endDate !== headerEndDate) && (
                 <Button

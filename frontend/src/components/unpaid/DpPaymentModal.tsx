@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BankAccount, Expense, ExpensePayment } from "@/types";
 import { deleteExpensePayment, getExpensePayments, recordExpensePayment } from "@/lib/api";
-import { formatDateId, formatRupiah } from "@/lib/formatters";
+import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   getDueUrgencyInfo,
   getEndOfMonthDate,
@@ -539,10 +540,9 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                     </span>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <Input
-                      type="date"
+                    <DatePicker
                       value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
+                      onChange={(d) => setDueDate(toIsoDate(d))}
                       className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-700 sm:w-44"
                     />
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -576,11 +576,10 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
                     Tanggal Bayar
                   </label>
-                  <Input
-                    type="date"
+                  <DatePicker
                     value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
+                    onChange={(d) => setPaymentDate(toIsoDate(d))}
+                    className="w-full h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
                   />
                 </div>
 

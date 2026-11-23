@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -1065,35 +1066,22 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               )}
 
               {periodMode === "custom" && (
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="date"
-                    value={customStart}
-                    max={customEnd || undefined}
-                    onChange={(e) => {
-                      setCustomStart(e.target.value);
-                      setPage(1);
-                      setSelectedIds([]);
-                    }}
-                    aria-label="Dari tanggal"
-                    aria-invalid={isCustomRangeInvalid}
-                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500 aria-invalid:border-red-400"
-                  />
-                  <span className="text-xs text-slate-500 dark:text-slate-400">s.d.</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    min={customStart || undefined}
-                    onChange={(e) => {
-                      setCustomEnd(e.target.value);
-                      setPage(1);
-                      setSelectedIds([]);
-                    }}
-                    aria-label="Sampai tanggal"
-                    aria-invalid={isCustomRangeInvalid}
-                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500 aria-invalid:border-red-400"
-                  />
-                </div>
+                <DateRangePicker
+                  initialDateFrom={customStart}
+                  initialDateTo={customEnd}
+                  onUpdate={({ range }) => {
+                    if (range.from) {
+                      setCustomStart(toIsoDate(range.from));
+                    }
+                    if (range.to) {
+                      setCustomEnd(toIsoDate(range.to));
+                    } else if (range.from) {
+                      setCustomEnd(toIsoDate(range.from));
+                    }
+                    setPage(1);
+                    setSelectedIds([]);
+                  }}
+                />
               )}
             </div>
 

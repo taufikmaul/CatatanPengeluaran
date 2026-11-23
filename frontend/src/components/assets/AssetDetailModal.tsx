@@ -8,7 +8,7 @@ import {
   addAssetMaintenance,
 } from "@/lib/api";
 import { FixedAsset } from "@/types";
-import { formatDateId, formatRupiah } from "@/lib/formatters";
+import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DataTable } from "@/components/common/DataTable";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
@@ -23,6 +23,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -458,7 +459,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">Tanggal Pelepasan</label>
-                      <Input type="date" value={dDate} onChange={(e) => setDDate(e.target.value)} className="h-9 text-xs bg-white" />
+                      <DatePicker value={dDate} onChange={(d) => setDDate(toIsoDate(d))} className="w-full h-9 text-xs bg-white" />
                     </div>
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">Jenis Pelepasan</label>
@@ -517,7 +518,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Tanggal</label>
-                    <Input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className="h-9 text-xs bg-white" required />
+                    <DatePicker value={mDate} onChange={(d) => setMDate(toIsoDate(d))} className="w-full h-9 text-xs bg-white" />
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Jenis</label>
@@ -539,7 +540,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <Input value={mDesc} onChange={(e) => setMDesc(e.target.value)} placeholder="Detail perbaikan / sparepart yang diganti *" className="h-9 text-xs bg-white" required />
-                  <Input type="date" value={mNextDate} onChange={(e) => setMNextDate(e.target.value)} title="Jadwal servis berikutnya" className="h-9 text-xs bg-white" />
+                  <DatePicker value={mNextDate} onChange={(d) => setMNextDate(toIsoDate(d))} placeholder="Jadwal servis berikutnya" className="w-full h-9 text-xs bg-white" />
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="flex items-center gap-2 cursor-pointer text-slate-700">

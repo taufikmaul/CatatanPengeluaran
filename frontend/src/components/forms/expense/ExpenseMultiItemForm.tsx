@@ -6,10 +6,11 @@ import {
   OcrExtractedItem,
 } from "@/types";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { checkInvoiceDuplicate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import {
   Plus,
@@ -355,12 +356,10 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
               <label className="text-[11px] font-semibold text-slate-700 block mb-1">
                 Tanggal Nota
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
-                required
-                className="h-10 text-xs rounded-xl bg-white"
+                onChange={(d) => setExpenseDate(toIsoDate(d))}
+                className="w-full h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
               />
             </div>
 
@@ -888,12 +887,10 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                 <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
                 Tanggal Jatuh Tempo Nota Ini
               </label>
-              <Input
-                type="date"
+              <DatePicker
                 value={dueDate === "-" ? "" : dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                required={isUnpaid}
-                className="h-9 text-xs rounded-xl bg-white border-rose-200 sm:w-56"
+                onChange={(d) => setDueDate(toIsoDate(d))}
+                className="w-full sm:w-56 h-9 text-xs rounded-xl bg-white border-rose-200"
               />
             </div>
           )}

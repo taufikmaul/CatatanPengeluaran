@@ -10,7 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
+import { DatePicker } from "@/components/ui/date-picker";
 import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate, getBankAccounts, getSuppliers, createSupplier, getAssets } from "@/lib/api";
 import {
   CalendarClock,
@@ -932,10 +933,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                       <label className="text-xs font-semibold text-slate-700 block mb-1">
                         Tanggal Nota
                       </label>
-                      <Input
-                        type="date"
-                        {...register("expense_date", { required: true })}
-                        className="h-11 sm:h-10 text-xs rounded-xl"
+                      <DatePicker
+                        value={watch("expense_date")}
+                        onChange={(d) => setValue("expense_date", toIsoDate(d), { shouldValidate: true })}
+                        className="w-full h-11 sm:h-10 text-xs rounded-xl"
                       />
                     </div>
                     <div>
@@ -1438,10 +1439,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                           <label className="text-[11px] font-semibold text-slate-700 block mb-1">
                             Jadwal Servis Berikutnya (Opsional)
                           </label>
-                          <Input
-                            type="date"
-                            {...register("next_service_date")}
-                            className="h-9 text-xs rounded-xl bg-white"
+                          <DatePicker
+                            value={watch("next_service_date") || ""}
+                            onChange={(d) => setValue("next_service_date", toIsoDate(d))}
+                            className="w-full h-9 text-xs rounded-xl bg-white"
                           />
                         </div>
                       </div>

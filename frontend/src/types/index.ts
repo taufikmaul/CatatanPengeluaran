@@ -703,6 +703,22 @@ export interface SystemConfig {
   asset_default_useful_life_months?: number;
 }
 
+export interface MonthlyBudgetDetailResponse {
+  ok: boolean;
+  year: number;
+  month: number;
+  total_budget: number;
+  category_percentages: Record<string, number>;
+  category_amounts: Record<string, number>;
+  is_custom: boolean;
+  valid_categories: string[];
+  valid_units?: string[];
+  previous_month_ending_balance?: number;
+  previous_month_year?: number;
+  previous_month?: number;
+  message?: string;
+}
+
 export interface SupplierPriceComparison {
   supplier: string;
   min_price: number;

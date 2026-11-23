@@ -36,6 +36,16 @@ export function formatDateId(dateStr: string | null | undefined, includeDay: boo
 }
 
 /**
+ * Format Date object ke string ISO format YYYY-MM-DD
+ */
+export function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Dapatkan warna badge untuk kategori pengeluaran
  */
 export function getCategoryColor(category: string): { bg: string; text: string; border: string } {

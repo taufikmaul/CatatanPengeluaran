@@ -691,6 +691,7 @@ class MonthlyBudgetCopyRequest(BaseModel):
     target_month: int
     source_year: int | None = None
     source_month: int | None = None
+    use_previous_cash_balance: bool = False
 
 
 class MonthlyBudgetDetailResponse(BaseModel):
@@ -703,6 +704,9 @@ class MonthlyBudgetDetailResponse(BaseModel):
     is_custom: bool = False
     valid_categories: list[str]
     valid_units: list[str] = []
+    previous_month_ending_balance: float | None = 0.0
+    previous_month_year: int | None = None
+    previous_month: int | None = None
     message: str | None = None
 
 

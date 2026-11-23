@@ -2,8 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Control, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-form";
 import { BankAccount, ExpenseFormData, ItemSuggestion } from "@/types";
 import { CategoryFormProfile } from "@/lib/categoryFormConfig";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarClock, Package, ShoppingBag, Calculator, Percent, Wallet } from "lucide-react";
@@ -715,11 +716,10 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
             <label className="text-[11px] font-semibold text-amber-900 block mb-1">
               Tanggal Bayar DP (Opsional, default tanggal nota)
             </label>
-            <Input
-              type="date"
+            <DatePicker
               value={dpPaymentDate || expenseDate || ""}
-              onChange={(e) => setValue("dp_payment_date", e.target.value)}
-              className="h-9 text-xs rounded-xl bg-white border-amber-200"
+              onChange={(d) => setValue("dp_payment_date", toIsoDate(d))}
+              className="w-full h-9 text-xs rounded-xl bg-white border-amber-200"
             />
           </div>
         </div>
@@ -755,10 +755,10 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
             <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
             <span>{isDp ? "Tempo Waktu Pelunasan Sisa" : "Tanggal Jatuh Tempo Tagihan"}</span>
           </label>
-          <Input
-            type="date"
-            {...register("due_date")}
-            className="h-10 text-xs rounded-xl bg-white border-rose-200"
+          <DatePicker
+            value={dueDate || ""}
+            onChange={(d) => setValue("due_date", toIsoDate(d), { shouldDirty: true })}
+            className="w-full h-10 text-xs rounded-xl bg-white border-rose-200"
           />
           <div className="flex flex-wrap items-center gap-1.5">
             {[

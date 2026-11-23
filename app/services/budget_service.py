@@ -22,6 +22,28 @@ async def get_monthly_budget_record(
     return result.scalar_one_or_none()
 
 
+async def get_previous_month_cash_balance(
+    db: AsyncSession, year: int, month: int
+) -> tuple[int, int, float]:
+    """Hitung tahun, bulan, dan saldo kas akhir periode bulan sebelumnya."""
+    if month == 1:
+        prev_year = year - 1
+        prev_month = 12
+    else:
+        prev_year = year
+        prev_month = month - 1
+
+    try:
+        from app.services.cashflow_service import get_daily_cashflow
+
+        prev_cf = await get_daily_cashflow(db, year=prev_year, month=prev_month)
+        ending_balance = round(float(prev_cf.get("saldo_akhir", 0.0)), 2)
+    except Exception:
+        ending_balance = 0.0
+
+    return prev_year, prev_month, ending_balance
+
+
 async def get_effective_budget(
     db: AsyncSession, year: int, month: int
 ) -> dict:
@@ -29,7 +51,9 @@ async def get_effective_budget(
     Ambil anggaran efektif untuk bulan dan tahun yang diminta.
     Jika bulan tersebut sudah disetup khusus di tabel `monthly_budgets`, gunakan data tersebut.
     Jika belum, fallback ke konfigurasi global di `settings`.
+    Juga menghitung estimasi kas akhir bulan sebelumnya sebagai referensi setup kas awal.
     """
+    prev_year, prev_month, prev_balance = await get_previous_month_cash_balance(db, year, month)
     record = await get_monthly_budget_record(db, year, month)
     if record is not None:
         tot = float(record.total_budget or 0)
@@ -61,6 +85,9 @@ async def get_effective_budget(
             "category_percentages": pcts,
             "category_amounts": amts,
             "is_custom": True,
+            "previous_month_ending_balance": prev_balance,
+            "previous_month_year": prev_year,
+            "previous_month": prev_month,
             "updated_at": record.updated_at.isoformat() if record.updated_at else None,
         }
 
@@ -85,6 +112,9 @@ async def get_effective_budget(
         "category_percentages": global_pcts,
         "category_amounts": global_cat_budgets,
         "is_custom": False,
+        "previous_month_ending_balance": prev_balance,
+        "previous_month_year": prev_year,
+        "previous_month": prev_month,
         "updated_at": None,
     }
 
@@ -142,9 +172,13 @@ async def copy_budget_from_previous(
     db: AsyncSession,
     target_year: int,
     target_month: int,
+    use_previous_cash_balance: bool = False,
 ) -> MonthlyBudget | None:
     """
     Salin anggaran dari bulan sebelumnya (atau bulan terakhir yang ada catatannya).
+    Jika use_previous_cash_balance bernilai True, total_budget akan menggunakan saldo kas akhir
+    riil dari bulan sebelumnya (dari laporan arus kas harian), dengan persentase alokasi kategori
+    mengikuti bulan acuan.
     """
     if target_month == 1:
         prev_year = target_year - 1
@@ -171,16 +205,29 @@ async def copy_budget_from_previous(
         res = await db.execute(stmt)
         source_record = res.scalar_one_or_none()
 
+    # Tentukan total budget yang akan dipakai
+    if use_previous_cash_balance:
+        _, _, ending_cash = await get_previous_month_cash_balance(db, target_year, target_month)
+        chosen_total = max(0.0, float(ending_cash))
+    elif source_record is not None:
+        chosen_total = float(source_record.total_budget)
+    else:
+        chosen_total = 0.0
+
     if source_record is None:
         # Jika sama sekali tidak ada di DB, gunakan konfigurasi global jika ada
         global_budget = await get_effective_budget(db, prev_year, prev_month)
-        if global_budget.get("total_budget", 0) > 0:
+        source_pcts = global_budget.get("category_percentages", {})
+        if not use_previous_cash_balance:
+            chosen_total = float(global_budget.get("total_budget", 0))
+
+        if chosen_total > 0 or source_pcts:
             return await upsert_monthly_budget(
                 db=db,
                 year=target_year,
                 month=target_month,
-                total_budget=global_budget["total_budget"],
-                category_percentages=global_budget.get("category_percentages", {}),
+                total_budget=chosen_total,
+                category_percentages=source_pcts,
             )
         return None
 
@@ -188,6 +235,6 @@ async def copy_budget_from_previous(
         db=db,
         year=target_year,
         month=target_month,
-        total_budget=float(source_record.total_budget),
+        total_budget=chosen_total,
         category_percentages=source_record.category_percentages,
     )

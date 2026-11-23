@@ -4,6 +4,8 @@ import { PurchaseRequestItem } from "@/types";
 import { usePurchaseRequestWorkflow } from "@/components/requests/usePurchaseRequestWorkflow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { toIsoDate } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -465,11 +467,11 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
                   <Calendar className="w-3.5 h-3.5 text-purple-700 dark:text-purple-400" />
                   Tanggal Kedaluwarsa (Exp Date)
                 </label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={receiveExpDate}
-                  onChange={(e) => setReceiveExpDate(e.target.value)}
-                  className="text-xs h-10"
+                  onChange={(d) => setReceiveExpDate(toIsoDate(d))}
+                  placeholder="Pilih tanggal kedaluwarsa..."
+                  className="w-full text-xs h-10"
                 />
               </div>
 

@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getAssetByQrToken, addAssetMaintenance } from "@/lib/api";
-import { formatDateId, formatRupiah } from "@/lib/formatters";
+import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Wrench,
@@ -275,7 +276,7 @@ export const AssetPublicLabelPage: React.FC<AssetPublicLabelPageProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Tanggal Servis</label>
-                    <Input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className="h-9 text-xs bg-white" required />
+                    <DatePicker value={mDate} onChange={(d) => setMDate(toIsoDate(d))} className="w-full h-9 text-xs bg-white" />
                   </div>
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Jenis Tindakan</label>
@@ -302,7 +303,7 @@ export const AssetPublicLabelPage: React.FC<AssetPublicLabelPageProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
                   <div>
                     <label className="font-semibold text-slate-700 block mb-1">Jadwal Servis Berikutnya</label>
-                    <Input type="date" value={mNextDate} onChange={(e) => setMNextDate(e.target.value)} className="h-9 text-xs bg-white" />
+                    <DatePicker value={mNextDate} onChange={(d) => setMNextDate(toIsoDate(d))} placeholder="Opsional" className="w-full h-9 text-xs bg-white" />
                   </div>
                   <label className="flex items-center gap-2 h-9 px-2.5 rounded-lg border border-slate-200 bg-white cursor-pointer">
                     <input type="checkbox" checked={mCreateExpense} onChange={(e) => setMCreateExpense(e.target.checked)} className="w-4 h-4 rounded" />

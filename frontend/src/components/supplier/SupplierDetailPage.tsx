@@ -18,9 +18,11 @@ import {
   Expense,
   ExpenseFormData,
 } from "@/types";
-import { formatRupiah, formatDateId } from "@/lib/formatters";
+import { formatRupiah, formatDateId, toIsoDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -1283,24 +1285,16 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                 <option value="Lunas">Lunas</option>
               </select>
 
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => {
-                  setStartDate(e.target.value);
+              <DateRangePicker
+                initialDateFrom={startDate || undefined}
+                initialDateTo={endDate || undefined}
+                placeholder="Filter rentang tanggal..."
+                onUpdate={({ range }) => {
+                  if (range.from) setStartDate(toIsoDate(range.from));
+                  if (range.to) setEndDate(toIsoDate(range.to));
+                  else if (range.from) setEndDate(toIsoDate(range.from));
                   setPage(1);
                 }}
-                className="h-8 text-xs rounded-xl w-32"
-              />
-              <span className="text-xs text-slate-400">-</span>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => {
-                  setEndDate(e.target.value);
-                  setPage(1);
-                }}
-                className="h-8 text-xs rounded-xl w-32"
               />
 
               {(searchCategory || searchPayStatus || startDate || endDate) && (
@@ -1509,12 +1503,10 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                       <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
                         Tanggal Belanja *
                       </label>
-                      <Input
-                        type="date"
+                      <DatePicker
                         value={newExpenseDate}
-                        onChange={(e) => setNewExpenseDate(e.target.value)}
-                        required
-                        className="h-11 sm:h-10 text-xs rounded-xl"
+                        onChange={(d) => setNewExpenseDate(toIsoDate(d))}
+                        className="w-full h-11 sm:h-10 text-xs rounded-xl"
                       />
                     </div>
 
@@ -1707,12 +1699,10 @@ export const SupplierDetailPage: React.FC<SupplierDetailPageProps> = ({
                       <label className="font-semibold block mb-1 text-rose-700 dark:text-rose-300">
                         Tanggal Jatuh Tempo *
                       </label>
-                      <Input
-                        type="date"
+                      <DatePicker
                         value={newDueDate}
-                        onChange={(e) => setNewDueDate(e.target.value)}
-                        required={newPayStatus !== "Lunas"}
-                        className="h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-800"
+                        onChange={(d) => setNewDueDate(toIsoDate(d))}
+                        className="w-full h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-800"
                       />
                     </div>
                   )}

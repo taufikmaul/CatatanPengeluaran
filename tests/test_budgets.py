@@ -130,8 +130,11 @@ async def test_budget_api_endpoints(client, auth_cookies):
     assert data_get["total_budget"] == 30_000_000
     assert data_get["category_amounts"]["Bahan Baku"] == 15_000_000
     assert data_get["is_custom"] is True
+    assert "previous_month_ending_balance" in data_get
+    assert data_get["previous_month"] == 9
+    assert data_get["previous_month_year"] == 2026
 
-    # 3. POST copy budget ke November 2026
+    # 3. POST copy budget ke November 2026 (standar)
     res_copy = await client.post(
         "/api/v1/budgets/copy",
         json={"target_year": 2026, "target_month": 11},
@@ -141,3 +144,14 @@ async def test_budget_api_endpoints(client, auth_cookies):
     assert data_copy["total_budget"] == 30_000_000
     assert data_copy["category_percentages"]["Bahan Baku"] == 50.0
     assert data_copy["month"] == 11
+
+    # 4. POST copy budget ke Desember 2026 dengan use_previous_cash_balance = True
+    res_copy_cash = await client.post(
+        "/api/v1/budgets/copy",
+        json={"target_year": 2026, "target_month": 12, "use_previous_cash_balance": True},
+    )
+    assert res_copy_cash.status_code == 200
+    data_copy_cash = res_copy_cash.json()
+    assert data_copy_cash["month"] == 12
+    assert "previous_month_ending_balance" in data_copy_cash
+    assert data_copy_cash["category_percentages"]["Bahan Baku"] == 50.0

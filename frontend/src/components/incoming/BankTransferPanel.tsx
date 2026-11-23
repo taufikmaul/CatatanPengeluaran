@@ -2,10 +2,11 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { BankAccount } from "@/types";
 import { getBankTransfers, createBankTransfer, deleteBankTransfer } from "@/lib/api";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/common/DataTable";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
@@ -201,11 +202,10 @@ export const BankTransferPanel: React.FC<BankTransferPanelProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
             <div>
               <label className="text-[11px] font-medium text-slate-600 block mb-1">Tanggal</label>
-              <Input
-                type="date"
+              <DatePicker
                 value={transferDate}
-                onChange={(e) => setTransferDate(e.target.value)}
-                className="h-9 text-xs"
+                onChange={(d) => setTransferDate(toIsoDate(d))}
+                className="w-full h-9 text-xs"
               />
             </div>
 

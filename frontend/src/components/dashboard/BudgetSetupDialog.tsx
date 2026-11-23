@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   Sliders,
   ArrowRight,
+  Wallet,
+  ArrowDownToLine,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/formatters";
 import { getMonthlyBudget, saveMonthlyBudget, copyMonthlyBudget } from "@/lib/api";
@@ -68,6 +70,8 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
   const [percentages, setPercentages] = useState<Record<string, number>>({});
   const [categories, setCategories] = useState<string[]>([]);
   const [isCustom, setIsCustom] = useState<boolean>(false);
+  const [prevMonthEndingCash, setPrevMonthEndingCash] = useState<number | null>(null);
+  const [prevMonthInfo, setPrevMonthInfo] = useState<{ month: number; year: number } | null>(null);
 
   // Sync initial props when opened
   useEffect(() => {
@@ -86,6 +90,18 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
       setPercentages(data.category_percentages || {});
       setCategories(data.valid_categories || []);
       setIsCustom(Boolean(data.is_custom));
+      setPrevMonthEndingCash(
+        data.previous_month_ending_balance !== undefined && data.previous_month_ending_balance !== null
+          ? data.previous_month_ending_balance
+          : 0
+      );
+      if (data.previous_month && data.previous_month_year) {
+        setPrevMonthInfo({ month: data.previous_month, year: data.previous_month_year });
+      } else {
+        const pm = month === 1 ? 12 : month - 1;
+        const py = month === 1 ? year - 1 : year;
+        setPrevMonthInfo({ month: pm, year: py });
+      }
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Gagal memuat anggaran bulanan");
     } finally {
@@ -189,15 +205,26 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     toast.info("Alokasi persentase di-reset ke 0%.");
   };
 
-  // Copy from previous month
-  const handleCopyPrevious = async () => {
+  // Copy from previous month (target budget or ending cash)
+  const handleCopyPrevious = async (useCashBalance: boolean = false) => {
     setIsCopying(true);
     try {
-      const res = await copyMonthlyBudget(selectedYear, selectedMonth);
+      const res = await copyMonthlyBudget(
+        selectedYear,
+        selectedMonth,
+        undefined,
+        undefined,
+        useCashBalance
+      );
       setTotalBudget(res.total_budget || 0);
       setPercentages(res.category_percentages || {});
       setIsCustom(true);
-      toast.success(res.message || "Berhasil menyalin anggaran dari bulan sebelumnya!");
+      toast.success(
+        res.message ||
+          (useCashBalance
+            ? "Berhasil menggunakan kas akhir bulan lalu!"
+            : "Berhasil menyalin anggaran dari bulan sebelumnya!")
+      );
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Gagal menyalin anggaran");
     } finally {
@@ -363,6 +390,43 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                 Reset 0
               </button>
             </div>
+
+            {/* Opsi Gunakan Akhir Kas Bulan Lalu */}
+            {prevMonthEndingCash !== null && (
+              <div className="pt-2.5 mt-1 border-t border-emerald-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white/80 p-2.5 rounded-xl border border-emerald-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                    <Wallet className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-slate-600 font-medium block leading-tight">
+                      Akhir Kas {prevMonthInfo ? `${MONTH_NAMES[prevMonthInfo.month - 1]} ${prevMonthInfo.year}` : "Bulan Lalu"}:
+                    </span>
+                    <span className="text-xs font-bold text-slate-900 tabular-nums">
+                      {formatRupiah(prevMonthEndingCash)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const amount = Math.max(0, prevMonthEndingCash);
+                      setTotalBudget(amount);
+                      toast.success(
+                        `Kas awal bulanan diset ke akhir kas bulan lalu (${formatRupiah(amount)})`
+                      );
+                    }}
+                    className="h-7 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800 rounded-lg px-2.5 gap-1 shadow-2xs"
+                  >
+                    <ArrowDownToLine className="w-3 h-3 text-sky-600" />
+                    Gunakan Kas Akhir
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Allocation Health Bar */}
@@ -461,17 +525,35 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                 </Button>
               </div>
 
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleCopyPrevious}
-                disabled={isCopying}
-                className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-sky-200 text-sky-800 hover:bg-sky-50"
-              >
-                <Copy className="w-3 h-3 text-sky-600 mr-1" />
-                {isCopying ? "Menyalin..." : "Salin Bulan Lalu"}
-              </Button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleCopyPrevious(false)}
+                  disabled={isCopying}
+                  title="Salin plafon dan alokasi persentase kategori bulan lalu"
+                  className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-sky-200 text-sky-800 hover:bg-sky-50"
+                >
+                  <Copy className="w-3 h-3 text-sky-600 mr-1" />
+                  {isCopying ? "Menyalin..." : "Salin Bulan Lalu"}
+                </Button>
+
+                {prevMonthEndingCash !== null && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCopyPrevious(true)}
+                    disabled={isCopying}
+                    title="Gunakan saldo akhir kas riil bulan lalu sebagai kas awal bulan ini"
+                    className="h-7 text-[11px] rounded-lg px-2.5 font-semibold border-emerald-300 text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100/80"
+                  >
+                    <Wallet className="w-3 h-3 text-emerald-600 mr-1" />
+                    Salin + Pakai Kas Akhir
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 

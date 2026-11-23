@@ -46,6 +46,9 @@ async def get_budget_endpoint(
         category_amounts=data.get("category_amounts", {}),
         is_custom=data.get("is_custom", False),
         valid_categories=settings.valid_categories,
+        previous_month_ending_balance=data.get("previous_month_ending_balance", 0.0),
+        previous_month_year=data.get("previous_month_year"),
+        previous_month=data.get("previous_month"),
         message="Berhasil memuat anggaran",
     )
 
@@ -86,6 +89,9 @@ async def save_budget_endpoint(
         category_amounts=record.category_amounts,
         is_custom=True,
         valid_categories=settings.valid_categories,
+        previous_month_ending_balance=data.get("previous_month_ending_balance", 0.0),
+        previous_month_year=data.get("previous_month_year"),
+        previous_month=data.get("previous_month"),
         message=f"Anggaran bulan {payload.month}/{payload.year} berhasil disimpan!",
     )
 
@@ -97,17 +103,25 @@ async def copy_budget_endpoint(
 ):
     """
     Salin anggaran dari bulan sebelumnya (atau bulan acuan yang diminta) ke bulan target.
+    Mendukung opsi use_previous_cash_balance untuk menggunakan kas akhir riil dari bulan lalu.
     """
     record = await copy_budget_from_previous(
         db=db,
         target_year=payload.target_year,
         target_month=payload.target_month,
+        use_previous_cash_balance=payload.use_previous_cash_balance,
     )
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tidak ditemukan data anggaran acuan untuk disalin.",
         )
+
+    data = await get_effective_budget(db, payload.target_year, payload.target_month)
+    if payload.use_previous_cash_balance:
+        msg = f"Berhasil menerapkan kas akhir bulan lalu ke bulan {payload.target_month}/{payload.target_year}!"
+    else:
+        msg = f"Berhasil menyalin anggaran ke bulan {payload.target_month}/{payload.target_year}!"
 
     return MonthlyBudgetDetailResponse(
         ok=True,
@@ -118,5 +132,8 @@ async def copy_budget_endpoint(
         category_amounts=record.category_amounts,
         is_custom=True,
         valid_categories=settings.valid_categories,
-        message=f"Berhasil menyalin anggaran ke bulan {payload.target_month}/{payload.target_year}!",
+        previous_month_ending_balance=data.get("previous_month_ending_balance", 0.0),
+        previous_month_year=data.get("previous_month_year"),
+        previous_month=data.get("previous_month"),
+        message=msg,
     )

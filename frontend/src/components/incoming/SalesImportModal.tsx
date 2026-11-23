@@ -5,7 +5,8 @@ import {
   SalesImportRowOverride,
 } from "@/types";
 import { previewSalesImport, commitSalesImport, downloadIncomingTxTemplateCsv } from "@/lib/api";
-import { formatRupiah } from "@/lib/formatters";
+import { formatRupiah, toIsoDate } from "@/lib/formatters";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Dialog,
   DialogContent,
@@ -718,17 +719,15 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({
                                       >
                                         Tanggal Transaksi
                                       </label>
-                                      <input
-                                        id="import-edit-date"
-                                        type="date"
+                                      <DatePicker
                                         value={editDraft.transaction_date}
-                                        onChange={(e) =>
+                                        onChange={(d) =>
                                           setEditDraft({
                                             ...editDraft,
-                                            transaction_date: e.target.value,
+                                            transaction_date: toIsoDate(d),
                                           })
                                         }
-                                        className="w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full h-8 text-xs bg-white text-slate-900"
                                       />
                                     </div>
 
