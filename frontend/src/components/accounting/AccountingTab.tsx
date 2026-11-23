@@ -1246,6 +1246,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   data={accountingData.laba_rugi.hpp_items}
                   getRowId={(r) => r.account_code}
                   defaultPageSize={10}
+                  tableLayout={{ columnsResizable: false, width: "auto" }}
                   containerClassName="border-0 rounded-none shadow-none"
                 >
                   <div className="bg-amber-50/50 dark:bg-amber-950/20 border-t border-amber-200 dark:border-amber-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
@@ -1298,6 +1299,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   data={accountingData.laba_rugi.opex_items}
                   getRowId={(r) => r.account_code}
                   defaultPageSize={10}
+                  tableLayout={{ columnsResizable: false, width: "auto" }}
                   containerClassName="border-0 rounded-none shadow-none"
                 >
                   <div className="bg-blue-50/50 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
@@ -1383,6 +1385,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     data={accountingData.neraca.rekening_positions}
                     getRowId={(r) => String(r.id)}
                     defaultPageSize={10}
+                    tableLayout={{ columnsResizable: false, width: "auto" }}
                     containerClassName="border-0 rounded-none shadow-none"
                   />
                 </Card>
@@ -1846,6 +1849,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       data={dailyCashflowData.daily_rows}
                       getRowId={(r) => r.date}
                       defaultPageSize={10}
+                      tableLayout={{ columnsResizable: false, width: "auto" }}
                       containerClassName="border-0 rounded-none shadow-none"
                     >
                       <div className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-900 dark:text-slate-100">
@@ -2171,6 +2175,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     getRowId={(exp) => String(exp.id)}
                     isLoading={isLoadingLedger}
                     defaultPageSize={10}
+                    tableLayout={{ columnsResizable: false, width: "auto" }}
                     containerClassName="rounded-lg"
                     emptyState={
                       <div className="py-8 text-center text-slate-400 text-xs">
