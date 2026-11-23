@@ -81,9 +81,12 @@ async def generate_ai_analysis(
 async def _aggregate_financial_data(
     db: AsyncSession, year: int, month: int
 ) -> dict[str, Any]:
-    """Kompilasi ringkasan data finansial bulan berjalan dan komparasi bulan lalu."""
+    """Kompilasi ringkasan data finansial bulan berjalan, omset, profitabilitas, dan komparasi bulan lalu."""
+    from app.services.accounting_service import get_accounting_report
+
     report = await get_monthly_report(db, year, month)
     leaderboards = await get_monthly_leaderboards(db, year, month)
+    acc_report = await get_accounting_report(db, year, month)
 
     # Hitung bulan lalu
     if month == 1:
@@ -103,6 +106,20 @@ async def _aggregate_financial_data(
 
     mom_diff = total_pengeluaran - prev_total
     mom_pct = round((mom_diff / prev_total) * 100.0, 1) if prev_total > 0 else 0.0
+
+    # Pendapatan & Profitabilitas dari accounting_service
+    lr = acc_report.get("laba_rugi", {})
+    cs = acc_report.get("analisis", {}).get("cost_structure", {})
+    hpp_var = acc_report.get("analisis", {}).get("hpp_variance", {})
+
+    revenue_gross = float(lr.get("revenue_gross", 0.0))
+    revenue_net = float(lr.get("revenue_net", 0.0))
+    gross_profit = float(lr.get("gross_profit", 0.0))
+    net_profit = float(lr.get("net_profit", 0.0))
+    gross_margin_pct = cs.get("gross_margin_pct")
+    net_margin_pct = cs.get("net_margin_pct")
+    hpp_to_revenue_pct = cs.get("hpp_to_revenue_pct")
+    opex_to_revenue_pct = cs.get("opex_to_revenue_pct")
 
     # Anggaran
     from app.services.budget_service import get_effective_budget
@@ -129,6 +146,17 @@ async def _aggregate_financial_data(
         "month": month,
         "year": year,
         "month_name": MONTH_NAMES[month - 1],
+        "revenue_gross": revenue_gross,
+        "revenue_net": revenue_net,
+        "gross_profit": gross_profit,
+        "net_profit": net_profit,
+        "gross_margin_pct": gross_margin_pct,
+        "net_margin_pct": net_margin_pct,
+        "hpp_to_revenue_pct": hpp_to_revenue_pct,
+        "opex_to_revenue_pct": opex_to_revenue_pct,
+        "theoretical_hpp": float(hpp_var.get("theoretical_hpp", 0.0)),
+        "actual_hpp": float(hpp_var.get("actual_hpp", 0.0)),
+        "hpp_variance_pct": hpp_var.get("variance_pct"),
         "total_lunas": total_lunas,
         "total_hutang": total_hutang,
         "total_pengeluaran": total_pengeluaran,
@@ -212,7 +240,7 @@ async def _call_ai_engine(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_prompt(data: dict[str, Any]) -> str:
-    """Susun prompt analisis keuangan dengan konteks angka toko kue."""
+    """Susun prompt analisis keuangan dengan konteks angka toko kue (omset, laba, & pengeluaran)."""
     cat_summary = "\n".join(
         f"- {k}: {fmt_rupiah(v)}" for k, v in data["per_kategori"].items()
     ) or "- Belum ada data kategori"
@@ -238,9 +266,24 @@ def _build_prompt(data: dict[str, Any]) -> str:
         else "Limit Anggaran Bulanan belum disetel."
     )
 
-    return f"""Berikut adalah data real pengeluaran toko kue Historycake periode {data['month_name']} {data['year']}:
+    rev_net = float(data.get("revenue_net") or 0.0)
+    rev_info = (
+        f"- Pendapatan Kotor: {fmt_rupiah(data.get('revenue_gross', 0.0))}\n"
+        f"- Pendapatan Bersih (Net Revenue): {fmt_rupiah(rev_net)}\n"
+        f"- Laba Kotor: {fmt_rupiah(data.get('gross_profit', 0.0))} (Gross Margin: {data.get('gross_margin_pct')}%)\n"
+        f"- Laba / Rugi Bersih: {fmt_rupiah(data.get('net_profit', 0.0))} (Net Margin: {data.get('net_margin_pct')}%)\n"
+        f"- Rasio HPP terhadap Omset: {data.get('hpp_to_revenue_pct')}%\n"
+        f"- Rasio OPEX terhadap Omset: {data.get('opex_to_revenue_pct')}%"
+        if rev_net > 0
+        else "- Pendapatan Bersih: Belum ada transaksi penjualan tercatat pada periode ini."
+    )
 
-1. RINGKASAN TOTAL:
+    return f"""Berikut adalah data real keuangan toko kue Historycake periode {data['month_name']} {data['year']}:
+
+0. RINGKASAN PENDAPATAN & PROFITABILITAS:
+{rev_info}
+
+1. RINGKASAN TOTAL PENGELUARAN:
 - Total Pengeluaran: {fmt_rupiah(data['total_pengeluaran'])} ({data['expense_count']} transaksi)
 - Lunas: {fmt_rupiah(data['total_lunas'])}
 - Belum Lunas / Tempo: {fmt_rupiah(data['total_hutang'])} ({data['unpaid_count']} tagihan)
@@ -265,13 +308,13 @@ Analisis kondisi keuangan ini dan berikan output dalam format JSON valid dengan 
 {{
   "health_status": "SEHAT" | "PERLU_PERHATIAN" | "KRITIS",
   "health_score": <skor integer 1 sampai 100>,
-  "summary": "<Paragraf ringkasan eksekutif 3-4 kalimat tentang kondisi pengeluaran bulan ini>",
+  "summary": "<Paragraf ringkasan eksekutif 3-4 kalimat tentang kondisi profitabilitas dan pengeluaran bulan ini>",
   "key_insights": [
     "<Poin observasi penting 1>",
     "<Poin observasi penting 2>",
     "<Poin observasi penting 3>"
   ],
-  "budget_analysis": "<Ulasan mendalam terkait serapan anggaran, kategori boros, dan arus kas>",
+  "budget_analysis": "<Ulasan mendalam terkait serapan anggaran, rasio biaya terhadap omset, dan arus kas>",
   "price_alerts": [
     "<Peringatan lonjakan harga atau bahan yang perlu dievaluasi vendornya>"
   ],
@@ -366,15 +409,31 @@ def _build_fallback_analysis(data: dict[str, Any]) -> dict[str, Any]:
     mom_pct = data["mom_pct"]
     unpaid = data["total_hutang"]
     overbudget = data["overbudget_categories"]
+    rev_net = float(data.get("revenue_net") or 0.0)
+    net_profit = float(data.get("net_profit") or 0.0)
+    net_margin_pct = data.get("net_margin_pct")
+    hpp_to_rev = data.get("hpp_to_revenue_pct")
 
     score = 80
     reasons = []
 
-    if mom_pct > 20:
-        score -= 15
-        reasons.append(f"Pengeluaran naik signifikan +{mom_pct}% dibanding bulan lalu.")
-    elif mom_pct < -5:
-        score += 5
+    if rev_net > 0:
+        if net_profit < 0:
+            score -= 20
+            reasons.append(
+                f"Operasional bulan ini mencatat rugi bersih {fmt_rupiah(abs(net_profit))} (Net Margin {net_margin_pct}%)."
+            )
+        elif net_margin_pct is not None and net_margin_pct >= 20.0:
+            score += 5
+        if hpp_to_rev is not None and hpp_to_rev > 55.0:
+            score -= 10
+            reasons.append(f"Rasio HPP terhadap omset ({hpp_to_rev}%) melampaui batas ideal 55%.")
+    else:
+        if mom_pct > 20:
+            score -= 15
+            reasons.append(f"Pengeluaran naik signifikan +{mom_pct}% dibanding bulan lalu.")
+        elif mom_pct < -5:
+            score += 5
 
     if overbudget:
         score -= min(25, len(overbudget) * 10)
@@ -393,16 +452,27 @@ def _build_fallback_analysis(data: dict[str, Any]) -> dict[str, Any]:
     else:
         status = "KRITIS"
 
-    summary = (
-        f"Total pengeluaran tercatat {fmt_rupiah(total)} pada {data['month_name']} {data['year']}. "
-        f"Tren bulanan tercatat {('naik +' + str(mom_pct) + '%') if mom_pct >= 0 else ('turun ' + str(mom_pct) + '%')} "
-        f"dibandingkan {data['prev_month_name']}. Arus kas dan alokasi bahan baku perlu dipantau secara berkala."
-    )
+    if rev_net > 0:
+        profit_label = f"laba bersih {fmt_rupiah(net_profit)} (margin {net_margin_pct}%)" if net_profit >= 0 else f"rugi bersih {fmt_rupiah(abs(net_profit))} (margin {net_margin_pct}%)"
+        summary = (
+            f"Pada periode {data['month_name']} {data['year']}, pendapatan bersih tercatat {fmt_rupiah(rev_net)} "
+            f"dengan total pengeluaran {fmt_rupiah(total)} dan menghasilkan {profit_label}. "
+            f"Tren pengeluaran tercatat {('naik +' + str(mom_pct) + '%') if mom_pct >= 0 else ('turun ' + str(mom_pct) + '%')} "
+            f"dibandingkan {data['prev_month_name']}."
+        )
+    else:
+        summary = (
+            f"Total pengeluaran tercatat {fmt_rupiah(total)} pada {data['month_name']} {data['year']}. "
+            f"Tren bulanan tercatat {('naik +' + str(mom_pct) + '%') if mom_pct >= 0 else ('turun ' + str(mom_pct) + '%')} "
+            f"dibandingkan {data['prev_month_name']}. Arus kas dan alokasi bahan baku perlu dipantau secara berkala."
+        )
 
     insights = [
         f"Kategori Bahan Baku dan Kemasan memegang porsi terbesar dalam operasional toko.",
         f"Terdapat {data['unpaid_count']} tagihan tempo senilai {fmt_rupiah(unpaid)} yang perlu diperhatikan tanggal jatuh temponya.",
     ]
+    if rev_net > 0 and hpp_to_rev is not None:
+        insights.insert(0, f"Rasio HPP terhadap omset bersih berada pada angka {hpp_to_rev}% dengan Gross Margin {data.get('gross_margin_pct')}%.")
     if reasons:
         insights.extend(reasons)
 

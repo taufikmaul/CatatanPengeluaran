@@ -269,6 +269,7 @@ export interface AccountLineItem {
   mom_change_pct: number | null;
   percentage_of_group: number;
   percentage_of_total_expense: number;
+  percentage_of_revenue?: number | null;
   transaction_count: number;
   description?: string;
 }
@@ -293,7 +294,9 @@ export interface LabaRugiReportData {
   prev_revenue_net?: number;
   mom_revenue_change_pct?: number | null;
   gross_profit?: number;
+  gross_margin_pct?: number | null;
   net_profit?: number;
+  net_margin_pct?: number | null;
   prev_net_profit?: number;
   disposal_gain_loss?: number;
   depreciation_expense?: number;
@@ -386,6 +389,27 @@ export interface HealthEvaluationItem {
   note: string;
 }
 
+export interface HppVarianceMenuItem {
+  product_name: string;
+  qty_sold: number;
+  unit_hpp: number;
+  total_theoretical_hpp: number;
+  net_sales: number;
+}
+
+export interface HppVarianceData {
+  theoretical_hpp: number;
+  actual_hpp: number;
+  variance_nominal: number;
+  variance_pct: number | null;
+  matched_menu_count: number;
+  unmatched_item_count: number;
+  matched_qty_total: number;
+  top_menu_costs: HppVarianceMenuItem[];
+  status: "aligned" | "surplus_purchase" | "stock_drawdown" | "no_sales_match" | "no_menu_data" | string;
+  note: string;
+}
+
 export interface AccountingAnalysisData {
   cost_structure: {
     hpp_ratio: number;
@@ -397,12 +421,26 @@ export interface AccountingAnalysisData {
     maintenance_ratio: number;
     software_ratio: number;
     utilitas_ratio: number;
+    has_revenue?: boolean;
+    hpp_to_revenue_pct?: number | null;
+    opex_to_revenue_pct?: number | null;
+    bahan_to_revenue_pct?: number | null;
+    kemasan_to_revenue_pct?: number | null;
+    gaji_to_revenue_pct?: number | null;
+    sewa_to_revenue_pct?: number | null;
+    marketing_to_revenue_pct?: number | null;
+    maintenance_to_revenue_pct?: number | null;
+    software_to_revenue_pct?: number | null;
+    utilitas_to_revenue_pct?: number | null;
+    gross_margin_pct?: number | null;
+    net_margin_pct?: number | null;
   };
   top_variances_mom: {
     top_increases: AccountLineItem[];
     top_savings: AccountLineItem[];
   };
   health_evaluation: HealthEvaluationItem[];
+  hpp_variance?: HppVarianceData;
 }
 
 export interface AccountingReportData {

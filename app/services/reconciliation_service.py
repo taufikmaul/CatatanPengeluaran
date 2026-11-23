@@ -7,9 +7,11 @@ from datetime import datetime, date, timedelta
 from typing import Any
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.incoming_transaction import IncomingTransaction
 from app.models.expense import Expense
+from app.models.expense_payment import ExpensePayment
 from app.services.sales_import_service import (
     _decode_csv_bytes,
     _detect_delimiter,
@@ -274,11 +276,28 @@ async def preview_reconciliation(
     )
     candidate_exp = exp_res.scalars().all()
 
+    ep_res = await db.execute(
+        select(ExpensePayment)
+        .options(selectinload(ExpensePayment.expense))
+        .where(
+            and_(
+                ExpensePayment.payment_date >= min_d,
+                ExpensePayment.payment_date <= max_d,
+            )
+        )
+    )
+    candidate_ep = [
+        ep
+        for ep in ep_res.scalars().all()
+        if ep.expense is not None and ep.expense.reconciled_at is None
+    ]
+
     matched_incoming = []
     matched_expenses = []
     unmatched = []
     used_tx: set[int] = set()
     used_exp: set[int] = set()
+    used_ep: set[int] = set()
 
     for r in rows:
         r_date = r["date_obj"]
@@ -311,13 +330,58 @@ async def preview_reconciliation(
                     "bank_account_id": bank_account_id or found.bank_account_id,
                 })
             else:
-                unmatched.append({
-                    "row_no": r["row_no"],
-                    "date": r["date"],
-                    "description": r["description"],
-                    "direction": "CR",
-                    "amount": amt,
-                })
+                # Fallback: cek apakah mutasi CR merupakan batch settlement / pencairan gabungan harian per order_type atau payment_method
+                batch_group: list[IncomingTransaction] | None = None
+                daily_buckets: dict[tuple[date, str], list[IncomingTransaction]] = {}
+                for t in candidate_tx:
+                    if t.id in used_tx:
+                        continue
+                    if abs((t.transaction_date - r_date).days) <= date_tolerance_days:
+                        for ch_key in (
+                            f"ot:{(t.order_type or '').strip().lower()}",
+                            f"pm:{(t.payment_method or '').strip().lower()}",
+                        ):
+                            if ch_key.endswith(":"):
+                                continue
+                            daily_buckets.setdefault((t.transaction_date, ch_key), []).append(t)
+
+                for (_b_date, _ch_key), tx_list in daily_buckets.items():
+                    if len(tx_list) < 2:
+                        continue
+                    group_net = sum(float(x.net_received or 0.0) for x in tx_list)
+                    if abs(group_net - amt) < 1.0:
+                        batch_group = tx_list
+                        break
+
+                if batch_group:
+                    for bt in batch_group:
+                        used_tx.add(bt.id)
+                        bt_net = float(bt.net_received or 0.0)
+                        matched_incoming.append({
+                            "row_no": r["row_no"],
+                            "reconciled_ref": r["reference"],
+                            "bank_date": r["date"],
+                            "bank_desc": f"{r['description']} (Batch {len(batch_group)} tx)",
+                            "tx_id": bt.id,
+                            "receipt_no": bt.receipt_no,
+                            "order_no": bt.order_no,
+                            "transaction_date": bt.transaction_date.isoformat(),
+                            "order_type": bt.order_type,
+                            "old_platform_fee": float(bt.platform_fee or 0.0),
+                            "new_platform_fee": float(bt.platform_fee or 0.0),
+                            "old_net_received": bt_net,
+                            "new_net_received": bt_net,
+                            "diff_net": 0.0,
+                            "bank_account_id": bank_account_id or bt.bank_account_id,
+                        })
+                else:
+                    unmatched.append({
+                        "row_no": r["row_no"],
+                        "date": r["date"],
+                        "description": r["description"],
+                        "direction": "CR",
+                        "amount": amt,
+                    })
         else:
             found_exp = None
             for e in candidate_exp:
@@ -342,13 +406,40 @@ async def preview_reconciliation(
                     "bank_account_id": bank_account_id or found_exp.bank_account_id,
                 })
             else:
-                unmatched.append({
-                    "row_no": r["row_no"],
-                    "date": r["date"],
-                    "description": r["description"],
-                    "direction": "DB",
-                    "amount": amt,
-                })
+                # Fallback: cek pembayaran bertahap / DP / termin / pelunasan tempo / reimbursement di ExpensePayment
+                found_ep = None
+                for ep in candidate_ep:
+                    if ep.id in used_ep:
+                        continue
+                    if abs((ep.payment_date - r_date).days) <= date_tolerance_days and abs(float(ep.amount) - amt) < 1.0:
+                        found_ep = ep
+                        break
+                if found_ep and found_ep.expense:
+                    used_ep.add(found_ep.id)
+                    parent_exp = found_ep.expense
+                    matched_expenses.append({
+                        "row_no": r["row_no"],
+                        "reconciled_ref": r["reference"],
+                        "bank_date": r["date"],
+                        "bank_desc": r["description"],
+                        "expense_id": parent_exp.id,
+                        "expense_payment_id": found_ep.id,
+                        "payment_type": found_ep.payment_type,
+                        "expense_date": found_ep.payment_date.isoformat(),
+                        "supplier": parent_exp.supplier,
+                        "item_name": f"{parent_exp.item_name} ({found_ep.payment_type.upper()})",
+                        "total_price": float(found_ep.amount),
+                        "pay_method": found_ep.pay_method or parent_exp.pay_method,
+                        "bank_account_id": bank_account_id or found_ep.bank_account_id or parent_exp.bank_account_id,
+                    })
+                else:
+                    unmatched.append({
+                        "row_no": r["row_no"],
+                        "date": r["date"],
+                        "description": r["description"],
+                        "direction": "DB",
+                        "amount": amt,
+                    })
 
     return {
         "mode": mode,
@@ -390,6 +481,13 @@ async def apply_reconciliation(
         exp.reconciled_ref = m.get("reconciled_ref")
         if m.get("bank_account_id") is not None:
             exp.bank_account_id = int(m["bank_account_id"])
+        if m.get("expense_payment_id"):
+            ep = await db.get(ExpensePayment, int(m["expense_payment_id"]))
+            if ep:
+                if m.get("reconciled_ref") and not ep.reference_no:
+                    ep.reference_no = str(m["reconciled_ref"])
+                if m.get("bank_account_id") is not None:
+                    ep.bank_account_id = int(m["bank_account_id"])
         exp_count += 1
 
     await db.commit()

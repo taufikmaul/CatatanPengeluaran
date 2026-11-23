@@ -381,6 +381,7 @@ class AccountLineItem(BaseModel):
     mom_change_pct: float | None = None
     percentage_of_group: float = 0.0
     percentage_of_total_expense: float = 0.0
+    percentage_of_revenue: float | None = None
     transaction_count: int = 0
     description: str = ""
 
@@ -394,8 +395,13 @@ class LabaRugiReport(BaseModel):
     prev_revenue_net: float = 0.0
     mom_revenue_change_pct: float | None = None
     gross_profit: float = 0.0
+    gross_margin_pct: float | None = None
     net_profit: float = 0.0
+    net_margin_pct: float | None = None
     prev_net_profit: float = 0.0
+    disposal_gain_loss: float = 0.0
+    depreciation_expense: float = 0.0
+    low_value_asset_expense: float = 0.0
     revenue_by_channel: list[dict[str, Any]] = []
     hpp_items: list[AccountLineItem]
     subtotal_hpp: float
@@ -437,6 +443,7 @@ class NeracaReport(BaseModel):
     rekening_positions: list[RekeningPositionItem] = []
     total_rekening_balance: float = 0.0
     aset_tetap: list[NeracaItem]
+    aset_tetap_summary: dict[str, Any] = {}
     subtotal_aset_tetap: float
     total_aset: float
     kewajiban_lancar: list[NeracaItem]
@@ -470,6 +477,7 @@ class AccountingAnalysis(BaseModel):
     cost_structure: dict[str, Any]
     top_variances_mom: dict[str, Any]
     health_evaluation: list[dict[str, Any]]
+    hpp_variance: dict[str, Any] = {}
 
 
 class AccountingReportResponse(BaseModel):

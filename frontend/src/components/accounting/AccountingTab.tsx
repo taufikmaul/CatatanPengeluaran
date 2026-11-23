@@ -174,47 +174,58 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
   // Export Rekap Akuntansi ke CSV
   const handleExportCsv = () => {
     if (!accountingData) return;
+    const lr = accountingData.laba_rugi;
+    const cs = accountingData.analisis.cost_structure;
     const lines = [
       `LAPORAN AKUNTANSI KEUANGAN (SAK EMKM) - HISTORYCAKE`,
       `Periode: ${accountingData.month_name} ${accountingData.year}`,
       `Dicetak pada: ${new Date().toLocaleString("id-ID")}`,
       "",
+      `0. RINGKASAN PENDAPATAN & PROFITABILITAS`,
+      `"Penjualan Kotor (Gross Sales)",${lr.revenue_gross || 0}`,
+      `"Diskon & Komisi Platform",-${(lr.revenue_discount || 0) + (lr.revenue_platform_fee || 0)}`,
+      `"Pendapatan Bersih (Net Revenue)",${lr.revenue_net || 0}`,
+      `"Laba Kotor (Gross Profit)",${lr.gross_profit || 0},"${lr.gross_margin_pct != null ? lr.gross_margin_pct + "%" : "-"}"`,
+      `"Laba / Rugi Bersih (Net Profit)",${lr.net_profit || 0},"${lr.net_margin_pct != null ? lr.net_margin_pct + "%" : "-"}"`,
+      "",
       `1. LAPORAN LABA RUGI (BEBAN POKOK & OPERASIONAL)`,
-      `Kode Akun,Nama Akun,Kategori,Nominal Bulan Ini,Nominal Bulan Lalu,Selisih MoM,% Grup,% Beban Usaha`,
+      `Kode Akun,Nama Akun,Kategori,Nominal Bulan Ini,Nominal Bulan Lalu,Selisih MoM,% Grup,% Beban Usaha,% Omset Bersih`,
     ];
 
     // HPP
-    lines.push(`-- HARGA POKOK PENJUALAN (HPP) --,,,,,,,`);
-    accountingData.laba_rugi.hpp_items.forEach((item) => {
+    lines.push(`-- HARGA POKOK PENJUALAN (HPP) --,,,,,,,,`);
+    lr.hpp_items.forEach((item) => {
+      const revPct = item.percentage_of_revenue != null ? `${item.percentage_of_revenue}%` : "-";
       lines.push(
-        `"${item.account_code}","${item.account_name}","${item.category}",${item.total},${item.prev_total},${item.diff_nominal},${item.percentage_of_group}%,${item.percentage_of_total_expense}%`
+        `"${item.account_code}","${item.account_name}","${item.category}",${item.total},${item.prev_total},${item.diff_nominal},${item.percentage_of_group}%,${item.percentage_of_total_expense}%,${revPct}`
       );
     });
     lines.push(
-      `"SUBTOTAL HPP","","Harga Pokok Penjualan",${accountingData.laba_rugi.subtotal_hpp},${accountingData.laba_rugi.prev_subtotal_hpp},${accountingData.laba_rugi.subtotal_hpp - accountingData.laba_rugi.prev_subtotal_hpp},100%,${accountingData.analisis.cost_structure.hpp_ratio}%`
+      `"SUBTOTAL HPP","","Harga Pokok Penjualan",${lr.subtotal_hpp},${lr.prev_subtotal_hpp},${lr.subtotal_hpp - lr.prev_subtotal_hpp},100%,${cs.hpp_ratio}%,${cs.hpp_to_revenue_pct != null ? cs.hpp_to_revenue_pct + "%" : "-"}`
     );
 
     // OPEX
     lines.push(``);
-    lines.push(`-- BEBAN OPERASIONAL & UMUM (OPEX) --,,,,,,,`);
-    accountingData.laba_rugi.opex_items.forEach((item) => {
+    lines.push(`-- BEBAN OPERASIONAL & UMUM (OPEX) --,,,,,,,,`);
+    lr.opex_items.forEach((item) => {
+      const revPct = item.percentage_of_revenue != null ? `${item.percentage_of_revenue}%` : "-";
       lines.push(
-        `"${item.account_code}","${item.account_name}","${item.category}",${item.total},${item.prev_total},${item.diff_nominal},${item.percentage_of_group}%,${item.percentage_of_total_expense}%`
+        `"${item.account_code}","${item.account_name}","${item.category}",${item.total},${item.prev_total},${item.diff_nominal},${item.percentage_of_group}%,${item.percentage_of_total_expense}%,${revPct}`
       );
     });
     lines.push(
-      `"SUBTOTAL OPEX","","Beban Operasional",${accountingData.laba_rugi.subtotal_opex},${accountingData.laba_rugi.prev_subtotal_opex},${accountingData.laba_rugi.subtotal_opex - accountingData.laba_rugi.prev_subtotal_opex},100%,${accountingData.analisis.cost_structure.opex_ratio}%`
+      `"SUBTOTAL OPEX","","Beban Operasional",${lr.subtotal_opex},${lr.prev_subtotal_opex},${lr.subtotal_opex - lr.prev_subtotal_opex},100%,${cs.opex_ratio}%,${cs.opex_to_revenue_pct != null ? cs.opex_to_revenue_pct + "%" : "-"}`
     );
 
     // Total Beban
     lines.push(``);
     lines.push(
-      `"TOTAL BEBAN USAHA (LABA RUGI)","","",${accountingData.laba_rugi.total_beban},${accountingData.laba_rugi.prev_total_beban},${accountingData.laba_rugi.total_beban - accountingData.laba_rugi.prev_total_beban},-,100%`
+      `"TOTAL BEBAN USAHA (LABA RUGI)","","",${lr.total_beban},${lr.prev_total_beban},${lr.total_beban - lr.prev_total_beban},-,100%,-`
     );
 
     // Neraca
     lines.push(``);
-    lines.push(`2. LAPORAN POSISI KEUANGAN (NERACA BELANJA & ASET)`);
+    lines.push(`2. LAPORAN POSISI KEUANGAN (NERACA STANDAR SAK EMKM)`);
     lines.push(`Kode Akun,Nama Akun,Kelompok,Nominal,Keterangan`);
     accountingData.neraca.aset_lancar.forEach((item) => {
       lines.push(`"${item.account_code}","${item.account_name}","Aset Lancar",${item.nominal},"${item.description}"`);
@@ -222,8 +233,12 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
     accountingData.neraca.aset_tetap.forEach((item) => {
       lines.push(`"${item.account_code}","${item.account_name}","Aset Tetap",${item.nominal},"${item.description}"`);
     });
+    lines.push(`"TOTAL ASET","Total Aktiva (Aset Lancar + Aset Tetap)","Total Aset",${accountingData.neraca.total_aset},""`);
     accountingData.neraca.kewajiban_lancar.forEach((item) => {
-      lines.push(`"${item.account_code}","${item.account_name}","Kewajiban / Hutang",${item.nominal},"${item.description}"`);
+      lines.push(`"${item.account_code}","${item.account_name}","Kewajiban Lancar",${item.nominal},"${item.description}"`);
+    });
+    (accountingData.neraca.ekuitas || []).forEach((item) => {
+      lines.push(`"${item.account_code}","${item.account_name}","Ekuitas",${item.nominal},"${item.description}"`);
     });
 
     const csvContent = "data:text/csv;charset=utf-8," + lines.join("\n");
@@ -375,7 +390,33 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           </span>
         </div>
       ),
-      size: 95,
+      size: 90,
+    },
+    {
+      accessorKey: "percentage_of_revenue",
+      id: "percentage_of_revenue",
+      header: ({ column }) => (
+        <DataGridColumnHeader
+          title="% Omset"
+          column={column}
+          className="justify-end text-right"
+        />
+      ),
+      cell: ({ row }) => {
+        const revPct = row.original.percentage_of_revenue;
+        return (
+          <div className="text-right tabular-nums whitespace-nowrap">
+            {revPct !== null && revPct !== undefined ? (
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {revPct}%
+              </span>
+            ) : (
+              <span className="text-slate-400">-</span>
+            )}
+          </div>
+        );
+      },
+      size: 90,
     },
     {
       id: "actions",
@@ -1153,7 +1194,14 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                      <div className="text-[11px] text-slate-500">Laba Kotor (Net - HPP)</div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Laba Kotor (Net - HPP)</span>
+                        {accountingData.laba_rugi.gross_margin_pct != null && (
+                          <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                            {accountingData.laba_rugi.gross_margin_pct}%
+                          </span>
+                        )}
+                      </div>
                       <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
                         {formatRupiah(accountingData.laba_rugi.gross_profit || 0)}
                       </div>
@@ -1163,9 +1211,16 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                         ? "border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/60 dark:bg-emerald-950/20"
                         : "border-rose-200 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20"
                     }`}>
-                      <div className="text-[11px] text-slate-600 dark:text-slate-300">Laba / Rugi Bersih</div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
+                        <span>Laba / Rugi Bersih</span>
+                        {accountingData.laba_rugi.net_margin_pct != null && (
+                          <span className="font-mono font-semibold">
+                            {accountingData.laba_rugi.net_margin_pct}%
+                          </span>
+                        )}
+                      </div>
                       <div className={`text-sm font-bold tabular-nums mt-0.5 ${
-                        (accountingData.laba_rugi.net_profit || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
+                        (accountingData.laba_rugi.net_profit || 0) >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
                       }`}>
                         {formatRupiah(accountingData.laba_rugi.net_profit || 0)}
                       </div>
@@ -1400,7 +1455,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       <div className="flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-emerald-600" />
                         <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                          Aset Lancar (Kas & Bank Belanja)
+                          Aset Lancar (Posisi Kas &amp; Bank)
                         </h3>
                       </div>
                       <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
@@ -1465,6 +1520,21 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       )}
                     </div>
                   </Card>
+
+                  {/* Total Aset (Aktiva) */}
+                  <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between shadow-xs">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                        Total Aset (Aktiva)
+                      </span>
+                      <span className="text-[11px] text-slate-300">
+                        Aset Lancar (Kas &amp; Bank) + Nilai Buku Aset Tetap
+                      </span>
+                    </div>
+                    <span className="text-lg font-extrabold tabular-nums">
+                      {formatRupiah(accountingData.neraca.total_aset)}
+                    </span>
+                  </div>
                 </div>
 
                 {/* SISI KANAN: KEWAJIBAN (PASSIVA) */}
@@ -1574,6 +1644,24 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </div>
                     </Card>
                   )}
+
+                  {/* Total Kewajiban + Ekuitas (Passiva) */}
+                  <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between shadow-xs">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                        Total Kewajiban &amp; Ekuitas (Passiva)
+                      </span>
+                      <span className="text-[11px] text-slate-300">
+                        Kewajiban Lancar + Modal Awal + Laba Ditahan + Laba Berjalan
+                      </span>
+                    </div>
+                    <span className="text-lg font-extrabold tabular-nums">
+                      {formatRupiah(
+                        (accountingData.neraca.subtotal_kewajiban || 0) +
+                          (accountingData.neraca.subtotal_ekuitas || 0)
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1946,32 +2034,146 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </div>
               </div>
 
+              {/* Analisis Variansi HPP Teoritis (Resep) vs HPP Aktual (Belanja) */}
+              {accountingData.analisis.hpp_variance && (
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <div>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        Variansi HPP Teoritis (Resep Menu) vs HPP Aktual (Belanja Bahan &amp; Kemasan)
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Membandingkan biaya resep dari kuantitas produk terjual terhadap realisasi belanja bahan baku pada periode ini
+                      </p>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-semibold ${
+                        accountingData.analisis.hpp_variance.status === "aligned"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                          : accountingData.analisis.hpp_variance.status === "surplus_purchase"
+                          ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                          : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                      }`}
+                    >
+                      {accountingData.analisis.hpp_variance.matched_menu_count} menu cocok ({accountingData.analisis.hpp_variance.matched_qty_total} unit terjual)
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                      <span className="text-[11px] text-slate-500 block">HPP Teoritis (Standar Resep)</span>
+                      <span className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 block">
+                        {formatRupiah(accountingData.analisis.hpp_variance.theoretical_hpp)}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                      <span className="text-[11px] text-slate-500 block">HPP Aktual (Belanja Periode Ini)</span>
+                      <span className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 block">
+                        {formatRupiah(accountingData.analisis.hpp_variance.actual_hpp)}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+                      <span className="text-[11px] text-slate-500 block">Selisih (Aktual - Teoritis)</span>
+                      <span
+                        className={`text-base font-bold tabular-nums mt-0.5 block ${
+                          accountingData.analisis.hpp_variance.variance_nominal > 0
+                            ? "text-amber-700 dark:text-amber-400"
+                            : "text-emerald-700 dark:text-emerald-400"
+                        }`}
+                      >
+                        {accountingData.analisis.hpp_variance.variance_nominal > 0 ? "+" : ""}
+                        {formatRupiah(accountingData.analisis.hpp_variance.variance_nominal)}
+                        {accountingData.analisis.hpp_variance.variance_pct != null && (
+                          <span className="text-xs font-semibold ml-1.5">
+                            ({accountingData.analisis.hpp_variance.variance_pct > 0 ? "+" : ""}
+                            {accountingData.analisis.hpp_variance.variance_pct}%)
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200/70 dark:border-slate-800">
+                    {accountingData.analisis.hpp_variance.note}
+                  </p>
+                </Card>
+              )}
+
               {/* Struktur Biaya Operasional (Cost Breakdown) */}
               <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
-                <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-1">
-                  Struktur Biaya Komprehensif (% terhadap Total Beban Usaha)
-                </h4>
-                <p className="text-xs text-slate-500 mb-4">
-                  Proporsi alokasi setiap komponen biaya utama terhadap total belanja operasional
-                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-0.5">
+                      Struktur Biaya Komprehensif (% terhadap Omset Bersih &amp; Total Beban Usaha)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      Proporsi setiap komponen biaya terhadap pendapatan bersih (omset) dan terhadap total belanja operasional
+                    </p>
+                  </div>
+                </div>
 
                 <div className="space-y-3.5">
                   {[
-                    { label: "Bahan Baku (Bahan Kue & Minuman)", pct: accountingData.analisis.cost_structure.bahan_ratio, color: "bg-amber-500" },
-                    { label: "Gaji & Upah Karyawan (SDM)", pct: accountingData.analisis.cost_structure.gaji_ratio, color: "bg-rose-500" },
-                    { label: "Sewa Tempat & Bangunan", pct: accountingData.analisis.cost_structure.sewa_ratio, color: "bg-purple-500" },
-                    { label: "Utilitas Toko (Listrik, Gas, Air)", pct: accountingData.analisis.cost_structure.utilitas_ratio, color: "bg-emerald-500" },
-                    { label: "Pemasaran & Promosi (Marketing)", pct: accountingData.analisis.cost_structure.marketing_ratio, color: "bg-pink-500" },
-                    { label: "Pemeliharaan & Servis (Maintenance)", pct: accountingData.analisis.cost_structure.maintenance_ratio, color: "bg-orange-500" },
-                    { label: "Software & POS Cloud", pct: accountingData.analisis.cost_structure.software_ratio, color: "bg-cyan-500" },
+                    {
+                      label: "Bahan Baku (Bahan Kue & Minuman)",
+                      pct: accountingData.analisis.cost_structure.bahan_ratio,
+                      revPct: accountingData.analisis.cost_structure.bahan_to_revenue_pct,
+                      color: "bg-amber-500",
+                    },
+                    {
+                      label: "Gaji & Upah Karyawan (SDM)",
+                      pct: accountingData.analisis.cost_structure.gaji_ratio,
+                      revPct: accountingData.analisis.cost_structure.gaji_to_revenue_pct,
+                      color: "bg-rose-500",
+                    },
+                    {
+                      label: "Sewa Tempat & Bangunan",
+                      pct: accountingData.analisis.cost_structure.sewa_ratio,
+                      revPct: accountingData.analisis.cost_structure.sewa_to_revenue_pct,
+                      color: "bg-purple-500",
+                    },
+                    {
+                      label: "Utilitas Toko (Listrik, Gas, Air)",
+                      pct: accountingData.analisis.cost_structure.utilitas_ratio,
+                      revPct: accountingData.analisis.cost_structure.utilitas_to_revenue_pct,
+                      color: "bg-emerald-500",
+                    },
+                    {
+                      label: "Pemasaran & Promosi (Marketing)",
+                      pct: accountingData.analisis.cost_structure.marketing_ratio,
+                      revPct: accountingData.analisis.cost_structure.marketing_to_revenue_pct,
+                      color: "bg-pink-500",
+                    },
+                    {
+                      label: "Pemeliharaan & Servis (Maintenance)",
+                      pct: accountingData.analisis.cost_structure.maintenance_ratio,
+                      revPct: accountingData.analisis.cost_structure.maintenance_to_revenue_pct,
+                      color: "bg-orange-500",
+                    },
+                    {
+                      label: "Software & POS Cloud",
+                      pct: accountingData.analisis.cost_structure.software_ratio,
+                      revPct: accountingData.analisis.cost_structure.software_to_revenue_pct,
+                      color: "bg-cyan-500",
+                    },
                   ].map((cost, idx) => (
                     <div key={idx}>
                       <div className="flex justify-between text-xs mb-1">
                         <span className="font-medium text-slate-700 dark:text-slate-300">{cost.label}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">{cost.pct}%</span>
+                        <div className="flex items-center gap-3 tabular-nums">
+                          {cost.revPct != null && (
+                            <span className="font-semibold text-blue-700 dark:text-blue-400">
+                              {cost.revPct}% omset
+                            </span>
+                          )}
+                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                            {cost.pct}% beban
+                          </span>
+                        </div>
                       </div>
                       <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div className={`${cost.color} h-full rounded-full transition-all duration-500`} style={{ width: `${cost.pct}%` }} />
+                        <div className={`${cost.color} h-full rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, cost.pct)}%` }} />
                       </div>
                     </div>
                   ))}

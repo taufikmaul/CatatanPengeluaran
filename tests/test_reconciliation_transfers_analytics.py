@@ -384,3 +384,108 @@ async def test_radar_menu_labels_unique_for_shared_long_prefixes(client: AsyncCl
         assert all(0.0 <= p["revenue_score"] <= 100.0 for p in pts)
         assert max(p["qty_score"] for p in pts) == 100.0
         assert max(p["revenue_score"] for p in pts) == 100.0
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_matches_expense_payments_and_daily_batch_payouts(
+    client: AsyncClient, db: AsyncSession, auth_cookies
+):
+    """
+    Uji Step 6:
+    - Mutasi DB pada CSV rekening koran dapat mencocokkan pembayaran DP/cicilan di ExpensePayment.
+    - Mutasi CR dapat mencocokkan pencairan gabungan harian (batch settlement) per order_type / payment_method.
+    """
+    from datetime import date
+    from decimal import Decimal
+    from app.models.incoming_transaction import IncomingTransaction
+    from app.models.expense import Expense
+    from app.models.expense_payment import ExpensePayment
+
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat 2 transaksi masuk QRIS di tanggal yang sama (120.000 + 80.000 = 200.000 batch payout)
+    tx1 = IncomingTransaction(
+        transaction_date=date(2026, 11, 20),
+        receipt_no="QR-001",
+        order_type="Take Away",
+        payment_method="QRIS",
+        gross_sales=120000.0,
+        discount_amount=0.0,
+        net_sales=120000.0,
+        platform_fee=0.0,
+        net_received=120000.0,
+        status="paid",
+    )
+    tx2 = IncomingTransaction(
+        transaction_date=date(2026, 11, 20),
+        receipt_no="QR-002",
+        order_type="Take Away",
+        payment_method="QRIS",
+        gross_sales=80000.0,
+        discount_amount=0.0,
+        net_sales=80000.0,
+        platform_fee=0.0,
+        net_received=80000.0,
+        status="paid",
+    )
+    # 2. Buat 1 invoice belanja DP / Sebagian (Total 1.000.000, DP 400.000 di ExpensePayment)
+    exp_dp = Expense(
+        expense_date=date(2026, 11, 19),
+        supplier="Vendor Box",
+        item_name="Box Tart Custom",
+        qty=Decimal("100"),
+        unit="Pcs",
+        category="Kemasan",
+        unit_price=Decimal("10000"),
+        total_price=Decimal("1000000"),
+        pay_method="Transfer",
+        pay_status="DP / Sebagian",
+        paid_amount=Decimal("400000"),
+    )
+    db.add_all([tx1, tx2, exp_dp])
+    await db.flush()
+
+    ep = ExpensePayment(
+        expense_id=exp_dp.id,
+        payment_type="dp",
+        amount=Decimal("400000"),
+        payment_date=date(2026, 11, 20),
+        pay_method="Transfer",
+        notes="DP 40%",
+    )
+    db.add(ep)
+    await db.commit()
+
+    bank_csv = """Tanggal,Keterangan,Debit,Kredit,Referensi
+20/11/2026,TRSF DP VENDOR BOX,400000,0,REF-DP-400
+21/11/2026,SETTLEMENT QRIS GABUNGAN,0,200000,REF-QRIS-BATCH
+""".encode("utf-8")
+
+    r_prev = await client.post(
+        "/api/v1/reconciliation/preview",
+        files={"file": ("mutasi_batch.csv", bank_csv, "text/csv")},
+        data={"mode": "mutasi_bank"},
+    )
+    assert r_prev.status_code == 200
+    preview = r_prev.json()["preview"]
+    assert len(preview["unmatched_rows"]) == 0
+    assert len(preview["matched_expenses"]) == 1
+    assert preview["matched_expenses"][0]["expense_id"] == exp_dp.id
+    assert preview["matched_expenses"][0]["expense_payment_id"] == ep.id
+    assert preview["matched_expenses"][0]["total_price"] == 400000.0
+
+    assert len(preview["matched_incoming"]) == 2
+    matched_tx_ids = {m["tx_id"] for m in preview["matched_incoming"]}
+    assert matched_tx_ids == {tx1.id, tx2.id}
+
+    r_apply = await client.post(
+        "/api/v1/reconciliation/apply",
+        json={
+            "incoming_matches": preview["matched_incoming"],
+            "expense_matches": preview["matched_expenses"],
+        },
+    )
+    assert r_apply.status_code == 200
+    assert r_apply.json()["result"]["reconciled_incoming"] == 2
+    assert r_apply.json()["result"]["reconciled_expenses"] == 1
+
