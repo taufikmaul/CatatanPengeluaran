@@ -838,9 +838,11 @@ async def get_monthly_report(
                 total_lunas += total_val
                 per_kategori[kat] = per_kategori.get(kat, 0.0) + total_val
             elif is_unpaid_or_dp_status(e.pay_status):
+                # Standar Akrual (SAK EMKM): pengakuan beban kategori (HPP/OPEX) dicatat penuh saat transaksi terjadi,
+                # sedangkan total_lunas hanya mencatat porsi kas yang sudah terbayar dan list_hutang mencatat sisa kewajiban.
+                per_kategori[kat] = per_kategori.get(kat, 0.0) + total_val
                 if paid_val > 0:
                     total_lunas += paid_val
-                    per_kategori[kat] = per_kategori.get(kat, 0.0) + paid_val
                 if remaining_val > 0 or not is_dp_status(e.pay_status):
                     list_hutang.append({
                         "id": e.id,
