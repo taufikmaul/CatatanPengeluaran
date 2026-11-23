@@ -43,13 +43,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
-import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
@@ -57,7 +50,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { formatRupiah, formatDateId } from "@/lib/formatters";
+import { formatRupiah } from "@/lib/formatters";
 import { toast } from "sonner";
 import {
   PackageCheck,
@@ -84,12 +77,8 @@ import {
   FileSpreadsheet,
   ChevronDown,
   RotateCcw,
-  Store,
-  Receipt,
   Scale,
-  TrendingUp,
-  TrendingDown,
-  Eye,
+  Receipt,
   CheckCircle,
 } from "lucide-react";
 
@@ -341,9 +330,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
     konversi_resep: "",
   });
 
-  // Quick-Inspect Drawer state
-  const [inspectDrawerItem, setInspectDrawerItem] = useState<MasterItem | null>(null);
-
   // Audit & Merge state
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditMinScore, setAuditMinScore] = useState(0.70);
@@ -438,37 +424,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       categoriesCount: catSet.size,
     };
   }, [masterItems]);
-
-  // Quick-Inspect Drawer Query
-  const { data: drawerPriceHistory, isLoading: isDrawerLoading } = useQuery<{
-    item_name: string;
-    latest_price: number;
-    min_price: number;
-    max_price: number;
-    avg_price: number;
-    cheapest_supplier: string;
-    tx_count: number;
-    history?: Array<{
-      id: number;
-      expense_date: string;
-      supplier?: string;
-      qty: number;
-      unit?: string;
-      unit_price: number;
-      total_price: number;
-    }>;
-  }>({
-    queryKey: ["drawer-price-history", inspectDrawerItem?.id, inspectDrawerItem?.item_name],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (inspectDrawerItem?.id) params.append("item_id", String(inspectDrawerItem.id));
-      if (inspectDrawerItem?.item_name) params.append("item_name", inspectDrawerItem.item_name);
-      const res = await api.get(`/expenses/price-history?${params.toString()}`);
-      return res.data;
-    },
-    enabled: !!inspectDrawerItem,
-    staleTime: 30000,
-  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -989,12 +944,12 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setInspectDrawerItem(item)}
+                onClick={() => onInspectItemPrice?.(item.item_name, item.id)}
                 className="group/item inline-flex items-center gap-1.5 text-left font-semibold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                title="Buka panel ringkasan & riwayat harga item"
+                title="Buka riwayat harga & perbandingan toko"
               >
                 <span>{item.item_name}</span>
-                <Eye className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                <LineChart className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover/item:opacity-100 transition-opacity" />
               </button>
               {!hasRecipe && (
                 <span
@@ -2857,221 +2812,6 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         }}
       />
 
-      {/* Quick-Inspect Slide-Over Sheet (Right Drawer) */}
-      <Sheet
-        open={Boolean(inspectDrawerItem)}
-        onOpenChange={(open) => {
-          if (!open) setInspectDrawerItem(null);
-        }}
-      >
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto p-6 space-y-6">
-          {inspectDrawerItem && (
-            <>
-              <SheetHeader className="text-left space-y-1.5 border-b border-slate-100 dark:border-slate-800 pb-4">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wider">
-                    {inspectDrawerItem.category}
-                  </Badge>
-                  {inspectDrawerItem.satuan_resep &&
-                  inspectDrawerItem.konversi_resep &&
-                  inspectDrawerItem.konversi_resep > 0 ? (
-                    <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-medium">
-                      Resep Aktif
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-medium">
-                      Resep Belum Diatur
-                    </Badge>
-                  )}
-                </div>
-                <SheetTitle className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                  {inspectDrawerItem.item_name}
-                </SheetTitle>
-                <SheetDescription className="text-xs text-slate-500 dark:text-slate-400">
-                  Ringkasan spesifikasi satuan, konversi resep, dan pergerakan harga belanja.
-                </SheetDescription>
-              </SheetHeader>
-
-              {/* Detail Spesifikasi Satuan */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
-                  <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  Konfigurasi Satuan & Konversi
-                </h4>
-                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Satuan Pembelian:</span>
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {inspectDrawerItem.satuan_beli || "Pcs"}
-                    </span>
-                  </div>
-                  {inspectDrawerItem.isi_paket && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Isi / Kemasan:</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {inspectDrawerItem.isi_paket}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Tipe Satuan:</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                      {inspectDrawerItem.tipe_satuan === "keduanya"
-                        ? "Paket & Ecer"
-                        : inspectDrawerItem.tipe_satuan === "paket"
-                        ? "Hanya Paket"
-                        : "Hanya Ecer"}
-                    </span>
-                  </div>
-                  <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-                    <span className="text-slate-500 block mb-1">Formula Konversi Resep:</span>
-                    {inspectDrawerItem.satuan_resep &&
-                    inspectDrawerItem.konversi_resep &&
-                    inspectDrawerItem.konversi_resep > 0 ? (
-                      <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-semibold text-xs border border-emerald-200/60 dark:border-emerald-800">
-                        <span>1 {inspectDrawerItem.satuan_beli || "Pcs"}</span>
-                        <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="tabular-nums">
-                          {inspectDrawerItem.konversi_resep} {inspectDrawerItem.satuan_resep}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-amber-600 font-medium">
-                        Belum dikonfigurasi (HPP resep menu belum dapat dihitung presisi).
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Price & Supplier Intelligence */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
-                  <Receipt className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  Metrik Harga & Belanja
-                </h4>
-
-                {isDrawerLoading ? (
-                  <div className="py-6 text-center text-xs text-slate-400">
-                    Memuat data histori harga...
-                  </div>
-                ) : drawerPriceHistory ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                        <span className="text-[10px] text-slate-500 font-medium block">
-                          Harga Terakhir
-                        </span>
-                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          {formatRupiah(drawerPriceHistory.latest_price)}
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                        <span className="text-[10px] text-slate-500 font-medium block">
-                          Rata-rata Harga
-                        </span>
-                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          {formatRupiah(drawerPriceHistory.avg_price)}
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900">
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                          <TrendingDown className="w-3 h-3" /> Termurah
-                        </span>
-                        <span className="text-sm font-bold text-emerald-800 dark:text-emerald-300 tabular-nums">
-                          {formatRupiah(drawerPriceHistory.min_price)}
-                        </span>
-                      </div>
-                      <div className="p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900">
-                        <span className="text-[10px] text-rose-700 dark:text-rose-400 font-medium flex items-center gap-1">
-                          <TrendingUp className="w-3 h-3" /> Tertinggi
-                        </span>
-                        <span className="text-sm font-bold text-rose-800 dark:text-rose-300 tabular-nums">
-                          {formatRupiah(drawerPriceHistory.max_price)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-                      <span className="text-slate-500 flex items-center gap-1.5">
-                        <Store className="w-3.5 h-3.5 text-slate-400" /> Supplier Termurah:
-                      </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {drawerPriceHistory.cheapest_supplier || inspectDrawerItem.default_supplier || "-"}
-                      </span>
-                    </div>
-
-                    {/* Riwayat Transaksi Terakhir */}
-                    {drawerPriceHistory.history && drawerPriceHistory.history.length > 0 && (
-                      <div className="space-y-2 pt-2">
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                          5 Pembelian Terakhir ({drawerPriceHistory.tx_count} transaksi tercatat)
-                        </span>
-                        <div className="space-y-1.5">
-                          {drawerPriceHistory.history.slice(0, 5).map((h) => (
-                            <div
-                              key={h.id}
-                              className="p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs flex items-center justify-between"
-                            >
-                              <div>
-                                <span className="font-medium text-slate-900 dark:text-slate-100 block">
-                                  {h.supplier || "Supplier Umum"}
-                                </span>
-                                <span className="text-[10px] text-slate-400">
-                                  {formatDateId(h.expense_date)} • {h.qty} {h.unit || inspectDrawerItem.satuan_beli || "Pcs"}
-                                </span>
-                              </div>
-                              <div className="text-right">
-                                <span className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums block">
-                                  {formatRupiah(h.unit_price)}
-                                </span>
-                                <span className="text-[10px] text-slate-400 tabular-nums">
-                                  Total: {formatRupiah(h.total_price)}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-center text-xs text-slate-500">
-                    Belum ada riwayat transaksi pengeluaran untuk item ini.
-                  </div>
-                )}
-              </div>
-
-              {/* Action Footer */}
-              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                {canEdit && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const item = inspectDrawerItem;
-                      setInspectDrawerItem(null);
-                      startEdit(item);
-                    }}
-                    className="rounded-xl text-xs flex-1 gap-1.5"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    Edit Item Ini
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setInspectDrawerItem(null)}
-                  className="rounded-xl text-xs px-4"
-                >
-                  Tutup
-                </Button>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 };
