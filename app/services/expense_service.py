@@ -2739,8 +2739,13 @@ async def get_reimbursement_summary(
     year: int | None = None,
     user_id: int | None = None,
     include_ongkir: bool = False,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict:
-    """Ringkasan statistik data talangan (reimbursement) & rincian per user."""
+    """Ringkasan statistik data talangan (reimbursement) & rincian per user.
+
+    start_date/end_date (inklusif) lebih diutamakan daripada month/year.
+    """
     query = select(Expense).where(Expense.is_reimbursement == True)  # noqa: E712
     if not include_ongkir:
         query = query.where(
@@ -2749,7 +2754,12 @@ async def get_reimbursement_summary(
                 ~Expense.item_name.ilike("ongkir%"),
             )
         )
-    if month and year:
+    if start_date or end_date:
+        if start_date:
+            query = query.where(Expense.expense_date >= start_date)
+        if end_date:
+            query = query.where(Expense.expense_date <= end_date)
+    elif month and year:
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))

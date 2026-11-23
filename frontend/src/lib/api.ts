@@ -532,10 +532,14 @@ export async function getReimbursementSummary(params?: {
   year?: number | null;
   userId?: number | null;
   includeOngkir?: boolean;
+  startDate?: string | null;
+  endDate?: string | null;
 }): Promise<ReimbursementSummaryResponse> {
   const q = new URLSearchParams();
   if (params?.month) q.append("month", String(params.month));
   if (params?.year) q.append("year", String(params.year));
+  if (params?.startDate) q.append("start_date", params.startDate);
+  if (params?.endDate) q.append("end_date", params.endDate);
   if (params?.userId) q.append("user_id", String(params.userId));
   if (params?.includeOngkir) q.append("include_ongkir", "true");
   const res = await api.get(`/expenses/reimbursements/summary?${q.toString()}`);

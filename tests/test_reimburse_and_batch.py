@@ -161,6 +161,40 @@ class TestReimbursementServices:
         remaining = await get_outstanding_reimbursements(db, user_id=user.id)
         assert len(remaining) == 0
 
+    @pytest.mark.asyncio
+    async def test_reimbursement_summary_custom_date_range(self, db: AsyncSession):
+        from app.services.expense_service import get_reimbursement_summary
+
+        db.add_all([
+            Expense(expense_date=date(2026, 9, 30), item_name="Telur", total_price=Decimal("10000"), is_reimbursement=True),
+            Expense(expense_date=date(2026, 10, 5), item_name="Susu", total_price=Decimal("20000"), is_reimbursement=True),
+            Expense(expense_date=date(2026, 10, 20), item_name="Coklat", total_price=Decimal("30000"), is_reimbursement=True),
+            Expense(expense_date=date(2026, 10, 21), item_name="Keju", total_price=Decimal("40000"), is_reimbursement=True),
+        ])
+        await db.commit()
+
+        summary = await get_reimbursement_summary(
+            db, start_date=date(2026, 10, 1), end_date=date(2026, 10, 20)
+        )
+        assert summary["total_count"] == 2
+        assert summary["total_nominal"] == 50000.0
+
+        # Rentang tanggal lebih diutamakan daripada month/year
+        summary = await get_reimbursement_summary(
+            db, month=9, year=2026, start_date=date(2026, 10, 21), end_date=date(2026, 10, 21)
+        )
+        assert summary["total_count"] == 1
+        assert summary["total_nominal"] == 40000.0
+
+    @pytest.mark.asyncio
+    async def test_reimbursement_summary_rejects_inverted_range(self, client, auth_cookies):
+        client.cookies.update(auth_cookies)
+        res = await client.get(
+            "/api/v1/expenses/reimbursements/summary",
+            params={"start_date": "2026-10-20", "end_date": "2026-10-01"},
+        )
+        assert res.status_code == 400
+
 
 # ──────────────────────────────────────────────
 # 3. Tests for Telegram Messages & Keyboards

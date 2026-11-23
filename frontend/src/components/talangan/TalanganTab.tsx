@@ -64,6 +64,15 @@ const MONTH_NAMES = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ];
 
+type PeriodMode = "all" | "month" | "custom";
+
+const toIsoDate = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 export const TalanganTab: React.FC<TalanganTabProps> = ({
   currentMonth,
   currentYear,
@@ -82,7 +91,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
   // Filter states
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reimbursed">("pending");
-  const [isAllPeriods, setIsAllPeriods] = useState<boolean>(true); // Default true agar owner bisa langsung lihat seluruh talangan tertunda
+  // Default "all" agar owner bisa langsung lihat seluruh talangan tertunda
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("all");
+  const [customStart, setCustomStart] = useState<string>(() => toIsoDate(new Date(currentYear, currentMonth - 1, 1)));
+  const [customEnd, setCustomEnd] = useState<string>(() => toIsoDate(new Date()));
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
   const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
@@ -109,6 +121,15 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   const [isUsersExpanded, setIsUsersExpanded] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  // Parameter periode efektif yang dikirim ke API
+  const isCustomRangeInvalid =
+    periodMode === "custom" && !!customStart && !!customEnd && customStart > customEnd;
+  const rangeStart = periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
+  const rangeEnd = periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
+  const monthParam = periodMode === "month" ? selectedMonth : null;
+  const monthEndParam = periodMode === "month" ? selectedMonthEnd : null;
+  const yearParam = periodMode === "month" ? selectedYear : null;
+
   // 1. Fetch Ringkasan Talangan (Summary KPI + User breakdown)
   const {
     data: summaryData,
@@ -117,18 +138,23 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   } = useQuery<ReimbursementSummaryResponse>({
     queryKey: [
       "talangan-summary",
-      isAllPeriods ? null : selectedMonth,
-      isAllPeriods ? null : selectedYear,
+      monthParam,
+      yearParam,
+      rangeStart,
+      rangeEnd,
       selectedUserId,
       includeOngkir,
     ],
     queryFn: () =>
       getReimbursementSummary({
-        month: isAllPeriods ? null : selectedMonth,
-        year: isAllPeriods ? null : selectedYear,
+        month: monthParam,
+        year: yearParam,
+        startDate: rangeStart,
+        endDate: rangeEnd,
         userId: selectedUserId,
         includeOngkir,
       }),
+    enabled: !isCustomRangeInvalid,
   });
 
   // 2. Fetch Data Talangan Terpaginasi
@@ -141,14 +167,17 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       "expenses-talangan",
       page,
       perPage,
-      isAllPeriods ? null : selectedMonth,
-      isAllPeriods ? null : selectedMonthEnd,
-      isAllPeriods ? null : selectedYear,
+      monthParam,
+      monthEndParam,
+      yearParam,
+      rangeStart,
+      rangeEnd,
       statusFilter,
       selectedUserId,
       search,
       includeOngkir,
     ],
+    enabled: !isCustomRangeInvalid,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -161,12 +190,15 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         params.append("include_ongkir", "true");
       }
 
-      if (!isAllPeriods) {
+      if (periodMode === "month") {
         params.append("month", String(selectedMonth));
         if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
           params.append("month_end", String(selectedMonthEnd));
         }
         params.append("year", String(selectedYear));
+      } else if (periodMode === "custom") {
+        if (rangeStart) params.append("start_date", rangeStart);
+        if (rangeEnd) params.append("end_date", rangeEnd);
       }
 
       if (statusFilter === "pending") {
@@ -974,52 +1006,101 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           </div>
 
           {/* Periode Controls */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={isAllPeriods ? "secondary" : "outline"}
-              size="sm"
-              onClick={() => {
-                setIsAllPeriods((prev) => !prev);
-                setPage(1);
-              }}
-              className="h-9 rounded-xl text-xs font-medium px-3 gap-1.5"
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{isAllPeriods ? "Semua Waktu (Aktif)" : "Bulan Tertentu"}</span>
-            </Button>
-
-            {!isAllPeriods && (
-              <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-stretch gap-1.5 md:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <select
-                  value={selectedMonth}
+                  value={periodMode}
                   onChange={(e) => {
-                    setSelectedMonth(Number(e.target.value));
+                    setPeriodMode(e.target.value as PeriodMode);
                     setPage(1);
+                    setSelectedIds([]);
                   }}
-                  className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden"
+                  aria-label="Periode talangan"
+                  className="h-9 pl-8 pr-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
                 >
-                  {MONTH_NAMES.map((name, idx) => (
-                    <option key={name} value={idx + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden"
-                >
-                  {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map((yr) => (
-                    <option key={yr} value={yr}>
-                      {yr}
-                    </option>
-                  ))}
+                  <option value="all">Semua Waktu</option>
+                  <option value="month">Bulan Tertentu</option>
+                  <option value="custom">Rentang Tanggal</option>
                 </select>
               </div>
+
+              {periodMode === "month" && (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      const m = Number(e.target.value);
+                      setSelectedMonth(m);
+                      setSelectedMonthEnd(m);
+                      setPage(1);
+                    }}
+                    aria-label="Bulan"
+                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={name} value={idx + 1}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      setSelectedYear(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    aria-label="Tahun"
+                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
+                  >
+                    {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {periodMode === "custom" && (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={customStart}
+                    max={customEnd || undefined}
+                    onChange={(e) => {
+                      setCustomStart(e.target.value);
+                      setPage(1);
+                      setSelectedIds([]);
+                    }}
+                    aria-label="Dari tanggal"
+                    aria-invalid={isCustomRangeInvalid}
+                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500 aria-invalid:border-red-400"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400">s.d.</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    min={customStart || undefined}
+                    onChange={(e) => {
+                      setCustomEnd(e.target.value);
+                      setPage(1);
+                      setSelectedIds([]);
+                    }}
+                    aria-label="Sampai tanggal"
+                    aria-invalid={isCustomRangeInvalid}
+                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500 aria-invalid:border-red-400"
+                  />
+                </div>
+              )}
+            </div>
+
+            {isCustomRangeInvalid && (
+              <p role="alert" className="text-[11px] font-medium text-red-600 dark:text-red-400">
+                Tanggal awal tidak boleh setelah tanggal akhir.
+              </p>
             )}
           </div>
         </div>
@@ -1079,7 +1160,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               size="sm"
               onClick={() => {
                 setStatusFilter("pending");
-                setIsAllPeriods(true);
+                setPeriodMode("all");
                 setSelectedUserId(null);
                 setIncludeOngkir(false);
                 setSearch("");

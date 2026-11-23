@@ -582,10 +582,25 @@ async def get_reimbursements_summary_endpoint(
     year: int | None = Query(None, ge=2020),
     user_id: int | None = Query(None),
     include_ongkir: bool = Query(False),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Ambil ringkasan statistik reimbursement/talangan dan rincian per user."""
-    data = await get_reimbursement_summary(db, month=month, year=year, user_id=user_id, include_ongkir=include_ongkir)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tanggal mulai tidak boleh setelah tanggal akhir.",
+        )
+    data = await get_reimbursement_summary(
+        db,
+        month=month,
+        year=year,
+        user_id=user_id,
+        include_ongkir=include_ongkir,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return ReimbursementSummaryResponse(**data)
 
 
