@@ -14,9 +14,11 @@ import { formatRupiah } from "@/lib/formatters";
 import { getMenuConversionHint } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
+  BatchCostCategory,
   IngredientCostGroup,
   MasterDataOption,
   MasterItem,
+  MenuBatchCostItemInput,
   MenuHppMode,
   MenuIngredientInput,
   MenuItemType,
@@ -32,6 +34,7 @@ import {
   Layers,
   Package,
   Percent,
+  Plus,
   Settings2,
   Tags,
   Trash2,
@@ -65,6 +68,38 @@ interface IngredientDraftRow {
   master_prev_price?: number | null;
   drift_source?: string | null;
 }
+
+interface BatchCostDraftRow {
+  key: string;
+  category: BatchCostCategory;
+  name: string;
+  amount: string;
+}
+
+function createBatchCostRow(
+  category: BatchCostCategory = "labor",
+  name = "",
+  amount = ""
+): BatchCostDraftRow {
+  return {
+    key: `bc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    category,
+    name,
+    amount,
+  };
+}
+
+const BATCH_COST_PRESETS: Array<{
+  category: BatchCostCategory;
+  label: string;
+}> = [
+  { category: "labor", label: "Tenaga Produksi / Baker" },
+  { category: "labor", label: "Tenaga Barista / Seduh" },
+  { category: "labor", label: "Tenaga Dekorasi / Finishing" },
+  { category: "operational", label: "Gas & Listrik Oven" },
+  { category: "operational", label: "Penyusutan Peralatan" },
+  { category: "operational", label: "Air, Es & Sanitasi" },
+];
 
 interface MenuFormDialogProps {
   open: boolean;
@@ -401,9 +436,10 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
   const [hppManual, setHppManual] = useState("");
   const [hppMode, setHppMode] = useState<MenuHppMode>("auto");
 
-  const [laborCost, setLaborCost] = useState("");
-  const [otherFee, setOtherFee] = useState("");
-  const [otherFeeDescription, setOtherFeeDescription] = useState("");
+  const [batchCostRows, setBatchCostRows] = useState<BatchCostDraftRow[]>([
+    createBatchCostRow("labor", "", ""),
+    createBatchCostRow("operational", "", ""),
+  ]);
 
   const [notes, setNotes] = useState("");
   const [isActive, setIsActive] = useState(true);
@@ -587,9 +623,54 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       );
       setHppManual(String(editingMenu.hpp_manual || 0));
       setHppMode(editingMenu.hpp_mode || "auto");
-      setLaborCost(editingMenu.labor_cost ? String(editingMenu.labor_cost) : "");
-      setOtherFee(editingMenu.other_fee ? String(editingMenu.other_fee) : "");
-      setOtherFeeDescription(editingMenu.other_fee_description || "");
+      if (
+        Array.isArray(editingMenu.batch_cost_items) &&
+        editingMenu.batch_cost_items.length > 0
+      ) {
+        setBatchCostRows(
+          editingMenu.batch_cost_items.map((bc, idx) =>
+            createBatchCostRow(
+              bc.category === "labor" ? "labor" : "operational",
+              bc.name ||
+                (bc.category === "labor"
+                  ? `Tenaga Kerja #${idx + 1}`
+                  : `Biaya Operasional #${idx + 1}`),
+              bc.amount ? String(bc.amount) : ""
+            )
+          )
+        );
+      } else {
+        const legacyRows: BatchCostDraftRow[] = [];
+        if (editingMenu.labor_cost && editingMenu.labor_cost > 0) {
+          legacyRows.push(
+            createBatchCostRow(
+              "labor",
+              "Tenaga Kerja (Labor)",
+              String(editingMenu.labor_cost)
+            )
+          );
+        }
+        if (
+          (editingMenu.other_fee && editingMenu.other_fee > 0) ||
+          (editingMenu.other_fee_description &&
+            editingMenu.other_fee_description.trim() !== "")
+        ) {
+          legacyRows.push(
+            createBatchCostRow(
+              "operational",
+              editingMenu.other_fee_description || "Biaya Operasional Batch",
+              editingMenu.other_fee ? String(editingMenu.other_fee) : ""
+            )
+          );
+        }
+        if (legacyRows.length === 0) {
+          legacyRows.push(
+            createBatchCostRow("labor", "", ""),
+            createBatchCostRow("operational", "", "")
+          );
+        }
+        setBatchCostRows(legacyRows);
+      }
       setNotes(editingMenu.notes || "");
       setIsActive(editingMenu.is_active);
       setIngredients(
@@ -642,9 +723,10 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       setTargetFoodCostPct("");
       setHppManual("");
       setHppMode("auto");
-      setLaborCost("");
-      setOtherFee("");
-      setOtherFeeDescription("");
+      setBatchCostRows([
+        createBatchCostRow("labor", "", ""),
+        createBatchCostRow("operational", "", ""),
+      ]);
       setNotes("");
       setIsActive(true);
       setIngredients([]);
@@ -756,8 +838,38 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       }
     }
 
-    const laborNum = Math.max(0, Number(laborCost) || 0);
-    const otherFeeNum = Math.max(0, Number(otherFee) || 0);
+    let laborNum = 0;
+    let otherFeeNum = 0;
+    const activeBatchCostItems: Array<{
+      key: string;
+      category: BatchCostCategory;
+      name: string;
+      amount: number;
+      unitAmount: number;
+    }> = [];
+
+    for (const bc of batchCostRows) {
+      const amt = Math.max(0, Number(bc.amount) || 0);
+      const cleanLabel = bc.name.trim();
+      if (bc.category === "labor") {
+        laborNum += amt;
+      } else {
+        otherFeeNum += amt;
+      }
+      if (amt > 0 || cleanLabel !== "") {
+        activeBatchCostItems.push({
+          key: bc.key,
+          category: bc.category,
+          name:
+            cleanLabel ||
+            (bc.category === "labor"
+              ? "Tenaga Kerja (Labor)"
+              : "Biaya Operasional Batch"),
+          amount: amt,
+          unitAmount: amt / netYieldQty,
+        });
+      }
+    }
 
     const unitIngredientCost = rawBatchIngredients / netYieldQty;
     const unitLaborCost = laborNum / netYieldQty;
@@ -773,11 +885,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       otherFeeNum,
       unitLaborCost,
       unitOtherFee,
+      activeBatchCostItems,
       coreUnitHpp,
       total: totalRecipeHpp,
       rowMap,
     };
-  }, [ingredients, masterMap, subMenuMap, laborCost, otherFee, netYieldQty]);
+  }, [ingredients, masterMap, subMenuMap, batchCostRows, netYieldQty]);
 
   const sellingPriceNum = isSellable ? Math.max(0, Number(sellingPrice) || 0) : 0;
   const hppManualNum = Math.max(0, Number(hppManual) || 0);
@@ -897,6 +1010,58 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     );
   };
 
+  const handleUpdateBatchCostRow = (
+    rowKey: string,
+    patch: Partial<BatchCostDraftRow>
+  ) => {
+    setBatchCostRows((prev) =>
+      prev.map((r) => (r.key === rowKey ? { ...r, ...patch } : r))
+    );
+  };
+
+  const handleAddBatchCostRow = (
+    category: BatchCostCategory = "operational",
+    defaultName = ""
+  ) => {
+    const newRow = createBatchCostRow(category, defaultName, "");
+    setBatchCostRows((prev) => [...prev, newRow]);
+    flashRowHighlight(newRow.key);
+  };
+
+  const handleAddPresetBatchCost = (
+    category: BatchCostCategory,
+    label: string
+  ) => {
+    setBatchCostRows((prev) => {
+      const emptyIdx = prev.findIndex(
+        (r) =>
+          r.category === category &&
+          r.name.trim() === "" &&
+          (Number(r.amount) || 0) === 0
+      );
+      if (emptyIdx >= 0) {
+        const next = [...prev];
+        next[emptyIdx] = { ...next[emptyIdx], name: label };
+        flashRowHighlight(next[emptyIdx].key);
+        return next;
+      }
+      const newRow = createBatchCostRow(category, label, "");
+      flashRowHighlight(newRow.key);
+      return [...prev, newRow];
+    });
+  };
+
+  const handleRemoveBatchCostRow = (rowKey: string) => {
+    setBatchCostRows((prev) => {
+      if (prev.length <= 1) {
+        return prev.map((r) =>
+          r.key === rowKey ? { ...r, name: "", amount: "" } : r
+        );
+      }
+      return prev.filter((r) => r.key !== rowKey);
+    });
+  };
+
   const handleQuickAddItem = (selection: QuickAddSelection) => {
     const newKey = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setFormError(null);
@@ -954,6 +1119,16 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
         setFormError(
           `Paket / Hampers hanya dapat disusun dari Menu Jual yang sudah jadi. "${sub.name}" bertipe ${
             subType === "prepared" ? "Prepared (1/2 jadi)" : "Paket / Bundling"
+          }.`
+        );
+        return;
+      }
+      if (itemType !== "bundle" && subType !== "prepared") {
+        setFormError(
+          `Resep ${
+            itemType === "prepared" ? "Prepared / Setengah Jadi" : "Menu Jual"
+          } tidak boleh disusun dari Menu Jual atau Paket. Hanya Bahan, Kemasan, dan Menu Prepared yang diperbolehkan. "${sub.name}" bertipe ${
+            subType === "finished" ? "Menu Jual" : "Paket / Bundling"
           }.`
         );
         return;
@@ -1064,7 +1239,6 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
 
   const invalidBundleRowKeys = useMemo(() => {
     const invalid = new Set<string>();
-    if (!isBundle) return invalid;
     for (const row of ingredients) {
       const hasContent =
         row.ingredient_name.trim() !== "" ||
@@ -1072,20 +1246,29 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
         row.sub_menu_id !== null;
       if (!hasContent) continue;
 
-      if (row.cost_group === "packaging") {
-        if (row.sub_menu_id !== null) {
+      if (isBundle) {
+        if (row.cost_group === "packaging") {
+          if (row.sub_menu_id !== null) {
+            invalid.add(row.key);
+          }
+          continue;
+        }
+
+        if (row.master_item_id !== null || row.sub_menu_id === null) {
+          invalid.add(row.key);
+          continue;
+        }
+        const sub = subMenuMap.get(row.sub_menu_id);
+        if (sub && (sub.item_type || "finished") !== "finished") {
           invalid.add(row.key);
         }
-        continue;
-      }
-
-      if (row.master_item_id !== null || row.sub_menu_id === null) {
-        invalid.add(row.key);
-        continue;
-      }
-      const sub = subMenuMap.get(row.sub_menu_id);
-      if (sub && (sub.item_type || "finished") !== "finished") {
-        invalid.add(row.key);
+      } else {
+        if (row.sub_menu_id !== null) {
+          const sub = subMenuMap.get(row.sub_menu_id);
+          if (sub && (sub.item_type || "finished") !== "prepared") {
+            invalid.add(row.key);
+          }
+        }
       }
     }
     return invalid;
@@ -1182,6 +1365,20 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
             return;
           }
         }
+      } else if (row.sub_menu_id !== null) {
+        const sub = subMenuMap.get(row.sub_menu_id);
+        if (sub && (sub.item_type || "finished") !== "prepared") {
+          setFormError(
+            `Resep ${
+              itemType === "prepared" ? "Prepared / Setengah Jadi" : "Menu Jual"
+            } tidak boleh disusun dari "${sub.name}" karena bertipe ${
+              (sub.item_type || "finished") === "finished"
+                ? "Menu Jual"
+                : "Paket / Hampers"
+            }. Hanya Bahan, Kemasan, dan Menu Prepared yang diperbolehkan.`
+          );
+          return;
+        }
       }
 
       const qtyVal = Number(row.qty);
@@ -1238,6 +1435,47 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     const shelfDaysVal =
       shelfLifeDays.trim() !== "" ? Number(shelfLifeDays) : null;
 
+    const parsedBatchCosts: MenuBatchCostItemInput[] = [];
+    for (const bc of batchCostRows) {
+      const cleanBcName = bc.name.trim();
+      const rawAmt = bc.amount.trim();
+      if (!cleanBcName && rawAmt === "") {
+        continue;
+      }
+      const amtVal = rawAmt === "" ? 0 : Number(rawAmt);
+      if (Number.isNaN(amtVal) || amtVal < 0) {
+        setFormError(
+          `Nominal biaya "${cleanBcName || "Tenaga Kerja / Operasional"}" tidak valid.`
+        );
+        return;
+      }
+      if (amtVal <= 0 && !cleanBcName) {
+        continue;
+      }
+      parsedBatchCosts.push({
+        category: bc.category,
+        name:
+          cleanBcName ||
+          (bc.category === "labor"
+            ? "Tenaga Kerja (Labor)"
+            : "Biaya Operasional Batch"),
+        amount: amtVal,
+      });
+    }
+
+    const totalLaborCost = parsedBatchCosts
+      .filter((i) => i.category === "labor")
+      .reduce((acc, i) => acc + i.amount, 0);
+    const totalOtherFee = parsedBatchCosts
+      .filter((i) => i.category === "operational")
+      .reduce((acc, i) => acc + i.amount, 0);
+    const joinedOtherDesc =
+      parsedBatchCosts
+        .filter((i) => i.category === "operational" && i.name)
+        .map((i) => i.name)
+        .join(", ")
+        .slice(0, 255) || null;
+
     onSubmit({
       name: cleanName,
       anonymous_name: anonymousName.trim() || null,
@@ -1250,7 +1488,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       batch_yield_qty: batchYieldNum,
       batch_yield_unit: batchYieldUnit.trim() || unit.trim() || "Porsi",
       waste_loss_pct: wasteLossNum,
-      labor_cost: Math.max(0, Number(laborCost) || 0),
+      labor_cost: totalLaborCost,
       target_food_cost_pct: targetFcVal,
       shelf_life_days:
         shelfDaysVal !== null && !Number.isNaN(shelfDaysVal) && shelfDaysVal >= 0
@@ -1260,8 +1498,9 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
       selling_price: sellingPriceNum,
       hpp_manual: hppManualNum,
       hpp_mode: hppMode,
-      other_fee: Math.max(0, Number(otherFee) || 0),
-      other_fee_description: otherFeeDescription.trim() || null,
+      other_fee: totalOtherFee,
+      other_fee_description: joinedOtherDesc,
+      batch_cost_items: parsedBatchCosts,
       notes: notes.trim() || null,
       is_active: isActive,
       ingredients: parsedIngredients,
@@ -1783,10 +2022,18 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     lastAddedNotice={lastAddedNotice}
                   />
 
-                  {isBundle && invalidBundleRowKeys.size > 0 && (
+                  {invalidBundleRowKeys.size > 0 && (
                     <div className="rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/90 dark:bg-rose-950/40 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-rose-900 dark:text-rose-200">
                       <span>
-                        Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> yang bukan Menu Jual (bahan mentah, 1/2 jadi, atau manual). Paket / Hampers hanya memperbolehkan Menu Jual yang sudah jadi sebagai item penyusun.
+                        {isBundle ? (
+                          <>
+                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> yang bukan Menu Jual (bahan mentah, 1/2 jadi, atau manual). Paket / Hampers hanya memperbolehkan Menu Jual yang sudah jadi sebagai item penyusun.
+                          </>
+                        ) : (
+                          <>
+                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> bertipe Menu Jual atau Paket. Resep {itemType === "prepared" ? "Prepared / Setengah Jadi" : "Menu Jual"} hanya boleh disusun dari Bahan, Kemasan, dan Menu Prepared.
+                          </>
+                        )}
                       </span>
                       <Button
                         type="button"
@@ -1880,91 +2127,237 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     <option value="Paket" />
                   </datalist>
 
-                  {/* SECTION 3: TENAGA KERJA & BIAYA LAINNYA */}
+                  {/* SECTION 3: TENAGA KERJA & BIAYA OPERASIONAL BATCH (MULTI-KOMPONEN) */}
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-1">
-                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                        3. Tenaga Kerja (Labor) &amp; Biaya Operasional Batch
-                      </div>
-                      <span className="text-[11px] text-slate-600 dark:text-slate-400">
-                        Opsional per 1 batch (ikut terbagi ke net yield)
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
-                      <div className="sm:col-span-4">
-                        <label
-                          htmlFor="recipe-labor-cost"
-                          className="block text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 font-medium"
-                        >
-                          Biaya Tenaga Kerja / Labor (Rp)
-                        </label>
-                        <Input
-                          id="recipe-labor-cost"
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={laborCost}
-                          onChange={(e) => setLaborCost(e.target.value)}
-                          placeholder="0"
-                          className="h-8 text-xs tabular-nums bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                      <div className="sm:col-span-3">
-                        <label
-                          htmlFor="recipe-other-fee"
-                          className="block text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 font-medium"
-                        >
-                          Biaya Lainnya (Rp)
-                        </label>
-                        <Input
-                          id="recipe-other-fee"
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={otherFee}
-                          onChange={(e) => setOtherFee(e.target.value)}
-                          placeholder="0"
-                          className="h-8 text-xs tabular-nums bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                      <div className="sm:col-span-5">
-                        <label
-                          htmlFor="recipe-other-fee-desc"
-                          className="block text-[11px] text-slate-700 dark:text-slate-300 mb-0.5 font-medium"
-                        >
-                          Keterangan Biaya Lainnya
-                        </label>
-                        <Input
-                          id="recipe-other-fee-desc"
-                          value={otherFeeDescription}
-                          onChange={(e) =>
-                            setOtherFeeDescription(e.target.value)
-                          }
-                          placeholder="Contoh: Gas oven, listrik mixer, penyusutan"
-                          className="h-8 text-xs bg-white dark:bg-slate-950"
-                        />
-                      </div>
-                    </div>
-
-                    {!otherFeeDescription && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {[
-                          "Gas & Listrik Oven",
-                          "Penyusutan Peralatan",
-                          "Tenaga Dekorasi",
-                        ].map((chip) => (
-                          <button
-                            key={chip}
-                            type="button"
-                            onClick={() => setOtherFeeDescription(chip)}
-                            className="px-2 py-0.5 rounded text-[11px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
+                          <span>
+                            3. Tenaga Kerja (Labor) &amp; Biaya Operasional Batch
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700"
                           >
-                            + {chip}
-                          </button>
-                        ))}
+                            {recipeSummary.activeBatchCostItems.length} komponen
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Bisa lebih dari 1 komponen rincian per batch (ikut terbagi ke hasil bersih{" "}
+                          {Number(netYieldQty.toFixed(2))}{" "}
+                          {batchYieldUnit || unit}).
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAddBatchCostRow("labor")}
+                          className="h-7 px-2.5 text-[11px] gap-1 bg-white dark:bg-slate-950 border-indigo-200 text-indigo-800 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/50"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Tambah Labor</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAddBatchCostRow("operational")}
+                          className="h-7 px-2.5 text-[11px] gap-1 bg-white dark:bg-slate-950"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Tambah Operasional</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {(recipeSummary.laborNum > 0 ||
+                      recipeSummary.otherFeeNum > 0) && (
+                      <div className="rounded-lg border border-indigo-200/80 dark:border-indigo-900/70 bg-indigo-50/60 dark:bg-indigo-950/30 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                        <div className="flex flex-wrap items-center gap-2 text-slate-700 dark:text-slate-300">
+                          <span>
+                            Labor Batch:{" "}
+                            <strong className="tabular-nums text-indigo-900 dark:text-indigo-200">
+                              {formatRupiah(recipeSummary.laborNum)}
+                            </strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Operasional Batch:{" "}
+                            <strong className="tabular-nums text-slate-900 dark:text-slate-100">
+                              {formatRupiah(recipeSummary.otherFeeNum)}
+                            </strong>
+                          </span>
+                        </div>
+                        <div className="font-semibold tabular-nums text-indigo-900 dark:text-indigo-200">
+                          Per {batchYieldUnit || unit}:{" "}
+                          {formatRupiah(unitLaborAndOther)}
+                        </div>
                       </div>
                     )}
+
+                    <div className="space-y-2">
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        {batchCostRows.map((bcRow, idx) => {
+                          const rowAmt = Math.max(0, Number(bcRow.amount) || 0);
+                          const rowUnitAmt = rowAmt / netYieldQty;
+                          const isLabor = bcRow.category === "labor";
+                          const isHighlighted = recentlyAddedKey === bcRow.key;
+
+                          return (
+                            <motion.div
+                              key={bcRow.key}
+                              layout="position"
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -4 }}
+                              transition={{
+                                duration: 0.16,
+                                ease: [0.16, 1, 0.3, 1],
+                              }}
+                              className={cn(
+                                "rounded-lg border p-2.5 bg-white dark:bg-slate-950 transition-colors",
+                                isHighlighted
+                                  ? "border-blue-500 ring-2 ring-blue-500/20"
+                                  : "border-slate-200 dark:border-slate-800"
+                              )}
+                            >
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+                                <div className="sm:col-span-3">
+                                  <label
+                                    htmlFor={`bc-cat-${bcRow.key}`}
+                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                  >
+                                    Jenis Biaya #{idx + 1}
+                                  </label>
+                                  <select
+                                    id={`bc-cat-${bcRow.key}`}
+                                    value={bcRow.category}
+                                    onChange={(e) =>
+                                      handleUpdateBatchCostRow(bcRow.key, {
+                                        category: e.target
+                                          .value as BatchCostCategory,
+                                      })
+                                    }
+                                    className={cn(
+                                      "h-8 w-full rounded-md border px-2 text-xs font-medium",
+                                      isLabor
+                                        ? "border-indigo-300 bg-indigo-50/60 text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200"
+                                        : "border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    )}
+                                  >
+                                    <option value="labor">
+                                      Tenaga Kerja (Labor)
+                                    </option>
+                                    <option value="operational">
+                                      Biaya Operasional
+                                    </option>
+                                  </select>
+                                </div>
+
+                                <div className="sm:col-span-5">
+                                  <label
+                                    htmlFor={`bc-name-${bcRow.key}`}
+                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                  >
+                                    Nama / Rincian Komponen
+                                  </label>
+                                  <Input
+                                    id={`bc-name-${bcRow.key}`}
+                                    value={bcRow.name}
+                                    onChange={(e) =>
+                                      handleUpdateBatchCostRow(bcRow.key, {
+                                        name: e.target.value,
+                                      })
+                                    }
+                                    placeholder={
+                                      isLabor
+                                        ? "Contoh: Tenaga baker, barista, dekorasi"
+                                        : "Contoh: Gas oven, listrik mixer, penyusutan"
+                                    }
+                                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-4">
+                                  <label
+                                    htmlFor={`bc-amt-${bcRow.key}`}
+                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                  >
+                                    Biaya per Batch (Rp)
+                                  </label>
+                                  <div className="flex items-center gap-1.5">
+                                    <Input
+                                      id={`bc-amt-${bcRow.key}`}
+                                      type="number"
+                                      min={0}
+                                      step="any"
+                                      value={bcRow.amount}
+                                      onChange={(e) =>
+                                        handleUpdateBatchCostRow(bcRow.key, {
+                                          amount: e.target.value,
+                                        })
+                                      }
+                                      placeholder="0"
+                                      className="h-8 text-xs tabular-nums bg-white dark:bg-slate-950"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleRemoveBatchCostRow(bcRow.key)
+                                      }
+                                      aria-label={`Hapus komponen biaya ${
+                                        bcRow.name || idx + 1
+                                      }`}
+                                      title="Hapus komponen biaya ini"
+                                      className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 text-slate-600 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-300 dark:hover:bg-rose-950/40 transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                  {rowAmt > 0 && netYieldQty !== 1 && (
+                                    <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums mt-0.5">
+                                      Per {batchYieldUnit || unit}:{" "}
+                                      <strong className="text-slate-800 dark:text-slate-200">
+                                        {formatRupiah(rowUnitAmt)}
+                                      </strong>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 mr-0.5">
+                        Tambah cepat:
+                      </span>
+                      {BATCH_COST_PRESETS.map((preset) => (
+                        <button
+                          key={`${preset.category}-${preset.label}`}
+                          type="button"
+                          onClick={() =>
+                            handleAddPresetBatchCost(
+                              preset.category,
+                              preset.label
+                            )
+                          }
+                          className={cn(
+                            "px-2 py-0.5 rounded text-[11px] border transition-colors",
+                            preset.category === "labor"
+                              ? "bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 hover:border-indigo-500"
+                              : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-700 dark:hover:text-blue-300"
+                          )}
+                        >
+                          + {preset.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Status & Notes */}
@@ -2140,6 +2533,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
                           {formatRupiah(unitLaborAndOther)}
                         </div>
+                        {recipeSummary.activeBatchCostItems.length > 0 && (
+                          <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
+                            {recipeSummary.activeBatchCostItems.length} komponen
+                            batch
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-0.5">
@@ -2406,6 +2805,15 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     <strong className="text-slate-900 dark:text-slate-100">
                       {packagingRows.length} kemasan
                     </strong>
+                    {recipeSummary.activeBatchCostItems.length > 0 && (
+                      <>
+                        {" "}
+                        |{" "}
+                        <strong className="text-slate-900 dark:text-slate-100">
+                          {recipeSummary.activeBatchCostItems.length} biaya batch
+                        </strong>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center justify-end gap-2">
                     <Button

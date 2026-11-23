@@ -29,6 +29,7 @@ from app.services.menu_product_service import (
     import_menus_from_pos_history,
     is_menu_anonymize_locked,
     load_all_menus_graph,
+    normalize_batch_cost_items,
     regenerate_anonymous_names,
     resolve_all_menu_financials,
     serialize_menu_product,
@@ -78,6 +79,12 @@ class MenuIngredientInput(BaseModel):
         return self
 
 
+class MenuBatchCostItemInput(BaseModel):
+    category: str = Field("operational", pattern="^(labor|operational)$")
+    name: Optional[str] = Field(None, max_length=255)
+    amount: float = Field(0.0, ge=0)
+
+
 class MenuProductCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     anonymous_name: Optional[str] = Field(None, max_length=255)
@@ -99,6 +106,7 @@ class MenuProductCreate(BaseModel):
     hpp_mode: str = Field("auto", pattern="^(auto|manual|recipe)$")
     other_fee: float = Field(0.0, ge=0)
     other_fee_description: Optional[str] = Field(None, max_length=255)
+    batch_cost_items: Optional[list[MenuBatchCostItemInput]] = None
     notes: Optional[str] = None
     is_active: bool = True
     ingredients: list[MenuIngredientInput] = Field(default_factory=list)
@@ -125,6 +133,7 @@ class MenuProductUpdate(BaseModel):
     hpp_mode: Optional[str] = Field(None, pattern="^(auto|manual|recipe)$")
     other_fee: Optional[float] = Field(None, ge=0)
     other_fee_description: Optional[str] = Field(None, max_length=255)
+    batch_cost_items: Optional[list[MenuBatchCostItemInput]] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
     ingredients: Optional[list[MenuIngredientInput]] = None
@@ -648,7 +657,7 @@ async def api_bulk_create_menus(
                     validate_bundle_composition(it.item_type, ing_dicts, menus_by_id)
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
-            elif it.item_type == "bundle":
+            elif (it.item_type or "finished").strip().lower() != (existing.item_type or "finished").strip().lower():
                 existing_ing_dicts = [
                     {
                         "master_item_id": ing.master_item_id,
@@ -659,7 +668,7 @@ async def api_bulk_create_menus(
                     for ing in (existing.ingredients or [])
                 ]
                 try:
-                    validate_bundle_composition("bundle", existing_ing_dicts, menus_by_id)
+                    validate_bundle_composition(it.item_type, existing_ing_dicts, menus_by_id)
                 except ValueError as e:
                     raise HTTPException(status_code=400, detail=str(e))
             existing.category = it.category.strip() or existing.category
@@ -674,9 +683,20 @@ async def api_bulk_create_menus(
             existing.batch_yield_qty = float(it.batch_yield_qty or 1.0)
             existing.batch_yield_unit = (it.batch_yield_unit or "").strip() or existing.unit
             existing.waste_loss_pct = float(it.waste_loss_pct or 0.0)
-            existing.labor_cost = float(it.labor_cost or 0.0)
-            existing.other_fee = float(it.other_fee or 0.0)
-            existing.other_fee_description = (it.other_fee_description or "").strip() or None
+            _, norm_labor, norm_other, norm_other_desc, norm_batch_json = (
+                normalize_batch_cost_items(
+                    [bc.model_dump() for bc in it.batch_cost_items]
+                    if it.batch_cost_items is not None
+                    else None,
+                    fallback_labor=float(it.labor_cost or 0.0),
+                    fallback_other=float(it.other_fee or 0.0),
+                    fallback_other_desc=it.other_fee_description,
+                )
+            )
+            existing.labor_cost = norm_labor
+            existing.other_fee = norm_other
+            existing.other_fee_description = norm_other_desc
+            existing.batch_cost_items_json = norm_batch_json
             existing.selling_price = it.selling_price
             existing.hpp_manual = it.hpp_manual
             existing.hpp_mode = it.hpp_mode
@@ -710,6 +730,16 @@ async def api_bulk_create_menus(
             is_sellable_val = (
                 it.is_sellable if it.is_sellable is not None else (it.item_type != "prepared")
             )
+            _, norm_labor, norm_other, norm_other_desc, norm_batch_json = (
+                normalize_batch_cost_items(
+                    [bc.model_dump() for bc in it.batch_cost_items]
+                    if it.batch_cost_items is not None
+                    else None,
+                    fallback_labor=float(it.labor_cost or 0.0),
+                    fallback_other=float(it.other_fee or 0.0),
+                    fallback_other_desc=it.other_fee_description,
+                )
+            )
             new_menu = MenuProduct(
                 name=clean_name,
                 anonymous_name=anon_code,
@@ -722,15 +752,16 @@ async def api_bulk_create_menus(
                 batch_yield_qty=float(it.batch_yield_qty or 1.0),
                 batch_yield_unit=(it.batch_yield_unit or "").strip() or unit_val,
                 waste_loss_pct=float(it.waste_loss_pct or 0.0),
-                labor_cost=float(it.labor_cost or 0.0),
+                labor_cost=norm_labor,
                 target_food_cost_pct=it.target_food_cost_pct,
                 shelf_life_days=it.shelf_life_days,
                 storage_method=(it.storage_method or "").strip() or None,
                 selling_price=it.selling_price,
                 hpp_manual=it.hpp_manual,
                 hpp_mode=it.hpp_mode,
-                other_fee=float(it.other_fee or 0.0),
-                other_fee_description=(it.other_fee_description or "").strip() or None,
+                other_fee=norm_other,
+                other_fee_description=norm_other_desc,
+                batch_cost_items_json=norm_batch_json,
                 notes=it.notes,
                 is_active=it.is_active,
             )
@@ -871,7 +902,7 @@ async def api_clone_menu(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu asal tidak ditemukan.")
 
     target_type = (payload.item_type or source.item_type or "finished").strip().lower()
-    if target_type == "bundle":
+    if source.ingredients:
         source_ing_dicts = [
             {
                 "master_item_id": ing.master_item_id,
@@ -882,7 +913,7 @@ async def api_clone_menu(
             for ing in (source.ingredients or [])
         ]
         try:
-            validate_bundle_composition("bundle", source_ing_dicts, menus_by_id)
+            validate_bundle_composition(target_type, source_ing_dicts, menus_by_id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -973,6 +1004,16 @@ async def api_create_menu(
         if payload.is_sellable is not None
         else (payload.item_type != "prepared")
     )
+    _, norm_labor, norm_other, norm_other_desc, norm_batch_json = (
+        normalize_batch_cost_items(
+            [bc.model_dump() for bc in payload.batch_cost_items]
+            if payload.batch_cost_items is not None
+            else None,
+            fallback_labor=float(payload.labor_cost or 0.0),
+            fallback_other=float(payload.other_fee or 0.0),
+            fallback_other_desc=payload.other_fee_description,
+        )
+    )
     menu = MenuProduct(
         name=clean_name,
         anonymous_name=anon_name,
@@ -985,15 +1026,16 @@ async def api_create_menu(
         batch_yield_qty=float(payload.batch_yield_qty or 1.0),
         batch_yield_unit=(payload.batch_yield_unit or "").strip() or unit_val,
         waste_loss_pct=float(payload.waste_loss_pct or 0.0),
-        labor_cost=float(payload.labor_cost or 0.0),
+        labor_cost=norm_labor,
         target_food_cost_pct=payload.target_food_cost_pct,
         shelf_life_days=payload.shelf_life_days,
         storage_method=(payload.storage_method or "").strip() or None,
         selling_price=float(payload.selling_price or 0.0),
         hpp_manual=float(payload.hpp_manual or 0.0),
         hpp_mode=payload.hpp_mode,
-        other_fee=float(payload.other_fee or 0.0),
-        other_fee_description=(payload.other_fee_description or "").strip() or None,
+        other_fee=norm_other,
+        other_fee_description=norm_other_desc,
+        batch_cost_items_json=norm_batch_json,
         notes=(payload.notes or "").strip() or None,
         is_active=payload.is_active,
     )
@@ -1047,6 +1089,7 @@ async def api_update_menu(
         menu.name = clean_name
 
     next_item_type = (payload.item_type or menu.item_type or "finished").strip().lower()
+    cur_item_type = (menu.item_type or "finished").strip().lower()
     if payload.ingredients is not None:
         sub_ids = [
             int(ing.sub_menu_id)
@@ -1065,7 +1108,7 @@ async def api_update_menu(
                 )
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-    elif next_item_type == "bundle" and (menu.item_type or "finished").strip().lower() != "bundle":
+    elif next_item_type != cur_item_type:
         menus_by_id = await load_all_menus_graph(db)
         menu_in_graph = menus_by_id.get(menu_id)
         existing_ing_dicts = [
@@ -1077,10 +1120,11 @@ async def api_update_menu(
             }
             for ing in (menu_in_graph.ingredients if menu_in_graph else [])
         ]
-        try:
-            validate_bundle_composition("bundle", existing_ing_dicts, menus_by_id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        if existing_ing_dicts:
+            try:
+                validate_bundle_composition(next_item_type, existing_ing_dicts, menus_by_id)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
     if payload.anonymous_name is not None:
         clean_anon = payload.anonymous_name.strip()
@@ -1105,32 +1149,51 @@ async def api_update_menu(
                 )
         menu.anonymous_name = clean_anon
 
-    if (
-        payload.item_type is not None
-        and next_item_type != "finished"
-        and (menu.item_type or "finished").strip().lower() == "finished"
-    ):
-        bundle_ref_res = await db.execute(
-            select(MenuProduct.name)
-            .join(MenuIngredient, MenuIngredient.menu_id == MenuProduct.id)
-            .where(
-                MenuIngredient.sub_menu_id == menu_id,
-                MenuProduct.item_type == "bundle",
+    if payload.item_type is not None and next_item_type != cur_item_type:
+        if cur_item_type == "finished" and next_item_type != "finished":
+            bundle_ref_res = await db.execute(
+                select(MenuProduct.name)
+                .join(MenuIngredient, MenuIngredient.menu_id == MenuProduct.id)
+                .where(
+                    MenuIngredient.sub_menu_id == menu_id,
+                    MenuProduct.item_type == "bundle",
+                )
+                .distinct()
+                .order_by(MenuProduct.name.asc())
             )
-            .distinct()
-            .order_by(MenuProduct.name.asc())
-        )
-        bundle_parents = [row[0] for row in bundle_ref_res.fetchall() if row[0]]
-        if bundle_parents:
-            preview = ", ".join(bundle_parents[:5])
-            extra = f" (+{len(bundle_parents) - 5} lainnya)" if len(bundle_parents) > 5 else ""
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Tidak dapat mengubah tipe '{menu.name}' menjadi bukan Menu Jual karena masih menjadi "
-                    f"item penyusun di Paket / Hampers: {preview}{extra}."
-                ),
+            bundle_parents = [row[0] for row in bundle_ref_res.fetchall() if row[0]]
+            if bundle_parents:
+                preview = ", ".join(bundle_parents[:5])
+                extra = f" (+{len(bundle_parents) - 5} lainnya)" if len(bundle_parents) > 5 else ""
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Tidak dapat mengubah tipe '{menu.name}' menjadi bukan Menu Jual karena masih menjadi "
+                        f"item penyusun di Paket / Hampers: {preview}{extra}."
+                    ),
+                )
+        if cur_item_type == "prepared" and next_item_type != "prepared":
+            prep_ref_res = await db.execute(
+                select(MenuProduct.name)
+                .join(MenuIngredient, MenuIngredient.menu_id == MenuProduct.id)
+                .where(
+                    MenuIngredient.sub_menu_id == menu_id,
+                    MenuProduct.item_type.in_(["finished", "prepared"]),
+                )
+                .distinct()
+                .order_by(MenuProduct.name.asc())
             )
+            prep_parents = [row[0] for row in prep_ref_res.fetchall() if row[0]]
+            if prep_parents:
+                preview = ", ".join(prep_parents[:5])
+                extra = f" (+{len(prep_parents) - 5} lainnya)" if len(prep_parents) > 5 else ""
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Tidak dapat mengubah tipe '{menu.name}' menjadi Menu Jual atau Paket karena masih dipakai "
+                        f"sebagai sub-resep Prepared di: {preview}{extra}."
+                    ),
+                )
 
     if payload.sku is not None:
         menu.sku = payload.sku.strip() or None
@@ -1168,6 +1231,36 @@ async def api_update_menu(
         menu.other_fee = float(payload.other_fee)
     if payload.other_fee_description is not None:
         menu.other_fee_description = payload.other_fee_description.strip() or None
+    if payload.batch_cost_items is not None:
+        _, norm_labor, norm_other, norm_other_desc, norm_batch_json = (
+            normalize_batch_cost_items(
+                [bc.model_dump() for bc in payload.batch_cost_items],
+                fallback_labor=float(menu.labor_cost or 0.0),
+                fallback_other=float(menu.other_fee or 0.0),
+                fallback_other_desc=menu.other_fee_description,
+            )
+        )
+        menu.labor_cost = norm_labor
+        menu.other_fee = norm_other
+        menu.other_fee_description = norm_other_desc
+        menu.batch_cost_items_json = norm_batch_json
+    elif (
+        payload.labor_cost is not None
+        or payload.other_fee is not None
+        or payload.other_fee_description is not None
+    ):
+        _, norm_labor, norm_other, norm_other_desc, norm_batch_json = (
+            normalize_batch_cost_items(
+                None,
+                fallback_labor=float(menu.labor_cost or 0.0),
+                fallback_other=float(menu.other_fee or 0.0),
+                fallback_other_desc=menu.other_fee_description,
+            )
+        )
+        menu.labor_cost = norm_labor
+        menu.other_fee = norm_other
+        menu.other_fee_description = norm_other_desc
+        menu.batch_cost_items_json = norm_batch_json
     if payload.notes is not None:
         menu.notes = payload.notes.strip() or None
     if payload.is_active is not None:

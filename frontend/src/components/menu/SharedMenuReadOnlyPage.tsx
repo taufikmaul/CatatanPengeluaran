@@ -208,21 +208,42 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
                     ))}
                   </div>
                 )}
-                {(menu.labor_cost || 0) > 0 && (
-                  <div className="flex justify-between text-[11px] font-medium text-slate-700 dark:text-slate-300 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1">
-                    <span>+ Tenaga Kerja (Labor)</span>
-                    <span className="tabular-nums font-semibold">
-                      {formatRupiah(menu.unit_labor_cost ?? menu.labor_cost)}
-                    </span>
+                {menu.batch_cost_items && menu.batch_cost_items.length > 0 ? (
+                  <div className="space-y-1 pt-1 border-t border-dashed border-slate-300 dark:border-slate-700">
+                    <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      Tenaga Kerja &amp; Operasional Batch ({menu.batch_cost_items.length})
+                    </div>
+                    {menu.batch_cost_items.map((bc, idx) => (
+                      <div
+                        key={idx}
+                        className="flex justify-between text-[11px] text-slate-700 dark:text-slate-300"
+                      >
+                        <span>+ {bc.name}</span>
+                        <span className="tabular-nums font-semibold">
+                          {formatRupiah(bc.unit_amount ?? bc.amount ?? 0)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                )}
-                {menu.other_fee > 0 && (
-                  <div className="flex justify-between text-[11px] font-medium text-amber-700 dark:text-amber-400 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1">
-                    <span>+ Biaya Lainnya</span>
-                    <span className="tabular-nums font-semibold">
-                      {formatRupiah(menu.unit_other_fee ?? menu.other_fee)}
-                    </span>
-                  </div>
+                ) : (
+                  <>
+                    {(menu.labor_cost || 0) > 0 && (
+                      <div className="flex justify-between text-[11px] font-medium text-slate-700 dark:text-slate-300 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1">
+                        <span>+ Tenaga Kerja (Labor)</span>
+                        <span className="tabular-nums font-semibold">
+                          {formatRupiah(menu.unit_labor_cost ?? menu.labor_cost)}
+                        </span>
+                      </div>
+                    )}
+                    {menu.other_fee > 0 && (
+                      <div className="flex justify-between text-[11px] font-medium text-amber-700 dark:text-amber-400 border-t border-dashed border-slate-300 dark:border-slate-700 pt-1">
+                        <span>+ Biaya Lainnya</span>
+                        <span className="tabular-nums font-semibold">
+                          {formatRupiah(menu.unit_other_fee ?? menu.other_fee)}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             );

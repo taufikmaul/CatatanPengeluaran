@@ -1725,6 +1725,21 @@ export interface MenuIngredientInput {
 }
 
 export type MenuHppMode = "auto" | "manual" | "recipe";
+export type BatchCostCategory = "labor" | "operational";
+
+export interface MenuBatchCostItem {
+  category: BatchCostCategory;
+  name: string;
+  amount: number;
+  unit_amount?: number;
+}
+
+export interface MenuBatchCostItemInput {
+  category: BatchCostCategory;
+  name?: string;
+  amount: number;
+}
+
 export type FoodCostStatus =
   | "no_price"
   | "no_hpp"
@@ -1751,6 +1766,7 @@ export interface MenuProduct {
   labor_cost: number;
   unit_labor_cost?: number;
   unit_other_fee?: number;
+  batch_cost_items?: MenuBatchCostItem[];
   target_food_cost_pct?: number | null;
   shelf_life_days?: number | null;
   storage_method?: string | null;
@@ -1809,6 +1825,7 @@ export interface MenuProductPayload {
   hpp_mode: MenuHppMode;
   other_fee?: number;
   other_fee_description?: string | null;
+  batch_cost_items?: MenuBatchCostItemInput[];
   notes?: string | null;
   is_active: boolean;
   ingredients?: MenuIngredientInput[];

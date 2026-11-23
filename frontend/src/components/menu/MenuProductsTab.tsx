@@ -471,29 +471,89 @@ const MenuExpandedRecipePanel: React.FC<MenuExpandedRecipePanelProps> = ({
         </div>
       )}
 
-      {/* 3. Labor & Biaya Lainnya */}
-      {((menu.labor_cost || 0) > 0 || (menu.other_fee || 0) > 0) && (
-        <div className="space-y-1 pt-2 border-t border-dashed border-slate-300 dark:border-slate-700">
-          {(menu.labor_cost || 0) > 0 && (
-            <div className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-300 font-medium">
-              <span>
-                + Tenaga Kerja (Labor)
-                {(menu.batch_yield_qty || 1) !== 1 ? " per unit" : ""}
-              </span>
-              <span className="tabular-nums font-semibold">
-                {formatRupiah(menu.unit_labor_cost ?? menu.labor_cost ?? 0)}
-              </span>
+      {/* 3. Labor & Biaya Operasional Batch (Multi-Komponen) */}
+      {((menu.batch_cost_items && menu.batch_cost_items.length > 0) ||
+        (menu.labor_cost || 0) > 0 ||
+        (menu.other_fee || 0) > 0) && (
+        <div className="space-y-1.5 pt-2 border-t border-dashed border-slate-300 dark:border-slate-700">
+          <div className="font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              Tenaga Kerja (Labor) &amp; Biaya Operasional Batch
+              {menu.batch_cost_items && menu.batch_cost_items.length > 0
+                ? ` (${menu.batch_cost_items.length} komponen)`
+                : ""}
+            </span>
+            <span className="text-slate-600 dark:text-slate-400 font-normal tabular-nums">
+              Per unit:{" "}
+              {formatRupiah(
+                (menu.unit_labor_cost ?? menu.labor_cost ?? 0) +
+                  (menu.unit_other_fee ?? menu.other_fee ?? 0)
+              )}
+              {(menu.batch_yield_qty || 1) !== 1
+                ? ` (Batch: ${formatRupiah(
+                    (menu.labor_cost || 0) + (menu.other_fee || 0)
+                  )})`
+                : ""}
+            </span>
+          </div>
+
+          {menu.batch_cost_items && menu.batch_cost_items.length > 0 ? (
+            <div className="space-y-1">
+              {menu.batch_cost_items.map((bc, idx) => (
+                <div
+                  key={`${bc.category}-${idx}`}
+                  className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-300"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={
+                        bc.category === "labor"
+                          ? "text-[9px] px-1.5 py-0 bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-200 dark:border-indigo-800"
+                          : "text-[9px] px-1.5 py-0 bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                      }
+                    >
+                      {bc.category === "labor" ? "Labor" : "Operasional"}
+                    </Badge>
+                    <span className="font-medium">{bc.name}</span>
+                    {(menu.batch_yield_qty || 1) !== 1 && (
+                      <span className="text-slate-600 dark:text-slate-400">
+                        (batch {formatRupiah(bc.amount || 0)})
+                      </span>
+                    )}
+                  </div>
+                  <span className="tabular-nums font-medium shrink-0">
+                    {formatRupiah(bc.unit_amount ?? bc.amount ?? 0)}
+                  </span>
+                </div>
+              ))}
             </div>
-          )}
-          {(menu.other_fee || 0) > 0 && (
-            <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300 font-medium">
-              <span>
-                + Biaya Lainnya
-                {menu.other_fee_description ? ` (${menu.other_fee_description})` : ""}
-              </span>
-              <span className="tabular-nums font-semibold">
-                {formatRupiah(menu.unit_other_fee ?? menu.other_fee ?? 0)}
-              </span>
+          ) : (
+            <div className="space-y-1">
+              {(menu.labor_cost || 0) > 0 && (
+                <div className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-300 font-medium">
+                  <span>
+                    + Tenaga Kerja (Labor)
+                    {(menu.batch_yield_qty || 1) !== 1 ? " per unit" : ""}
+                  </span>
+                  <span className="tabular-nums font-semibold">
+                    {formatRupiah(menu.unit_labor_cost ?? menu.labor_cost ?? 0)}
+                  </span>
+                </div>
+              )}
+              {(menu.other_fee || 0) > 0 && (
+                <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300 font-medium">
+                  <span>
+                    + Biaya Lainnya
+                    {menu.other_fee_description
+                      ? ` (${menu.other_fee_description})`
+                      : ""}
+                  </span>
+                  <span className="tabular-nums font-semibold">
+                    {formatRupiah(menu.unit_other_fee ?? menu.other_fee ?? 0)}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

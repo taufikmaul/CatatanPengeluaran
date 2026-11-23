@@ -1244,5 +1244,185 @@ async def test_bundle_composition_only_finished_menus_plus_packaging_and_fees(
     assert res_demote.status_code == 400
     assert "hampers spesial a" in res_demote.json()["detail"].lower()
 
+    # 10. TOLAK: Menu Jual (finished) maupun Prepared tidak boleh disusun dari Menu Jual (finished) atau Bundle
+    res_fin_uses_fin = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Menu Jual Pakai Menu Jual Lain",
+            "item_type": "finished",
+            "unit": "Porsi",
+            "ingredients": [
+                {"sub_menu_id": finished_cake["id"], "cost_group": "ingredient", "qty": 1, "unit": "Toples", "yield_factor": 1}
+            ],
+        },
+    )
+    assert res_fin_uses_fin.status_code == 400
+    assert "menu jual" in res_fin_uses_fin.json()["detail"].lower()
+
+    res_prep_uses_fin = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Prepared Pakai Menu Jual",
+            "item_type": "prepared",
+            "unit": "Gram",
+            "batch_yield_qty": 1000,
+            "ingredients": [
+                {"sub_menu_id": finished_cake["id"], "cost_group": "ingredient", "qty": 1, "unit": "Toples", "yield_factor": 1}
+            ],
+        },
+    )
+    assert res_prep_uses_fin.status_code == 400
+    assert "menu jual" in res_prep_uses_fin.json()["detail"].lower()
+
+    res_fin_uses_bundle = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Menu Jual Pakai Paket",
+            "item_type": "finished",
+            "unit": "Porsi",
+            "ingredients": [
+                {"sub_menu_id": bundle_a["id"], "cost_group": "ingredient", "qty": 1, "unit": "Paket", "yield_factor": 1}
+            ],
+        },
+    )
+    assert res_fin_uses_bundle.status_code == 400
+    assert "paket" in res_fin_uses_bundle.json()["detail"].lower()
+
+    # 11. TOLAK: Mengubah item Prepared yang sedang dipakai di Menu Jual menjadi Menu Jual (finished)
+    used_by_finished = (
+        await client.post(
+            "/api/v1/menus",
+            json={
+                "name": "Menu Jual Pakai Saus Prepared",
+                "item_type": "finished",
+                "unit": "Porsi",
+                "ingredients": [
+                    {"sub_menu_id": prep_item["id"], "cost_group": "ingredient", "qty": 1, "unit": "Jar", "yield_factor": 1}
+                ],
+            },
+        )
+    ).json()["item"]
+    assert used_by_finished["id"] > 0
+
+    res_promote_used_prep = await client.put(
+        f"/api/v1/menus/{prep_item['id']}",
+        json={"item_type": "finished"},
+    )
+    assert res_promote_used_prep.status_code == 400
+    assert "menu jual pakai saus prepared" in res_promote_used_prep.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_multi_component_batch_cost_items_labor_and_operational(
+    client: AsyncClient, db: AsyncSession, auth_cookies: dict
+):
+    """
+    Section 3: Tenaga Kerja (Labor) & Biaya Operasional Batch mendukung lebih dari 1 komponen rincian:
+    - Beberapa item labor + beberapa item operational dijumlahkan otomatis ke labor_cost & other_fee
+    - Setiap item punya unit_amount yang dibagi net_yield_qty
+    - Mode anonim menyamarkan nama komponen rincian
+    - Duplikasi / clone dengan scale_factor ikut menskalakan setiap komponen rincian
+    """
+    client.cookies.update(auth_cookies)
+
+    biji_kopi = MasterItem(
+        item_name="Bens Coffee Arabika 1KG",
+        category="Bahan Minuman",
+        satuan_beli="Kg",
+        satuan_ecer="Gram",
+    )
+    db.add(biji_kopi)
+    await db.flush()
+    db.add(
+        Expense(
+            expense_date=date(2026, 11, 20),
+            supplier="Roastery",
+            item_name="Bens Coffee Arabika 1KG",
+            qty=1,
+            unit="Kg",
+            category="Bahan Minuman",
+            unit_price=263000,
+            total_price=263000,
+            pay_method="Tunai",
+            pay_status="Lunas",
+            master_item_id=biji_kopi.id,
+        )
+    )
+    await db.commit()
+
+    # Buat Prepared Espresso Shot: batch yield 30 ml, 4 komponen rincian di Section 3
+    res_create = await client.post(
+        "/api/v1/menus",
+        json={
+            "name": "Espresso Base Multi Batch Cost",
+            "item_type": "prepared",
+            "is_sellable": False,
+            "category": "Prepared / Sub-Resep",
+            "unit": "ml",
+            "batch_yield_qty": 30,
+            "batch_yield_unit": "ml",
+            "waste_loss_pct": 0,
+            "ingredients": [
+                {
+                    "master_item_id": biji_kopi.id,
+                    "cost_group": "ingredient",
+                    "qty": 18,
+                    "unit": "Gram",
+                    "yield_factor": 1000,  # 18/1000 * 263000 = 4734
+                }
+            ],
+            "batch_cost_items": [
+                {"category": "labor", "name": "Tenaga Barista Kalibrasi", "amount": 600},
+                {"category": "labor", "name": "Tenaga Barista Ekstraksi", "amount": 900},
+                {"category": "operational", "name": "Listrik Mesin Espresso", "amount": 450},
+                {"category": "operational", "name": "Penyusutan Grinder & Mesin", "amount": 300},
+                {"category": "operational", "name": "Air Filter & Flushing", "amount": 150},
+            ],
+        },
+    )
+    assert res_create.status_code == 201, res_create.text
+    item = res_create.json()["item"]
+
+    # Total labor = 600 + 900 = 1500 (per ml = 50.0)
+    # Total operational = 450 + 300 + 150 = 900 (per ml = 30.0)
+    assert item["labor_cost"] == 1500.0
+    assert item["unit_labor_cost"] == 50.0
+    assert item["other_fee"] == 900.0
+    assert item["unit_other_fee"] == 30.0
+    assert "Listrik Mesin Espresso" in (item["other_fee_description"] or "")
+    assert "Penyusutan Grinder & Mesin" in (item["other_fee_description"] or "")
+    assert len(item["batch_cost_items"]) == 5
+    assert item["batch_cost_items"][0]["name"] == "Tenaga Barista Kalibrasi"
+    assert item["batch_cost_items"][0]["unit_amount"] == 20.0
+    assert item["batch_cost_items"][2]["name"] == "Listrik Mesin Espresso"
+    assert item["batch_cost_items"][2]["unit_amount"] == 15.0
+
+    # Mode anonim menyamarkan nama komponen rincian
+    res_anon = await client.get(f"/api/v1/menus/{item['id']}?anonymize=true")
+    assert res_anon.status_code == 200
+    anon_item = res_anon.json()["item"]
+    anon_bc_names = [bc["name"] for bc in anon_item["batch_cost_items"]]
+    assert anon_bc_names == [
+        "Tenaga Kerja #1",
+        "Tenaga Kerja #2",
+        "Biaya Operasional #1",
+        "Biaya Operasional #2",
+        "Biaya Operasional #3",
+    ]
+
+    # Clone dengan scale_factor=2.0 ikut menskalakan setiap rincian batch_cost_items
+    res_clone = await client.post(
+        f"/api/v1/menus/{item['id']}/clone",
+        json={"new_name": "Espresso Base Double Batch", "scale_factor": 2.0},
+    )
+    assert res_clone.status_code == 201, res_clone.text
+    cloned = res_clone.json()["item"]
+    assert cloned["labor_cost"] == 3000.0
+    assert cloned["other_fee"] == 1800.0
+    assert len(cloned["batch_cost_items"]) == 5
+    assert cloned["batch_cost_items"][0]["amount"] == 1200.0
+    assert cloned["batch_cost_items"][1]["amount"] == 1800.0
+
+
 
 

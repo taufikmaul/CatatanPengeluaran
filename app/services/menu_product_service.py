@@ -274,6 +274,103 @@ def default_anon_prefix(item_type: str | None) -> str:
     return "MENU"
 
 
+def normalize_batch_cost_items(
+    raw_items: list[dict[str, Any]] | None,
+    fallback_labor: float = 0.0,
+    fallback_other: float = 0.0,
+    fallback_other_desc: str | None = None,
+) -> tuple[list[dict[str, Any]], float, float, str | None, str | None]:
+    """
+    Normalisasi daftar rincian komponen biaya Section 3 (Tenaga Kerja / Labor & Biaya Operasional Batch).
+    Mengembalikan:
+      (items_list, total_labor_cost, total_other_fee, other_fee_description, batch_cost_items_json)
+    Kompatibel penuh dengan field legacy `labor_cost`, `other_fee`, dan `other_fee_description`.
+    """
+    clean_fallback_desc = (fallback_other_desc or "").strip() or None
+    if raw_items is not None:
+        cleaned: list[dict[str, Any]] = []
+        for it in raw_items:
+            if not isinstance(it, dict):
+                continue
+            cat = str(it.get("category") or "operational").strip().lower()
+            if cat not in ("labor", "operational"):
+                cat = "operational"
+            raw_name = str(it.get("name") or "").strip()
+            try:
+                amount = round(max(0.0, float(it.get("amount") or 0.0)), 2)
+            except (TypeError, ValueError):
+                amount = 0.0
+            if amount <= 0 and not raw_name:
+                continue
+            default_label = (
+                "Tenaga Kerja (Labor)" if cat == "labor" else "Biaya Operasional Batch"
+            )
+            cleaned.append(
+                {
+                    "category": cat,
+                    "name": (raw_name or default_label)[:255],
+                    "amount": amount,
+                }
+            )
+
+        labor_total = round(
+            sum(r["amount"] for r in cleaned if r["category"] == "labor"), 2
+        )
+        other_total = round(
+            sum(r["amount"] for r in cleaned if r["category"] == "operational"), 2
+        )
+        op_names = [
+            r["name"]
+            for r in cleaned
+            if r["category"] == "operational" and r["name"]
+        ]
+        if op_names:
+            joined_desc = ", ".join(op_names)[:255]
+        elif other_total > 0 and clean_fallback_desc:
+            joined_desc = clean_fallback_desc[:255]
+        else:
+            joined_desc = None
+
+        json_str = json.dumps(cleaned, ensure_ascii=False) if cleaned else None
+        return cleaned, labor_total, other_total, joined_desc, json_str
+
+    l_val = round(max(0.0, float(fallback_labor or 0.0)), 2)
+    o_val = round(max(0.0, float(fallback_other or 0.0)), 2)
+    synthesized: list[dict[str, Any]] = []
+    if l_val > 0:
+        synthesized.append(
+            {
+                "category": "labor",
+                "name": "Tenaga Kerja (Labor)",
+                "amount": l_val,
+            }
+        )
+    if o_val > 0 or clean_fallback_desc:
+        synthesized.append(
+            {
+                "category": "operational",
+                "name": (clean_fallback_desc or "Biaya Operasional Batch")[:255],
+                "amount": o_val,
+            }
+        )
+    json_str = json.dumps(synthesized, ensure_ascii=False) if synthesized else None
+    return synthesized, l_val, o_val, clean_fallback_desc, json_str
+
+
+def parse_menu_batch_cost_items(menu: MenuProduct) -> list[dict[str, Any]] | None:
+    """Parse JSON rincian biaya batch dari kolom `batch_cost_items_json` bila tersedia."""
+    raw_json = getattr(menu, "batch_cost_items_json", None)
+    if not raw_json or not str(raw_json).strip():
+        return None
+    try:
+        parsed = json.loads(raw_json)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        pass
+    return None
+
+
 def _format_anon_code(prefix: str, number: int) -> str:
     clean_prefix = re.sub(r"[^A-Za-z0-9_-]", "", (prefix or "MENU").strip().upper()) or "MENU"
     return f"{clean_prefix}-{number:03d}"
@@ -424,13 +521,40 @@ def validate_bundle_composition(
     menus_by_id: dict[int, MenuProduct],
 ) -> None:
     """
-    Validasi aturan khusus menu Paket / Hampers (`item_type == "bundle"`):
-    - Item penyusun (`cost_group != "packaging"`) HANYA boleh berupa Menu Jual yang sudah jadi (`item_type == "finished"`).
-      Tidak boleh berupa bahan baku (`master_item_id`), input bahan manual, item 1/2 jadi (`prepared`), atau paket lain (`bundle`).
-    - Kemasan (`cost_group == "packaging"`) tetap diperbolehkan dari Master Item kemasan atau input manual kemasan,
-      tetapi tidak boleh merujuk sub-menu / sub-resep.
+    Validasi aturan komposisi resep berdasarkan tipe item:
+    1. Menu Paket / Hampers (`item_type == "bundle"`):
+       - Item penyusun (`cost_group != "packaging"`) HANYA boleh berupa Menu Jual yang sudah jadi (`item_type == "finished"`).
+         Tidak boleh berupa bahan baku (`master_item_id`), input bahan manual, item 1/2 jadi (`prepared`), atau paket lain (`bundle`).
+       - Kemasan (`cost_group == "packaging"`) tetap diperbolehkan dari Master Item kemasan atau input manual kemasan,
+         tetapi tidak boleh merujuk sub-menu / sub-resep.
+    2. Menu Jual (`finished`) & Prepared / Setengah Jadi (`prepared`):
+       - HANYA boleh disusun dari bahan baku & kemasan (Master Item / manual) serta Menu Prepared (`item_type == "prepared"`).
+       - TIDAK BOLEH menggunakan Menu Jual (`item_type == "finished"`) maupun Paket / Hampers (`item_type == "bundle"`).
     """
-    if (item_type or "finished").strip().lower() != "bundle":
+    norm_type = (item_type or "finished").strip().lower()
+    if norm_type != "bundle":
+        parent_type_label = (
+            "Prepared / Setengah Jadi" if norm_type == "prepared" else "Menu Jual"
+        )
+        for item in ingredients_payload:
+            sid = item.get("sub_menu_id")
+            if sid is None:
+                continue
+            sub_menu = menus_by_id.get(int(sid))
+            if sub_menu is None:
+                raise ValueError(f"Sub-resep dengan ID {sid} tidak ditemukan.")
+            sub_type = (getattr(sub_menu, "item_type", None) or "finished").strip().lower()
+            if sub_type == "finished":
+                raise ValueError(
+                    f"Resep {parent_type_label} tidak boleh disusun dari Menu Jual '{sub_menu.name}'. "
+                    "Hanya Bahan, Kemasan, dan Menu Prepared (1/2 jadi) yang diperbolehkan. "
+                    "Menu Jual hanya dapat dipakai sebagai penyusun pada Paket / Hampers."
+                )
+            if sub_type != "prepared":
+                raise ValueError(
+                    f"Resep {parent_type_label} tidak boleh menggunakan Paket / Hampers '{sub_menu.name}'. "
+                    "Hanya Bahan, Kemasan, dan Menu Prepared (1/2 jadi) yang diperbolehkan."
+                )
         return
 
     for item in ingredients_payload:
@@ -565,6 +689,7 @@ def resolve_all_menu_financials(
                 "other_fee": 0.0,
                 "unit_other_fee": 0.0,
                 "other_fee_description": getattr(menu, "other_fee_description", None),
+                "batch_cost_items": [],
                 "core_unit_hpp": 0.0,
                 "recipe_hpp": 0.0,
                 "hpp_manual": 0.0,
@@ -730,9 +855,22 @@ def resolve_all_menu_financials(
             max(0.0001, batch_yield_qty * (1.0 - waste_loss_pct / 100.0)), 4
         )
 
-        labor_cost = round(float(getattr(menu, "labor_cost", 0.0) or 0.0), 2)
-        other_fee = round(float(getattr(menu, "other_fee", 0.0) or 0.0), 2)
-        other_fee_desc = getattr(menu, "other_fee_description", None)
+        parsed_batch_items = parse_menu_batch_cost_items(menu)
+        normalized_batch_items, labor_cost, other_fee, other_fee_desc, _ = (
+            normalize_batch_cost_items(
+                parsed_batch_items,
+                fallback_labor=float(getattr(menu, "labor_cost", 0.0) or 0.0),
+                fallback_other=float(getattr(menu, "other_fee", 0.0) or 0.0),
+                fallback_other_desc=getattr(menu, "other_fee_description", None),
+            )
+        )
+        resolved_batch_cost_items = [
+            {
+                **it,
+                "unit_amount": round(float(it["amount"]) / net_yield_qty, 2),
+            }
+            for it in normalized_batch_items
+        ]
         raw_batch_total = round(raw_batch_ingredients + labor_cost + other_fee, 2)
 
         unit_ingredient_cost = round(raw_batch_ingredients / net_yield_qty, 2)
@@ -742,7 +880,12 @@ def resolve_all_menu_financials(
         recipe_hpp = round(core_unit_hpp + subtotal_packaging, 2)
 
         hpp_manual = round(float(menu.hpp_manual or 0.0), 2)
-        has_recipe = len(ingredient_rows) > 0 or other_fee > 0 or labor_cost > 0
+        has_recipe = (
+            len(ingredient_rows) > 0
+            or other_fee > 0
+            or labor_cost > 0
+            or len(resolved_batch_cost_items) > 0
+        )
         mode = (menu.hpp_mode or "auto").strip().lower()
         if mode not in ("auto", "manual", "recipe"):
             mode = "auto"
@@ -822,6 +965,7 @@ def resolve_all_menu_financials(
             "other_fee": other_fee,
             "unit_other_fee": unit_other_fee,
             "other_fee_description": other_fee_desc,
+            "batch_cost_items": resolved_batch_cost_items,
             "core_unit_hpp": round(core_unit_hpp_effective, 2),
             "recipe_hpp": recipe_hpp,
             "hpp_manual": hpp_manual,
@@ -929,6 +1073,22 @@ def serialize_menu_product(
                     "notes": None,
                 }
             )
+        labor_idx = 0
+        op_idx = 0
+        masked_batch_costs: list[dict[str, Any]] = []
+        for bc in fin.get("batch_cost_items", []):
+            if bc.get("category") == "labor":
+                labor_idx += 1
+                bc_label = f"Tenaga Kerja #{labor_idx}"
+            else:
+                op_idx += 1
+                bc_label = f"Biaya Operasional #{op_idx}"
+            masked_batch_costs.append(
+                {
+                    **bc,
+                    "name": bc_label,
+                }
+            )
         return {
             **base_meta,
             "name": menu.anonymous_name,
@@ -938,6 +1098,7 @@ def serialize_menu_product(
             "is_anonymized": True,
             **fin,
             "other_fee_description": None,
+            "batch_cost_items": masked_batch_costs,
             "ingredients": masked_ingredients,
         }
 
@@ -1117,6 +1278,30 @@ async def clone_menu_with_scale(
     anon_code = generate_next_anonymous_code(existing_codes, prefix=default_anon_prefix(target_type))
     safe_scale = float(scale_factor) if scale_factor > 0 else 1.0
 
+    src_batch_items = parse_menu_batch_cost_items(source_menu)
+    scaled_raw_batch_items: list[dict[str, Any]] | None = None
+    if src_batch_items is not None:
+        scaled_raw_batch_items = [
+            {
+                "category": it.get("category", "operational"),
+                "name": it.get("name", ""),
+                "amount": round(float(it.get("amount") or 0.0) * safe_scale, 2),
+            }
+            for it in src_batch_items
+        ]
+    _, scaled_labor, scaled_other, scaled_other_desc, scaled_batch_json = (
+        normalize_batch_cost_items(
+            scaled_raw_batch_items,
+            fallback_labor=round(
+                float(getattr(source_menu, "labor_cost", 0.0) or 0.0) * safe_scale, 2
+            ),
+            fallback_other=round(
+                float(getattr(source_menu, "other_fee", 0.0) or 0.0) * safe_scale, 2
+            ),
+            fallback_other_desc=getattr(source_menu, "other_fee_description", None),
+        )
+    )
+
     cloned = MenuProduct(
         name=new_name.strip(),
         anonymous_name=anon_code,
@@ -1135,15 +1320,16 @@ async def clone_menu_with_scale(
         ),
         batch_yield_unit=getattr(source_menu, "batch_yield_unit", None),
         waste_loss_pct=float(getattr(source_menu, "waste_loss_pct", 0.0) or 0.0),
-        labor_cost=round(float(getattr(source_menu, "labor_cost", 0.0) or 0.0) * safe_scale, 2),
+        labor_cost=scaled_labor,
         target_food_cost_pct=getattr(source_menu, "target_food_cost_pct", None),
         shelf_life_days=getattr(source_menu, "shelf_life_days", None),
         storage_method=getattr(source_menu, "storage_method", None),
         selling_price=float(source_menu.selling_price or 0.0),
         hpp_manual=float(source_menu.hpp_manual or 0.0),
         hpp_mode=source_menu.hpp_mode,
-        other_fee=round(float(getattr(source_menu, "other_fee", 0.0) or 0.0) * safe_scale, 2),
-        other_fee_description=getattr(source_menu, "other_fee_description", None),
+        other_fee=scaled_other,
+        other_fee_description=scaled_other_desc,
+        batch_cost_items_json=scaled_batch_json,
         notes=source_menu.notes,
         is_active=True,
     )

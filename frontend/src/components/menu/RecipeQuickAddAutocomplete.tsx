@@ -204,8 +204,8 @@ export const RecipeQuickAddAutocomplete: React.FC<
       if (isBundle) {
         if (targetMode === "packaging") continue;
         if ((menu.item_type || "finished") !== "finished") continue;
-      } else if (targetMode === "packaging" && menu.item_type !== "prepared") {
-        continue;
+      } else {
+        if (menu.item_type !== "prepared") continue;
       }
 
       const metaHay = [
@@ -229,10 +229,8 @@ export const RecipeQuickAddAutocomplete: React.FC<
       let modePriority = 1;
       if (isBundle) {
         modePriority = 0;
-      } else if (targetMode === "auto") {
-        modePriority = menu.item_type === "prepared" ? 0 : 2;
-      } else if (targetMode === "ingredient") {
-        modePriority = menu.item_type === "prepared" ? 0 : 1;
+      } else if (targetMode === "auto" || targetMode === "ingredient") {
+        modePriority = 0;
       } else {
         modePriority = 2;
       }

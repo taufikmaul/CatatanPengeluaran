@@ -109,7 +109,7 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
     const q = query.trim().toLowerCase();
     const candidates = menuOptions.filter((m) => {
       if (excludeMenuId !== undefined && m.id === excludeMenuId) return false;
-      if (costGroup === "packaging" && m.item_type !== "prepared") return false;
+      if (m.item_type !== "prepared") return false;
       if (!q) return true;
       const hay = [
         m.name,
@@ -124,18 +124,8 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
       return hay.includes(q);
     });
 
-    const typeWeight: Record<MenuItemType, number> = {
-      prepared: 0,
-      finished: 1,
-      bundle: 2,
-    };
-    return [...candidates].sort((a, b) => {
-      const wa = typeWeight[a.item_type || "finished"] ?? 9;
-      const wb = typeWeight[b.item_type || "finished"] ?? 9;
-      if (wa !== wb) return wa - wb;
-      return a.name.localeCompare(b.name, "id");
-    });
-  }, [menuOptions, excludeMenuId, costGroup, query]);
+    return [...candidates].sort((a, b) => a.name.localeCompare(b.name, "id"));
+  }, [menuOptions, excludeMenuId, query]);
 
   const filteredMasterItems = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -525,7 +515,7 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
               {filteredSubMenus.length > 0 && (
                 <div>
                   <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
-                    Sub-Resep (Prepared) &amp; Produk Lain ({filteredSubMenus.length})
+                    Sub-Resep (Prepared) ({filteredSubMenus.length})
                   </div>
                   {filteredSubMenus.map((menu) => renderSubMenuRow(menu, runningIdx++))}
                 </div>
