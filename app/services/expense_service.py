@@ -2841,10 +2841,17 @@ async def get_unpaid_summary(
     month: int | None = None,
     year: int | None = None,
     supplier_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> dict:
     """Ringkasan statistik transaksi belum lunas & DP, tempo terdekat, dan rekap per supplier."""
     query = select(Expense).where(unpaid_status_clause())
-    if month and year:
+    if start_date or end_date:
+        if start_date:
+            query = query.where(Expense.expense_date >= start_date)
+        if end_date:
+            query = query.where(Expense.expense_date <= end_date)
+    elif month and year:
         start = date(year, month, 1)
         end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
         query = query.where(and_(Expense.expense_date >= start, Expense.expense_date < end))

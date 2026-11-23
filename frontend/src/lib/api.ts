@@ -565,11 +565,15 @@ export async function getUnpaidSummary(params?: {
   month?: number | null;
   year?: number | null;
   supplierId?: number | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }): Promise<UnpaidSummaryResponse> {
   const q = new URLSearchParams();
   if (params?.month) q.append("month", String(params.month));
   if (params?.year) q.append("year", String(params.year));
   if (params?.supplierId) q.append("supplier_id", String(params.supplierId));
+  if (params?.startDate) q.append("start_date", params.startDate);
+  if (params?.endDate) q.append("end_date", params.endDate);
   const res = await api.get(`/expenses/unpaid/summary?${q.toString()}`);
   return res.data;
 }

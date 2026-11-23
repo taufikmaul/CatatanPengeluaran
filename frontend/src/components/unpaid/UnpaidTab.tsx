@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, getUnpaidSummary, settleUnpaidExpenses, getBankAccounts } from "@/lib/api";
 import { Expense, UnpaidSummaryResponse, UnpaidSupplierSummary } from "@/types";
-import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
+import { formatRupiah, formatDateId, getCategoryColor, toIsoDate } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
   getDueUrgencyInfo,
@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -70,6 +71,8 @@ const MONTH_NAMES = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ];
 
+type PeriodMode = "all" | "month" | "custom";
+
 export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   currentMonth,
   currentYear,
@@ -85,10 +88,13 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
   // Filters
   const [statusTab, setStatusTab] = useState<"unpaid" | "dp" | "overdue" | "soon" | "paid" | "all">("unpaid");
-  const [isAllPeriods, setIsAllPeriods] = useState<boolean>(true);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("all");
+  const isAllPeriods = periodMode === "all";
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
   const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [customStart, setCustomStart] = useState<string>(() => toIsoDate(new Date(currentYear, currentMonth - 1, 1)));
+  const [customEnd, setCustomEnd] = useState<string>(() => toIsoDate(new Date()));
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [search, setSearch] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("due_date");
@@ -118,6 +124,15 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     queryFn: () => getBankAccounts(true),
   });
 
+  // Parameter periode efektif
+  const isCustomRangeInvalid =
+    periodMode === "custom" && !!customStart && !!customEnd && customStart > customEnd;
+  const rangeStart = periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
+  const rangeEnd = periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
+  const monthParam = periodMode === "month" ? selectedMonth : null;
+  const monthEndParam = periodMode === "month" ? selectedMonthEnd : null;
+  const yearParam = periodMode === "month" ? selectedYear : null;
+
   // 1. Fetch Ringkasan Belum Lunas, DP & Tempo Terdekat
   const {
     data: summaryData,
@@ -127,14 +142,19 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   } = useQuery<UnpaidSummaryResponse>({
     queryKey: [
       "unpaid-summary",
-      isAllPeriods ? null : selectedMonth,
-      isAllPeriods ? null : selectedYear,
+      monthParam,
+      yearParam,
+      rangeStart,
+      rangeEnd,
       selectedSupplierId,
     ],
+    enabled: !isCustomRangeInvalid,
     queryFn: () =>
       getUnpaidSummary({
-        month: isAllPeriods ? null : selectedMonth,
-        year: isAllPeriods ? null : selectedYear,
+        month: monthParam,
+        year: yearParam,
+        startDate: rangeStart,
+        endDate: rangeEnd,
         supplierId: selectedSupplierId,
       }),
   });
@@ -150,15 +170,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       "expenses-unpaid",
       page,
       perPage,
-      isAllPeriods ? null : selectedMonth,
-      isAllPeriods ? null : selectedMonthEnd,
-      isAllPeriods ? null : selectedYear,
+      monthParam,
+      monthEndParam,
+      yearParam,
+      rangeStart,
+      rangeEnd,
       statusTab,
       selectedSupplierId,
       search,
       sortBy,
       sortOrder,
     ],
+    enabled: !isCustomRangeInvalid,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -168,12 +191,15 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
         sort_order: sortOrder,
       });
 
-      if (!isAllPeriods) {
+      if (periodMode === "month") {
         params.append("month", String(selectedMonth));
         if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
           params.append("month_end", String(selectedMonthEnd));
         }
         params.append("year", String(selectedYear));
+      } else if (periodMode === "custom") {
+        if (rangeStart) params.append("start_date", rangeStart);
+        if (rangeEnd) params.append("end_date", rangeEnd);
       }
 
       if (statusTab === "unpaid" || statusTab === "overdue" || statusTab === "soon") {
@@ -1272,54 +1298,88 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           </div>
 
           {/* Periode Controls */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={isAllPeriods ? "secondary" : "outline"}
-              size="sm"
-              onClick={() => {
-                setIsAllPeriods((prev) => !prev);
-                setPage(1);
-              }}
-              className="min-h-[40px] rounded-xl text-xs font-medium px-3 gap-1.5"
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{isAllPeriods ? "Semua Waktu (Aktif)" : "Bulan Tertentu"}</span>
-            </Button>
-
-            {!isAllPeriods && (
-              <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-stretch gap-1.5 md:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <select
-                  value={selectedMonth}
+                  value={periodMode}
                   onChange={(e) => {
-                    setSelectedMonth(Number(e.target.value));
+                    setPeriodMode(e.target.value as PeriodMode);
                     setPage(1);
+                    setSelectedIds([]);
                   }}
-                  aria-label="Pilih bulan"
-                  className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
+                  aria-label="Periode tagihan"
+                  className="h-10 pl-8 pr-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
                 >
-                  {MONTH_NAMES.map((name, idx) => (
-                    <option key={name} value={idx + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  aria-label="Pilih tahun"
-                  className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
-                >
-                  {[selectedYear - 1, selectedYear, selectedYear + 1].map((yr) => (
-                    <option key={yr} value={yr}>
-                      {yr}
-                    </option>
-                  ))}
+                  <option value="all">Semua Waktu</option>
+                  <option value="month">Bulan Tertentu</option>
+                  <option value="custom">Rentang Tanggal</option>
                 </select>
               </div>
+
+              {periodMode === "month" && (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      const m = Number(e.target.value);
+                      setSelectedMonth(m);
+                      setSelectedMonthEnd(m);
+                      setPage(1);
+                    }}
+                    aria-label="Pilih bulan"
+                    className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={name} value={idx + 1}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => {
+                      setSelectedYear(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    aria-label="Pilih tahun"
+                    className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
+                  >
+                    {[selectedYear - 1, selectedYear, selectedYear + 1].map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {periodMode === "custom" && (
+                <DateRangePicker
+                  initialDateFrom={customStart}
+                  initialDateTo={customEnd}
+                  onUpdate={({ range }) => {
+                    if (range.from) {
+                      setCustomStart(toIsoDate(range.from));
+                    }
+                    if (range.to) {
+                      setCustomEnd(toIsoDate(range.to));
+                    } else if (range.from) {
+                      setCustomEnd(toIsoDate(range.from));
+                    }
+                    setPage(1);
+                    setSelectedIds([]);
+                  }}
+                />
+              )}
+            </div>
+
+            {isCustomRangeInvalid && (
+              <p role="alert" className="text-[11px] font-medium text-red-600 dark:text-red-400">
+                Tanggal awal tidak boleh setelah tanggal akhir.
+              </p>
             )}
           </div>
         </div>

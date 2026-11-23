@@ -644,10 +644,24 @@ async def get_unpaid_summary_endpoint(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2020),
     supplier_id: int | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Ambil ringkasan statistik tagihan belum lunas, tempo terdekat, dan rincian per supplier."""
-    data = await get_unpaid_summary(db, month=month, year=year, supplier_id=supplier_id)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tanggal mulai tidak boleh setelah tanggal akhir.",
+        )
+    data = await get_unpaid_summary(
+        db,
+        month=month,
+        year=year,
+        supplier_id=supplier_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return UnpaidSummaryResponse(**data)
 
 
