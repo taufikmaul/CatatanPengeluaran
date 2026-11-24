@@ -563,10 +563,17 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         setOcrExtractedItems(res.items);
         setSelectedOcrIndex(0);
         applyExtractedItemToForm(res.items[0]);
-        setActiveTab("form");
-        setOcrSuccessBanner(
-          `Berhasil membaca ${res.items.length} item dari struk. Silakan periksa rincian data lalu simpan.`
-        );
+        if (res.items.length > 1 && onBatchSubmit && !initialData && !repeatData) {
+          setActiveTab("multi");
+          toast.success(
+            `Berhasil membaca ${res.items.length} item dari struk dan dimuat ke mode Multi-Item.`
+          );
+        } else {
+          setActiveTab("form");
+          setOcrSuccessBanner(
+            `Berhasil membaca ${res.items.length} item dari struk. Silakan periksa rincian data lalu simpan.`
+          );
+        }
       } else {
         setOcrError(
           res.message || "Gagal membaca struk/nota. Pastikan gambar jelas dan tidak terpotong."
@@ -763,6 +770,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
             itemSuggestions={itemSuggestions}
             supplierSuggestions={supplierSuggestions}
             usersList={usersList}
+            bankAccounts={bankAccounts}
             isSubmitting={isSubmitting}
             ocrSeedItems={ocrExtractedItems.length > 0 ? ocrExtractedItems : undefined}
             onBatchSubmit={onBatchSubmit}

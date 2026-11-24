@@ -2,6 +2,7 @@ import axios from "axios";
 import {
   Expense,
   ExpenseFormData,
+  ExpenseInvoiceListResponse,
   ExpenseLog,
   ExpenseAuditResponse,
   Supplier,
@@ -538,6 +539,7 @@ export async function getReimbursementSummary(params?: {
   year?: number | null;
   userId?: number | null;
   includeOngkir?: boolean;
+  talanganType?: "all" | "belanja" | "ongkir";
   startDate?: string | null;
   endDate?: string | null;
 }): Promise<ReimbursementSummaryResponse> {
@@ -548,6 +550,7 @@ export async function getReimbursementSummary(params?: {
   if (params?.endDate) q.append("end_date", params.endDate);
   if (params?.userId) q.append("user_id", String(params.userId));
   if (params?.includeOngkir) q.append("include_ongkir", "true");
+  if (params?.talanganType) q.append("talangan_type", params.talanganType);
   const res = await api.get(`/expenses/reimbursements/summary?${q.toString()}`);
   return res.data;
 }
@@ -603,6 +606,70 @@ export async function recordExpensePayment(
   payload: import("@/types").ExpensePaymentPayload
 ): Promise<Expense> {
   const res = await api.post(`/expenses/${expenseId}/payments`, payload);
+  return res.data;
+}
+
+export async function recordInvoicePayment(
+  payload: import("@/types").InvoicePaymentPayload
+): Promise<Expense[]> {
+  const res = await api.post("/expenses/unpaid/payment", payload);
+  return res.data;
+}
+
+export async function getGroupedExpenses(params?: {
+  page?: number;
+  per_page?: number;
+  category?: string;
+  month?: number | null;
+  month_end?: number | null;
+  year?: number | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  search?: string;
+  status?: string;
+  pay_method?: string;
+  is_reimbursement?: boolean | null;
+  user_id?: number | null;
+  supplier_id?: number | null;
+  supplier?: string;
+  special_type?: string;
+  reimbursed_status?: string;
+  sort_by?: string;
+  sort_order?: "asc" | "desc" | string;
+  due_urgency?: "overdue" | "soon" | string;
+  include_ongkir?: boolean;
+  talangan_type?: string;
+}): Promise<ExpenseInvoiceListResponse> {
+  const q = new URLSearchParams();
+  if (params?.page) q.append("page", String(params.page));
+  if (params?.per_page) q.append("per_page", String(params.per_page));
+  if (params?.category) q.append("category", params.category);
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.month_end) q.append("month_end", String(params.month_end));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.start_date) q.append("start_date", params.start_date);
+  if (params?.end_date) q.append("end_date", params.end_date);
+  if (params?.search?.trim()) q.append("search", params.search.trim());
+  if (params?.status) q.append("status", params.status);
+  if (params?.pay_method) q.append("pay_method", params.pay_method);
+  if (params?.is_reimbursement !== undefined && params?.is_reimbursement !== null) {
+    q.append("is_reimbursement", String(params.is_reimbursement));
+  }
+  if (params?.user_id !== undefined && params?.user_id !== null) {
+    q.append("user_id", String(params.user_id));
+  }
+  if (params?.supplier_id !== undefined && params?.supplier_id !== null) {
+    q.append("supplier_id", String(params.supplier_id));
+  }
+  if (params?.supplier) q.append("supplier", params.supplier);
+  if (params?.special_type) q.append("special_type", params.special_type);
+  if (params?.reimbursed_status) q.append("reimbursed_status", params.reimbursed_status);
+  if (params?.sort_by) q.append("sort_by", params.sort_by);
+  if (params?.sort_order) q.append("sort_order", params.sort_order);
+  if (params?.due_urgency) q.append("due_urgency", params.due_urgency);
+  if (params?.include_ongkir) q.append("include_ongkir", "true");
+  if (params?.talangan_type) q.append("talangan_type", params.talangan_type);
+  const res = await api.get(`/expenses/grouped?${q.toString()}`);
   return res.data;
 }
 

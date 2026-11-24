@@ -1,7 +1,19 @@
 import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, getUnpaidSummary, settleUnpaidExpenses, getBankAccounts } from "@/lib/api";
-import { Expense, UnpaidSummaryResponse, UnpaidSupplierSummary } from "@/types";
+import {
+  api,
+  getGroupedExpenses,
+  getUnpaidSummary,
+  settleUnpaidExpenses,
+  getBankAccounts,
+} from "@/lib/api";
+import {
+  Expense,
+  ExpenseInvoiceGroup,
+  ExpenseInvoiceListResponse,
+  UnpaidSummaryResponse,
+  UnpaidSupplierSummary,
+} from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor, toIsoDate } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
@@ -12,6 +24,12 @@ import {
 } from "@/lib/paymentStatus";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { DpPaymentModal } from "./DpPaymentModal";
+import {
+  ExpenseViewMode,
+  InvoiceFeeFooter,
+  InvoiceViewModeToggle,
+  getInvoiceItemSummaryText,
+} from "@/components/common/InvoiceGroupShared";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +44,7 @@ import {
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
-import { ColumnDef, PaginationState, useTable } from "@tanstack/react-table";
+import { ColumnDef, ExpandedState, PaginationState, useTable } from "@tanstack/react-table";
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import {
@@ -43,6 +61,7 @@ import {
   Eye,
   ExternalLink,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   CheckCheck,
   AlertCircle,
@@ -108,6 +127,10 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number>(25);
+  const [viewMode, setViewMode] = useState<ExpenseViewMode>("grouped");
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+  const [mobileExpandedKeys, setMobileExpandedKeys] = useState<Record<string, boolean>>({});
+  const isGroupedMode = viewMode === "grouped";
 
   // Batch selection & modal states
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -117,7 +140,12 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
   // DP & Pelunasan Modal state
   const [paymentModalExpense, setPaymentModalExpense] = useState<Expense | null>(null);
+  const [paymentModalInvoiceGroup, setPaymentModalInvoiceGroup] = useState<ExpenseInvoiceGroup | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">("percent");
+
+  const toggleMobileExpand = (key: string) => {
+    setMobileExpandedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const { data: bankAccounts = [] } = useQuery({
     queryKey: ["bank-accounts", "active"],
@@ -159,12 +187,12 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       }),
   });
 
-  // 2. Fetch Daftar Transaksi Belum Lunas & DP Terpaginasi
+  // 2. Fetch Daftar Transaksi Belum Lunas & DP Terpaginasi (Per Item Mode)
   const {
     data: expensesData,
-    isLoading: isExpensesLoading,
-    isError: isExpensesError,
-    refetch: refetchExpenses,
+    isLoading: isFlatExpensesLoading,
+    isError: isFlatExpensesError,
+    refetch: refetchFlatExpenses,
   } = useQuery({
     queryKey: [
       "expenses-unpaid",
@@ -181,7 +209,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       sortBy,
       sortOrder,
     ],
-    enabled: !isCustomRangeInvalid,
+    enabled: !isCustomRangeInvalid && !isGroupedMode,
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -223,11 +251,79 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     },
   });
 
-  const rawExpenses: Expense[] = expensesData?.data || [];
-  const totalItems: number = expensesData?.total || 0;
-  const totalPages: number = expensesData?.total_pages || 1;
+  // 2b. Fetch Daftar Transaksi Belum Lunas & DP Terkelompok per Invoice (Default Mode)
+  const {
+    data: groupedData,
+    isLoading: isGroupedExpensesLoading,
+    isError: isGroupedExpensesError,
+    refetch: refetchGroupedExpenses,
+  } = useQuery<ExpenseInvoiceListResponse>({
+    queryKey: [
+      "expenses-unpaid-grouped",
+      page,
+      perPage,
+      monthParam,
+      monthEndParam,
+      yearParam,
+      rangeStart,
+      rangeEnd,
+      statusTab,
+      selectedSupplierId,
+      search,
+      sortBy,
+      sortOrder,
+    ],
+    enabled: !isCustomRangeInvalid && isGroupedMode,
+    queryFn: () => {
+      let apiStatus: string | undefined;
+      let dueUrgency: string | undefined;
+      if (statusTab === "unpaid") apiStatus = "Belum Lunas";
+      else if (statusTab === "overdue") {
+        apiStatus = "Belum Lunas";
+        dueUrgency = "overdue";
+      } else if (statusTab === "soon") {
+        apiStatus = "Belum Lunas";
+        dueUrgency = "soon";
+      } else if (statusTab === "dp") apiStatus = "DP / Sebagian";
+      else if (statusTab === "paid") apiStatus = "Lunas";
 
-  // Filter client-side untuk tab overdue / soon agar presisi dengan tanggal lokal
+      return getGroupedExpenses({
+        page,
+        per_page: perPage,
+        special_type: "unpaid",
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        due_urgency: dueUrgency,
+        month: periodMode === "month" ? selectedMonth : null,
+        month_end:
+          periodMode === "month" && selectedMonthEnd !== selectedMonth
+            ? selectedMonthEnd
+            : null,
+        year: periodMode === "month" ? selectedYear : null,
+        start_date: periodMode === "custom" ? rangeStart : null,
+        end_date: periodMode === "custom" ? rangeEnd : null,
+        status: apiStatus,
+        supplier_id: selectedSupplierId,
+        search: search.trim() || undefined,
+      });
+    },
+  });
+
+  const isExpensesLoading = isGroupedMode ? isGroupedExpensesLoading : isFlatExpensesLoading;
+  const isExpensesError = isGroupedMode ? isGroupedExpensesError : isFlatExpensesError;
+  const refetchExpenses = isGroupedMode ? refetchGroupedExpenses : refetchFlatExpenses;
+
+  const invoiceGroups: ExpenseInvoiceGroup[] = groupedData?.data || [];
+  const rawExpenses: Expense[] = expensesData?.data || [];
+  const totalItems: number = isGroupedMode
+    ? groupedData?.total || 0
+    : expensesData?.total || 0;
+  const totalGroupChildItems: number = groupedData?.total_items || 0;
+  const totalPages: number = isGroupedMode
+    ? groupedData?.total_pages || 1
+    : expensesData?.total_pages || 1;
+
+  // Filter client-side untuk tab overdue / soon pada mode Per Item agar presisi dengan tanggal lokal
   const expenses = useMemo(() => {
     if (statusTab === "overdue") {
       return rawExpenses.filter((e) => getDueUrgencyInfo(e.due_date).urgency === "overdue");
@@ -246,10 +342,12 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     mutationFn: settleUnpaidExpenses,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["accounting-report"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
 
@@ -275,6 +373,28 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     const action = isCurrentlyPaid ? "mark_unpaid" : "mark_paid";
     settleMutation.mutate({
       expense_ids: [expense.id],
+      action,
+      bank_account_id:
+        action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+    });
+  };
+
+  const getGroupActionableIds = (group: ExpenseInvoiceGroup): number[] => {
+    if (statusTab === "paid" || group.is_paid) {
+      return group.items.map((it) => it.id);
+    }
+    const unpaidIds = group.items
+      .filter((it) => !isPaidStatus(it.pay_status))
+      .map((it) => it.id);
+    return unpaidIds.length > 0 ? unpaidIds : group.items.map((it) => it.id);
+  };
+
+  const handleToggleGroupPaid = (group: ExpenseInvoiceGroup) => {
+    const action = group.is_paid ? "mark_unpaid" : "mark_paid";
+    const targetIds = getGroupActionableIds(group);
+    if (targetIds.length === 0) return;
+    settleMutation.mutate({
+      expense_ids: targetIds,
       action,
       bank_account_id:
         action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
@@ -309,9 +429,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       });
   };
 
+  const allVisibleSelectableIds = useMemo(() => {
+    if (isGroupedMode) {
+      return Array.from(
+        new Set(invoiceGroups.flatMap((g) => getGroupActionableIds(g)))
+      );
+    }
+    return expenses.map((e) => e.id);
+  }, [isGroupedMode, invoiceGroups, expenses, statusTab]);
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedIds(expenses.map((e) => e.id));
+      setSelectedIds(allVisibleSelectableIds);
     } else {
       setSelectedIds([]);
     }
@@ -321,6 +450,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+  };
+
+  const handleToggleSelectGroup = (group: ExpenseInvoiceGroup) => {
+    const groupIds = getGroupActionableIds(group);
+    if (groupIds.length === 0) return;
+    const allSelected = groupIds.every((id) => selectedIds.includes(id));
+    setSelectedIds((prev) => {
+      if (allSelected) {
+        return prev.filter((id) => !groupIds.includes(id));
+      }
+      return Array.from(new Set([...prev, ...groupIds]));
+    });
   };
 
   const handleBatchSettle = (action: "mark_paid" | "mark_unpaid") => {
@@ -334,13 +475,20 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   };
 
   const selectedNominal = useMemo(() => {
-    return expenses
+    const pool = isGroupedMode
+      ? Array.from(
+          new Map(
+            invoiceGroups.flatMap((g) => g.items).map((it) => [it.id, it])
+          ).values()
+        )
+      : expenses;
+    return pool
       .filter((e) => selectedIds.includes(e.id))
       .reduce((sum, e) => {
         const bd = getExpensePaymentBreakdown(e);
         return sum + (bd.isPaid ? bd.total : bd.remaining);
       }, 0);
-  }, [expenses, selectedIds]);
+  }, [isGroupedMode, invoiceGroups, expenses, selectedIds]);
 
   const handleDelete = (id: number) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus catatan tagihan ini?")) {
@@ -351,8 +499,27 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   };
 
   const openPaymentModal = (expense: Expense, mode: "full" | "percent" | "amount") => {
+    setPaymentModalInvoiceGroup(null);
     setPaymentModalMode(mode);
     setPaymentModalExpense(expense);
+  };
+
+  const openGroupPaymentModal = (
+    group: ExpenseInvoiceGroup,
+    mode: "full" | "percent" | "amount"
+  ) => {
+    const unpaidItems = group.items.filter((it) => !isPaidStatus(it.pay_status));
+    if (unpaidItems.length === 1) {
+      openPaymentModal(unpaidItems[0], mode);
+      return;
+    }
+    if (group.items.length === 1) {
+      openPaymentModal(group.items[0], mode);
+      return;
+    }
+    setPaymentModalExpense(null);
+    setPaymentModalMode(mode);
+    setPaymentModalInvoiceGroup(group);
   };
 
   const getInitials = (name: string) => {
@@ -373,6 +540,643 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   const dpRemainingNominal = summaryData?.dp_remaining_nominal ?? 0;
   const activeSuppliersCount =
     summaryData?.by_supplier?.filter((s) => s.unpaid_count > 0).length || 0;
+
+  const groupedUnpaidColumns = useMemo<ColumnDef<DataGridFeatures, ExpenseInvoiceGroup>[]>(
+    () => [
+      {
+        id: "expand",
+        header: () => null,
+        cell: ({ row }) =>
+          row.getCanExpand() ? (
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                row.getToggleExpandedHandler()();
+              }}
+              aria-expanded={row.getIsExpanded()}
+              aria-label={
+                row.getIsExpanded()
+                  ? "Tutup rincian item tagihan"
+                  : `Lihat ${row.original.items_count} item tagihan`
+              }
+              className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            >
+              {row.getIsExpanded() ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronRight className="w-4 h-4" />
+              )}
+            </button>
+          ) : null,
+        size: 38,
+        enableSorting: false,
+        meta: {
+          expandedContent: (group: ExpenseInvoiceGroup) => (
+            <div className="bg-slate-50/90 dark:bg-slate-900/70 px-4 sm:px-6 py-3 border-t border-slate-200/70 dark:border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  <Receipt className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                  <span>Rincian Item Tagihan ({group.items.length} item)</span>
+                  {group.invoice_number && group.invoice_number !== "-" && (
+                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                      #{group.invoice_number}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-950/60 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
+                    <tr>
+                      <th className="py-2 px-3 text-left font-semibold w-8">#</th>
+                      <th className="py-2 px-3 text-left font-semibold">Barang &amp; Kategori</th>
+                      <th className="py-2 px-3 text-right font-semibold">Qty</th>
+                      <th className="py-2 px-3 text-right font-semibold">Harga Satuan</th>
+                      <th className="py-2 px-3 text-right font-semibold">Tagihan / Sisa</th>
+                      <th className="py-2 px-3 text-center font-semibold">Status</th>
+                      <th className="py-2 px-3 text-center font-semibold">Aksi Item</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {group.items.map((it, idx) => {
+                      const bd = getExpensePaymentBreakdown(it);
+                      const catColor = getCategoryColor(it.category);
+                      return (
+                        <tr key={it.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/50">
+                          <td className="py-2 px-3 font-mono text-slate-500 tabular-nums">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2 px-3 min-w-[200px]">
+                            <div className="font-semibold text-slate-900 dark:text-slate-100">
+                              {it.item_name}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                              >
+                                {it.category || "Umum"}
+                              </Badge>
+                              {it.notes && it.notes !== "-" && (
+                                <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                                  {it.notes}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
+                            {it.qty} {it.unit || "Pcs"}
+                          </td>
+                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
+                            {formatRupiah(it.unit_price)}
+                          </td>
+                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap">
+                            {bd.isPaid ? (
+                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                                {formatRupiah(bd.total)}
+                              </span>
+                            ) : bd.paid > 0 ? (
+                              <div>
+                                <div className="font-bold text-rose-700 dark:text-rose-400">
+                                  Sisa {formatRupiah(bd.remaining)}
+                                </div>
+                                <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                                  DP {formatRupiah(bd.paid)} / {formatRupiah(bd.total)}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                                {formatRupiah(bd.total)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            {bd.isPaid ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200"
+                              >
+                                Lunas
+                              </Badge>
+                            ) : bd.isDp ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200"
+                              >
+                                DP {Math.round(bd.progressPct)}%
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200"
+                              >
+                                Belum Lunas
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1">
+                              {!bd.isPaid ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      openPaymentModal(it, bd.isDp ? "full" : "percent")
+                                    }
+                                    className="h-7 px-2 text-[10px] font-semibold border-amber-300 text-amber-900 hover:bg-amber-50"
+                                  >
+                                    {bd.isDp ? "Bayar" : "DP"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleTogglePaid(it)}
+                                    disabled={settleMutation.isPending}
+                                    className="h-7 px-2 text-[10px] font-semibold border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                                  >
+                                    Lunas
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleTogglePaid(it)}
+                                  disabled={settleMutation.isPending}
+                                  className="h-7 px-2 text-[10px] font-semibold"
+                                >
+                                  Batal
+                                </Button>
+                              )}
+                              {onViewExpense && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => onViewExpense(it)}
+                                  className="h-7 w-7 text-slate-600"
+                                  title="Lihat Detail"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => onEditExpense(it)}
+                                className="h-7 w-7 text-slate-600"
+                                title="Edit Item"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </Button>
+                              {canDelete && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => handleDelete(it.id)}
+                                  disabled={deletingId === it.id}
+                                  className="h-7 w-7 text-rose-600 hover:text-rose-800"
+                                  title="Hapus Item"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <InvoiceFeeFooter group={group} showPaymentSummary={!group.is_paid} />
+            </div>
+          ),
+        },
+      },
+      {
+        id: "select",
+        header: () => {
+          const allSelected =
+            allVisibleSelectableIds.length > 0 &&
+            allVisibleSelectableIds.every((id) => selectedIds.includes(id));
+          const someSelected =
+            allVisibleSelectableIds.some((id) => selectedIds.includes(id)) && !allSelected;
+          return (
+            <div className="flex justify-center">
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={(chk) => handleSelectAll(Boolean(chk))}
+                aria-label="Pilih semua invoice"
+              />
+            </div>
+          );
+        },
+        cell: ({ row }) => {
+          const g = row.original;
+          const groupIds = getGroupActionableIds(g);
+          const allSelected =
+            groupIds.length > 0 && groupIds.every((id) => selectedIds.includes(id));
+          const someSelected =
+            groupIds.some((id) => selectedIds.includes(id)) && !allSelected;
+          return (
+            <div className="flex justify-center">
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={() => handleToggleSelectGroup(g)}
+                aria-label={`Pilih invoice ${g.invoice_number !== "-" ? g.invoice_number : g.supplier}`}
+              />
+            </div>
+          );
+        },
+        size: 44,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "expense_date",
+        id: "expense_date",
+        header: () => <span>Tanggal</span>,
+        cell: ({ row }) => {
+          const g = row.original;
+          return (
+            <div className="whitespace-nowrap">
+              <div className="font-semibold text-slate-900 dark:text-slate-100">
+                {formatDateId(g.expense_date)}
+              </div>
+              <div className="text-[11px] text-slate-600 dark:text-slate-300">
+                {g.items_count > 1 ? `${g.items_count} item` : `ID: #${g.items[0]?.id ?? "-"}`}
+              </div>
+            </div>
+          );
+        },
+        size: 105,
+      },
+      {
+        accessorKey: "due_date",
+        id: "due_date",
+        header: () => <span>Tempo Pelunasan</span>,
+        cell: ({ row }) => {
+          const g = row.original;
+          const dueInfo = getDueUrgencyInfo(g.due_date);
+          return g.is_paid ? (
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
+              {g.due_date && g.due_date !== "-" ? formatDateId(g.due_date) : "Selesai"}
+            </span>
+          ) : (
+            <div className="space-y-1 whitespace-nowrap">
+              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                {formatDateId(g.due_date)}
+              </div>
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-2 py-0.5 rounded-md ${dueInfo.badgeClass}`}
+              >
+                {dueInfo.label}
+              </Badge>
+            </div>
+          );
+        },
+        size: 140,
+      },
+      {
+        accessorKey: "supplier",
+        id: "supplier",
+        header: () => <span>Toko / Supplier</span>,
+        cell: ({ row }) => {
+          const g = row.original;
+          return (
+            <div>
+              <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="truncate max-w-[155px] lg:max-w-[200px]" title={g.supplier}>
+                  {g.supplier || "Tanpa Supplier"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                {g.invoice_number && g.invoice_number !== "-" && (
+                  <span className="text-[11px] text-slate-700 dark:text-slate-300 font-mono">
+                    No: {g.invoice_number}
+                  </span>
+                )}
+                {g.items_count > 1 && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                    {g.items_count} item
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        },
+        size: 185,
+      },
+      {
+        id: "item_summary",
+        header: () => <span>Barang &amp; Kategori</span>,
+        cell: ({ row }) => {
+          const g = row.original;
+          const summary = getInvoiceItemSummaryText(g);
+          const catColor = getCategoryColor(g.primary_category);
+          const extraCats = Math.max(0, (g.categories?.length || 1) - 1);
+          return (
+            <div>
+              <button
+                type="button"
+                onClick={row.getToggleExpandedHandler()}
+                className="font-medium text-slate-900 dark:text-slate-100 max-w-[210px] truncate text-left hover:text-blue-700 block"
+                title={summary.title}
+              >
+                {summary.title}
+                {summary.extraCount > 0 ? ` +${summary.extraCount} lainnya` : ""}
+              </button>
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                >
+                  {g.primary_category || "Umum"}
+                </Badge>
+                {extraCats > 0 && (
+                  <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                    +{extraCats} kategori
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        },
+        size: 215,
+      },
+      {
+        accessorKey: "total_amount",
+        id: "total_amount",
+        header: () => <div className="text-right w-full">Tagihan &amp; DP</div>,
+        cell: ({ row }) => {
+          const g = row.original;
+          const totalPaymentsCount = g.items.reduce(
+            (sum, it) => sum + (it.payments_count || 0),
+            0
+          );
+          return (
+            <div className="text-right whitespace-nowrap">
+              {g.is_paid ? (
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                    {formatRupiah(g.total_amount)}
+                  </div>
+                  {totalPaymentsCount > 0 && (
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                      {totalPaymentsCount}x pembayaran
+                    </div>
+                  )}
+                </div>
+              ) : g.is_dp || g.paid_amount > 0 ? (
+                <div className="space-y-1 min-w-[145px]">
+                  <div className="font-bold text-rose-700 dark:text-rose-400 tabular-nums text-sm">
+                    Sisa {formatRupiah(g.remaining_amount)}
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-amber-500"
+                      style={{ width: `${Math.min(100, g.payment_progress_pct)}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                    DP {formatRupiah(g.paid_amount)} / {formatRupiah(g.total_amount)}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                    {formatRupiah(g.total_amount)}
+                  </div>
+                  {g.items_count > 1 && (
+                    <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                      {g.items_count} item gabungan
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        },
+        size: 165,
+      },
+      {
+        accessorKey: "pay_status",
+        id: "pay_status",
+        header: () => <div className="text-center w-full">Status</div>,
+        cell: ({ row }) => {
+          const g = row.original;
+          return (
+            <div className="text-center whitespace-nowrap">
+              {g.is_paid ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
+                >
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Lunas
+                </Badge>
+              ) : g.is_dp ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
+                >
+                  <Wallet className="w-3 h-3 mr-1" />
+                  DP {Math.round(g.payment_progress_pct)}%
+                </Badge>
+              ) : g.is_mixed_pay_status ? (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
+                >
+                  <Clock className="w-3 h-3 mr-1" />
+                  Sebagian Lunas
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
+                >
+                  <Clock className="w-3 h-3 mr-1" />
+                  Belum Lunas
+                </Badge>
+              )}
+            </div>
+          );
+        },
+        size: 125,
+      },
+      {
+        id: "nota",
+        header: () => <div className="text-center w-full">Nota</div>,
+        cell: ({ row }) => {
+          const tgLink = parseTelegramLink(row.original.msg_link);
+          return (
+            <div className="text-center whitespace-nowrap">
+              {tgLink?.isUrl && tgLink.url ? (
+                <a
+                  href={tgLink.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
+                  title="Buka pesan nota di Telegram"
+                >
+                  <TelegramIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Nota</span>
+                  <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                </a>
+              ) : (
+                <span className="text-slate-500 dark:text-slate-400">-</span>
+              )}
+            </div>
+          );
+        },
+        size: 90,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-center w-full">Aksi</div>,
+        cell: ({ row }) => {
+          const g = row.original;
+          const single = g.items_count === 1 ? g.items[0] : null;
+          const hasAnyPayments = g.items.some((it) => (it.payments_count || 0) > 0);
+          return (
+            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+              {!g.is_paid ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => openGroupPaymentModal(g, g.is_dp ? "full" : "percent")}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white shadow-2xs"
+                    title={
+                      g.is_dp
+                        ? "Catat cicilan atau pelunasan sisa DP invoice"
+                        : "Catat pembayaran DP atau cicilan invoice"
+                    }
+                  >
+                    <Wallet className="w-3 h-3 mr-1" />
+                    {g.is_dp ? "Bayar / Lunasi" : "DP"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handleToggleGroupPaid(g)}
+                    disabled={settleMutation.isPending}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs"
+                    title="Langsung lunasi seluruh item dalam invoice ini"
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Lunas
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {hasAnyPayments && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openGroupPaymentModal(g, "full")}
+                      className="h-8 px-2.5 text-[11px] font-semibold rounded-lg border-slate-300 text-slate-700 dark:text-slate-200"
+                      title="Lihat riwayat DP dan pelunasan"
+                    >
+                      <History className="w-3 h-3 mr-1" />
+                      Riwayat
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleToggleGroupPaid(g)}
+                    disabled={settleMutation.isPending}
+                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200"
+                    title="Batalkan status Lunas"
+                  >
+                    Batal
+                  </Button>
+                </>
+              )}
+
+              {single ? (
+                <>
+                  {onViewExpense && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onViewExpense(single)}
+                      className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                      title="Lihat Detail"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onEditExpense(single)}
+                    className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                    title="Edit Transaksi"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </Button>
+                  {canDelete && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDelete(single.id)}
+                      disabled={deletingId === single.id}
+                      className="h-8 w-8 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg"
+                      title="Hapus Transaksi"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={row.getToggleExpandedHandler()}
+                  aria-expanded={row.getIsExpanded()}
+                  className="h-8 px-2 text-[11px] font-semibold rounded-lg border-slate-300 dark:border-slate-700"
+                  title="Buka / tutup rincian item"
+                >
+                  {row.getIsExpanded() ? "Tutup" : `Items (${g.items_count})`}
+                </Button>
+              )}
+            </div>
+          );
+        },
+        size: 265,
+      },
+    ],
+    [
+      allVisibleSelectableIds,
+      selectedIds,
+      settleMutation.isPending,
+      onViewExpense,
+      onEditExpense,
+      canDelete,
+      deletingId,
+      statusTab,
+    ]
+  );
 
   const unpaidColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
     () => [
@@ -771,6 +1575,31 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     state: {
       pagination: unpaidPagination,
     },
+    onPaginationChange: (updater) => {
+      const next = typeof updater === "function" ? updater(unpaidPagination) : updater;
+      if (next.pageSize !== perPage) {
+        setPerPage(next.pageSize);
+        setPage(1);
+      } else {
+        setPage(next.pageIndex + 1);
+      }
+    },
+  });
+
+  const groupedUnpaidTable = useTable({
+    features: dataGridFeatures,
+    columns: groupedUnpaidColumns,
+    data: invoiceGroups,
+    manualPagination: true,
+    autoResetExpanded: false,
+    rowCount: totalItems,
+    getRowId: (row: ExpenseInvoiceGroup) => row.group_key,
+    getRowCanExpand: (row) => row.original.items.length > 0,
+    state: {
+      pagination: unpaidPagination,
+      expanded,
+    },
+    onExpandedChange: setExpanded,
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(unpaidPagination) : updater;
       if (next.pageSize !== perPage) {
@@ -1528,8 +2357,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
               Coba Lagi
             </Button>
           </div>
-        ) : expenses.length === 0 ? (
+        ) : (isGroupedMode ? invoiceGroups.length === 0 : expenses.length === 0) ? (
           <div className="p-10 text-center space-y-3">
+            <div className="flex justify-end">
+              <InvoiceViewModeToggle
+                mode={viewMode}
+                onChange={(m) => {
+                  setViewMode(m);
+                  setPage(1);
+                  setSelectedIds([]);
+                }}
+              />
+            </div>
             <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 mx-auto flex items-center justify-center">
               <Receipt className="w-7 h-7" />
             </div>
@@ -1577,15 +2416,333 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           </div>
         ) : (
           <DataTable
-            table={unpaidTable}
+            table={(isGroupedMode ? groupedUnpaidTable : unpaidTable) as any}
             recordCount={totalItems}
             isLoading={isExpensesLoading}
+            header={
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Daftar Tagihan Belum Lunas &amp; DP
+                  </span>
+                  <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
+                    {isGroupedMode
+                      ? `${totalItems} invoice (${totalGroupChildItems} item)`
+                      : `${totalItems} item`}
+                  </Badge>
+                </div>
+                <InvoiceViewModeToggle
+                  mode={viewMode}
+                  onChange={(m) => {
+                    setViewMode(m);
+                    setPage(1);
+                    setSelectedIds([]);
+                  }}
+                />
+              </div>
+            }
             containerClassName="border-0 rounded-none shadow-none"
             tableWrapperClassName="hidden md:block"
           >
             {/* Mobile Card Layout (< md) */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-              {expenses.map((expense) => {
+              {isGroupedMode
+                ? invoiceGroups.map((g) => {
+                    const groupIds = getGroupActionableIds(g);
+                    const isSelected =
+                      groupIds.length > 0 &&
+                      groupIds.every((id) => selectedIds.includes(id));
+                    const dueInfo = getDueUrgencyInfo(g.due_date);
+                    const catColor = getCategoryColor(g.primary_category);
+                    const tgLink = parseTelegramLink(g.msg_link);
+                    const summary = getInvoiceItemSummaryText(g);
+                    const isExpanded = Boolean(mobileExpandedKeys[g.group_key]);
+
+                    return (
+                      <div
+                        key={g.group_key}
+                        className={`p-4 space-y-3 ${
+                          isSelected
+                            ? "bg-rose-50/50 dark:bg-rose-950/20"
+                            : dueInfo.urgency === "overdue" && !g.is_paid
+                            ? "bg-red-50/30 dark:bg-red-950/10"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => handleToggleSelectGroup(g)}
+                              aria-label={`Pilih invoice ${g.supplier}`}
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0">
+                              <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug">
+                                {summary.title}
+                                {summary.extraCount > 0 && (
+                                  <span className="text-blue-700 dark:text-blue-300 ml-1">
+                                    +{summary.extraCount} lainnya
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <span className="font-medium">{g.supplier || "Tanpa Supplier"}</span>
+                                <span>{formatDateId(g.expense_date)}</span>
+                                {g.invoice_number && g.invoice_number !== "-" && (
+                                  <span className="font-mono text-[10px]">
+                                    #{g.invoice_number}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {g.is_paid ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 shrink-0"
+                            >
+                              Lunas
+                            </Badge>
+                          ) : g.is_dp ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 shrink-0"
+                            >
+                              DP {Math.round(g.payment_progress_pct)}%
+                            </Badge>
+                          ) : g.is_mixed_pay_status ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 shrink-0"
+                            >
+                              Sebagian Lunas
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 shrink-0"
+                            >
+                              Belum Lunas
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Nominal & DP Progress */}
+                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-2">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              {g.is_paid ? "Total Invoice" : "Sisa Pelunasan"}
+                            </span>
+                            <span
+                              className={`text-base font-extrabold tabular-nums ${
+                                g.is_paid
+                                  ? "text-emerald-700 dark:text-emerald-400"
+                                  : "text-rose-700 dark:text-rose-400"
+                              }`}
+                            >
+                              {formatRupiah(g.is_paid ? g.total_amount : g.remaining_amount)}
+                            </span>
+                          </div>
+
+                          {(g.is_dp || g.paid_amount > 0) && !g.is_paid && (
+                            <>
+                              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-amber-500"
+                                  style={{ width: `${Math.min(100, g.payment_progress_pct)}%` }}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200 tabular-nums">
+                                <span>Terbayar: {formatRupiah(g.paid_amount)}</span>
+                                <span>Total: {formatRupiah(g.total_amount)}</span>
+                              </div>
+                            </>
+                          )}
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px]">
+                            <div className="flex items-center gap-1.5">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                              >
+                                {g.primary_category || "Umum"}
+                              </Badge>
+                              <span className="text-slate-700 dark:text-slate-200 font-medium">
+                                {g.items_count} item
+                              </span>
+                            </div>
+                            {!g.is_paid && (
+                              <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${dueInfo.badgeClass}`}>
+                                {g.due_date && g.due_date !== "-"
+                                  ? `${formatDateId(g.due_date)} (${dueInfo.label})`
+                                  : dueInfo.label}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Mobile Actions (>= 44px tap targets) */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!g.is_paid ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() =>
+                                  openGroupPaymentModal(g, g.is_dp ? "full" : "percent")
+                                }
+                                className="flex-1 min-h-[44px] text-xs font-bold rounded-xl bg-amber-700 hover:bg-amber-800 text-white"
+                              >
+                                <Wallet className="w-3.5 h-3.5 mr-1.5" />
+                                <span>{g.is_dp ? "Bayar / Lunasi" : "Bayar DP"}</span>
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => handleToggleGroupPaid(g)}
+                                disabled={settleMutation.isPending}
+                                className="min-h-[44px] px-3.5 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                                <span>Lunasi</span>
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleGroupPaid(g)}
+                              disabled={settleMutation.isPending}
+                              className="flex-1 min-h-[44px] px-3.5 text-xs font-semibold rounded-xl"
+                            >
+                              Batal Lunas
+                            </Button>
+                          )}
+
+                          {tgLink?.isUrl && tgLink.url && (
+                            <a
+                              href={tgLink.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl border border-blue-200 bg-blue-50 text-blue-700"
+                              title="Buka pesan nota di Telegram"
+                            >
+                              <TelegramIcon className="w-4 h-4" />
+                            </a>
+                          )}
+
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toggleMobileExpand(g.group_key)}
+                            aria-expanded={isExpanded}
+                            className="min-h-[44px] px-3 text-xs font-semibold rounded-xl gap-1"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronUp className="w-4 h-4" />
+                                <span>Tutup</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-4 h-4" />
+                                <span>Items ({g.items_count})</span>
+                              </>
+                            )}
+                          </Button>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700 p-3 space-y-2.5">
+                            <div className="divide-y divide-slate-200/80 dark:divide-slate-700/80">
+                              {g.items.map((it) => {
+                                const bd = getExpensePaymentBreakdown(it);
+                                return (
+                                  <div key={it.id} className="py-2.5 first:pt-0 last:pb-0 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                                          {it.item_name}
+                                        </div>
+                                        <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
+                                          {it.qty} {it.unit || "Pcs"} × {formatRupiah(it.unit_price)} •{" "}
+                                          {it.category}
+                                        </div>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <div className="font-bold text-xs text-slate-900 dark:text-slate-100 tabular-nums">
+                                          {formatRupiah(bd.isPaid ? bd.total : bd.remaining)}
+                                        </div>
+                                        <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                                          {bd.isPaid ? "Lunas" : bd.isDp ? `DP ${Math.round(bd.progressPct)}%` : "Belum Lunas"}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {!bd.isPaid && (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => openPaymentModal(it, bd.isDp ? "full" : "percent")}
+                                          className="min-h-[44px] px-3 rounded-xl text-xs font-semibold text-amber-900 border-amber-300"
+                                        >
+                                          {bd.isDp ? "Bayar Item" : "DP Item"}
+                                        </Button>
+                                      )}
+                                      {onViewExpense && (
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          onClick={() => onViewExpense(it)}
+                                          className="min-h-[44px] min-w-[44px] rounded-xl"
+                                          aria-label={`Detail ${it.item_name}`}
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        onClick={() => onEditExpense(it)}
+                                        className="min-h-[44px] min-w-[44px] rounded-xl"
+                                        aria-label={`Edit ${it.item_name}`}
+                                      >
+                                        <Edit2 className="w-4 h-4" />
+                                      </Button>
+                                      {canDelete && (
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          onClick={() => handleDelete(it.id)}
+                                          disabled={deletingId === it.id}
+                                          className="min-h-[44px] min-w-[44px] rounded-xl text-rose-700 border-rose-200"
+                                          aria-label={`Hapus ${it.item_name}`}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <InvoiceFeeFooter group={g} showPaymentSummary={!g.is_paid} compact />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                : expenses.map((expense) => {
                 const isSelected = selectedIds.includes(expense.id);
                 const bd = getExpensePaymentBreakdown(expense);
                 const dueInfo = getDueUrgencyInfo(expense.due_date);
@@ -1805,9 +2962,13 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 
       {/* 8. DP & Pelunasan Modal */}
       <DpPaymentModal
-        isOpen={Boolean(paymentModalExpense)}
-        onClose={() => setPaymentModalExpense(null)}
+        isOpen={Boolean(paymentModalExpense || paymentModalInvoiceGroup)}
+        onClose={() => {
+          setPaymentModalExpense(null);
+          setPaymentModalInvoiceGroup(null);
+        }}
         expense={paymentModalExpense}
+        invoiceGroup={paymentModalInvoiceGroup}
         bankAccounts={bankAccounts}
         initialMode={paymentModalMode}
         onPaymentUpdated={(updated) => setPaymentModalExpense(updated)}

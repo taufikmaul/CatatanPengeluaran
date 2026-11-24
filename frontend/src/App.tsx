@@ -1,7 +1,26 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, createExpenseBatch, exchangeSsoToken, getExpenseUsers, getPurchaseRequestStats } from "@/lib/api";
-import { Expense, MonthlyReport, SystemConfig, ExpenseFormData, ExpenseUser, SuggestionsResponse } from "@/types";
+import {
+  api,
+  createExpenseBatch,
+  exchangeSsoToken,
+  getBankAccounts,
+  getExpenseUsers,
+  getGroupedExpenses,
+  getPurchaseRequestStats,
+  settleUnpaidExpenses,
+} from "@/lib/api";
+import {
+  Expense,
+  ExpenseInvoiceGroup,
+  ExpenseInvoiceListResponse,
+  MonthlyReport,
+  SystemConfig,
+  ExpenseFormData,
+  ExpenseUser,
+  SuggestionsResponse,
+} from "@/types";
+import { ExpenseViewMode } from "@/components/common/InvoiceGroupShared";
 import { Spinner } from "@/components/ui/spinner";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -259,6 +278,12 @@ function MainDashboardApp() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number>(25);
+  const [txViewMode, setTxViewMode] = useState<ExpenseViewMode>("grouped");
+
+  const handleTxViewModeChange = (next: ExpenseViewMode) => {
+    setTxViewMode(next);
+    setPage(1);
+  };
 
   // Modal & Drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -290,11 +315,22 @@ function MainDashboardApp() {
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isDataHygieneModalOpen, setIsDataHygieneModalOpen] = useState(false);
   const [paymentModalExpense, setPaymentModalExpense] = useState<Expense | null>(null);
+  const [paymentModalInvoiceGroup, setPaymentModalInvoiceGroup] = useState<ExpenseInvoiceGroup | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">("full");
   const [activeAiChatSessionId, setActiveAiChatSessionId] = useState<number | null>(null);
 
   const handleOpenPaymentModal = (expense: Expense, mode: "full" | "percent" | "amount" = "full") => {
+    setPaymentModalInvoiceGroup(null);
     setPaymentModalExpense(expense);
+    setPaymentModalMode(mode);
+  };
+
+  const handleOpenInvoicePaymentModal = (
+    group: ExpenseInvoiceGroup,
+    mode: "full" | "percent" | "amount" = "full"
+  ) => {
+    setPaymentModalExpense(null);
+    setPaymentModalInvoiceGroup(group);
     setPaymentModalMode(mode);
   };
 
@@ -449,11 +485,11 @@ function MainDashboardApp() {
     staleTime: 30_000,
   });
 
-  // 3. Expenses List Query
+  // 3. Expenses List Query (Per Item Mode)
   const {
     data: expensesData,
-    isLoading: isExpensesLoading,
-    refetch: refetchExpenses,
+    isLoading: isFlatExpensesLoading,
+    refetch: refetchFlatExpenses,
   } = useQuery({
     queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
     queryFn: async () => {
@@ -476,6 +512,46 @@ function MainDashboardApp() {
       const res = await api.get(`/expenses?${params.toString()}`);
       return res.data;
     },
+    enabled: !!authData?.authenticated && canViewFinancialData && txViewMode === "items",
+  });
+
+  // 3a. Grouped Invoice List Query (Default Mode)
+  const {
+    data: groupedExpensesData,
+    isLoading: isGroupedExpensesLoading,
+    refetch: refetchGroupedExpenses,
+  } = useQuery<ExpenseInvoiceListResponse>({
+    queryKey: ["expenses-grouped", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
+    queryFn: () =>
+      getGroupedExpenses({
+        page,
+        per_page: perPage,
+        month: monthStart,
+        month_end: monthEnd && monthEnd !== monthStart ? monthEnd : null,
+        year,
+        category: category || undefined,
+        search: search || undefined,
+        status: status || undefined,
+        pay_method: payMethod || undefined,
+        is_reimbursement: isReimbursement,
+        user_id: selectedUserId,
+      }),
+    enabled: !!authData?.authenticated && canViewFinancialData && txViewMode === "grouped",
+  });
+
+  const isExpensesLoading = txViewMode === "grouped" ? isGroupedExpensesLoading : isFlatExpensesLoading;
+  const activeTotalCount = txViewMode === "grouped" ? (groupedExpensesData?.total || 0) : (expensesData?.total || 0);
+  const activeTotalPages = txViewMode === "grouped" ? (groupedExpensesData?.total_pages || 1) : (expensesData?.total_pages || 1);
+  const activeTotalItemsCount = txViewMode === "grouped" ? (groupedExpensesData?.total_items || 0) : (expensesData?.total || 0);
+
+  const refetchExpenses = () => {
+    refetchFlatExpenses();
+    refetchGroupedExpenses();
+  };
+
+  const { data: bankAccountsData = [] } = useQuery({
+    queryKey: ["bank-accounts", "active"],
+    queryFn: () => getBankAccounts(true),
     enabled: !!authData?.authenticated && canViewFinancialData,
   });
 
@@ -580,6 +656,11 @@ function MainDashboardApp() {
           : "Catatan pengeluaran berhasil ditambahkan"
       );
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -609,6 +690,11 @@ function MainDashboardApp() {
     onSuccess: (saved) => {
       toast.success(`${saved.length} catatan pengeluaran berhasil disimpan`);
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -672,6 +758,11 @@ function MainDashboardApp() {
         toast.info(`Transaksi #${updated.id} diubah ke Belum Lunas`);
       }
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["price-history"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
@@ -692,6 +783,56 @@ function MainDashboardApp() {
     },
   });
 
+  // Mutasi: Toggle Pay Status untuk 1 Grup Invoice
+  const toggleInvoiceStatusMutation = useMutation({
+    mutationFn: async ({
+      expenseIds,
+      action,
+    }: {
+      expenseIds: number[];
+      action: "mark_paid" | "mark_unpaid";
+    }) => {
+      return await settleUnpaidExpenses({ expense_ids: expenseIds, action });
+    },
+    onSuccess: (data) => {
+      if (data.action === "mark_paid") {
+        toast.success(`Invoice ditandai Lunas (${data.updated_count} item)`);
+      } else {
+        toast.info(`Status Lunas invoice dibatalkan (${data.updated_count} item)`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["report"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail || "Gagal mengubah status pembayaran invoice");
+    },
+  });
+
+  const handleToggleInvoiceStatus = (group: ExpenseInvoiceGroup) => {
+    if (group.is_paid) {
+      toggleInvoiceStatusMutation.mutate({
+        expenseIds: group.items.map((it) => it.id),
+        action: "mark_unpaid",
+      });
+    } else {
+      const unpaidIds = group.items
+        .filter((it) => !isPaidStatus(it.pay_status))
+        .map((it) => it.id);
+      if (unpaidIds.length > 0) {
+        toggleInvoiceStatusMutation.mutate({
+          expenseIds: unpaidIds,
+          action: "mark_paid",
+        });
+      }
+    }
+  };
+
   // Mutasi: Delete Expense
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -703,6 +844,11 @@ function MainDashboardApp() {
     onSuccess: () => {
       toast.success("Pengeluaran berhasil dihapus");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
+      queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });
       queryClient.invalidateQueries({ queryKey: ["suggestions"] });
       queryClient.invalidateQueries({ queryKey: ["master-items"] });
@@ -889,13 +1035,19 @@ function MainDashboardApp() {
                         onNavigateTab={(t) => handleTabChange(t)}
                         reportData={reportData}
                         expenses={expensesData?.data || []}
+                        invoiceGroups={groupedExpensesData?.data || []}
+                        viewMode={txViewMode}
+                        onViewModeChange={handleTxViewModeChange}
+                        totalItemsCount={activeTotalItemsCount}
                         isExpensesLoading={isExpensesLoading}
                         page={page}
-                        totalPages={expensesData?.total_pages || 1}
-                        totalCount={expensesData?.total || 0}
+                        totalPages={activeTotalPages}
+                        totalCount={activeTotalCount}
                         onPageChange={setPage}
                         onToggleStatus={handleToggleStatus}
+                        onToggleInvoiceStatus={handleToggleInvoiceStatus}
                         onOpenPaymentModal={handleOpenPaymentModal}
+                        onOpenInvoicePaymentModal={handleOpenInvoicePaymentModal}
                         onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
@@ -1184,18 +1336,24 @@ function MainDashboardApp() {
                     {/* Admin Input Expense Table */}
                     <ExpenseTable
                       expenses={expensesData?.data || []}
+                      invoiceGroups={groupedExpensesData?.data || []}
+                      viewMode={txViewMode}
+                      onViewModeChange={handleTxViewModeChange}
+                      totalItemsCount={activeTotalItemsCount}
                       isLoading={isExpensesLoading}
                       page={page}
                       pageSize={perPage}
-                      totalPages={expensesData?.total_pages || 1}
-                      totalCount={expensesData?.total || 0}
+                      totalPages={activeTotalPages}
+                      totalCount={activeTotalCount}
                       onPageChange={setPage}
                       onPageSizeChange={(size) => {
                         setPerPage(size);
                         setPage(1);
                       }}
                       onToggleStatus={handleToggleStatus}
+                      onToggleInvoiceStatus={handleToggleInvoiceStatus}
                       onOpenPaymentModal={handleOpenPaymentModal}
+                      onOpenInvoicePaymentModal={handleOpenInvoicePaymentModal}
                       onEditExpense={(item) => {
                         setRepeatingExpense(null);
                         setEditingExpense(item);
@@ -1247,13 +1405,19 @@ function MainDashboardApp() {
                         onNavigateTab={(t) => handleTabChange(t)}
                         reportData={reportData}
                         expenses={expensesData?.data || []}
+                        invoiceGroups={groupedExpensesData?.data || []}
+                        viewMode={txViewMode}
+                        onViewModeChange={handleTxViewModeChange}
+                        totalItemsCount={activeTotalItemsCount}
                         isExpensesLoading={isExpensesLoading}
                         page={page}
-                        totalPages={expensesData?.total_pages || 1}
-                        totalCount={expensesData?.total || 0}
+                        totalPages={activeTotalPages}
+                        totalCount={activeTotalCount}
                         onPageChange={setPage}
                         onToggleStatus={handleToggleStatus}
+                        onToggleInvoiceStatus={handleToggleInvoiceStatus}
                         onOpenPaymentModal={handleOpenPaymentModal}
+                        onOpenInvoicePaymentModal={handleOpenInvoicePaymentModal}
                         onMarkPaidById={(id) => toggleStatusMutation.mutate({ id, newStatus: "Lunas" })}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
@@ -1405,18 +1569,24 @@ function MainDashboardApp() {
                       {/* Desktop Expense Data Table */}
                       <ExpenseTable
                         expenses={expensesData?.data || []}
+                        invoiceGroups={groupedExpensesData?.data || []}
+                        viewMode={txViewMode}
+                        onViewModeChange={handleTxViewModeChange}
+                        totalItemsCount={activeTotalItemsCount}
                         isLoading={isExpensesLoading}
                         page={page}
                         pageSize={perPage}
-                        totalPages={expensesData?.total_pages || 1}
-                        totalCount={expensesData?.total || 0}
+                        totalPages={activeTotalPages}
+                        totalCount={activeTotalCount}
                         onPageChange={setPage}
                         onPageSizeChange={(size) => {
                           setPerPage(size);
                           setPage(1);
                         }}
                         onToggleStatus={handleToggleStatus}
+                        onToggleInvoiceStatus={handleToggleInvoiceStatus}
                         onOpenPaymentModal={handleOpenPaymentModal}
+                        onOpenInvoicePaymentModal={handleOpenInvoicePaymentModal}
                         onEditExpense={(item) => {
                           setRepeatingExpense(null);
                           setEditingExpense(item);
@@ -1572,18 +1742,24 @@ function MainDashboardApp() {
                     {/* Admin Input Expense Table */}
                     <ExpenseTable
                       expenses={expensesData?.data || []}
+                      invoiceGroups={groupedExpensesData?.data || []}
+                      viewMode={txViewMode}
+                      onViewModeChange={handleTxViewModeChange}
+                      totalItemsCount={activeTotalItemsCount}
                       isLoading={isExpensesLoading}
                       page={page}
                       pageSize={perPage}
-                      totalPages={expensesData?.total_pages || 1}
-                      totalCount={expensesData?.total || 0}
+                      totalPages={activeTotalPages}
+                      totalCount={activeTotalCount}
                       onPageChange={setPage}
                       onPageSizeChange={(size) => {
                         setPerPage(size);
                         setPage(1);
                       }}
                       onToggleStatus={handleToggleStatus}
+                      onToggleInvoiceStatus={handleToggleInvoiceStatus}
                       onOpenPaymentModal={handleOpenPaymentModal}
+                      onOpenInvoicePaymentModal={handleOpenInvoicePaymentModal}
                       onEditExpense={(item) => {
                         setRepeatingExpense(null);
                         setEditingExpense(item);
@@ -2001,19 +2177,38 @@ function MainDashboardApp() {
         )}
 
         {/* DP & Pelunasan Payment Modal */}
-        {paymentModalExpense && (
+        {(paymentModalExpense || paymentModalInvoiceGroup) && (
           <React.Suspense fallback={null}>
             <DpPaymentModal
-              isOpen={Boolean(paymentModalExpense)}
-              onClose={() => setPaymentModalExpense(null)}
+              isOpen={Boolean(paymentModalExpense || paymentModalInvoiceGroup)}
+              onClose={() => {
+                setPaymentModalExpense(null);
+                setPaymentModalInvoiceGroup(null);
+              }}
               expense={paymentModalExpense}
+              invoiceGroup={paymentModalInvoiceGroup}
+              bankAccounts={bankAccountsData}
               initialMode={paymentModalMode}
               onPaymentUpdated={() => {
                 queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
                 queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
                 queryClient.invalidateQueries({ queryKey: ["report"] });
                 queryClient.invalidateQueries({ queryKey: ["expense-payments"] });
+                queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
+              }}
+              onInvoiceUpdated={() => {
+                queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
+                queryClient.invalidateQueries({ queryKey: ["report"] });
                 queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
               }}
             />

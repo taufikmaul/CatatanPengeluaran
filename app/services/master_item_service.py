@@ -464,7 +464,11 @@ async def list_master_items(db: AsyncSession) -> list[MasterItem]:
     return list(result.scalars().all())
 
 
-async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict]) -> list[dict]:
+async def match_and_normalize_extracted_items(
+    db: AsyncSession,
+    items: list[dict],
+    preserve_explicit_pay_status: bool = False,
+) -> list[dict]:
     """
     Cocokkan setiap item hasil ekstraksi AI/input dengan katalog MasterItem.
     - Mengubah `barang` ke `MasterItem.item_name`
@@ -518,7 +522,7 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
             if "pay_method" in item:
                 item["pay_method"] = norm_pm
 
-            # Status pembayaran: selain pembayaran COD maka statusnya lunas
+            # Status pembayaran: selain pembayaran COD maka statusnya lunas (kecuali input dashboard/batch eksplisit)
             notes_str = str(item.get("keterangan") or item.get("notes") or "").lower()
             if norm_pm == "COD":
                 is_explicit_paid = any(k in notes_str for k in ("sudah lunas", "sudah dibayar", "lunas kasir", "sudah bayar"))
@@ -527,7 +531,7 @@ async def match_and_normalize_extracted_items(db: AsyncSession, items: list[dict
                     item["status_pembayaran"] = item.get("status_pembayaran") or cod_status
                 if "pay_status" in item:
                     item["pay_status"] = item.get("pay_status") or cod_status
-            else:
+            elif not preserve_explicit_pay_status:
                 if "status_pembayaran" in item:
                     item["status_pembayaran"] = "Lunas"
                 if "pay_status" in item:

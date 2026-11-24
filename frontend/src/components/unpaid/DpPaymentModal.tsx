@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BankAccount, Expense, ExpensePayment } from "@/types";
-import { deleteExpensePayment, getExpensePayments, recordExpensePayment } from "@/lib/api";
+import { BankAccount, Expense, ExpenseInvoiceGroup, ExpensePayment } from "@/types";
+import {
+  deleteExpensePayment,
+  getExpensePayments,
+  recordExpensePayment,
+  recordInvoicePayment,
+} from "@/lib/api";
 import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -44,9 +49,11 @@ interface DpPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   expense: Expense | null;
+  invoiceGroup?: ExpenseInvoiceGroup | null;
   bankAccounts?: BankAccount[];
   initialMode?: "full" | "percent" | "amount";
   onPaymentUpdated?: (updated: Expense) => void;
+  onInvoiceUpdated?: () => void;
 }
 
 const PAYMENT_METHODS = ["Transfer", "Tunai", "QRIS", "Debit", "Kredit"];
@@ -55,11 +62,18 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   isOpen,
   onClose,
   expense,
+  invoiceGroup = null,
   bankAccounts = [],
   initialMode = "percent",
   onPaymentUpdated,
+  onInvoiceUpdated,
 }) => {
   const queryClient = useQueryClient();
+
+  const isMultiInvoiceMode = Boolean(invoiceGroup && invoiceGroup.items.length > 1);
+  const activeSingleExpense =
+    expense ||
+    (invoiceGroup && invoiceGroup.items.length === 1 ? invoiceGroup.items[0] : null);
 
   const [payMode, setPayMode] = useState<"full" | "percent" | "amount">(initialMode);
   const [percentVal, setPercentVal] = useState<number>(50);
@@ -73,49 +87,129 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   const breakdown = useMemo(() => {
-    if (!expense) {
+    if (isMultiInvoiceMode && invoiceGroup) {
+      return {
+        total: invoiceGroup.total_amount,
+        paid: invoiceGroup.paid_amount,
+        remaining: invoiceGroup.remaining_amount,
+        progressPct: invoiceGroup.payment_progress_pct,
+        isPaid: invoiceGroup.is_paid,
+        isDp: invoiceGroup.is_dp,
+      };
+    }
+    if (!activeSingleExpense) {
       return { total: 0, paid: 0, remaining: 0, progressPct: 0, isPaid: false, isDp: false };
     }
-    return getExpensePaymentBreakdown(expense);
-  }, [expense]);
+    return getExpensePaymentBreakdown(activeSingleExpense);
+  }, [isMultiInvoiceMode, invoiceGroup, activeSingleExpense]);
 
   useEffect(() => {
-    if (!isOpen || !expense) return;
-    const bd = getExpensePaymentBreakdown(expense);
+    if (!isOpen) return;
+    if (isMultiInvoiceMode && invoiceGroup) {
+      const defaultMode = invoiceGroup.is_dp ? "full" : initialMode;
+      setPayMode(defaultMode);
+      setPercentVal(50);
+      setAmountVal(
+        defaultMode === "full"
+          ? invoiceGroup.remaining_amount
+          : Math.round(invoiceGroup.total_amount * 0.5)
+      );
+      setPaymentDate(new Date().toISOString().split("T")[0]);
+      setPayMethod(
+        invoiceGroup.pay_method && invoiceGroup.pay_method !== "Tempo / Tagihan" && !invoiceGroup.pay_method.includes("(+")
+          ? invoiceGroup.pay_method
+          : "Transfer"
+      );
+      const firstBankId = invoiceGroup.items.find((it) => it.bank_account_id)?.bank_account_id;
+      setBankAccountId(firstBankId ? String(firstBankId) : "");
+      setDueDate(
+        invoiceGroup.due_date && invoiceGroup.due_date !== "-"
+          ? invoiceGroup.due_date.slice(0, 10)
+          : getTempoQuickDate(14)
+      );
+      setReferenceNo("");
+      setNotes("");
+      setFormError(null);
+      return;
+    }
+
+    if (!activeSingleExpense) return;
+    const bd = getExpensePaymentBreakdown(activeSingleExpense);
     const defaultMode = bd.isDp ? "full" : initialMode;
     setPayMode(defaultMode);
     setPercentVal(50);
     setAmountVal(defaultMode === "full" ? bd.remaining : Math.round(bd.total * 0.5));
     setPaymentDate(new Date().toISOString().split("T")[0]);
     setPayMethod(
-      expense.pay_method && expense.pay_method !== "Tempo / Tagihan"
-        ? expense.pay_method
+      activeSingleExpense.pay_method && activeSingleExpense.pay_method !== "Tempo / Tagihan"
+        ? activeSingleExpense.pay_method
         : "Transfer"
     );
-    setBankAccountId(expense.bank_account_id ? String(expense.bank_account_id) : "");
+    setBankAccountId(activeSingleExpense.bank_account_id ? String(activeSingleExpense.bank_account_id) : "");
     setDueDate(
-      expense.due_date && expense.due_date !== "-"
-        ? expense.due_date.slice(0, 10)
+      activeSingleExpense.due_date && activeSingleExpense.due_date !== "-"
+        ? activeSingleExpense.due_date.slice(0, 10)
         : getTempoQuickDate(14)
     );
     setReferenceNo("");
     setNotes("");
     setFormError(null);
-  }, [isOpen, expense, initialMode]);
+  }, [isOpen, isMultiInvoiceMode, invoiceGroup, activeSingleExpense, initialMode]);
 
   const {
-    data: payments = [],
-    isLoading: isPaymentsLoading,
-    isError: isPaymentsError,
-    refetch: refetchPayments,
+    data: singlePayments = [],
+    isLoading: isSinglePaymentsLoading,
+    isError: isSinglePaymentsError,
+    refetch: refetchSinglePayments,
   } = useQuery<ExpensePayment[]>({
-    queryKey: ["expense-payments", expense?.id],
-    queryFn: () => getExpensePayments(expense!.id),
-    enabled: isOpen && Boolean(expense?.id),
+    queryKey: ["expense-payments", activeSingleExpense?.id],
+    queryFn: () => getExpensePayments(activeSingleExpense!.id),
+    enabled: isOpen && !isMultiInvoiceMode && Boolean(activeSingleExpense?.id),
   });
 
+  const {
+    data: multiPayments = [],
+    isLoading: isMultiPaymentsLoading,
+    isError: isMultiPaymentsError,
+    refetch: refetchMultiPayments,
+  } = useQuery<ExpensePayment[]>({
+    queryKey: [
+      "invoice-payments",
+      invoiceGroup?.group_key,
+      invoiceGroup?.items.map((it) => it.id).join(","),
+    ],
+    queryFn: async () => {
+      if (!invoiceGroup) return [];
+      const lists = await Promise.all(
+        invoiceGroup.items.map((it) => getExpensePayments(it.id))
+      );
+      return lists
+        .flat()
+        .sort(
+          (a, b) =>
+            (a.payment_date || "").localeCompare(b.payment_date || "") ||
+            a.id - b.id
+        );
+    },
+    enabled: isOpen && isMultiInvoiceMode && Boolean(invoiceGroup),
+  });
+
+  const isPaymentsLoading = isMultiInvoiceMode ? isMultiPaymentsLoading : isSinglePaymentsLoading;
+  const isPaymentsError = isMultiInvoiceMode ? isMultiPaymentsError : isSinglePaymentsError;
+  const refetchPayments = isMultiInvoiceMode ? refetchMultiPayments : refetchSinglePayments;
+
+  const invoiceItemNameMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    invoiceGroup?.items.forEach((it) => {
+      map[it.id] = it.item_name;
+    });
+    return map;
+  }, [invoiceGroup]);
+
+  const payments = isMultiInvoiceMode ? multiPayments : singlePayments;
+
   const payAmountNow = useMemo(() => {
-    if (!expense || breakdown.remaining <= 0) return 0;
+    if ((!activeSingleExpense && !isMultiInvoiceMode) || breakdown.remaining <= 0) return 0;
     if (payMode === "full") return breakdown.remaining;
     if (payMode === "percent") {
       const pct = Math.max(0, Math.min(100, Number(percentVal || 0)));
@@ -123,7 +217,7 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
       return Math.min(breakdown.remaining, raw);
     }
     return Math.max(0, Number(amountVal || 0));
-  }, [expense, breakdown, payMode, percentVal, amountVal]);
+  }, [activeSingleExpense, isMultiInvoiceMode, breakdown, payMode, percentVal, amountVal]);
 
   const remainingAfterPay = Math.max(0, breakdown.remaining - payAmountNow);
   const willBeFull = remainingAfterPay <= 1;
@@ -143,25 +237,33 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+    queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
     queryClient.invalidateQueries({ queryKey: ["unpaid-summary"] });
     queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+    queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
     queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
     queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
     queryClient.invalidateQueries({ queryKey: ["report"] });
     queryClient.invalidateQueries({ queryKey: ["accounting-report"] });
     queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     queryClient.invalidateQueries({ queryKey: ["supplier"] });
     queryClient.invalidateQueries({ queryKey: ["bank-accounts"] });
-    if (expense?.id) {
-      queryClient.invalidateQueries({ queryKey: ["expense-payments", expense.id] });
+    if (activeSingleExpense?.id) {
+      queryClient.invalidateQueries({ queryKey: ["expense-payments", activeSingleExpense.id] });
+    }
+    if (invoiceGroup?.group_key) {
+      queryClient.invalidateQueries({ queryKey: ["invoice-payments", invoiceGroup.group_key] });
     }
   };
 
-  const isCod = isCodExpense(expense);
+  const isCod = isMultiInvoiceMode && invoiceGroup
+    ? invoiceGroup.items.some((it) => isCodExpense(it))
+    : isCodExpense(activeSingleExpense);
   const hasInst = hasInstallmentHistory({ payments });
 
   const recordMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async (): Promise<{ updated: Expense | Expense[]; isInvoice: boolean }> => {
       const effectivePaymentType = willBeFull
         ? "settlement"
         : breakdown.paid <= 0
@@ -184,7 +286,27 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
           : `Pembayaran Termin #1 (${effectivePctOfTotal}%)`
         : `Pembayaran Termin #${payments.filter((p) => p.payment_type === "installment").length + 1}`;
 
-      return recordExpensePayment(expense!.id, {
+      if (isMultiInvoiceMode && invoiceGroup) {
+        const unpaidIds = invoiceGroup.items
+          .filter((it) => getExpensePaymentBreakdown(it).remaining > 0)
+          .map((it) => it.id);
+        const updatedList = await recordInvoicePayment({
+          expense_ids: unpaidIds,
+          settle_full: payMode === "full",
+          dp_percent: payMode === "percent" ? Number(percentVal) : null,
+          amount: payMode === "amount" ? Number(amountVal) : null,
+          payment_type: effectivePaymentType,
+          payment_date: paymentDate,
+          pay_method: payMethod,
+          bank_account_id: bankAccountId ? Number(bankAccountId) : null,
+          reference_no: referenceNo.trim() || null,
+          notes: notes.trim() || defaultNotes,
+          due_date: !willBeFull && dueDate ? dueDate : null,
+        });
+        return { updated: updatedList, isInvoice: true };
+      }
+
+      const updatedSingle = await recordExpensePayment(activeSingleExpense!.id, {
         settle_full: payMode === "full",
         dp_percent: payMode === "percent" ? Number(percentVal) : null,
         amount: payMode === "amount" ? Number(amountVal) : null,
@@ -196,9 +318,31 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
         notes: notes.trim() || defaultNotes,
         due_date: !willBeFull && dueDate ? dueDate : null,
       });
+      return { updated: updatedSingle, isInvoice: false };
     },
-    onSuccess: (updatedExpense) => {
+    onSuccess: (res) => {
       invalidateAll();
+      if (res.isInvoice) {
+        onInvoiceUpdated?.();
+        if (willBeFull) {
+          toast.success(`Seluruh tagihan invoice (${invoiceGroup?.items_count} item) telah lunas.`);
+          confetti({
+            particleCount: 55,
+            spread: 65,
+            origin: { y: 0.7 },
+          });
+        } else {
+          toast.success(
+            `Pembayaran ${formatRupiah(payAmountNow)} dicatat ke invoice. Sisa: ${formatRupiah(
+              remainingAfterPay
+            )}.`
+          );
+        }
+        onClose();
+        return;
+      }
+
+      const updatedExpense = res.updated as Expense;
       if (onPaymentUpdated) onPaymentUpdated(updatedExpense);
 
       if (updatedExpense.pay_status === "Lunas") {
@@ -226,10 +370,12 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   });
 
   const deletePaymentMutation = useMutation({
-    mutationFn: (paymentId: number) => deleteExpensePayment(expense!.id, paymentId),
+    mutationFn: ({ expId, paymentId }: { expId: number; paymentId: number }) =>
+      deleteExpensePayment(expId, paymentId),
     onSuccess: (updatedExpense) => {
       invalidateAll();
-      if (onPaymentUpdated) onPaymentUpdated(updatedExpense);
+      onInvoiceUpdated?.();
+      if (!isMultiInvoiceMode && onPaymentUpdated) onPaymentUpdated(updatedExpense);
       toast.info("Riwayat pembayaran dihapus dan sisa tagihan diperbarui.");
     },
     onError: (err: any) => {
@@ -240,7 +386,7 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!expense) return;
+    if (!activeSingleExpense && !isMultiInvoiceMode) return;
 
     if (payAmountNow <= 0) {
       setFormError("Nominal pembayaran harus lebih dari Rp 0.");
@@ -262,9 +408,18 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
     recordMutation.mutate();
   };
 
-  if (!expense) return null;
+  if (!activeSingleExpense && !isMultiInvoiceMode) return null;
 
-  const dueInfo = getDueUrgencyInfo(expense.due_date);
+  const targetDueStr = isMultiInvoiceMode && invoiceGroup
+    ? invoiceGroup.due_date
+    : activeSingleExpense?.due_date;
+  const targetExpenseDate = isMultiInvoiceMode && invoiceGroup
+    ? invoiceGroup.expense_date
+    : activeSingleExpense?.expense_date || "";
+  const targetInvoiceNo = isMultiInvoiceMode && invoiceGroup
+    ? invoiceGroup.invoice_number
+    : activeSingleExpense?.invoice_number;
+  const dueInfo = getDueUrgencyInfo(targetDueStr);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -281,13 +436,28 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                     ? "DP & Pelunasan Tagihan"
                     : "Cicilan & Pelunasan Hutang (Termin)"}
                 </DialogTitle>
-                <Badge variant="outline" className="font-mono text-[11px]">
-                  #{expense.id}
-                </Badge>
+                {isMultiInvoiceMode && invoiceGroup ? (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    {invoiceGroup.invoice_number && invoiceGroup.invoice_number !== "-"
+                      ? `#${invoiceGroup.invoice_number}`
+                      : `${invoiceGroup.items_count} Item`}
+                  </Badge>
+                ) : activeSingleExpense ? (
+                  <Badge variant="outline" className="font-mono text-[11px]">
+                    #{activeSingleExpense.id}
+                  </Badge>
+                ) : null}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                {expense.item_name}
-                {expense.supplier && expense.supplier !== "-" ? ` (${expense.supplier})` : ""}
+                {isMultiInvoiceMode && invoiceGroup
+                  ? `${invoiceGroup.supplier && invoiceGroup.supplier !== "-" ? invoiceGroup.supplier : "Invoice Gabungan"} (${invoiceGroup.items_count} item)`
+                  : activeSingleExpense
+                  ? `${activeSingleExpense.item_name}${
+                      activeSingleExpense.supplier && activeSingleExpense.supplier !== "-"
+                        ? ` (${activeSingleExpense.supplier})`
+                        : ""
+                    }`
+                  : ""}
               </p>
             </div>
 
@@ -359,12 +529,12 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              <span>Tanggal Nota: {formatDateId(expense.expense_date)}</span>
-              {expense.invoice_number && expense.invoice_number !== "-" && (
-                <span className="font-mono">No. Invoice: {expense.invoice_number}</span>
+              <span>Tanggal Nota: {formatDateId(targetExpenseDate)}</span>
+              {targetInvoiceNo && targetInvoiceNo !== "-" && (
+                <span className="font-mono">No. Invoice: {targetInvoiceNo}</span>
               )}
-              {expense.due_date && expense.due_date !== "-" && (
-                <span>Tempo Saat Ini: {formatDateId(expense.due_date)}</span>
+              {targetDueStr && targetDueStr !== "-" && (
+                <span>Tempo Saat Ini: {formatDateId(targetDueStr)}</span>
               )}
             </div>
           </div>
@@ -646,6 +816,11 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                               ({p.dp_percent}%)
                             </span>
                           )}
+                          {isMultiInvoiceMode && invoiceItemNameMap[p.expense_id] && (
+                            <span className="text-[11px] text-slate-600 dark:text-slate-300 truncate max-w-[180px]">
+                              • {invoiceItemNameMap[p.expense_id]}
+                            </span>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
@@ -679,7 +854,10 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                               `Hapus pembayaran ${typeLabel} senilai ${formatRupiah(p.amount)}?`
                             )
                           ) {
-                            deletePaymentMutation.mutate(p.id);
+                            deletePaymentMutation.mutate({
+                              expId: p.expense_id,
+                              paymentId: p.id,
+                            });
                           }
                         }}
                         className="h-8 px-2.5 text-rose-600 hover:text-rose-700 shrink-0 self-end sm:self-center"

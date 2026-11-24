@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
+  BankAccount,
   ExpenseFormData,
   ExpenseUser,
   ItemSuggestion,
@@ -7,13 +8,21 @@ import {
 } from "@/types";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
+import { getTempoQuickDate, isDpStatus, isPaidStatus } from "@/lib/paymentStatus";
 import { checkInvoiceDuplicate } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
-import { InputGroupButton } from "@/components/ui/input-group";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { toast } from "sonner";
 import {
   Plus,
   Trash2,
@@ -22,6 +31,29 @@ import {
 } from "lucide-react";
 import { InlineMathInput } from "./InlineMathInput";
 import { PriceSpikeAlert } from "./PriceSpikeAlert";
+
+function allocateInvoiceDpAcrossRows(
+  rowTotals: number[],
+  targetDp: number
+): number[] {
+  const sumTotals = rowTotals.reduce((a, b) => a + b, 0);
+  if (sumTotals <= 0 || targetDp <= 0) {
+    return rowTotals.map(() => 0);
+  }
+  const cappedTarget = Math.min(targetDp, sumTotals);
+  const allocs = rowTotals.map((t) =>
+    t > 0 ? Math.min(t, Math.floor((cappedTarget * t) / sumTotals)) : 0
+  );
+  let remainder = cappedTarget - allocs.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < rowTotals.length && remainder > 0; i++) {
+    const cap = rowTotals[i] - allocs[i];
+    if (cap <= 0) continue;
+    const add = Math.min(cap, remainder);
+    allocs[i] += add;
+    remainder -= add;
+  }
+  return allocs;
+}
 
 export interface MultiExpenseRow {
   rowId: string;
@@ -43,6 +75,7 @@ interface ExpenseMultiItemFormProps {
   itemSuggestions: ItemSuggestion[];
   supplierSuggestions: string[];
   usersList: ExpenseUser[];
+  bankAccounts?: BankAccount[];
   isSubmitting: boolean;
   ocrSeedItems?: OcrExtractedItem[];
   onBatchSubmit: (items: ExpenseFormData[]) => void;
@@ -72,6 +105,7 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
   itemSuggestions,
   supplierSuggestions,
   usersList,
+  bankAccounts = [],
   isSubmitting,
   ocrSeedItems,
   onBatchSubmit,
@@ -93,6 +127,11 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
   const [payMethod, setPayMethod] = useState("Transfer");
   const [payStatus, setPayStatus] = useState("Lunas");
   const [dueDate, setDueDate] = useState("-");
+  const [dpType, setDpType] = useState<"percent" | "amount">("percent");
+  const [dpPercent, setDpPercent] = useState<number>(50);
+  const [dpPaidAmount, setDpPaidAmount] = useState<number>(0);
+  const [dpPaymentDate, setDpPaymentDate] = useState<string>("");
+  const [bankAccountId, setBankAccountId] = useState<number | null>(null);
   const [isReimbursement, setIsReimbursement] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
   const [msgLink] = useState("Web Dashboard");
@@ -123,6 +162,26 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       }
       if (first.metode_bayar && paymentMethods.includes(first.metode_bayar)) {
         setPayMethod(first.metode_bayar);
+        if (first.metode_bayar === "COD") {
+          const codStatus = first.status_pembayaran || "Belum Lunas";
+          setPayStatus(codStatus);
+          if (!isPaidStatus(codStatus)) {
+            setDueDate(getTempoQuickDate(7, first.tanggal || undefined));
+          }
+        } else if (first.status_pembayaran && !isPaidStatus(first.status_pembayaran)) {
+          setPayStatus(first.status_pembayaran);
+          setDueDate(
+            getTempoQuickDate(
+              isDpStatus(first.status_pembayaran) ? 14 : 7,
+              first.tanggal || undefined
+            )
+          );
+        }
+      } else if (first.status_pembayaran && !isPaidStatus(first.status_pembayaran)) {
+        setPayStatus(first.status_pembayaran);
+      }
+      if (first.is_reimbursement !== undefined) {
+        setIsReimbursement(Boolean(first.is_reimbursement));
       }
       setShippingFee(Number(first.ongkir ?? first.shipping_fee ?? 0));
       setTax(Number(first.tax ?? 0));
@@ -181,6 +240,17 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       .filter((s) => s && s !== "-")
       .map((s) => ({ value: s, label: s }));
   }, [supplierSuggestions]);
+
+  const bankAccountOptions = useMemo(() => {
+    return [
+      { value: "", label: "Otomatis (Sesuai Mapping Metode Bayar)" },
+      ...bankAccounts.map((acc) => ({
+        value: String(acc.id),
+        label: `${acc.name} (${acc.account_code})`,
+        sublabel: acc.bank_name,
+      })),
+    ];
+  }, [bankAccounts]);
 
   const userSelectOptions = useMemo(() => {
     return [
@@ -275,9 +345,24 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     return Object.entries(map);
   }, [rows]);
 
-  const isUnpaid =
-    payStatus.toLowerCase().includes("belum") ||
-    payStatus.toLowerCase().includes("hutang");
+  const isPaid = isPaidStatus(payStatus);
+  const isDp = isDpStatus(payStatus);
+  const isUnpaid = !isPaid;
+
+  const effectiveDpAmount = useMemo(() => {
+    if (!isDp || grandTotal <= 0) return 0;
+    if (dpType === "percent") {
+      const pct = Math.max(1, Math.min(99, Number(dpPercent || 50)));
+      return Math.round((grandTotal * pct) / 100);
+    }
+    return Math.min(grandTotal, Math.max(0, Number(dpPaidAmount || 0)));
+  }, [isDp, grandTotal, dpType, dpPercent, dpPaidAmount]);
+
+  const remainingAfterDp = Math.max(0, grandTotal - effectiveDpAmount);
+  const effectiveDpPct =
+    grandTotal > 0
+      ? Math.round((effectiveDpAmount / grandTotal) * 1000) / 10
+      : 0;
 
   const handleSubmitMulti = (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,6 +370,55 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     if (validRows.length === 0) {
       setFormError("Harap isi minimal 1 nama barang/keperluan pada daftar nota.");
       return;
+    }
+
+    const rowTotals = validRows.map((r, idx) => {
+      const prof = getCategoryFormProfile(r.category);
+      const q = prof.hideQty ? 1 : Number(r.qty) > 0 ? Number(r.qty) : 1;
+      const up = Number(r.unit_price) || 0;
+      const rowShip = idx === 0 ? Number(shippingFee || 0) : 0;
+      const rowTax = idx === 0 ? Number(tax || 0) : 0;
+      const rowOther = idx === 0 ? Number(otherFee || 0) : 0;
+      const rowDisc = idx === 0 ? Number(discount || 0) : 0;
+      return Math.max(0, q * up + rowShip + rowTax + rowOther - rowDisc);
+    });
+    const actualGrandTotal = rowTotals.reduce((a, b) => a + b, 0);
+
+    if (actualGrandTotal <= 0) {
+      const msg = "Total nominal nota harus lebih dari Rp 0.";
+      setFormError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    let dpAllocs: number[] = validRows.map(() => 0);
+    if (isDp) {
+      const pctBounded = Math.max(1, Math.min(99, Number(dpPercent || 50)));
+      const rawTargetDp =
+        dpType === "percent"
+          ? Math.round((actualGrandTotal * pctBounded) / 100)
+          : Math.max(0, Number(dpPaidAmount || 0));
+
+      if (rawTargetDp <= 0) {
+        const msg = "Nominal DP awal harus lebih dari Rp 0.";
+        setFormError(msg);
+        toast.error(msg);
+        return;
+      }
+      if (rawTargetDp >= actualGrandTotal) {
+        const msg =
+          "Nominal DP tidak boleh sama atau melebihi total invoice. Pilih status Lunas jika dibayar penuh.";
+        setFormError(msg);
+        toast.error(msg);
+        return;
+      }
+      if (!dueDate || dueDate === "-") {
+        const msg = "Tentukan tanggal jatuh tempo pelunasan untuk sisa DP.";
+        setFormError(msg);
+        toast.error(msg);
+        return;
+      }
+      dpAllocs = allocateInvoiceDpAcrossRows(rowTotals, rawTargetDp);
     }
 
     const batchPayload: ExpenseFormData[] = validRows.map((r, idx) => {
@@ -295,10 +429,8 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       const rowTax = idx === 0 ? Number(tax || 0) : 0;
       const rowOther = idx === 0 ? Number(otherFee || 0) : 0;
       const rowDisc = idx === 0 ? Number(discount || 0) : 0;
-      const rowTotal = Math.max(
-        0,
-        q * up + rowShip + rowTax + rowOther - rowDisc
-      );
+      const rowTotal = rowTotals[idx];
+      const rowPaid = isDp ? dpAllocs[idx] : undefined;
 
       return {
         expense_date: expenseDate,
@@ -315,7 +447,18 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
         total_price: rowTotal,
         pay_method: payMethod,
         pay_status: payStatus,
-        due_date: isUnpaid && dueDate ? dueDate : "-",
+        due_date: isUnpaid && dueDate && dueDate !== "-" ? dueDate : "-",
+        paid_amount: isDp ? rowPaid : undefined,
+        dp_type: isDp ? dpType : undefined,
+        dp_percent: isDp
+          ? dpType === "percent"
+            ? Math.max(1, Math.min(99, Number(dpPercent || 50)))
+            : actualGrandTotal > 0
+            ? Math.round((effectiveDpAmount / actualGrandTotal) * 10000) / 100
+            : undefined
+          : undefined,
+        dp_payment_date: isDp ? dpPaymentDate || expenseDate : undefined,
+        bank_account_id: isPaid || isDp ? bankAccountId : null,
         notes: r.notes.trim() || "-",
         invoice_number: invoiceNumber.trim() || "-",
         is_reimbursement: isReimbursement,
@@ -739,7 +882,14 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                 value={payMethod}
                 onValueChange={(val) => {
                   setPayMethod(val);
-                  if (val === "COD") setPayStatus("Belum Lunas");
+                  if (val === "COD") {
+                    setPayStatus("Belum Lunas");
+                    if (!dueDate || dueDate === "-") {
+                      setDueDate(getTempoQuickDate(7, expenseDate));
+                    }
+                  } else if (!isDp) {
+                    setPayStatus("Lunas");
+                  }
                 }}
                 options={paymentMethods}
                 placeholder="Metode bayar..."
@@ -752,9 +902,25 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
               </label>
               <AdaptiveSelect
                 value={payStatus}
-                onValueChange={setPayStatus}
+                onValueChange={(nextStatus) => {
+                  setPayStatus(nextStatus);
+                  setFormError(null);
+                  if (isDpStatus(nextStatus)) {
+                    if (!dueDate || dueDate === "-") {
+                      setDueDate(getTempoQuickDate(14, expenseDate));
+                    }
+                    if (!dpPaymentDate) {
+                      setDpPaymentDate(expenseDate);
+                    }
+                  } else if (nextStatus === "Belum Lunas") {
+                    if (!dueDate || dueDate === "-") {
+                      setDueDate(getTempoQuickDate(7, expenseDate));
+                    }
+                  }
+                }}
                 options={[
                   { value: "Lunas", label: "Lunas" },
+                  { value: "DP / Sebagian", label: "DP / Bayar Sebagian" },
                   { value: "Belum Lunas", label: "Belum Lunas (Hutang)" },
                 ]}
               />
@@ -776,16 +942,146 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
             </div>
           </div>
 
-          {isUnpaid && (
-            <div className="lg:col-span-12 pt-2 border-t border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <label className="text-xs font-medium text-rose-700 dark:text-rose-400">
-                Tanggal Jatuh Tempo Nota Ini
-              </label>
-              <DatePicker
-                value={dueDate === "-" ? "" : dueDate}
-                onChange={(d) => setDueDate(toIsoDate(d))}
-                className="w-full sm:w-56 h-9 text-xs"
-              />
+          {isDp && (
+            <div className="lg:col-span-12 pt-3 border-t border-border/70 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-xs font-semibold text-foreground">
+                  Rincian DP (Uang Muka) 1 Nota
+                </span>
+                <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+                  {effectiveDpPct}% dibayar awal
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-muted-foreground block">
+                    Skema Perhitungan DP
+                  </label>
+                  <AdaptiveSelect
+                    value={dpType}
+                    onValueChange={(val) => {
+                      setDpType((val as "percent" | "amount") || "percent");
+                      setFormError(null);
+                    }}
+                    options={[
+                      { value: "percent", label: "Persentase (%)" },
+                      { value: "amount", label: "Nominal (Rp)" },
+                    ]}
+                  />
+                </div>
+
+                {dpType === "percent" ? (
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-muted-foreground block">
+                      Persentase DP
+                    </label>
+                    <InputGroup className="h-9">
+                      <InputGroupInput
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={dpPercent}
+                        onChange={(e) => {
+                          setDpPercent(Number(e.target.value));
+                          setFormError(null);
+                        }}
+                        aria-label="Persentase DP"
+                        className="text-xs font-semibold tabular-nums"
+                      />
+                      <InputGroupAddon align="inline-end" className="pr-2.5">
+                        <InputGroupText className="text-xs">%</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-muted-foreground block">
+                      Nominal DP Dibayar Sekarang
+                    </label>
+                    <InlineMathInput
+                      value={dpPaidAmount}
+                      onChange={(val) => {
+                        setDpPaidAmount(val);
+                        setFormError(null);
+                      }}
+                      inputClassName="font-semibold"
+                      placeholder="Contoh: 500k"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-muted-foreground block">
+                    Tanggal Bayar DP
+                  </label>
+                  <DatePicker
+                    value={dpPaymentDate || expenseDate}
+                    onChange={(d) => setDpPaymentDate(toIsoDate(d))}
+                    className="w-full h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs py-1.5 border-y border-border/50 tabular-nums">
+                <div>
+                  <span className="text-[11px] text-muted-foreground mr-1.5">
+                    DP Dibayar:
+                  </span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                    {formatRupiah(effectiveDpAmount)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-muted-foreground mr-1.5">
+                    Sisa Tagihan:
+                  </span>
+                  <span className="font-semibold text-rose-700 dark:text-rose-400">
+                    {formatRupiah(remainingAfterDp)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {((bankAccounts.length > 0 && (isPaid || isDp)) || isUnpaid) && (
+            <div className="lg:col-span-12 pt-2 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              {bankAccounts.length > 0 && (isPaid || isDp) && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
+                    {isDp
+                      ? "Rekening Sumber Pembayaran DP"
+                      : "Rekening Sumber Dana"}
+                  </label>
+                  <AdaptiveSelect
+                    value={bankAccountId ? String(bankAccountId) : ""}
+                    onValueChange={(val) =>
+                      setBankAccountId(val ? Number(val) : null)
+                    }
+                    options={bankAccountOptions}
+                    placeholder="Otomatis (Sesuai Mapping Metode Bayar)"
+                    searchPlaceholder="Cari rekening..."
+                  />
+                </div>
+              )}
+
+              {isUnpaid && (
+                <div className="space-y-1 sm:ml-auto sm:w-full">
+                  <label className="text-xs font-medium text-rose-700 dark:text-rose-400 block">
+                    {isDp
+                      ? "Tanggal Jatuh Tempo Pelunasan Sisa"
+                      : "Tanggal Jatuh Tempo Nota Ini"}
+                  </label>
+                  <DatePicker
+                    value={dueDate === "-" ? "" : dueDate}
+                    onChange={(d) => {
+                      setDueDate(toIsoDate(d));
+                      setFormError(null);
+                    }}
+                    className="w-full h-9 text-xs"
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -795,11 +1091,20 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       <div className="px-4 sm:px-6 py-3 border-t border-border/80 bg-background shrink-0 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <span className="text-[11px] font-medium text-muted-foreground block truncate">
-            Total Gabungan ({rows.filter((r) => r.item_name.trim()).length} Barang)
+            {isDp
+              ? `Total Nota (${rows.filter((r) => r.item_name.trim()).length} Barang) · Sisa ${formatRupiah(remainingAfterDp)}`
+              : `Total Gabungan (${rows.filter((r) => r.item_name.trim()).length} Barang)`}
           </span>
-          <span className="text-sm sm:text-base font-bold text-foreground tabular-nums">
-            {formatRupiah(grandTotal)}
-          </span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-sm sm:text-base font-bold text-foreground tabular-nums">
+              {formatRupiah(grandTotal)}
+            </span>
+            {isDp && (
+              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                DP: {formatRupiah(effectiveDpAmount)}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

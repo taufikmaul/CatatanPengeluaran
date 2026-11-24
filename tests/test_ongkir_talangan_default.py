@@ -270,3 +270,83 @@ async def test_api_talangan_and_summary_exclude_ongkir_by_default(client, auth_c
     assert res_inc.status_code == 200
     items_inc = res_inc.json()["data"]
     assert any(i["item_name"] == "Ongkir Lalamove Cake" for i in items_inc)
+
+
+@pytest.mark.asyncio
+async def test_api_talangan_with_talangan_type_and_separate_summary(client, auth_cookies, db):
+    user = User(telegram_id=88884, name="Staff Multitalangan", is_auth=True)
+    db.add(user)
+    await db.flush()
+
+    exp1 = Expense(
+        expense_date=date(2026, 11, 20),
+        supplier="TBK Berkah",
+        item_name="Coklat Batang",
+        qty=Decimal("2"),
+        unit="Kg",
+        category="Bahan Kue",
+        unit_price=Decimal("45000"),
+        total_price=Decimal("90000"),
+        pay_method="Transfer",
+        pay_status="Lunas",
+        is_reimbursement=True,
+        user_id=user.id,
+    )
+    exp2 = Expense(
+        expense_date=date(2026, 11, 21),
+        supplier="GoSend",
+        item_name="Ongkir GoSend Bolu",
+        qty=Decimal("1"),
+        unit="Trip",
+        category="Ongkir",
+        unit_price=Decimal("25000"),
+        total_price=Decimal("25000"),
+        pay_method="Tunai",
+        pay_status="Lunas",
+        is_reimbursement=True,
+        user_id=user.id,
+    )
+    db.add_all([exp1, exp2])
+    await db.flush()
+
+    client.cookies.update(auth_cookies)
+
+    # 1. Test talangan_type=all
+    res_all = await client.get("/api/v1/expenses?is_reimbursement=true&special_type=talangan&talangan_type=all")
+    assert res_all.status_code == 200
+    items_all = res_all.json()["data"]
+    assert any(i["item_name"] == "Coklat Batang" for i in items_all)
+    assert any(i["item_name"] == "Ongkir GoSend Bolu" for i in items_all)
+
+    # 2. Test talangan_type=ongkir
+    res_ongkir = await client.get("/api/v1/expenses?is_reimbursement=true&special_type=talangan&talangan_type=ongkir")
+    assert res_ongkir.status_code == 200
+    items_ongkir = res_ongkir.json()["data"]
+    assert not any(i["item_name"] == "Coklat Batang" for i in items_ongkir)
+    assert any(i["item_name"] == "Ongkir GoSend Bolu" for i in items_ongkir)
+
+    # 3. Test talangan_type=belanja
+    res_belanja = await client.get("/api/v1/expenses?is_reimbursement=true&special_type=talangan&talangan_type=belanja")
+    assert res_belanja.status_code == 200
+    items_belanja = res_belanja.json()["data"]
+    assert any(i["item_name"] == "Coklat Batang" for i in items_belanja)
+    assert not any(i["item_name"] == "Ongkir GoSend Bolu" for i in items_belanja)
+
+    # 4. Summary with talangan_type=all -> has separate breakdown in overall & by_user
+    res_sum = await client.get("/api/v1/expenses/reimbursements/summary?talangan_type=all&user_id=" + str(user.id))
+    assert res_sum.status_code == 200
+    sum_data = res_sum.json()
+    assert sum_data["pending_total"] == 115000.0  # 90k + 25k
+    assert sum_data["belanja_pending_total"] == 90000.0
+    assert sum_data["ongkir_pending_total"] == 25000.0
+    assert sum_data["belanja_pending_count"] == 1
+    assert sum_data["ongkir_pending_count"] == 1
+
+    # Check by_user entry
+    assert len(sum_data["by_user"]) >= 1
+    u_entry = next(u for u in sum_data["by_user"] if u["user_id"] == user.id)
+    assert u_entry["pending_total"] == 115000.0
+    assert u_entry["belanja_pending_total"] == 90000.0
+    assert u_entry["ongkir_pending_total"] == 25000.0
+    assert u_entry["belanja_pending_count"] == 1
+    assert u_entry["ongkir_pending_count"] == 1

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { Expense, MonthlyReport, ExpenseUser, UnpaidExpenseItem } from "@/types";
+import { Expense, ExpenseInvoiceGroup, MonthlyReport, ExpenseUser, UnpaidExpenseItem } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
@@ -9,6 +9,12 @@ import {
   isReimbursementExpense,
   hasInstallmentHistory,
 } from "@/lib/paymentStatus";
+import {
+  ExpenseViewMode,
+  InvoiceFeeFooter,
+  InvoiceViewModeToggle,
+  getInvoiceItemSummaryText,
+} from "@/components/common/InvoiceGroupShared";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +34,8 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Eye,
   Repeat,
   Edit2,
@@ -64,12 +72,17 @@ export interface OwnerMobileViewProps {
   onNavigateTab?: (tab: any) => void;
   reportData?: MonthlyReport;
   expenses: Expense[];
+  invoiceGroups?: ExpenseInvoiceGroup[];
+  viewMode?: ExpenseViewMode;
+  onViewModeChange?: (mode: ExpenseViewMode) => void;
+  totalItemsCount?: number;
   isExpensesLoading: boolean;
   page: number;
   totalPages: number;
   totalCount: number;
   onPageChange: (newPage: number) => void;
   onToggleStatus: (expense: Expense) => void;
+  onToggleInvoiceStatus?: (group: ExpenseInvoiceGroup) => void;
   onMarkPaidById?: (id: number) => void;
   onEditExpense: (expense: Expense) => void;
   onRepeatExpense?: (expense: Expense) => void;
@@ -77,6 +90,7 @@ export interface OwnerMobileViewProps {
   onDeleteExpense: (expenseId: number) => void;
   onViewExpense?: (expense: Expense) => void;
   onOpenPaymentModal?: (expense: Expense, mode?: "full" | "percent" | "amount") => void;
+  onOpenInvoicePaymentModal?: (group: ExpenseInvoiceGroup, mode?: "full" | "percent" | "amount") => void;
   canDelete?: boolean;
 
   // Filter states & handlers
@@ -112,12 +126,17 @@ export function OwnerMobileView({
   onNavigateTab,
   reportData,
   expenses,
+  invoiceGroups = [],
+  viewMode = "items",
+  onViewModeChange,
+  totalItemsCount,
   isExpensesLoading,
   page,
   totalPages,
   totalCount,
   onPageChange,
   onToggleStatus,
+  onToggleInvoiceStatus,
   onMarkPaidById,
   onEditExpense,
   onRepeatExpense,
@@ -125,6 +144,7 @@ export function OwnerMobileView({
   onDeleteExpense,
   onViewExpense,
   onOpenPaymentModal,
+  onOpenInvoicePaymentModal,
   canDelete = true,
   highlightedExpenseId,
   month,
@@ -157,6 +177,22 @@ export function OwnerMobileView({
   );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Record<string, boolean>>({});
+  const isGroupedMode = viewMode === "grouped";
+
+  const toggleGroupExpand = (key: string) => {
+    setExpandedGroupKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  React.useEffect(() => {
+    if (!highlightedExpenseId || !isGroupedMode) return;
+    const matchGrp = invoiceGroups.find((g) =>
+      g.items.some((it) => it.id === highlightedExpenseId)
+    );
+    if (matchGrp) {
+      setExpandedGroupKeys((prev) => ({ ...prev, [matchGrp.group_key]: true }));
+    }
+  }, [highlightedExpenseId, isGroupedMode, invoiceGroups]);
 
   // Sinkronkan tab mobile jika route/activeTab berubah dari luar
   React.useEffect(() => {
@@ -376,7 +412,7 @@ export function OwnerMobileView({
                         <Button
                           size="sm"
                           onClick={() => onMarkPaidById(item.id!)}
-                          className="min-h-[44px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shrink-0 gap-1"
+                          className="min-h-[44px] px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold shrink-0 gap-1"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           <span>Lunas</span>
@@ -794,7 +830,15 @@ export function OwnerMobileView({
             )}
           </div>
 
-          {/* Quick Utility Actions */}
+          {/* Mode Toggle + Quick Utility Actions */}
+          {onViewModeChange && (
+            <InvoiceViewModeToggle
+              mode={viewMode}
+              onChange={onViewModeChange}
+              mobileFull
+            />
+          )}
+
           {(onOpenDataHygiene || onOpenAuditDuplicates) && (
             <div className="flex items-center gap-2">
               {onOpenDataHygiene && (
@@ -835,7 +879,7 @@ export function OwnerMobileView({
                   : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
               }`}
             >
-              Semua ({totalCount})
+              Semua ({isGroupedMode && totalItemsCount !== undefined ? `${totalCount} inv / ${totalItemsCount} item` : totalCount})
             </button>
 
             <button
@@ -990,7 +1034,7 @@ export function OwnerMobileView({
           )}
 
           {/* Empty State */}
-          {!isExpensesLoading && expenses.length === 0 && (
+          {!isExpensesLoading && (isGroupedMode ? invoiceGroups.length === 0 : expenses.length === 0) && (
             <div className="p-8 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
               <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto">
                 <Inbox className="w-6 h-6" />
@@ -1014,10 +1058,339 @@ export function OwnerMobileView({
             </div>
           )}
 
-          {/* Daftar Kartu Transaksi */}
-          {!isExpensesLoading && expenses.length > 0 && (
+          {/* Daftar Kartu Transaksi (Group Invoice atau Per Item) */}
+          {!isExpensesLoading && (isGroupedMode ? invoiceGroups.length > 0 : expenses.length > 0) && (
             <div className="space-y-3">
-              {expenses.map((e) => {
+              {isGroupedMode
+                ? invoiceGroups.map((g) => {
+                    const catColor = getCategoryColor(g.primary_category);
+                    const tgMeta = parseTelegramLink(g.msg_link);
+                    const summary = getInvoiceItemSummaryText(g);
+                    const single = g.items_count === 1 ? g.items[0] : null;
+                    const isExpanded = Boolean(expandedGroupKeys[g.group_key]);
+                    const hasCod = g.items.some((it) => isCodExpense(it));
+                    const isHighlighted = Boolean(
+                      highlightedExpenseId &&
+                        g.items.some((it) => it.id === highlightedExpenseId)
+                    );
+
+                    return (
+                      <div
+                        key={g.group_key}
+                        id={single ? `mobile-expense-row-${single.id}` : undefined}
+                        className={cn(
+                          "p-4 rounded-2xl border shadow-xs space-y-3 transition-all",
+                          isHighlighted
+                            ? "bg-blue-50/80 dark:bg-blue-950/60 ring-2 ring-blue-500 border-blue-300 dark:border-blue-700"
+                            : "bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {single ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onInspectItemPrice?.(single.item_name, single.master_item_id)
+                                  }
+                                  className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left hover:text-blue-600"
+                                >
+                                  {single.item_name}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleGroupExpand(g.group_key)}
+                                  className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left"
+                                >
+                                  {summary.title}
+                                  {summary.extraCount > 0 && (
+                                    <span className="text-blue-700 dark:text-blue-300 ml-1">
+                                      +{summary.extraCount} lainnya
+                                    </span>
+                                  )}
+                                </button>
+                              )}
+                              {g.items_count > 1 && (
+                                <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
+                                  {g.items_count} item
+                                </span>
+                              )}
+                              {g.is_reimbursement && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-purple-50 text-purple-800 dark:bg-purple-950 dark:text-purple-200 border border-purple-200 dark:border-purple-800">
+                                  <Briefcase className="w-2.5 h-2.5" />
+                                  <span>Talangan</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                                <Store className="w-3 h-3 text-slate-500" />
+                                <span>{g.supplier || "Tanpa Toko"}</span>
+                              </span>
+                              <span>•</span>
+                              <span>{formatDateId(g.expense_date)}</span>
+                              {g.invoice_number && g.invoice_number !== "-" && (
+                                <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-700 dark:text-slate-300">
+                                  #{g.invoice_number}
+                                </span>
+                              )}
+                              {g.user_name && (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200 border border-indigo-200/60 dark:border-indigo-900/60">
+                                  <UserIcon className="w-2.5 h-2.5" />
+                                  <span>{g.user_name}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 tabular-nums">
+                              {formatRupiah(g.total_amount)}
+                            </div>
+                            {!g.is_paid && g.paid_amount > 0 && (
+                              <div className="text-[10px] text-rose-700 dark:text-rose-400 font-semibold tabular-nums">
+                                Sisa {formatRupiah(g.remaining_amount)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800/80 gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${catColor.bg} ${catColor.border} dark:bg-slate-800 dark:border-slate-700`}
+                            >
+                              {g.primary_category}
+                              {g.categories.length > 1 ? ` +${g.categories.length - 1}` : ""}
+                            </span>
+                            {categoryCoaMap[g.primary_category] && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                {categoryCoaMap[g.primary_category].code}
+                              </span>
+                            )}
+                          </div>
+                          {g.pay_method && (
+                            <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                              {g.pay_method}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (single) {
+                                if ((g.is_dp || hasCod) && onOpenPaymentModal) {
+                                  onOpenPaymentModal(single, "full");
+                                } else {
+                                  onToggleStatus(single);
+                                }
+                              } else if ((g.is_dp || hasCod) && onOpenInvoicePaymentModal) {
+                                onOpenInvoicePaymentModal(g, "full");
+                              } else if (onToggleInvoiceStatus) {
+                                onToggleInvoiceStatus(g);
+                              }
+                            }}
+                            className={cn(
+                              "min-h-[44px] px-3.5 rounded-xl text-xs font-bold border flex items-center gap-1.5 transition-all active:scale-95",
+                              g.is_paid
+                                ? "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
+                                : hasCod || g.is_dp || g.is_mixed_pay_status
+                                ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
+                                : "bg-rose-50 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
+                            )}
+                          >
+                            {g.is_paid ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                                <span>Lunas</span>
+                              </>
+                            ) : hasCod ? (
+                              <>
+                                <Package className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
+                                <span>COD Belum Bayar</span>
+                              </>
+                            ) : g.is_dp ? (
+                              <>
+                                <Clock className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
+                                <span>DP {Math.round(g.payment_progress_pct)}%</span>
+                              </>
+                            ) : g.is_mixed_pay_status ? (
+                              <span>Sebagian Lunas</span>
+                            ) : (
+                              <>
+                                <Clock className="w-4 h-4 text-rose-700 dark:text-rose-400 shrink-0" />
+                                <span>Hutang</span>
+                              </>
+                            )}
+                          </button>
+
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            {tgMeta.isUrl && (
+                              <a
+                                href={tgMeta.url!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/50 text-[#229ED9] flex items-center justify-center gap-1"
+                                title={`Buka pesan Telegram (${tgMeta.badgeLabel})`}
+                              >
+                                <TelegramIcon className="w-4 h-4" />
+                              </a>
+                            )}
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleGroupExpand(g.group_key)}
+                              aria-expanded={isExpanded}
+                              className="min-h-[44px] px-3 rounded-xl text-xs font-semibold gap-1.5 border-slate-300 dark:border-slate-700"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronUp className="w-4 h-4" />
+                                  <span>Tutup</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-4 h-4" />
+                                  <span>Items ({g.items_count})</span>
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 p-3 space-y-2.5">
+                            <div className="divide-y divide-slate-200/80 dark:divide-slate-700/80">
+                              {g.items.map((it) => {
+                                const bd = getExpensePaymentBreakdown(it);
+                                const isItemHighlighted = highlightedExpenseId === it.id;
+                                return (
+                                  <div
+                                    key={it.id}
+                                    id={single ? undefined : `mobile-expense-row-${it.id}`}
+                                    className={cn(
+                                      "py-2.5 first:pt-0 last:pb-0 space-y-2 rounded-lg",
+                                      isItemHighlighted && "bg-blue-50/80 dark:bg-blue-950/50 p-2"
+                                    )}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            onInspectItemPrice?.(it.item_name, it.master_item_id)
+                                          }
+                                          className="font-semibold text-xs text-slate-900 dark:text-slate-100 text-left hover:underline"
+                                        >
+                                          {it.item_name}
+                                        </button>
+                                        <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
+                                          {it.qty} {it.unit || "Pcs"} × {formatRupiah(it.unit_price)} •{" "}
+                                          {it.category}
+                                        </div>
+                                        {it.notes && it.notes !== "-" && (
+                                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                            {it.notes}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <div className="font-bold text-xs text-slate-900 dark:text-slate-100 tabular-nums">
+                                          {formatRupiah(it.total_price)}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (bd.isDp && onOpenPaymentModal) {
+                                              onOpenPaymentModal(it, "full");
+                                            } else {
+                                              onToggleStatus(it);
+                                            }
+                                          }}
+                                          className={cn(
+                                            "text-[10px] font-semibold mt-0.5 underline",
+                                            bd.isPaid
+                                              ? "text-emerald-700 dark:text-emerald-400"
+                                              : "text-rose-700 dark:text-rose-400"
+                                          )}
+                                        >
+                                          {it.pay_status}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {onViewExpense && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          onClick={() => onViewExpense(it)}
+                                          className="min-h-[44px] min-w-[44px] rounded-xl"
+                                          aria-label={`Detail ${it.item_name}`}
+                                        >
+                                          <Eye className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      {onRepeatExpense && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          onClick={() => onRepeatExpense(it)}
+                                          className="min-h-[44px] min-w-[44px] rounded-xl"
+                                          aria-label={`Beli lagi ${it.item_name}`}
+                                        >
+                                          <Repeat className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={() => onEditExpense(it)}
+                                        className="min-h-[44px] min-w-[44px] rounded-xl"
+                                        aria-label={`Edit ${it.item_name}`}
+                                      >
+                                        <Edit2 className="w-4 h-4" />
+                                      </Button>
+                                      {canDelete && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="icon"
+                                          onClick={() => handleDelete(it.id)}
+                                          disabled={deletingId === it.id}
+                                          className="min-h-[44px] min-w-[44px] rounded-xl text-rose-700 border-rose-200"
+                                          aria-label={`Hapus ${it.item_name}`}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <InvoiceFeeFooter
+                              group={g}
+                              showPaymentSummary={!g.is_paid}
+                              compact
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                : expenses.map((e) => {
                 const catColor = getCategoryColor(e.category);
                 const bd = getExpensePaymentBreakdown(e);
                 const isLunas = bd.isPaid;

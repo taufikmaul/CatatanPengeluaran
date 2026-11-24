@@ -16,6 +16,8 @@ from app.api.schemas import (
     ExpenseUpdate,
     ExpenseResponse,
     ExpenseListResponse,
+    ExpenseInvoiceGroupResponse,
+    ExpenseInvoiceListResponse,
     ExpenseUserResponse,
     ExpenseLogResponse,
     ExpenseAuditResponse,
@@ -25,9 +27,11 @@ from app.api.schemas import (
     ReimbursementSettleRequest,
     UnpaidSummaryResponse,
     UnpaidSettleRequest,
+    UnpaidInvoicePaymentRequest,
 )
 from app.services.expense_service import (
     get_all_expenses_paginated,
+    get_grouped_expenses_paginated,
     get_expense_by_id,
     get_all_expense_users,
     get_item_price_history,
@@ -44,6 +48,7 @@ from app.services.expense_service import (
     settle_unpaid_expenses,
     get_expense_payments,
     record_expense_payment,
+    record_invoice_payment,
     delete_expense_payment,
     get_expense_payment_breakdown,
     is_paid_status,
@@ -122,6 +127,7 @@ def _to_response_dict(e: Expense) -> dict:
         "msg_link": e.msg_link or "Web Dashboard",
         "is_reimbursement": bool(e.is_reimbursement),
         "invoice_number": e.invoice_number or "-",
+        "invoice_group_id": getattr(e, "invoice_group_id", None),
         "reimbursed_at": e.reimbursed_at,
         "user_id": e.user_id,
         "user_name": user_name,
@@ -154,7 +160,9 @@ async def list_expenses(
     special_type: str | None = Query(None),
     reimbursed_status: str | None = Query(None),
     sort_by: str | None = Query(None),
+    sort_order: str | None = Query(None),
     include_ongkir: bool = Query(False),
+    talangan_type: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -174,7 +182,9 @@ async def list_expenses(
         special_type=special_type,
         reimbursed_status=reimbursed_status,
         sort_by=sort_by,
+        sort_order=sort_order,
         include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
         month_end=month_end,
         start_date=start_date,
         end_date=end_date,
@@ -185,6 +195,81 @@ async def list_expenses(
         ok=True,
         data=[ExpenseResponse(**_to_response_dict(e)) for e in expenses],
         total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+    )
+
+
+@router.get("/grouped", response_model=ExpenseInvoiceListResponse)
+async def list_expenses_grouped(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    category: str | None = Query(None),
+    month: int | None = Query(None),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    search: str | None = Query(None),
+    status: str | None = Query(None),
+    pay_method: str | None = Query(None),
+    is_reimbursement: bool | None = Query(None),
+    user_id: int | None = Query(None),
+    supplier_id: int | None = Query(None),
+    supplier: str | None = Query(None),
+    special_type: str | None = Query(None),
+    reimbursed_status: str | None = Query(None),
+    sort_by: str | None = Query(None),
+    sort_order: str | None = Query(None),
+    due_urgency: str | None = Query(None),
+    include_ongkir: bool = Query(False),
+    talangan_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil daftar transaksi terkelompok per 1 grup invoice beserta items-nya."""
+    groups, total_groups, total_items = await get_grouped_expenses_paginated(
+        db,
+        page=page,
+        per_page=per_page,
+        category=category,
+        month=month,
+        year=year,
+        search=search,
+        status=status,
+        pay_method=pay_method,
+        is_reimbursement=is_reimbursement,
+        user_id=user_id,
+        supplier_id=supplier_id,
+        supplier=supplier,
+        special_type=special_type,
+        reimbursed_status=reimbursed_status,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        due_urgency=due_urgency,
+        include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
+        month_end=month_end,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    total_pages = (total_groups + per_page - 1) // per_page if total_groups > 0 else 1
+
+    serialized_groups = [
+        ExpenseInvoiceGroupResponse(
+            **{
+                **grp,
+                "items": [ExpenseResponse(**_to_response_dict(it)) for it in grp["items"]],
+            }
+        )
+        for grp in groups
+    ]
+
+    return ExpenseInvoiceListResponse(
+        ok=True,
+        data=serialized_groups,
+        total=total_groups,
+        total_items=total_items,
         page=page,
         per_page=per_page,
         total_pages=total_pages,
@@ -329,6 +414,7 @@ async def create_expense(
         notes=norm["notes"] or "-",
         is_reimbursement=payload.is_reimbursement,
         invoice_number=payload.invoice_number or "-",
+        invoice_group_id=payload.invoice_group_id,
         msg_link=payload.msg_link or "Web Dashboard",
         user_id=payload.user_id,
         master_item_id=norm.get("master_item_id") or payload.master_item_id,
@@ -486,9 +572,12 @@ async def create_expense_batch(
             "paid_amount": it.paid_amount,
             "dp_type": it.dp_type,
             "dp_percent": it.dp_percent,
+            "dp_payment_date": it.dp_payment_date,
+            "dp_reference_no": it.dp_reference_no,
             "notes": it.notes or "-",
             "is_reimbursement": it.is_reimbursement,
             "invoice_number": it.invoice_number or "-",
+            "invoice_group_id": it.invoice_group_id,
             "msg_link": it.msg_link or "Web Dashboard",
             "user_id": it.user_id,
             "master_item_id": it.master_item_id,
@@ -513,10 +602,15 @@ async def create_expense_batch(
         dict_items,
         sheets_synced=False,
         actor=actor,
+        assign_group_ids=True,
     )
     await db.commit()
     for e in saved:
         await db.refresh(e)
+        try:
+            await db.refresh(e, ["payments"])
+        except Exception:
+            pass
         if e.user_id:
             try:
                 await db.refresh(e, ["user"])
@@ -582,6 +676,7 @@ async def get_reimbursements_summary_endpoint(
     year: int | None = Query(None, ge=2020),
     user_id: int | None = Query(None),
     include_ongkir: bool = Query(False),
+    talangan_type: str | None = Query(None),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -598,6 +693,7 @@ async def get_reimbursements_summary_endpoint(
         year=year,
         user_id=user_id,
         include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
         start_date=start_date,
         end_date=end_date,
     )
@@ -637,6 +733,35 @@ async def settle_reimbursements_endpoint(
         "updated_count": len(updated),
         "updated_ids": [e.id for e in updated],
     }
+
+
+@router.post("/unpaid/payment", response_model=list[ExpenseResponse], dependencies=[Depends(require_admin_role)])
+async def record_invoice_payment_endpoint(
+    payload: UnpaidInvoicePaymentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Catat pembayaran DP, termin/cicilan, atau pelunasan ke beberapa item dalam 1 grup invoice."""
+    actor = f"dashboard:{get_current_role(request)}"
+    updated = await record_invoice_payment(
+        db,
+        expense_ids=payload.expense_ids,
+        amount=payload.amount,
+        dp_percent=payload.dp_percent,
+        payment_type=payload.payment_type,
+        payment_date=payload.payment_date,
+        pay_method=payload.pay_method,
+        bank_account_id=payload.bank_account_id,
+        reference_no=payload.reference_no,
+        notes=payload.notes,
+        due_date=payload.due_date,
+        settle_full=payload.settle_full,
+        actor=actor,
+    )
+    await db.commit()
+    for e in updated:
+        await db.refresh(e)
+    return [ExpenseResponse(**_to_response_dict(e)) for e in updated]
 
 
 @router.get("/unpaid/summary", response_model=UnpaidSummaryResponse)

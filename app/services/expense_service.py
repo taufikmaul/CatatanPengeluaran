@@ -8,6 +8,7 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 import json
 import re
+import uuid
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
@@ -272,6 +273,7 @@ async def save_expenses(
             notes=item.get("keterangan") or item.get("notes") or "-",
             is_reimbursement=is_reimb,
             invoice_number=str(inv_num),
+            invoice_group_id=item.get("invoice_group_id"),
             msg_link=msg_link,
             user_id=user_id,
             master_item_id=master_item_id,
@@ -281,6 +283,7 @@ async def save_expenses(
         db.add(expense)
         saved.append(expense)
 
+    _assign_batch_invoice_group_ids(saved, include_ongkir=False)
     await db.flush()
 
     effective_actor = actor or (f"telegram:{user_id}" if user_id else "system")
@@ -1299,10 +1302,179 @@ async def get_item_price_history(
     }
 
 
-async def get_all_expenses_paginated(
-    db: AsyncSession,
-    page: int = 1,
-    per_page: int = 50,
+def _is_valid_invoice_no(inv: str | None) -> bool:
+    """True jika nomor invoice terisi nilai nyata selain placeholder '-'."""
+    if not inv:
+        return False
+    cleaned = inv.strip().lower()
+    return cleaned not in ("", "-", "none", "null", "n/a")
+
+
+def _norm_supplier_name(e: Expense) -> str:
+    """Normalisasi nama supplier untuk kunci pengelompokan invoice."""
+    sup = (getattr(e, "supplier", None) or "").strip().lower()
+    if sup in ("", "-", "none", "null"):
+        return "-"
+    return sup
+
+
+def _is_groupable_tg_link(msg_link: str | None) -> bool:
+    """True hanya jika msg_link adalah URL pesan Telegram spesifik yang memuat message ID."""
+    if not msg_link:
+        return False
+    raw = msg_link.strip().lower()
+    return ("t.me/" in raw or "telegram.me/" in raw) and raw.startswith(("http://", "https://"))
+
+
+def _compute_invoice_group_key(e: Expense) -> str:
+    """
+    Hitung kunci grup invoice deterministik (Opsi B Smart Grouping):
+    1. invoice_number valid + tanggal + supplier ternormalisasi
+    2. invoice_group_id eksplisit (untuk input multi-item tanpa no. invoice)
+    3. fallback msg_link URL pesan Telegram spesifik + tanggal + supplier
+    4. transaksi tunggal per ID
+    """
+    if _is_valid_invoice_no(e.invoice_number):
+        dt_str = e.expense_date.isoformat() if e.expense_date else ""
+        return f"inv:{e.invoice_number.strip().lower()}|{dt_str}|{_norm_supplier_name(e)}"
+    gid = (getattr(e, "invoice_group_id", None) or "").strip()
+    if gid:
+        return f"grp:{gid}"
+    if _is_groupable_tg_link(e.msg_link):
+        dt_str = e.expense_date.isoformat() if e.expense_date else ""
+        return f"tg:{e.msg_link.strip()}|{dt_str}|{_norm_supplier_name(e)}"
+    return f"single:{e.id}"
+
+
+def _assign_batch_invoice_group_ids(
+    expenses: list[Expense],
+    *,
+    include_ongkir: bool = False,
+) -> None:
+    """
+    Tetapkan invoice_group_id bersama untuk item dalam 1 batch yang berbagi
+    (expense_date, supplier) dan berjumlah minimal 2 item.
+    """
+    buckets: dict[tuple[str, str], list[Expense]] = defaultdict(list)
+    for exp in expenses:
+        if getattr(exp, "invoice_group_id", None):
+            continue
+        cat_l = (exp.category or "").strip().lower()
+        name_l = (exp.item_name or "").strip().lower()
+        if cat_l == "tukar cash" or "tukar cash" in name_l or "tarik tunai" in name_l:
+            continue
+        if not include_ongkir and (cat_l == "ongkir" or name_l.startswith("ongkir")):
+            continue
+        dt_str = exp.expense_date.isoformat() if exp.expense_date else ""
+        buckets[(dt_str, _norm_supplier_name(exp))].append(exp)
+
+    for group_items in buckets.values():
+        if len(group_items) >= 2:
+            gid = f"grp-{uuid.uuid4().hex[:12]}"
+            for exp in group_items:
+                exp.invoice_group_id = gid
+
+
+def _apply_special_type_filter(
+    query,
+    *,
+    special_type: str | None = None,
+    category: str | None = None,
+    status: str | None = None,
+    is_reimbursement: bool | None = None,
+    include_ongkir: bool = False,
+    talangan_type: str | None = None,
+):
+    """Terapkan filter khusus tipe transaksi (tukar_cash, ongkir, talangan, unpaid, default)."""
+    if special_type == "tukar_cash":
+        return query.where(
+            or_(
+                Expense.category.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tarik tunai%"),
+            )
+        )
+    if special_type == "ongkir":
+        return query.where(
+            or_(
+                Expense.category.ilike("ongkir%"),
+                Expense.item_name.ilike("ongkir%"),
+                Expense.item_name.ilike("%ongkir%"),
+                Expense.supplier.ilike("%gosend%"),
+                Expense.supplier.ilike("%grabexpress%"),
+                Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%maxim%"),
+                Expense.supplier.ilike("%j&t%"),
+                Expense.supplier.ilike("%sicepat%"),
+            )
+        )
+    if special_type in ("all_cash_delivery", "cash_or_delivery", "tukar_cash_ongkir"):
+        return query.where(
+            or_(
+                Expense.category.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tukar cash%"),
+                Expense.item_name.ilike("%tarik tunai%"),
+                Expense.category.ilike("ongkir%"),
+                Expense.item_name.ilike("ongkir%"),
+                Expense.item_name.ilike("%ongkir%"),
+                Expense.supplier.ilike("%gosend%"),
+                Expense.supplier.ilike("%grabexpress%"),
+                Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%maxim%"),
+                Expense.supplier.ilike("%j&t%"),
+                Expense.supplier.ilike("%sicepat%"),
+            )
+        )
+    if special_type == "talangan":
+        if talangan_type == "ongkir":
+            return query.where(
+                or_(
+                    func.lower(Expense.category) == "ongkir",
+                    Expense.item_name.ilike("ongkir%"),
+                    Expense.supplier.ilike("%gosend%"),
+                    Expense.supplier.ilike("%grabexpress%"),
+                    Expense.supplier.ilike("%lalamove%"),
+                    Expense.supplier.ilike("%maxim%"),
+                    Expense.supplier.ilike("%j&t%"),
+                    Expense.supplier.ilike("%sicepat%"),
+                )
+            )
+        if talangan_type == "belanja":
+            return query.where(
+                and_(
+                    or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                    ~Expense.item_name.ilike("ongkir%"),
+                )
+            )
+        if talangan_type == "all" or include_ongkir:
+            return query
+        if category != "Ongkir":
+            return query.where(
+                and_(
+                    or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                    ~Expense.item_name.ilike("ongkir%"),
+                )
+            )
+        return query
+    if special_type in ("all", "unpaid") or is_reimbursement is True or (status and any(k in status.lower() for k in ("belum", "hutang", "dp", "sebagian", "tempo"))):
+        return query
+    if category not in ("Ongkir", "Tukar Cash"):
+        return query.where(
+            and_(
+                or_(
+                    Expense.category.is_(None),
+                    Expense.category.not_in(["Ongkir", "Tukar Cash"]),
+                ),
+                ~Expense.item_name.ilike("ongkir%"),
+                ~Expense.item_name.ilike("%tukar cash%"),
+                ~Expense.item_name.ilike("%tarik tunai%"),
+            )
+        )
+    return query
+
+
+def _build_expense_filter_query(
+    *,
     category: str | None = None,
     month: int | None = None,
     year: int | None = None,
@@ -1316,88 +1488,50 @@ async def get_all_expenses_paginated(
     special_type: str | None = None,
     reimbursed_status: str | None = None,
     sort_by: str | None = None,
+    sort_order: str | None = None,
     include_ongkir: bool = False,
+    talangan_type: str | None = None,
     month_end: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-) -> tuple[list[Expense], int]:
-    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
+):
+    """Bangun query Expense dengan filter & pengurutan terpadu."""
+    resolved_order = (sort_order or ("asc" if sort_by == "due_date" else "desc")).lower()
+    is_asc = resolved_order == "asc"
+
     if sort_by == "due_date":
         from sqlalchemy import case
+        due_col = Expense.due_date.asc() if is_asc else Expense.due_date.desc()
         query = select(Expense).order_by(
             case((Expense.due_date.in_(("-", "", "None")), 1), else_=0),
-            Expense.due_date.asc(),
+            due_col,
             Expense.expense_date.desc(),
             Expense.id.desc(),
         )
+    elif sort_by == "total_price":
+        price_col = Expense.total_price.asc() if is_asc else Expense.total_price.desc()
+        query = select(Expense).order_by(price_col, Expense.expense_date.desc(), Expense.id.desc())
+    elif sort_by == "supplier":
+        sup_col = (
+            func.lower(func.coalesce(Expense.supplier, "")).asc()
+            if is_asc
+            else func.lower(func.coalesce(Expense.supplier, "")).desc()
+        )
+        query = select(Expense).order_by(sup_col, Expense.expense_date.desc(), Expense.id.desc())
     else:
-        query = select(Expense).order_by(Expense.expense_date.desc(), Expense.id.desc())
+        date_col = Expense.expense_date.asc() if is_asc else Expense.expense_date.desc()
+        id_col = Expense.id.asc() if is_asc else Expense.id.desc()
+        query = select(Expense).order_by(date_col, id_col)
 
-    if special_type == "tukar_cash":
-        query = query.where(
-            or_(
-                Expense.category.ilike("%tukar cash%"),
-                Expense.item_name.ilike("%tukar cash%"),
-                Expense.item_name.ilike("%tarik tunai%"),
-            )
-        )
-    elif special_type == "ongkir":
-        query = query.where(
-            or_(
-                Expense.category.ilike("ongkir%"),
-                Expense.item_name.ilike("ongkir%"),
-                Expense.item_name.ilike("%ongkir%"),
-                Expense.supplier.ilike("%gosend%"),
-                Expense.supplier.ilike("%grabexpress%"),
-                Expense.supplier.ilike("%lalamove%"),
-                Expense.supplier.ilike("%maxim%"),
-                Expense.supplier.ilike("%j&t%"),
-                Expense.supplier.ilike("%sicepat%"),
-            )
-        )
-    elif special_type in ("all_cash_delivery", "cash_or_delivery", "tukar_cash_ongkir"):
-        query = query.where(
-            or_(
-                Expense.category.ilike("%tukar cash%"),
-                Expense.item_name.ilike("%tukar cash%"),
-                Expense.item_name.ilike("%tarik tunai%"),
-                Expense.category.ilike("ongkir%"),
-                Expense.item_name.ilike("ongkir%"),
-                Expense.item_name.ilike("%ongkir%"),
-                Expense.supplier.ilike("%gosend%"),
-                Expense.supplier.ilike("%grabexpress%"),
-                Expense.supplier.ilike("%lalamove%"),
-                Expense.supplier.ilike("%maxim%"),
-                Expense.supplier.ilike("%j&t%"),
-                Expense.supplier.ilike("%sicepat%"),
-            )
-        )
-    elif special_type == "talangan":
-        # Daftar Talangan: by default EXCLUDE Ongkir (kecuali category == 'Ongkir' atau include_ongkir=True)
-        if not include_ongkir and category != "Ongkir":
-            query = query.where(
-                and_(
-                    or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
-                    ~Expense.item_name.ilike("ongkir%"),
-                )
-            )
-    elif special_type in ("all", "unpaid") or is_reimbursement is True or (status and any(k in status.lower() for k in ("belum", "hutang", "dp", "sebagian", "tempo"))):
-        # Tampilkan semua kategori tanpa filter exclude Ongkir/Tukar Cash
-        pass
-    else:
-        # Default view (Daftar Pengeluaran Utama): EXCLUDE Ongkir dan Tukar Cash
-        if category not in ("Ongkir", "Tukar Cash"):
-            query = query.where(
-                and_(
-                    or_(
-                        Expense.category.is_(None),
-                        Expense.category.not_in(["Ongkir", "Tukar Cash"]),
-                    ),
-                    ~Expense.item_name.ilike("ongkir%"),
-                    ~Expense.item_name.ilike("%tukar cash%"),
-                    ~Expense.item_name.ilike("%tarik tunai%"),
-                )
-            )
+    query = _apply_special_type_filter(
+        query,
+        special_type=special_type,
+        category=category,
+        status=status,
+        is_reimbursement=is_reimbursement,
+        include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
+    )
 
     if category:
         query = query.where(Expense.category == category)
@@ -1457,6 +1591,55 @@ async def get_all_expenses_paginated(
                 User.name.ilike(search_term),
             )
         )
+    return query
+
+
+async def get_all_expenses_paginated(
+    db: AsyncSession,
+    page: int = 1,
+    per_page: int = 50,
+    category: str | None = None,
+    month: int | None = None,
+    year: int | None = None,
+    search: str | None = None,
+    status: str | None = None,
+    pay_method: str | None = None,
+    is_reimbursement: bool | None = None,
+    user_id: int | None = None,
+    supplier_id: int | None = None,
+    supplier: str | None = None,
+    special_type: str | None = None,
+    reimbursed_status: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    include_ongkir: bool = False,
+    talangan_type: str | None = None,
+    month_end: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> tuple[list[Expense], int]:
+    """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
+    query = _build_expense_filter_query(
+        category=category,
+        month=month,
+        year=year,
+        search=search,
+        status=status,
+        pay_method=pay_method,
+        is_reimbursement=is_reimbursement,
+        user_id=user_id,
+        supplier_id=supplier_id,
+        supplier=supplier,
+        special_type=special_type,
+        reimbursed_status=reimbursed_status,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
+        month_end=month_end,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
     total = count_result.scalar() or 0
@@ -1464,6 +1647,352 @@ async def get_all_expenses_paginated(
     query = query.offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     return result.scalars().all(), total
+
+
+def _matches_due_urgency(e: Expense, due_urgency: str | None, today: date) -> bool:
+    """Filter ketepatan jatuh tempo lokal ('overdue' atau 'soon')."""
+    if not due_urgency:
+        return True
+    ps_low = (e.pay_status or "").strip().lower()
+    if ps_low in ("lunas", "paid"):
+        return False
+    due_d = parse_due_date(e.due_date)
+    if not due_d:
+        return False
+    days_left = (due_d - today).days
+    if due_urgency == "overdue":
+        return days_left < 0
+    if due_urgency == "soon":
+        return 0 <= days_left <= 7
+    return True
+
+
+def _build_invoice_group_dict(
+    group_key: str,
+    items: list[Expense],
+    matched_ids: set[int],
+) -> dict[str, Any]:
+    """Susun ringkasan agregat 1 grup invoice dari daftar item anggotanya."""
+    ordered_items = sorted(items, key=lambda x: (x.expense_date or date.min, x.id))
+    primary = ordered_items[0]
+
+    # Pilih nomor invoice valid pertama jika ada
+    inv_no = "-"
+    for it in ordered_items:
+        if _is_valid_invoice_no(it.invoice_number):
+            inv_no = it.invoice_number.strip()
+            break
+
+    inv_group_id = next((it.invoice_group_id for it in ordered_items if getattr(it, "invoice_group_id", None)), None)
+
+    # Pilih msg_link terbaik (prioritas link Telegram t.me)
+    best_msg_link = primary.msg_link or "Web Dashboard"
+    for it in ordered_items:
+        if _is_groupable_tg_link(it.msg_link):
+            best_msg_link = it.msg_link.strip()
+            break
+
+    # Kategori unik berurutan
+    categories: list[str] = []
+    for it in ordered_items:
+        cat = (it.category or "Operasional").strip() or "Operasional"
+        if cat not in categories:
+            categories.append(cat)
+
+    # User penginput
+    user_id = next((it.user_id for it in ordered_items if it.user_id is not None), None)
+    user_name = None
+    for it in ordered_items:
+        if getattr(it, "user", None) and it.user and it.user.name:
+            user_name = it.user.name
+            break
+    if not user_name and user_id is not None:
+        user_name = f"User #{user_id}"
+
+    # Metode bayar
+    pay_methods = []
+    for it in ordered_items:
+        pm = (it.pay_method or "Tunai").strip() or "Tunai"
+        if pm not in pay_methods:
+            pay_methods.append(pm)
+    group_pay_method = pay_methods[0] if len(pay_methods) == 1 else f"{pay_methods[0]} (+{len(pay_methods) - 1})"
+
+    subtotal_items = 0.0
+    shipping_fee = 0.0
+    tax = 0.0
+    other_fee = 0.0
+    discount = 0.0
+    total_amount = 0.0
+    paid_amount = 0.0
+    remaining_amount = 0.0
+
+    paid_count = 0
+    dp_count = 0
+    unpaid_count = 0
+    reimb_items: list[Expense] = []
+    reimb_pending_total = 0.0
+    reimb_done_count = 0
+    latest_reimb_at = None
+
+    unpaid_due_dates: list[date] = []
+    all_due_dates: list[date] = []
+
+    for it in ordered_items:
+        subtotal_items += max(0.0, float(it.qty or 0) * float(it.unit_price or 0))
+        shipping_fee += float(it.shipping_fee or 0)
+        tax += float(it.tax or 0)
+        other_fee += float(it.other_fee or 0)
+        discount += float(it.discount or 0)
+
+        tot_v, paid_v, rem_v, _ = get_expense_payment_breakdown(it)
+        total_amount += tot_v
+        paid_amount += paid_v
+        remaining_amount += rem_v
+
+        if is_paid_status(it.pay_status):
+            paid_count += 1
+        elif is_dp_status(it.pay_status) or paid_v > 0:
+            dp_count += 1
+        else:
+            unpaid_count += 1
+
+        due_d = parse_due_date(it.due_date)
+        if due_d:
+            all_due_dates.append(due_d)
+            if not is_paid_status(it.pay_status):
+                unpaid_due_dates.append(due_d)
+
+        if bool(it.is_reimbursement):
+            reimb_items.append(it)
+            if it.reimbursed_at is not None:
+                reimb_done_count += 1
+                if latest_reimb_at is None or it.reimbursed_at > latest_reimb_at:
+                    latest_reimb_at = it.reimbursed_at
+            else:
+                reimb_pending_total += tot_v
+
+    total_items_len = len(ordered_items)
+    all_paid = paid_count == total_items_len
+    has_unpaid_or_dp = (unpaid_count + dp_count) > 0
+    is_mixed_pay = paid_count > 0 and has_unpaid_or_dp
+    is_dp_group = (not all_paid) and (dp_count > 0 or paid_amount > 0)
+
+    if all_paid:
+        group_pay_status = "Lunas"
+    elif is_dp_group:
+        group_pay_status = "DP / Sebagian"
+    elif is_mixed_pay:
+        group_pay_status = "Sebagian Lunas"
+    else:
+        group_pay_status = "Belum Lunas"
+
+    progress_pct = round((paid_amount / total_amount) * 100, 1) if total_amount > 0 else (100.0 if all_paid else 0.0)
+
+    chosen_due = min(unpaid_due_dates) if unpaid_due_dates else (min(all_due_dates) if all_due_dates else None)
+    due_date_str = chosen_due.isoformat() if chosen_due else "-"
+
+    reimb_total_count = len(reimb_items)
+    reimb_pending_count = reimb_total_count - reimb_done_count
+    if reimb_total_count == 0:
+        reimb_status = "none"
+    elif reimb_pending_count == 0:
+        reimb_status = "reimbursed"
+    elif reimb_done_count == 0:
+        reimb_status = "pending"
+    else:
+        reimb_status = "partial"
+
+    matched_in_group = [it.id for it in ordered_items if it.id in matched_ids]
+
+    return {
+        "group_key": group_key,
+        "invoice_number": inv_no,
+        "invoice_group_id": inv_group_id,
+        "is_grouped": total_items_len > 1 or _is_valid_invoice_no(inv_no),
+        "expense_date": str(primary.expense_date),
+        "supplier": primary.supplier or "-",
+        "supplier_id": getattr(primary, "supplier_id", None),
+        "user_id": user_id,
+        "user_name": user_name,
+        "msg_link": best_msg_link,
+        "pay_method": group_pay_method,
+        "items_count": total_items_len,
+        "matched_items_count": len(matched_in_group),
+        "matched_item_ids": matched_in_group,
+        "categories": categories,
+        "primary_category": categories[0] if categories else "Operasional",
+        "subtotal_items": round(subtotal_items, 2),
+        "shipping_fee": round(shipping_fee, 2),
+        "tax": round(tax, 2),
+        "other_fee": round(other_fee, 2),
+        "discount": round(discount, 2),
+        "total_amount": round(total_amount, 2),
+        "paid_amount": round(paid_amount, 2),
+        "remaining_amount": round(remaining_amount, 2),
+        "payment_progress_pct": progress_pct,
+        "pay_status": group_pay_status,
+        "is_paid": all_paid,
+        "is_dp": is_dp_group,
+        "is_mixed_pay_status": is_mixed_pay,
+        "due_date": due_date_str,
+        "is_reimbursement": reimb_total_count > 0,
+        "reimbursed_status": reimb_status,
+        "reimbursed_count": reimb_done_count,
+        "reimbursement_pending_count": reimb_pending_count,
+        "reimbursement_pending_total": round(reimb_pending_total, 2),
+        "reimbursed_at": latest_reimb_at if reimb_status == "reimbursed" else None,
+        "items": ordered_items,
+        "_sort_due_date": chosen_due,
+        "_sort_exp_date": primary.expense_date or date.min,
+        "_sort_max_id": max(it.id for it in ordered_items),
+    }
+
+
+async def get_grouped_expenses_paginated(
+    db: AsyncSession,
+    page: int = 1,
+    per_page: int = 25,
+    category: str | None = None,
+    month: int | None = None,
+    year: int | None = None,
+    search: str | None = None,
+    status: str | None = None,
+    pay_method: str | None = None,
+    is_reimbursement: bool | None = None,
+    user_id: int | None = None,
+    supplier_id: int | None = None,
+    supplier: str | None = None,
+    special_type: str | None = None,
+    reimbursed_status: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
+    due_urgency: str | None = None,
+    include_ongkir: bool = False,
+    talangan_type: str | None = None,
+    month_end: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """
+    Ambil daftar transaksi yang sudah dikelompokkan dalam 1 grup invoice (Smart Grouping Opsi B)
+    dengan pagination pada level invoice agar 1 invoice tidak pernah terpotong lintas halaman.
+    Return: (paged_groups, total_groups, total_items).
+    """
+    query = _build_expense_filter_query(
+        category=category,
+        month=month,
+        year=year,
+        search=search,
+        status=status,
+        pay_method=pay_method,
+        is_reimbursement=is_reimbursement,
+        user_id=user_id,
+        supplier_id=supplier_id,
+        supplier=supplier,
+        special_type=special_type,
+        reimbursed_status=reimbursed_status,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        include_ongkir=include_ongkir,
+        talangan_type=talangan_type,
+        month_end=month_end,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    res = await db.execute(query)
+    matched_rows = list(res.scalars().all())
+    if due_urgency:
+        today = date.today()
+        matched_rows = [e for e in matched_rows if _matches_due_urgency(e, due_urgency, today)]
+
+    if not matched_rows:
+        return [], 0, 0
+
+    matched_ids = {e.id for e in matched_rows}
+    matched_keys = {_compute_invoice_group_key(e) for e in matched_rows}
+
+    inv_tokens = {e.invoice_number.strip().lower() for e in matched_rows if _is_valid_invoice_no(e.invoice_number)}
+    grp_tokens = {e.invoice_group_id.strip() for e in matched_rows if getattr(e, "invoice_group_id", None)}
+    tg_tokens = {
+        e.msg_link.strip()
+        for e in matched_rows
+        if not _is_valid_invoice_no(e.invoice_number)
+        and not (getattr(e, "invoice_group_id", None) or "").strip()
+        and _is_groupable_tg_link(e.msg_link)
+    }
+
+    by_id: dict[int, Expense] = {e.id: e for e in matched_rows}
+    sibling_clauses = []
+    if inv_tokens:
+        sibling_clauses.append(func.lower(func.trim(Expense.invoice_number)).in_(inv_tokens))
+    if grp_tokens:
+        sibling_clauses.append(Expense.invoice_group_id.in_(grp_tokens))
+    if tg_tokens:
+        sibling_clauses.append(Expense.msg_link.in_(tg_tokens))
+
+    if sibling_clauses:
+        sib_query = select(Expense).where(or_(*sibling_clauses))
+        if is_reimbursement is True or special_type == "talangan":
+            sib_query = sib_query.where(Expense.is_reimbursement == True)  # noqa: E712
+            sib_query = _apply_special_type_filter(
+                sib_query,
+                special_type="talangan",
+                category=category,
+                include_ongkir=include_ongkir,
+                talangan_type=talangan_type,
+            )
+        elif special_type not in ("all", "unpaid", "tukar_cash", "ongkir", "all_cash_delivery", "cash_or_delivery", "tukar_cash_ongkir"):
+            sib_query = _apply_special_type_filter(
+                sib_query,
+                special_type=special_type,
+                category=category,
+                status=status,
+                is_reimbursement=is_reimbursement,
+                include_ongkir=include_ongkir,
+                talangan_type=talangan_type,
+            )
+        sib_res = await db.execute(sib_query)
+        for cand in sib_res.scalars().all():
+            if cand.id not in by_id and _compute_invoice_group_key(cand) in matched_keys:
+                by_id[cand.id] = cand
+
+    grouped_map: dict[str, list[Expense]] = defaultdict(list)
+    for exp in by_id.values():
+        grouped_map[_compute_invoice_group_key(exp)].append(exp)
+
+    groups = [
+        _build_invoice_group_dict(g_key, g_items, matched_ids)
+        for g_key, g_items in grouped_map.items()
+    ]
+
+    resolved_order = (sort_order or ("asc" if sort_by == "due_date" else "desc")).lower()
+    is_desc = resolved_order != "asc"
+
+    if sort_by == "due_date":
+        with_due = [g for g in groups if g["_sort_due_date"] is not None]
+        without_due = [g for g in groups if g["_sort_due_date"] is None]
+        with_due.sort(key=lambda g: (g["_sort_due_date"], g["_sort_exp_date"], g["_sort_max_id"]), reverse=is_desc)
+        without_due.sort(key=lambda g: (g["_sort_exp_date"], g["_sort_max_id"]), reverse=True)
+        groups = with_due + without_due
+    elif sort_by == "total_price":
+        groups.sort(key=lambda g: (g["total_amount"], g["_sort_exp_date"], g["_sort_max_id"]), reverse=is_desc)
+    elif sort_by == "supplier":
+        groups.sort(key=lambda g: ((g["supplier"] or "").lower(), g["_sort_exp_date"], g["_sort_max_id"]), reverse=is_desc)
+    else:
+        groups.sort(key=lambda g: (g["_sort_exp_date"], g["_sort_max_id"]), reverse=is_desc)
+
+    total_groups = len(groups)
+    total_items = sum(g["items_count"] for g in groups)
+    start_idx = (page - 1) * per_page
+    paged_groups = groups[start_idx : start_idx + per_page]
+
+    for g in paged_groups:
+        g.pop("_sort_due_date", None)
+        g.pop("_sort_exp_date", None)
+        g.pop("_sort_max_id", None)
+
+    return paged_groups, total_groups, total_items
 
 
 async def get_all_expense_users(db: AsyncSession) -> list[User]:
@@ -1898,6 +2427,7 @@ async def delete_expense(
                 "reimbursed_at": str(expense.reimbursed_at) if getattr(expense, "reimbursed_at", None) else None,
                 "notes": expense.notes,
                 "invoice_number": expense.invoice_number,
+                "invoice_group_id": getattr(expense, "invoice_group_id", None),
                 "user_id": expense.user_id,
                 "master_item_id": expense.master_item_id,
                 "msg_link": expense.msg_link,
@@ -2318,6 +2848,7 @@ async def batch_insert_expenses(
     sheets_synced: bool = True,
     user_id: int | None = None,
     actor: str = "system",
+    assign_group_ids: bool = False,
 ) -> list[Expense]:
     """
     Simpan sekumpulan pengeluaran (misal dari CSV) ke Postgres secara batch.
@@ -2325,7 +2856,7 @@ async def batch_insert_expenses(
     """
     from app.services.master_item_service import match_and_normalize_extracted_items
 
-    await match_and_normalize_extracted_items(db, items)
+    await match_and_normalize_extracted_items(db, items, preserve_explicit_pay_status=True)
 
     saved = []
     today = date.today()
@@ -2416,6 +2947,7 @@ async def batch_insert_expenses(
             notes=item.get("notes") or "-",
             is_reimbursement=bool(item.get("is_reimbursement", False)),
             invoice_number=str(item.get("invoice_number") or item.get("no_invoice") or "-"),
+            invoice_group_id=item.get("invoice_group_id"),
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=item.get("user_id") or user_id,
             master_item_id=item.get("master_item_id"),
@@ -2425,28 +2957,50 @@ async def batch_insert_expenses(
         db.add(expense)
         saved.append(expense)
 
+    if assign_group_ids:
+        _assign_batch_invoice_group_ids(saved, include_ongkir=True)
+
     await db.flush()
 
-    for exp in saved:
+    valid_src_items = [
+        item for item in items
+        if Decimal(str(item.get("total_price") if item.get("total_price") is not None else (item.get("total_harga") or 0))) > 0
+    ]
+
+    for idx, exp in enumerate(saved):
+        src_item = valid_src_items[idx] if idx < len(valid_src_items) else {}
         if is_dp_status(exp.pay_status) and float(exp.paid_amount or 0) > 0:
+            raw_dp_date = src_item.get("dp_payment_date")
+            if isinstance(raw_dp_date, date):
+                dp_pay_date = raw_dp_date
+            elif isinstance(raw_dp_date, str) and raw_dp_date.strip():
+                try:
+                    dp_pay_date = date.fromisoformat(raw_dp_date.strip()[:10])
+                except (ValueError, TypeError):
+                    dp_pay_date = exp.expense_date or date.today()
+            else:
+                dp_pay_date = exp.expense_date or date.today()
+
+            target_acc = await _resolve_account_for_expense_payment(
+                db, exp.bank_account_id, exp.pay_method or "Transfer", exp.bank_account_id
+            )
+            if exp.bank_account_id is None and target_acc is not None:
+                exp.bank_account_id = target_acc
+
             db.add(
                 ExpensePayment(
                     expense_id=exp.id,
                     payment_type="dp",
                     amount=exp.paid_amount,
                     dp_percent=exp.dp_percent,
-                    payment_date=exp.expense_date or date.today(),
+                    payment_date=dp_pay_date,
                     pay_method=exp.pay_method or "Transfer",
-                    bank_account_id=exp.bank_account_id,
+                    bank_account_id=target_acc,
+                    reference_no=src_item.get("dp_reference_no"),
                     notes="Pembayaran DP awal",
                     actor=actor,
                 )
             )
-
-    valid_src_items = [
-        item for item in items
-        if Decimal(str(item.get("total_price") if item.get("total_price") is not None else (item.get("total_harga") or 0))) > 0
-    ]
     for idx, exp in enumerate(saved):
         await record_expense_log(
             db,
@@ -2741,6 +3295,7 @@ async def get_reimbursement_summary(
     year: int | None = None,
     user_id: int | None = None,
     include_ongkir: bool = False,
+    talangan_type: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> dict:
@@ -2749,7 +3304,29 @@ async def get_reimbursement_summary(
     start_date/end_date (inklusif) lebih diutamakan daripada month/year.
     """
     query = select(Expense).where(Expense.is_reimbursement == True)  # noqa: E712
-    if not include_ongkir:
+    if talangan_type == "ongkir":
+        query = query.where(
+            or_(
+                func.lower(Expense.category) == "ongkir",
+                Expense.item_name.ilike("ongkir%"),
+                Expense.supplier.ilike("%gosend%"),
+                Expense.supplier.ilike("%grabexpress%"),
+                Expense.supplier.ilike("%lalamove%"),
+                Expense.supplier.ilike("%maxim%"),
+                Expense.supplier.ilike("%j&t%"),
+                Expense.supplier.ilike("%sicepat%"),
+            )
+        )
+    elif talangan_type == "belanja":
+        query = query.where(
+            and_(
+                or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
+                ~Expense.item_name.ilike("ongkir%"),
+            )
+        )
+    elif talangan_type == "all" or include_ongkir:
+        pass
+    else:
         query = query.where(
             and_(
                 or_(Expense.category.is_(None), func.lower(Expense.category) != "ongkir"),
@@ -2782,18 +3359,57 @@ async def get_reimbursement_summary(
     reimbursed_count = 0
     reimbursed_total = 0.0
 
+    belanja_pending_count = 0
+    belanja_pending_total = 0.0
+    ongkir_pending_count = 0
+    ongkir_pending_total = 0.0
+
+    belanja_reimbursed_count = 0
+    belanja_reimbursed_total = 0.0
+    ongkir_reimbursed_count = 0
+    ongkir_reimbursed_total = 0.0
+
+    belanja_total_count = 0
+    belanja_total_nominal = 0.0
+    ongkir_total_count = 0
+    ongkir_total_nominal = 0.0
+
     by_user_dict: dict[int | None, dict] = {}
 
     for e in expenses:
         nominal = float(e.total_price or 0)
         is_pending = e.reimbursed_at is None
+        is_ongkir = (
+            (e.category and e.category.lower() == "ongkir")
+            or (e.item_name and e.item_name.lower().startswith("ongkir"))
+            or (e.supplier and any(k in e.supplier.lower() for k in ("gosend", "grabexpress", "lalamove", "maxim", "sicepat", "j&t")))
+        )
 
         if is_pending:
             pending_count += 1
             pending_total += nominal
+            if is_ongkir:
+                ongkir_pending_count += 1
+                ongkir_pending_total += nominal
+            else:
+                belanja_pending_count += 1
+                belanja_pending_total += nominal
         else:
             reimbursed_count += 1
             reimbursed_total += nominal
+            if is_ongkir:
+                ongkir_reimbursed_count += 1
+                ongkir_reimbursed_total += nominal
+            else:
+                belanja_reimbursed_count += 1
+                belanja_reimbursed_total += nominal
+
+        if is_ongkir:
+            ongkir_total_count += 1
+            ongkir_total_nominal += nominal
+        else:
+            belanja_total_count += 1
+            belanja_total_nominal += nominal
 
         uid = e.user_id
         if uid not in by_user_dict:
@@ -2809,17 +3425,48 @@ async def get_reimbursement_summary(
                 "reimbursed_total": 0.0,
                 "total_count": 0,
                 "total_nominal": 0.0,
+                "belanja_pending_count": 0,
+                "belanja_pending_total": 0.0,
+                "ongkir_pending_count": 0,
+                "ongkir_pending_total": 0.0,
+                "belanja_reimbursed_count": 0,
+                "belanja_reimbursed_total": 0.0,
+                "ongkir_reimbursed_count": 0,
+                "ongkir_reimbursed_total": 0.0,
+                "belanja_total_count": 0,
+                "belanja_total_nominal": 0.0,
+                "ongkir_total_count": 0,
+                "ongkir_total_nominal": 0.0,
             }
 
         g = by_user_dict[uid]
         g["total_count"] += 1
         g["total_nominal"] += nominal
+        if is_ongkir:
+            g["ongkir_total_count"] += 1
+            g["ongkir_total_nominal"] += nominal
+        else:
+            g["belanja_total_count"] += 1
+            g["belanja_total_nominal"] += nominal
+
         if is_pending:
             g["pending_count"] += 1
             g["pending_total"] += nominal
+            if is_ongkir:
+                g["ongkir_pending_count"] += 1
+                g["ongkir_pending_total"] += nominal
+            else:
+                g["belanja_pending_count"] += 1
+                g["belanja_pending_total"] += nominal
         else:
             g["reimbursed_count"] += 1
             g["reimbursed_total"] += nominal
+            if is_ongkir:
+                g["ongkir_reimbursed_count"] += 1
+                g["ongkir_reimbursed_total"] += nominal
+            else:
+                g["belanja_reimbursed_count"] += 1
+                g["belanja_reimbursed_total"] += nominal
 
     by_user = sorted(
         by_user_dict.values(),
@@ -2834,6 +3481,18 @@ async def get_reimbursement_summary(
         "reimbursed_total": reimbursed_total,
         "total_count": len(expenses),
         "total_nominal": pending_total + reimbursed_total,
+        "belanja_pending_count": belanja_pending_count,
+        "belanja_pending_total": belanja_pending_total,
+        "ongkir_pending_count": ongkir_pending_count,
+        "ongkir_pending_total": ongkir_pending_total,
+        "belanja_reimbursed_count": belanja_reimbursed_count,
+        "belanja_reimbursed_total": belanja_reimbursed_total,
+        "ongkir_reimbursed_count": ongkir_reimbursed_count,
+        "ongkir_reimbursed_total": ongkir_reimbursed_total,
+        "belanja_total_count": belanja_total_count,
+        "belanja_total_nominal": belanja_total_nominal,
+        "ongkir_total_count": ongkir_total_count,
+        "ongkir_total_nominal": ongkir_total_nominal,
         "by_user": by_user,
     }
 
@@ -3370,6 +4029,135 @@ async def record_expense_payment(
     return expense, payment
 
 
+async def record_invoice_payment(
+    db: AsyncSession,
+    expense_ids: list[int],
+    *,
+    amount: float | None = None,
+    dp_percent: float | None = None,
+    payment_type: str | None = None,
+    payment_date: date | None = None,
+    pay_method: str = "Transfer",
+    bank_account_id: int | None = None,
+    reference_no: str | None = None,
+    notes: str = "-",
+    due_date: str | None = None,
+    settle_full: bool = False,
+    actor: str = "system",
+) -> list[Expense]:
+    """Catat pembayaran DP, termin/cicilan, atau pelunasan secara proporsional ke item belum lunas dalam 1 grup invoice."""
+    from fastapi import HTTPException, status as http_status
+
+    if not expense_ids:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Daftar ID transaksi invoice tidak boleh kosong.",
+        )
+
+    res = await db.execute(
+        select(Expense).where(Expense.id.in_(expense_ids)).order_by(Expense.id.asc())
+    )
+    items = list(res.scalars().all())
+    if not items:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="Data tagihan invoice tidak ditemukan.",
+        )
+
+    unpaid_entries: list[tuple[Expense, float, float]] = []
+    total_group_val = 0.0
+    total_remaining = 0.0
+    for exp in items:
+        t_val, _, rem_val, _ = get_expense_payment_breakdown(exp)
+        total_group_val += t_val
+        if not is_paid_status(exp.pay_status) and rem_val > 0:
+            unpaid_entries.append((exp, t_val, rem_val))
+            total_remaining += rem_val
+
+    if not unpaid_entries or total_remaining <= 0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Seluruh item pada invoice ini sudah berstatus Lunas.",
+        )
+
+    if settle_full:
+        target_pay_amt = round(total_remaining, 2)
+    elif dp_percent is not None:
+        target_pay_amt = round(total_group_val * (float(dp_percent) / 100.0), 2)
+        if abs(target_pay_amt - total_remaining) <= 1.0 or target_pay_amt > total_remaining:
+            target_pay_amt = round(total_remaining, 2)
+    elif amount is not None:
+        target_pay_amt = round(float(amount), 2)
+    else:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Nominal pembayaran atau persentase DP harus diisi.",
+        )
+
+    if target_pay_amt <= 0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Nominal pembayaran harus lebih dari Rp 0.",
+        )
+
+    if target_pay_amt > total_remaining + 1.0:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"Nominal pembayaran (Rp {target_pay_amt:,.0f}) melebihi sisa tagihan invoice (Rp {total_remaining:,.0f}).",
+        )
+
+    is_full_settlement = settle_full or abs(target_pay_amt - total_remaining) <= 1.0
+    if is_full_settlement:
+        target_pay_amt = round(total_remaining, 2)
+
+    allocations: list[tuple[Expense, float, float]] = []
+    if is_full_settlement:
+        allocations = [(exp, rem_val, rem_val) for exp, _, rem_val in unpaid_entries]
+    else:
+        running = 0.0
+        for idx, (exp, _, rem_val) in enumerate(unpaid_entries):
+            if idx == len(unpaid_entries) - 1:
+                share = round(max(0.0, min(rem_val, target_pay_amt - running)), 2)
+            else:
+                share = round(target_pay_amt * (rem_val / total_remaining), 2)
+                share = min(rem_val, max(0.0, share))
+            allocations.append((exp, share, rem_val))
+            running = round(running + share, 2)
+
+        diff = round(target_pay_amt - running, 2)
+        if abs(diff) > 0.001:
+            for idx in range(len(allocations) - 1, -1, -1):
+                exp, share, rem_val = allocations[idx]
+                adjusted = round(share + diff, 2)
+                if 0 <= adjusted <= rem_val + 0.01:
+                    allocations[idx] = (exp, min(rem_val, adjusted), rem_val)
+                    diff = 0.0
+                    break
+
+    updated_expenses: list[Expense] = []
+    for exp, alloc_amt, rem_val in allocations:
+        if alloc_amt <= 0:
+            continue
+        item_full = is_full_settlement or abs(alloc_amt - rem_val) <= 0.01
+        updated_exp, _ = await record_expense_payment(
+            db,
+            exp.id,
+            amount=None if item_full else alloc_amt,
+            payment_type=payment_type,
+            payment_date=payment_date,
+            pay_method=pay_method,
+            bank_account_id=bank_account_id,
+            reference_no=reference_no,
+            notes=notes,
+            due_date=due_date,
+            settle_full=item_full,
+            actor=actor,
+        )
+        updated_expenses.append(updated_exp)
+
+    return updated_expenses
+
+
 async def delete_expense_payment(
     db: AsyncSession,
     expense_id: int,
@@ -3522,6 +4310,7 @@ async def restore_deleted_expense(
         is_reimbursement=bool(snap.get("is_reimbursement", False)),
         notes=snap.get("notes") or "-",
         invoice_number=snap.get("invoice_number") or "-",
+        invoice_group_id=snap.get("invoice_group_id"),
         user_id=snap.get("user_id"),
         master_item_id=snap.get("master_item_id"),
         msg_link=snap.get("msg_link") or "Restored Data",

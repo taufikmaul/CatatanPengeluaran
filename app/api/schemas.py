@@ -62,6 +62,7 @@ class ExpenseBase(BaseModel):
     notes: str = "-"
     is_reimbursement: bool = False
     invoice_number: str = "-"
+    invoice_group_id: str | None = None
     msg_link: str = "Web Dashboard"
     user_id: int | None = None
     master_item_id: int | None = None
@@ -106,6 +107,7 @@ class ExpenseUpdate(BaseModel):
     notes: str | None = None
     is_reimbursement: bool | None = None
     invoice_number: str | None = None
+    invoice_group_id: str | None = None
     reimbursed_at: datetime | None = None
     msg_link: str | None = None
     user_id: int | None = None
@@ -150,6 +152,7 @@ class ExpenseResponse(BaseModel):
     msg_link: str
     is_reimbursement: bool = False
     invoice_number: str = "-"
+    invoice_group_id: str | None = None
     reimbursed_at: datetime | None = None
     user_id: int | None = None
     user_name: str | None = None
@@ -198,6 +201,56 @@ class ExpenseListResponse(BaseModel):
     total_pages: int
 
 
+class ExpenseInvoiceGroupResponse(BaseModel):
+    group_key: str
+    invoice_number: str = "-"
+    invoice_group_id: str | None = None
+    is_grouped: bool = False
+    expense_date: str
+    supplier: str = "-"
+    supplier_id: int | None = None
+    user_id: int | None = None
+    user_name: str | None = None
+    msg_link: str = "Web Dashboard"
+    pay_method: str = "Tunai"
+    items_count: int
+    matched_items_count: int
+    matched_item_ids: list[int] = []
+    categories: list[str] = []
+    primary_category: str = "Operasional"
+    subtotal_items: float = 0.0
+    shipping_fee: float = 0.0
+    tax: float = 0.0
+    other_fee: float = 0.0
+    discount: float = 0.0
+    total_amount: float = 0.0
+    paid_amount: float = 0.0
+    remaining_amount: float = 0.0
+    payment_progress_pct: float = 0.0
+    pay_status: str = "Lunas"
+    is_paid: bool = True
+    is_dp: bool = False
+    is_mixed_pay_status: bool = False
+    due_date: str = "-"
+    is_reimbursement: bool = False
+    reimbursed_status: str = "none"  # "none" | "pending" | "partial" | "reimbursed"
+    reimbursed_count: int = 0
+    reimbursement_pending_count: int = 0
+    reimbursement_pending_total: float = 0.0
+    reimbursed_at: datetime | None = None
+    items: list[ExpenseResponse] = []
+
+
+class ExpenseInvoiceListResponse(BaseModel):
+    ok: bool = True
+    data: list[ExpenseInvoiceGroupResponse]
+    total: int
+    total_items: int = 0
+    page: int
+    per_page: int
+    total_pages: int
+
+
 class ReimbursementUserSummary(BaseModel):
     user_id: int | None = None
     user_name: str
@@ -208,6 +261,18 @@ class ReimbursementUserSummary(BaseModel):
     reimbursed_total: float = 0.0
     total_count: int = 0
     total_nominal: float = 0.0
+    belanja_pending_count: int = 0
+    belanja_pending_total: float = 0.0
+    ongkir_pending_count: int = 0
+    ongkir_pending_total: float = 0.0
+    belanja_reimbursed_count: int = 0
+    belanja_reimbursed_total: float = 0.0
+    ongkir_reimbursed_count: int = 0
+    ongkir_reimbursed_total: float = 0.0
+    belanja_total_count: int = 0
+    belanja_total_nominal: float = 0.0
+    ongkir_total_count: int = 0
+    ongkir_total_nominal: float = 0.0
 
 
 class ReimbursementSummaryResponse(BaseModel):
@@ -218,6 +283,18 @@ class ReimbursementSummaryResponse(BaseModel):
     reimbursed_total: float = 0.0
     total_count: int = 0
     total_nominal: float = 0.0
+    belanja_pending_count: int = 0
+    belanja_pending_total: float = 0.0
+    ongkir_pending_count: int = 0
+    ongkir_pending_total: float = 0.0
+    belanja_reimbursed_count: int = 0
+    belanja_reimbursed_total: float = 0.0
+    ongkir_reimbursed_count: int = 0
+    ongkir_reimbursed_total: float = 0.0
+    belanja_total_count: int = 0
+    belanja_total_nominal: float = 0.0
+    ongkir_total_count: int = 0
+    ongkir_total_nominal: float = 0.0
     by_user: list[ReimbursementUserSummary] = []
 
 
@@ -292,6 +369,20 @@ class UnpaidSettleRequest(BaseModel):
     payment_date: date | None = None
     reference_no: str | None = None
     notes: str | None = None
+
+
+class UnpaidInvoicePaymentRequest(BaseModel):
+    expense_ids: list[int]
+    amount: float | None = Field(None, gt=0)
+    dp_percent: float | None = Field(None, gt=0, le=100)
+    payment_type: str | None = None
+    payment_date: date = Field(default_factory=date.today)
+    pay_method: str = "Transfer"
+    bank_account_id: int | None = None
+    reference_no: str | None = None
+    notes: str = "-"
+    due_date: str | None = None
+    settle_full: bool = False
 
 
 class ExpenseLogResponse(BaseModel):

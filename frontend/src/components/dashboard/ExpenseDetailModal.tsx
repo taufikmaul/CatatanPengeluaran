@@ -106,8 +106,11 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
           : `Status penggantian talangan dibatalkan.`
       );
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses-talangan-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["talangan-summary"] });
       queryClient.invalidateQueries({ queryKey: ["reimbursements-summary"] });
       queryClient.invalidateQueries({ queryKey: ["report"] });

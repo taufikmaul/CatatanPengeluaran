@@ -56,6 +56,7 @@ export interface Expense {
   msg_link: string;
   is_reimbursement?: boolean;
   invoice_number?: string;
+  invoice_group_id?: string | null;
   reimbursed_at?: string | null;
   user_id?: number | null;
   user_name?: string | null;
@@ -92,6 +93,60 @@ export interface ExpenseListResponse {
   total_pages: number;
 }
 
+export interface ExpenseInvoiceGroup {
+  group_key: string;
+  invoice_number: string;
+  invoice_group_id?: string | null;
+  is_grouped: boolean;
+  expense_date: string;
+  supplier: string;
+  supplier_id?: number | null;
+  user_id?: number | null;
+  user_name?: string | null;
+  msg_link: string;
+  pay_method: string;
+  items_count: number;
+  matched_items_count: number;
+  matched_item_ids: number[];
+  categories: string[];
+  primary_category: string;
+  subtotal_items: number;
+  shipping_fee: number;
+  tax: number;
+  other_fee: number;
+  discount: number;
+  total_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
+  payment_progress_pct: number;
+  pay_status: string;
+  is_paid: boolean;
+  is_dp: boolean;
+  is_mixed_pay_status: boolean;
+  due_date: string;
+  is_reimbursement: boolean;
+  reimbursed_status: "none" | "pending" | "partial" | "reimbursed" | string;
+  reimbursed_count: number;
+  reimbursement_pending_count: number;
+  reimbursement_pending_total: number;
+  reimbursed_at?: string | null;
+  items: Expense[];
+}
+
+export interface ExpenseInvoiceListResponse {
+  ok: boolean;
+  data: ExpenseInvoiceGroup[];
+  total: number;
+  total_items: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
+export interface InvoicePaymentPayload extends ExpensePaymentPayload {
+  expense_ids: number[];
+}
+
 export interface ReimbursementUserSummary {
   user_id: number | null;
   user_name: string;
@@ -102,6 +157,18 @@ export interface ReimbursementUserSummary {
   reimbursed_total: number;
   total_count: number;
   total_nominal: number;
+  belanja_pending_count?: number;
+  belanja_pending_total?: number;
+  ongkir_pending_count?: number;
+  ongkir_pending_total?: number;
+  belanja_reimbursed_count?: number;
+  belanja_reimbursed_total?: number;
+  ongkir_reimbursed_count?: number;
+  ongkir_reimbursed_total?: number;
+  belanja_total_count?: number;
+  belanja_total_nominal?: number;
+  ongkir_total_count?: number;
+  ongkir_total_nominal?: number;
 }
 
 export interface ReimbursementSummaryResponse {
@@ -112,6 +179,18 @@ export interface ReimbursementSummaryResponse {
   reimbursed_total: number;
   total_count: number;
   total_nominal: number;
+  belanja_pending_count?: number;
+  belanja_pending_total?: number;
+  ongkir_pending_count?: number;
+  ongkir_pending_total?: number;
+  belanja_reimbursed_count?: number;
+  belanja_reimbursed_total?: number;
+  ongkir_reimbursed_count?: number;
+  ongkir_reimbursed_total?: number;
+  belanja_total_count?: number;
+  belanja_total_nominal?: number;
+  ongkir_total_count?: number;
+  ongkir_total_nominal?: number;
   by_user: ReimbursementUserSummary[];
 }
 
