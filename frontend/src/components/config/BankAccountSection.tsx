@@ -15,6 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -511,208 +519,237 @@ export const BankAccountSection: React.FC = () => {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Rekening" : "Tambah Rekening Baru"}</DialogTitle>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-xl">
+          <DialogHeader className="pb-2 border-b border-border/80">
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+              {editing ? "Edit Rekening" : "Tambah Rekening Baru"}
+            </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-2">
+          <div className="space-y-4 py-2 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Nama Rekening / Akun *
                 </label>
                 <Input
                   placeholder="cth. BCA Operasional"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="h-9 text-xs"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Tipe Akun *
                 </label>
-                <select
-                  className="w-full h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                <AdaptiveSelect
                   value={form.account_type}
-                  onChange={(e) => {
-                    const nextType = e.target.value as BankAccountType;
+                  onValueChange={(val) => {
+                    const nextType = val as BankAccountType;
                     setForm({
                       ...form,
                       account_type: nextType,
-                      account_code: DEFAULT_COA_BY_TYPE[nextType] || form.account_code,
+                      account_code:
+                        DEFAULT_COA_BY_TYPE[nextType] || form.account_code,
                     });
                   }}
-                >
-                  <option value="bank">Rekening Bank</option>
-                  <option value="cash">Kas Tunai</option>
-                  <option value="ewallet">E-Wallet / QRIS</option>
-                  <option value="aggregator">Dompet Platform (GoBiz/Grab/Shopee)</option>
-                </select>
+                  options={[
+                    { value: "bank", label: "Rekening Bank" },
+                    { value: "cash", label: "Kas Tunai" },
+                    { value: "ewallet", label: "E-Wallet / QRIS" },
+                    {
+                      value: "aggregator",
+                      label: "Dompet Platform (GoBiz/Grab/Shopee)",
+                    },
+                  ]}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Nama Bank / Provider *
                 </label>
                 <Input
                   placeholder="cth. BCA, Mandiri, Cash, GoBiz"
                   value={form.bank_name}
                   onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                  className="h-9 text-xs"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Nomor Rekening / ID
                 </label>
                 <Input
                   placeholder="Opsional"
                   value={form.account_number}
-                  onChange={(e) => setForm({ ...form, account_number: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, account_number: e.target.value })
+                  }
+                  className="h-9 text-xs font-mono"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Kode Akun COA
                 </label>
-                {!customCoaMode ? (
-                  <select
-                    className="w-full h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-mono"
-                    value={form.account_code}
-                    onChange={(e) => {
-                      if (e.target.value === "__CUSTOM__") {
-                        setCustomCoaMode(true);
-                      } else {
-                        setForm({ ...form, account_code: e.target.value });
-                      }
-                    }}
-                  >
-                    {coaOptions.map((o) => (
-                      <option key={o.code} value={o.code}>
-                        {o.code} — {o.label}
-                      </option>
-                    ))}
-                    <option value="__CUSTOM__">+ Ketik Kode Lain...</option>
-                  </select>
-                ) : (
-                  <div className="flex gap-1">
-                    <Input
-                      placeholder="cth. 1-1125"
-                      className="font-mono text-xs"
-                      value={form.account_code}
-                      onChange={(e) => setForm({ ...form, account_code: e.target.value })}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-[11px] px-2"
-                      onClick={() => setCustomCoaMode(false)}
-                    >
-                      Pilih
-                    </Button>
-                  </div>
-                )}
+                <AdaptiveSelect
+                  value={form.account_code}
+                  onValueChange={(val) =>
+                    setForm({ ...form, account_code: val })
+                  }
+                  options={coaOptions.map((o) => ({
+                    value: o.code,
+                    label: `${o.code} (${o.label})`,
+                  }))}
+                  searchable={true}
+                  creatable={true}
+                  creatablePrefix="Kode COA"
+                  placeholder="Pilih atau ketik kode COA..."
+                  searchPlaceholder="Cari atau ketik kode COA..."
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Atas Nama
                 </label>
                 <Input
                   placeholder="cth. History Cake"
                   value={form.account_holder}
-                  onChange={(e) => setForm({ ...form, account_holder: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, account_holder: e.target.value })
+                  }
+                  className="h-9 text-xs"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-700 block mb-1">
-                  Saldo Awal (Rp)
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
+                  Saldo Awal
                 </label>
-                <Input
-                  type="number"
-                  value={form.opening_balance}
-                  onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
-                />
+                <InputGroup className="h-9">
+                  <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                    <InputGroupText className="text-xs">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    type="number"
+                    value={form.opening_balance}
+                    onChange={(e) =>
+                      setForm({ ...form, opening_balance: e.target.value })
+                    }
+                    className="text-xs tabular-nums pl-1"
+                  />
+                </InputGroup>
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-slate-700 block mb-1.5">
+            <div className="pt-3 border-t border-border/70 space-y-2">
+              <label className="text-xs font-medium text-foreground block">
                 Auto-Mapping Metode Bayar / Tipe Order POS
               </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {SUGGESTED_POS_CHANNELS.map((ch) => {
-                  const selected = form.channel_mappings.includes(ch);
-                  return (
-                    <button
+
+              {form.channel_mappings.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.channel_mappings.map((ch) => (
+                    <Badge
                       key={ch}
-                      type="button"
-                      onClick={() => toggleChannel(ch)}
-                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                        selected
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                      }`}
+                      variant="secondary"
+                      className="text-xs font-medium gap-1 pr-1"
                     >
-                      {ch}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Tambah nama channel lain..."
+                      <span>{ch}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleChannel(ch)}
+                        aria-label={`Hapus channel ${ch}`}
+                        className="p-0.5 rounded hover:bg-muted-foreground/20"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <InputGroup className="h-9">
+                <InputGroupInput
+                  placeholder="Ketik nama channel POS (mis. QRIS, GoFood Integrasi) lalu Enter..."
                   value={form.custom_channel}
-                  onChange={(e) => setForm({ ...form, custom_channel: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, custom_channel: e.target.value })
+                  }
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
                       addCustomChannel();
                     }
                   }}
+                  className="text-xs"
                 />
-                <Button type="button" variant="outline" size="sm" onClick={addCustomChannel}>
-                  Tambah
-                </Button>
-              </div>
+                <InputGroupAddon align="inline-end" className="pr-1.5">
+                  <InputGroupButton
+                    onClick={addCustomChannel}
+                    disabled={!form.custom_channel.trim()}
+                    className="font-semibold text-blue-600 dark:text-blue-400"
+                  >
+                    Tambah
+                  </InputGroupButton>
+                </InputGroupAddon>
+              </InputGroup>
             </div>
 
-            <div className="flex items-center gap-5 pt-1">
-              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+            <div className="flex items-center gap-5 pt-2 border-t border-border/70">
+              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.is_default}
-                  onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-                  className="rounded border-slate-300"
+                  onChange={(e) =>
+                    setForm({ ...form, is_default: e.target.checked })
+                  }
+                  className="w-3.5 h-3.5 rounded border-input"
                 />
                 Jadikan rekening default
               </label>
-              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.is_active}
-                  onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                  className="rounded border-slate-300"
+                  onChange={(e) =>
+                    setForm({ ...form, is_active: e.target.checked })
+                  }
+                  className="w-3.5 h-3.5 rounded border-input"
                 />
                 Aktif
               </label>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+          <DialogFooter className="pt-3 border-t border-border/70">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDialogOpen(false)}
+              className="h-9 px-4 text-xs"
+            >
               Batal
             </Button>
             <Button
-              disabled={!form.name.trim() || !form.bank_name.trim() || saveMutation.isPending}
+              size="sm"
+              disabled={
+                !form.name.trim() ||
+                !form.bank_name.trim() ||
+                saveMutation.isPending
+              }
               onClick={() => saveMutation.mutate()}
+              className="h-9 px-5 text-xs font-semibold"
             >
-              {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+              {saveMutation.isPending && (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              )}
               Simpan Rekening
             </Button>
           </DialogFooter>

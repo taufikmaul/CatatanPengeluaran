@@ -4,19 +4,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Calendar as CalendarIcon,
   ChevronDown,
   ChevronUp,
-  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,23 +42,6 @@ export interface DateRangePickerProps {
   /** Format tanggal input */
   dateFormat?: "dmy" | "mdy";
 }
-
-export interface Preset {
-  name: string;
-  label: string;
-}
-
-const PRESETS: Preset[] = [
-  { name: "today", label: "Hari Ini" },
-  { name: "yesterday", label: "Kemarin" },
-  { name: "last7", label: "7 Hari Terakhir" },
-  { name: "last14", label: "14 Hari Terakhir" },
-  { name: "last30", label: "30 Hari Terakhir" },
-  { name: "thisWeek", label: "Minggu Ini" },
-  { name: "lastWeek", label: "Minggu Lalu" },
-  { name: "thisMonth", label: "Bulan Ini" },
-  { name: "lastMonth", label: "Bulan Lalu" },
-];
 
 const formatDate = (date: Date, locale: string = "id-ID"): string => {
   return date.toLocaleDateString(locale, {
@@ -125,7 +100,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       : undefined
   );
 
-  // Sync saat initial prop berubah dari luar
   useEffect(() => {
     if (initialDateFrom) {
       setRange({
@@ -138,7 +112,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const openedRangeRef = useRef<DateRange | undefined>(range);
   const openedRangeCompareRef = useRef<DateRange | undefined>(rangeCompare);
 
-  const [selectedPreset, setSelectedPreset] = useState<string | undefined>(undefined);
   const [isSmallScreen, setIsSmallScreen] = useState<boolean>(() =>
     typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
@@ -151,88 +124,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const getPresetRange = (presetName: string): DateRange => {
-    const preset = PRESETS.find(({ name }) => name === presetName);
-    if (!preset) throw new Error(`Unknown preset: ${presetName}`);
-    const from = new Date();
-    const to = new Date();
-    const dayOfWeek = from.getDay(); // 0 is Sunday
-    const distanceToMonday = (dayOfWeek + 6) % 7; // Monday as 0
-
-    switch (preset.name) {
-      case "today":
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "yesterday":
-        from.setDate(from.getDate() - 1);
-        from.setHours(0, 0, 0, 0);
-        to.setDate(to.getDate() - 1);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "last7":
-        from.setDate(from.getDate() - 6);
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "last14":
-        from.setDate(from.getDate() - 13);
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "last30":
-        from.setDate(from.getDate() - 29);
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "thisWeek":
-        from.setDate(from.getDate() - distanceToMonday);
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "lastWeek":
-        from.setDate(from.getDate() - distanceToMonday - 7);
-        from.setHours(0, 0, 0, 0);
-        to.setDate(from.getDate() + 6);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "thisMonth":
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to.setHours(23, 59, 59, 999);
-        break;
-      case "lastMonth":
-        from.setMonth(from.getMonth() - 1);
-        from.setDate(1);
-        from.setHours(0, 0, 0, 0);
-        to.setDate(0); // last day of prev month
-        to.setHours(23, 59, 59, 999);
-        break;
-    }
-
-    return { from, to };
-  };
-
-  const applyPreset = (presetName: string) => {
-    const newRange = getPresetRange(presetName);
-    setRange(newRange);
-    setSelectedPreset(presetName);
-  };
-
-  const checkPresetMatch = () => {
-    for (const p of PRESETS) {
-      const pRange = getPresetRange(p.name);
-      if (
-        range.from.toDateString() === pRange.from.toDateString() &&
-        range.to?.toDateString() === pRange.to?.toDateString()
-      ) {
-        setSelectedPreset(p.name);
-        return;
-      }
-    }
-    setSelectedPreset(undefined);
-  };
-
   const resetToOpened = () => {
     if (openedRangeRef.current) setRange(openedRangeRef.current);
     setRangeCompare(openedRangeCompareRef.current);
@@ -242,7 +133,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     if (isOpen) {
       openedRangeRef.current = range;
       openedRangeCompareRef.current = rangeCompare;
-      checkPresetMatch();
     }
   }, [isOpen]);
 
@@ -253,12 +143,12 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
           variant="outline"
           size={size}
           className={cn(
-            "h-9 px-3 rounded-xl text-xs font-medium justify-between gap-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 shadow-2xs hover:bg-slate-50 dark:hover:bg-slate-800",
+            "h-9 px-3 rounded-md text-xs font-medium justify-between gap-2 border-input bg-background text-foreground shadow-xs hover:bg-accent/50",
             className
           )}
         >
           <div className="flex items-center gap-2 truncate">
-            <CalendarIcon className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+            <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
             <span className="truncate">
               {range.from ? (
                 range.to && range.from.toDateString() !== range.to.toDateString() ? (
@@ -273,7 +163,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               )}
             </span>
           </div>
-          <div className="text-slate-400 -mr-1">
+          <div className="text-muted-foreground -mr-1">
             {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </div>
         </Button>
@@ -281,130 +171,75 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
 
       <PopoverContent
         align={align}
-        className="w-auto p-0 rounded-2xl shadow-xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden"
+        className="w-auto p-0 rounded-lg shadow-lg border-border bg-popover overflow-hidden"
       >
-        <div className="flex flex-col sm:flex-row">
-          {/* Main Content Area */}
-          <div className="p-3 space-y-3">
-            {/* Top Bar: Manual Date Inputs */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-1.5">
-                <DateInput
-                  value={range.from}
-                  dateFormat={dateFormat}
-                  onChange={(d) => {
-                    const toDate = range.to && d > range.to ? d : range.to;
-                    setRange({ from: d, to: toDate });
-                    setSelectedPreset(undefined);
-                  }}
-                />
-                <span className="text-xs text-slate-400 font-medium">s.d.</span>
-                <DateInput
-                  value={range.to || range.from}
-                  dateFormat={dateFormat}
-                  onChange={(d) => {
-                    const fromDate = d < range.from ? d : range.from;
-                    setRange({ from: fromDate, to: d });
-                    setSelectedPreset(undefined);
-                  }}
-                />
-              </div>
-
-              {/* Mobile Presets Dropdown */}
-              {isSmallScreen && (
-                <Select
-                  value={selectedPreset}
-                  onValueChange={(val) => applyPreset(val)}
-                >
-                  <SelectTrigger className="h-8 text-xs rounded-lg w-full">
-                    <SelectValue placeholder="Pilihan Cepat..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRESETS.map((p) => (
-                      <SelectItem key={p.name} value={p.name} className="text-xs">
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-
-            {/* Optional Compare Feature */}
-            {showCompare && (
-              <div className="flex items-center justify-between py-1 px-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={!!rangeCompare}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        const compFrom = new Date(range.from);
-                        compFrom.setFullYear(compFrom.getFullYear() - 1);
-                        const compTo = range.to ? new Date(range.to) : new Date(range.from);
-                        compTo.setFullYear(compTo.getFullYear() - 1);
-                        setRangeCompare({ from: compFrom, to: compTo });
-                      } else {
-                        setRangeCompare(undefined);
-                      }
-                    }}
-                  />
-                  <Label className="text-xs text-slate-600 dark:text-slate-300">
-                    Bandingkan periode sebelumnya
-                  </Label>
-                </div>
-              </div>
-            )}
-
-            {/* Calendar Grid */}
-            <div className="flex justify-center">
-              <Calendar
-                mode="range"
-                selected={{ from: range.from, to: range.to }}
-                onSelect={(val: any) => {
-                  if (val?.from) {
-                    setRange({ from: val.from, to: val?.to });
-                    setSelectedPreset(undefined);
-                  }
+        <div className="p-3 space-y-3">
+          {/* Top Bar: Manual Date Inputs */}
+          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-border/70">
+            <div className="flex items-center gap-1.5">
+              <DateInput
+                value={range.from}
+                dateFormat={dateFormat}
+                onChange={(d) => {
+                  const toDate = range.to && d > range.to ? d : range.to;
+                  setRange({ from: d, to: toDate });
                 }}
-                numberOfMonths={isSmallScreen ? 1 : 2}
-                defaultMonth={range.from}
+              />
+              <span className="text-xs text-muted-foreground font-medium">s.d.</span>
+              <DateInput
+                value={range.to || range.from}
+                dateFormat={dateFormat}
+                onChange={(d) => {
+                  const fromDate = d < range.from ? d : range.from;
+                  setRange({ from: fromDate, to: d });
+                }}
               />
             </div>
           </div>
 
-          {/* Desktop Presets Sidebar */}
-          {!isSmallScreen && (
-            <div className="border-l border-slate-100 dark:border-slate-800 p-3 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col justify-between w-40 shrink-0">
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 px-2 block mb-1">
-                  Pilihan Cepat
-                </span>
-                {PRESETS.map((p) => {
-                  const isSelected = selectedPreset === p.name;
-                  return (
-                    <button
-                      key={p.name}
-                      type="button"
-                      onClick={() => applyPreset(p.name)}
-                      className={cn(
-                        "w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-between",
-                        isSelected
-                          ? "bg-purple-100 text-purple-900 font-semibold dark:bg-purple-950/60 dark:text-purple-300"
-                          : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100"
-                      )}
-                    >
-                      <span>{p.label}</span>
-                      {isSelected && <Check className="w-3 h-3 text-purple-600 dark:text-purple-400" />}
-                    </button>
-                  );
-                })}
+          {/* Optional Compare Feature */}
+          {showCompare && (
+            <div className="flex items-center justify-between py-1 px-1">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={!!rangeCompare}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      const compFrom = new Date(range.from);
+                      compFrom.setFullYear(compFrom.getFullYear() - 1);
+                      const compTo = range.to ? new Date(range.to) : new Date(range.from);
+                      compTo.setFullYear(compTo.getFullYear() - 1);
+                      setRangeCompare({ from: compFrom, to: compTo });
+                    } else {
+                      setRangeCompare(undefined);
+                    }
+                  }}
+                />
+                <Label className="text-xs text-muted-foreground">
+                  Bandingkan periode sebelumnya
+                </Label>
               </div>
             </div>
           )}
+
+          {/* Calendar Grid */}
+          <div className="flex justify-center">
+            <Calendar
+              mode="range"
+              selected={{ from: range.from, to: range.to }}
+              onSelect={(val: any) => {
+                if (val?.from) {
+                  setRange({ from: val.from, to: val?.to });
+                }
+              }}
+              numberOfMonths={isSmallScreen ? 1 : 2}
+              defaultMonth={range.from}
+            />
+          </div>
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-end gap-2 p-3 bg-slate-50/80 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-muted/30 border-t border-border/70">
           <Button
             type="button"
             variant="ghost"
@@ -413,7 +248,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               resetToOpened();
               setIsOpen(false);
             }}
-            className="h-8 px-3 text-xs text-slate-600 dark:text-slate-400"
+            className="h-8 px-3 text-xs"
           >
             Batal
           </Button>
@@ -429,7 +264,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
                 onUpdate?.({ range, rangeCompare });
               }
             }}
-            className="h-8 px-4 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg shadow-xs"
+            className="h-8 px-4 text-xs font-semibold rounded-md"
           >
             Terapkan
           </Button>

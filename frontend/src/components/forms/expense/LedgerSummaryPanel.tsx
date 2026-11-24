@@ -1,17 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Control, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-form";
 import { BankAccount, ExpenseFormData, ItemSuggestion } from "@/types";
 import { CategoryFormProfile } from "@/lib/categoryFormConfig";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
-import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CalendarClock, Package, ShoppingBag, Calculator, Percent, Wallet } from "lucide-react";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { InlineMathInput } from "./InlineMathInput";
 import { PriceSpikeAlert } from "./PriceSpikeAlert";
 import {
-  getEndOfMonthDate,
   getTempoQuickDate,
   isDpStatus,
   isPaidStatus,
@@ -32,7 +37,6 @@ interface LedgerSummaryPanelProps {
 
 export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(({
   control,
-  register,
   setValue,
   catProfile,
   units,
@@ -46,7 +50,6 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
   const [customTurunan, setCustomTurunan] = useState("");
   const selectedBankAccountId = useWatch({ control, name: "bank_account_id" });
 
-  // Isolated watcher: hanya komponen ini yang re-render saat angka kalkulasi berubah
   const [
     qty = 1,
     unit = "Pcs",
@@ -55,6 +58,7 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
     tax = 0,
     otherFee = 0,
     discount = 0,
+    payMethod = "Transfer",
     payStatus = "Lunas",
     itemName = "",
     notes = "",
@@ -74,6 +78,7 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
       "tax",
       "other_fee",
       "discount",
+      "pay_method",
       "pay_status",
       "item_name",
       "notes",
@@ -100,12 +105,10 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
     baseSubtotal + extraFeesTotal - Number(discount || 0)
   );
 
-  // Sinkronkan total_price ke form state hanya saat hasil kalkulasi berubah
   useEffect(() => {
     setValue("total_price", calculatedTotal, { shouldDirty: false });
   }, [calculatedTotal, setValue]);
 
-  // Sinkronkan nominal DP saat mode persentase aktif
   useEffect(() => {
     if (!isDp) return;
     if ((dpType || "percent") === "percent" && calculatedTotal > 0) {
@@ -124,8 +127,7 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
       ? Math.round((effectiveDpAmount / calculatedTotal) * 1000) / 10
       : 0;
 
-  // Cari referensi harga terakhir untuk deteksi Price Spike / Typo
-  const matchedReference = React.useMemo(() => {
+  const matchedReference = useMemo(() => {
     if (selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0) {
       return selectedSuggestionHint;
     }
@@ -138,22 +140,58 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
     );
   }, [selectedSuggestionHint, itemName, itemSuggestions]);
 
+  const orderedUnits = useMemo(() => {
+    if (!catProfile.allowedUnits) return units;
+    return units
+      .filter((u) => catProfile.allowedUnits!.includes(u))
+      .concat(units.filter((u) => !catProfile.allowedUnits!.includes(u)));
+  }, [catProfile.allowedUnits, units]);
+
+  const payMethodOptions = useMemo(() => {
+    if (isOngkir) {
+      return Array.from(
+        new Set([
+          "Gopay - Kasir",
+          "Gopay - Owner",
+          "Gopay - Maya",
+          "Ovo - Akun",
+          "Tunai",
+          "QRIS",
+          "Transfer",
+          "COD",
+          ...paymentMethods,
+        ])
+      );
+    }
+    return paymentMethods;
+  }, [isOngkir, paymentMethods]);
+
+  const bankAccountOptions = useMemo(() => {
+    return [
+      { value: "", label: "Otomatis (Sesuai Mapping Metode Bayar)" },
+      ...bankAccounts.map((acc) => ({
+        value: String(acc.id),
+        label: `${acc.name} (${acc.account_code})`,
+        sublabel: acc.bank_name,
+      })),
+    ];
+  }, [bankAccounts]);
+
   return (
-    <div className="lg:col-span-5 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 sm:p-5 space-y-4 lg:sticky lg:top-0">
-      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
-        <span className="text-xs font-bold text-slate-800">
-          Rincian Nominal & Pembayaran
+    <div className="lg:col-span-5 lg:pl-6 pt-4 lg:pt-0 border-t lg:border-t-0 border-border/70 space-y-4">
+      <div className="flex items-center justify-between border-b border-border/70 pb-2">
+        <span className="text-xs font-semibold text-foreground tracking-tight">
+          Rincian Nominal &amp; Pembayaran
         </span>
-        <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200/70 px-2 py-0.5 rounded-md flex items-center gap-1">
-          <Calculator className="w-3 h-3" />
-          <span>Bisa ketik rumus (12*15k)</span>
+        <span className="text-[11px] text-muted-foreground">
+          Mendukung rumus (12*15k)
         </span>
       </div>
 
-      {/* Qty, Satuan, & Harga Satuan (Adaptif sesuai Kategori) */}
+      {/* Qty, Satuan, & Harga Satuan */}
       {catProfile.hideQty ? (
-        <div>
-          <label className="text-xs font-semibold text-slate-700 block mb-1">
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-foreground block">
             {catProfile.priceLabel}
           </label>
           <InlineMathInput
@@ -162,8 +200,8 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
               setValue("qty", 1);
               setValue("unit_price", val, { shouldValidate: true, shouldDirty: true });
             }}
-            className="h-11 sm:h-10 text-sm rounded-xl bg-white font-bold tabular-nums"
-            placeholder="Ketik nominal atau rumus (mis: 250k + 50k)"
+            inputClassName="font-semibold"
+            placeholder="0 atau rumus (250k + 50k)"
           />
           <PriceSpikeAlert
             currentPrice={Number(unitPrice || 0)}
@@ -176,54 +214,54 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="grid grid-cols-2 sm:grid-cols-12 gap-2.5">
-            <div className="col-span-1 sm:col-span-3">
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
-                {isOngkir ? "Jml Trip" : "Qty"}
+          <div className="grid grid-cols-12 gap-2.5">
+            <div className="col-span-4 sm:col-span-3 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
+                {isOngkir ? "Trip" : "Qty"}
               </label>
               <InlineMathInput
                 value={Number(qty || 0)}
                 formatCurrencyHint={false}
+                prefixText=""
                 onChange={(val) =>
                   setValue("qty", val > 0 ? val : 1, {
                     shouldValidate: true,
                     shouldDirty: true,
                   })
                 }
-                className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold text-center tabular-nums"
+                inputClassName="font-semibold text-center"
                 placeholder="1"
               />
             </div>
 
-            <div className="col-span-1 sm:col-span-4">
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="col-span-8 sm:col-span-4 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Satuan
               </label>
               {catProfile.lockUnit ? (
-                <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center text-slate-700">
+                <div className="h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-xs font-medium flex items-center text-muted-foreground">
                   {catProfile.defaultUnit}
                 </div>
               ) : (
-                <select
-                  {...register("unit", { required: true })}
-                  className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-2.5 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  {(catProfile.allowedUnits
-                    ? units
-                        .filter((u) => catProfile.allowedUnits!.includes(u))
-                        .concat(units.filter((u) => !catProfile.allowedUnits!.includes(u)))
-                    : units
-                  ).map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+                <AdaptiveSelect
+                  value={unit || "Pcs"}
+                  onValueChange={(val) =>
+                    setValue("unit", val || "Pcs", {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                    })
+                  }
+                  options={orderedUnits}
+                  placeholder="Pilih satuan..."
+                  searchPlaceholder="Cari satuan..."
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                />
               )}
             </div>
 
-            <div className="col-span-2 sm:col-span-5">
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="col-span-12 sm:col-span-5 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 {catProfile.priceLabel}
               </label>
               <InlineMathInput
@@ -234,13 +272,12 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
                     shouldDirty: true,
                   })
                 }
-                className="h-11 sm:h-10 text-xs rounded-xl bg-white font-bold tabular-nums"
-                placeholder="Mis: 25000 atau 300k/12"
+                inputClassName="font-semibold"
+                placeholder="25000 atau 300k/12"
               />
             </div>
           </div>
 
-          {/* Peringatan Lonjakan Harga / Salah Ketik Nol */}
           <PriceSpikeAlert
             currentPrice={Number(unitPrice || 0)}
             referencePrice={matchedReference?.last_unit_price}
@@ -252,56 +289,50 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
         </div>
       )}
 
-      {/* Hint & Selector Satuan & Turunan dari Master Item */}
+      {/* Hint & Selector Satuan & Turunan dari Master Item (Flat Hairline Section) */}
       {catProfile.showMasterItemAutocomplete &&
         selectedSuggestionHint &&
         (selectedSuggestionHint.isi_paket ||
           selectedSuggestionHint.tipe_satuan === "keduanya") && (
-          <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl text-xs space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-blue-800 font-semibold">
-              <span className="flex items-center gap-1">
-                <Package className="w-3.5 h-3.5 text-blue-600" />
-                <span>Kemasan Master Item:</span>
-              </span>
+          <div className="pt-2.5 border-t border-border/70 text-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">Kemasan Master Item</span>
               {selectedSuggestionHint.isi_paket && (
-                <span className="font-medium text-blue-700">
-                  1 {selectedSuggestionHint.satuan_beli || "Box"}:{" "}
-                  {selectedSuggestionHint.isi_paket}
+                <span>
+                  1 {selectedSuggestionHint.satuan_beli || "Box"}: {selectedSuggestionHint.isi_paket}
                 </span>
               )}
             </div>
 
             {selectedSuggestionHint.tipe_satuan === "keduanya" && (
-              <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() =>
                     setValue("unit", selectedSuggestionHint.satuan_beli || "Box")
                   }
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                  className={`h-8 px-2.5 rounded-md text-xs font-medium border transition-colors ${
                     (unit || "").toLowerCase() ===
                     (selectedSuggestionHint.satuan_beli || "Box").toLowerCase()
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-background text-foreground border-input hover:bg-muted/50"
                   }`}
                 >
-                  <Package className="w-3 h-3" />
-                  <span>Paket ({selectedSuggestionHint.satuan_beli || "Box"})</span>
+                  Paket ({selectedSuggestionHint.satuan_beli || "Box"})
                 </button>
                 <button
                   type="button"
                   onClick={() =>
                     setValue("unit", selectedSuggestionHint.satuan_ecer || "Pouch")
                   }
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                  className={`h-8 px-2.5 rounded-md text-xs font-medium border transition-colors ${
                     (unit || "").toLowerCase() ===
                     (selectedSuggestionHint.satuan_ecer || "Pouch").toLowerCase()
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-background text-foreground border-input hover:bg-muted/50"
                   }`}
                 >
-                  <ShoppingBag className="w-3 h-3" />
-                  <span>Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})</span>
+                  Ecer ({selectedSuggestionHint.satuan_ecer || "Pouch"})
                 </button>
               </div>
             )}
@@ -314,79 +345,79 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
                     .filter(Boolean)
                 : [];
               return (
-                <div className="pt-1 border-t border-blue-200/50 space-y-1.5">
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-blue-900 font-medium">
-                      Varian Isi / Turunan:
+                    <span className="text-[11px] text-muted-foreground">
+                      Varian Isi / Turunan
                     </span>
                     <button
                       type="button"
                       onClick={() => setShowNewTurunan((prev) => !prev)}
-                      className="text-[10px] text-blue-700 hover:underline font-medium"
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
                       {showNewTurunan ? "Tutup" : "+ Turunan Baru"}
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {rawVariants.map((variant, idx) => {
-                      const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
-                      const curNotes = notes || "";
-                      const isPicked = curNotes
-                        .toLowerCase()
-                        .includes(cleanVar.toLowerCase());
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
+                  {rawVariants.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {rawVariants.map((variant, idx) => {
+                        const cleanVar = variant.replace(/^isi[:\s]*/i, "").trim();
+                        const curNotes = notes || "";
+                        const isPicked = curNotes
+                          .toLowerCase()
+                          .includes(cleanVar.toLowerCase());
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setValue(
+                                "unit",
+                                selectedSuggestionHint.satuan_beli || "Bungkus"
+                              );
+                              upsertNoteTag("Isi", cleanVar);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                              isPicked
+                                ? "bg-foreground text-background border-foreground"
+                                : "bg-background text-foreground border-input hover:bg-muted/60"
+                            }`}
+                          >
+                            {selectedSuggestionHint.satuan_beli || "Bungkus"} ({cleanVar})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {showNewTurunan && (
+                    <InputGroup className="h-8">
+                      <InputGroupInput
+                        placeholder="Contoh: 500g, 1Kg, 250ml"
+                        value={customTurunan}
+                        onChange={(e) => setCustomTurunan(e.target.value)}
+                        className="text-xs"
+                      />
+                      <InputGroupAddon align="inline-end" className="pr-1">
+                        <InputGroupButton
+                          disabled={!customTurunan.trim()}
                           onClick={() => {
+                            const cleanVar = customTurunan.trim();
                             setValue(
                               "unit",
                               selectedSuggestionHint.satuan_beli || "Bungkus"
                             );
                             upsertNoteTag("Isi", cleanVar);
+                            setCustomTurunan("");
+                            setShowNewTurunan(false);
                           }}
-                          className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 ${
-                            isPicked
-                              ? "bg-emerald-600 text-white shadow-xs"
-                              : "bg-white text-slate-700 border border-blue-200 hover:bg-blue-100/50"
-                          }`}
+                          className="font-semibold text-blue-600 dark:text-blue-400"
                         >
-                          <span>
-                            {selectedSuggestionHint.satuan_beli || "Bungkus"} (isi{" "}
-                            {cleanVar})
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {showNewTurunan && (
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <Input
-                        placeholder="Contoh: 500g, 1Kg, 250ml"
-                        value={customTurunan}
-                        onChange={(e) => setCustomTurunan(e.target.value)}
-                        className="h-8 text-xs bg-white rounded-lg flex-1"
-                      />
-                      <button
-                        type="button"
-                        disabled={!customTurunan.trim()}
-                        onClick={() => {
-                          const cleanVar = customTurunan.trim();
-                          setValue(
-                            "unit",
-                            selectedSuggestionHint.satuan_beli || "Bungkus"
-                          );
-                          upsertNoteTag("Isi", cleanVar);
-                          setCustomTurunan("");
-                          setShowNewTurunan(false);
-                        }}
-                        className="h-8 px-2.5 bg-blue-600 text-white rounded-lg text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        Terapkan
-                      </button>
-                    </div>
+                          Terapkan
+                        </InputGroupButton>
+                      </InputGroupAddon>
+                    </InputGroup>
                   )}
                 </div>
               );
@@ -399,74 +430,70 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
         catProfile.taxLabel ||
         catProfile.otherFeeLabel ||
         catProfile.discountLabel) && (
-        <div className="grid grid-cols-2 gap-2.5 pt-1">
+        <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-border/70">
           {catProfile.shippingFeeLabel && (
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                {catProfile.shippingFeeLabel}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                {catProfile.shippingFeeLabel.replace(/\s*\(Rp\)/i, "")}
               </label>
               <InlineMathInput
                 value={Number(shippingFee || 0)}
                 onChange={(val) => setValue("shipping_fee", val)}
-                className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
                 placeholder="0"
               />
             </div>
           )}
 
           {catProfile.taxLabel && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-semibold text-slate-600">
-                  {catProfile.taxLabel}
-                </label>
-                {Number(unitPrice) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setValue(
-                        "tax",
-                        Math.round(Number(qty) * Number(unitPrice) * 0.11)
-                      )
-                    }
-                    className="text-[10px] text-blue-600 hover:underline font-semibold"
-                  >
-                    +11% PPN
-                  </button>
-                )}
-              </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                {catProfile.taxLabel.replace(/\s*\(Rp\)/i, "")}
+              </label>
               <InlineMathInput
                 value={Number(tax || 0)}
                 onChange={(val) => setValue("tax", val)}
-                className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
                 placeholder="0"
+                suffixAddon={
+                  Number(unitPrice) > 0 ? (
+                    <InputGroupButton
+                      size="xs"
+                      onClick={() =>
+                        setValue(
+                          "tax",
+                          Math.round(Number(qty) * Number(unitPrice) * 0.11)
+                        )
+                      }
+                      className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 h-6 px-1.5"
+                    >
+                      +11%
+                    </InputGroupButton>
+                  ) : undefined
+                }
               />
             </div>
           )}
 
           {catProfile.otherFeeLabel && (
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                {catProfile.otherFeeLabel}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                {catProfile.otherFeeLabel.replace(/\s*\(Rp\)/i, "")}
               </label>
               <InlineMathInput
                 value={Number(otherFee || 0)}
                 onChange={(val) => setValue("other_fee", val)}
-                className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
                 placeholder="0"
               />
             </div>
           )}
 
           {catProfile.discountLabel && (
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                {catProfile.discountLabel}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                {catProfile.discountLabel.replace(/\s*\(Rp\)/i, "")}
               </label>
               <InlineMathInput
                 value={Number(discount || 0)}
                 onChange={(val) => setValue("discount", val)}
-                className="h-10 sm:h-9 text-xs rounded-xl bg-white tabular-nums"
                 placeholder="0"
               />
             </div>
@@ -474,10 +501,10 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
         </div>
       )}
 
-      {/* Calculated Total Highlight Box with Breakdown */}
-      <div className="p-3.5 bg-white border border-blue-200/90 rounded-2xl space-y-2 shadow-2xs">
+      {/* Editorial Total Summary Line (Zero Nested Card) */}
+      <div className="pt-3 pb-1 border-t border-border/80 space-y-1.5">
         {(extraFeesTotal > 0 || Number(discount) > 0) && (
-          <div className="space-y-1 text-[11px] text-slate-500 border-b border-slate-100 pb-2">
+          <div className="space-y-1 text-[11px] text-muted-foreground pb-1.5 border-b border-border/50">
             <div className="flex justify-between">
               <span>
                 Subtotal ({qty} {unit})
@@ -487,7 +514,7 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
               </span>
             </div>
             {extraFeesTotal > 0 && (
-              <div className="flex justify-between text-slate-600">
+              <div className="flex justify-between">
                 <span>Biaya Tambahan / Pajak</span>
                 <span className="font-mono tabular-nums">
                   +{formatRupiah(extraFeesTotal)}
@@ -495,7 +522,7 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
               </div>
             )}
             {Number(discount) > 0 && (
-              <div className="flex justify-between text-emerald-700">
+              <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
                 <span>Potongan / Diskon</span>
                 <span className="font-mono tabular-nums">
                   -{formatRupiah(Number(discount))}
@@ -504,283 +531,209 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
             )}
           </div>
         )}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-bold text-slate-800">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs font-semibold text-foreground">
             {catProfile.totalLabel}
           </span>
-          <span className="text-lg font-extrabold text-blue-700 tabular-nums">
+          <span className="text-lg font-bold tracking-tight text-foreground tabular-nums">
             {formatRupiah(calculatedTotal)}
           </span>
         </div>
       </div>
 
       {/* Metode Bayar & Status Pembayaran */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-        <div>
-          <label className="text-xs font-semibold text-slate-700 block mb-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2.5 border-t border-border/70">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-foreground block">
             Metode Bayar
           </label>
           {isTukarCash ? (
-            <div className="h-11 sm:h-10 w-full rounded-xl border border-input bg-slate-100 px-3 text-xs font-semibold flex items-center justify-between text-slate-800">
+            <div className="h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-xs font-medium flex items-center justify-between text-foreground">
               <span>Tunai (Otomatis)</span>
-              <Badge
-                variant="outline"
-                className="text-[10px] bg-white text-emerald-700 border-emerald-200"
-              >
+              <Badge variant="outline" className="text-[10px]">
                 Kas Fisik
               </Badge>
             </div>
-          ) : isOngkir ? (
-            <>
-              <Input
-                list="ongkir-pay-methods"
-                placeholder="Gopay, Ovo, Tunai, QRIS..."
-                {...register("pay_method")}
-                className="h-11 sm:h-10 text-xs rounded-xl bg-white"
-              />
-              <datalist id="ongkir-pay-methods">
-                <option value="Gopay - Kasir" />
-                <option value="Gopay - Owner" />
-                <option value="Gopay - Maya" />
-                <option value="Ovo - Akun" />
-                <option value="Tunai" />
-                <option value="QRIS" />
-                <option value="Transfer" />
-                <option value="COD" />
-              </datalist>
-            </>
           ) : (
-            <select
-              {...register("pay_method", {
-                onChange: (e) => {
-                  const val = e.target.value;
-                  if (val === "COD") {
-                    setValue("pay_status", "Belum Lunas");
-                  } else {
-                    setValue("pay_status", "Lunas");
-                  }
-                },
-              })}
-              className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
-            >
-              {paymentMethods.map((pm) => (
-                <option key={pm} value={pm}>
-                  {pm}
-                </option>
-              ))}
-            </select>
+            <AdaptiveSelect
+              value={payMethod || "Transfer"}
+              onValueChange={(val) => {
+                setValue("pay_method", val, { shouldDirty: true });
+                if (val === "COD") {
+                  setValue("pay_status", "Belum Lunas");
+                } else if (!isDp) {
+                  setValue("pay_status", "Lunas");
+                }
+              }}
+              options={payMethodOptions}
+              creatable={isOngkir}
+              creatablePrefix="Metode"
+              placeholder="Pilih metode bayar..."
+              searchPlaceholder="Cari metode bayar..."
+            />
           )}
         </div>
-        <div>
-          <label className="text-xs font-semibold text-slate-700 block mb-1">
+
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-foreground block">
             Status Pembayaran
           </label>
-          <select
-            {...register("pay_status", {
-              onChange: (e) => {
-                const nextStatus = e.target.value;
-                if (isDpStatus(nextStatus)) {
-                  if (!dpType) setValue("dp_type", "percent");
-                  if (!dpPercent) setValue("dp_percent", 50);
-                  if (!dueDate || dueDate === "-") {
-                    setValue("due_date", getTempoQuickDate(14, expenseDate));
-                  }
-                } else if (nextStatus === "Belum Lunas") {
-                  setValue("paid_amount", 0);
-                  if (!dueDate || dueDate === "-") {
-                    setValue("due_date", getTempoQuickDate(7, expenseDate));
-                  }
+          <AdaptiveSelect
+            value={payStatus || "Lunas"}
+            onValueChange={(nextStatus) => {
+              setValue("pay_status", nextStatus, { shouldDirty: true });
+              if (isDpStatus(nextStatus)) {
+                if (!dpType) setValue("dp_type", "percent");
+                if (!dpPercent) setValue("dp_percent", 50);
+                if (!dueDate || dueDate === "-") {
+                  setValue("due_date", getTempoQuickDate(14, expenseDate));
                 }
-              },
-            })}
-            className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-semibold"
-          >
-            <option value="Lunas">Lunas</option>
-            <option value="DP / Sebagian">DP / Bayar Sebagian</option>
-            <option value="Belum Lunas">Belum Lunas (Hutang)</option>
-          </select>
+              } else if (nextStatus === "Belum Lunas") {
+                setValue("paid_amount", 0);
+                if (!dueDate || dueDate === "-") {
+                  setValue("due_date", getTempoQuickDate(7, expenseDate));
+                }
+              }
+            }}
+            options={[
+              { value: "Lunas", label: "Lunas" },
+              { value: "DP / Sebagian", label: "DP / Bayar Sebagian" },
+              { value: "Belum Lunas", label: "Belum Lunas (Hutang)" },
+            ]}
+          />
         </div>
       </div>
 
-      {/* Skema DP (tampil saat status = DP / Sebagian) */}
+      {/* Skema DP (Flat Hairline Section, Zero Nested Card & Zero Quick Preset Buttons) */}
       {isDp && (
-        <div className="p-3.5 bg-amber-50/80 border border-amber-300/90 rounded-2xl space-y-3">
+        <div className="pt-3 border-t border-border/70 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-              <Wallet className="w-4 h-4 text-amber-700" />
-              <span>Rincian DP (Uang Muka)</span>
+            <span className="text-xs font-semibold text-foreground">
+              Rincian DP (Uang Muka)
             </span>
-            <span className="text-[11px] font-bold text-amber-900 tabular-nums">
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
               {effectiveDpPct}% dibayar awal
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setValue("dp_type", "percent");
-                if (!dpPercent) setValue("dp_percent", 50);
-              }}
-              className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
-                (dpType || "percent") === "percent"
-                  ? "bg-amber-700 text-white border-amber-800"
-                  : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100/60"
-              }`}
-            >
-              <Percent className="w-3.5 h-3.5" />
-              <span>Persentase (%)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setValue("dp_type", "amount")}
-              className={`min-h-[40px] sm:min-h-[34px] px-2.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-colors ${
-                dpType === "amount"
-                  ? "bg-amber-700 text-white border-amber-800"
-                  : "bg-white text-slate-700 border-amber-200 hover:bg-amber-100/60"
-              }`}
-            >
-              <span>Nominal (Rp)</span>
-            </button>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                Skema Perhitungan DP
+              </label>
+              <AdaptiveSelect
+                value={dpType || "percent"}
+                onValueChange={(val) => {
+                  setValue("dp_type", val as "percent" | "amount");
+                  if (val === "percent" && !dpPercent) setValue("dp_percent", 50);
+                }}
+                options={[
+                  { value: "percent", label: "Persentase (%)" },
+                  { value: "amount", label: "Nominal (Rp)" },
+                ]}
+              />
+            </div>
 
-          {(dpType || "percent") === "percent" ? (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[20, 30, 50, 70].map((pct) => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => setValue("dp_percent", pct)}
-                    className={`min-h-[36px] px-3 rounded-lg text-xs font-bold border transition-colors ${
-                      Number(dpPercent) === pct
-                        ? "bg-amber-700 text-white border-amber-800"
-                        : "bg-white text-slate-800 border-amber-200 hover:bg-amber-100"
-                    }`}
-                  >
-                    {pct}%
-                  </button>
-                ))}
-                <div className="flex items-center gap-1 ml-auto">
-                  <Input
+            {(dpType || "percent") === "percent" ? (
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground block">
+                  Persentase DP
+                </label>
+                <InputGroup className="h-9">
+                  <InputGroupInput
                     type="number"
                     min={1}
                     max={99}
                     value={Number(dpPercent || 50)}
                     onChange={(e) => setValue("dp_percent", Number(e.target.value))}
                     aria-label="Persentase DP"
-                    className="w-16 h-9 text-xs font-bold text-center rounded-lg bg-white"
+                    className="text-xs font-semibold tabular-nums"
                   />
-                  <span className="text-xs font-bold text-slate-700">%</span>
-                </div>
+                  <InputGroupAddon align="inline-end" className="pr-2.5">
+                    <InputGroupText className="text-xs">%</InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
               </div>
-            </div>
-          ) : (
-            <div>
-              <label className="text-[11px] font-semibold text-amber-900 block mb-1">
-                Nominal DP Dibayar Sekarang
-              </label>
-              <InlineMathInput
-                value={Number(paidAmount || 0)}
-                onChange={(val) => {
-                  setValue("paid_amount", val, { shouldDirty: true });
-                  if (calculatedTotal > 0) {
-                    setValue(
-                      "dp_percent",
-                      Math.round((val / calculatedTotal) * 10000) / 100
-                    );
-                  }
-                }}
-                className="h-10 text-xs font-bold rounded-xl bg-white tabular-nums"
-                placeholder="Ketik nominal DP, mis: 500k"
-              />
-            </div>
-          )}
+            ) : (
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground block">
+                  Nominal DP Dibayar Sekarang
+                </label>
+                <InlineMathInput
+                  value={Number(paidAmount || 0)}
+                  onChange={(val) => {
+                    setValue("paid_amount", val, { shouldDirty: true });
+                    if (calculatedTotal > 0) {
+                      setValue(
+                        "dp_percent",
+                        Math.round((val / calculatedTotal) * 10000) / 100
+                      );
+                    }
+                  }}
+                  inputClassName="font-semibold"
+                  placeholder="Contoh: 500k"
+                />
+              </div>
+            )}
+          </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-amber-200/80 text-xs">
+          <div className="flex items-center justify-between text-xs py-1.5 border-y border-border/50">
             <div>
-              <span className="text-[11px] text-amber-900 block">DP Dibayar:</span>
-              <span className="font-bold text-emerald-800 tabular-nums">
+              <span className="text-[11px] text-muted-foreground mr-1.5">DP Dibayar:</span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
                 {formatRupiah(effectiveDpAmount)}
               </span>
             </div>
-            <div className="text-right">
-              <span className="text-[11px] text-amber-900 block">Sisa Pelunasan:</span>
-              <span className="font-bold text-rose-700 tabular-nums">
+            <div>
+              <span className="text-[11px] text-muted-foreground mr-1.5">Sisa:</span>
+              <span className="font-semibold text-rose-700 dark:text-rose-400 tabular-nums">
                 {formatRupiah(remainingAfterDp)}
               </span>
             </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-semibold text-amber-900 block mb-1">
-              Tanggal Bayar DP (Opsional, default tanggal nota)
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-muted-foreground block">
+              Tanggal Bayar DP
             </label>
             <DatePicker
               value={dpPaymentDate || expenseDate || ""}
               onChange={(d) => setValue("dp_payment_date", toIsoDate(d))}
-              className="w-full h-9 text-xs rounded-xl bg-white border-amber-200"
+              className="w-full h-9 text-xs"
             />
           </div>
         </div>
       )}
 
-      {/* Rekening Sumber (Kas / Bank / Petty Cash) - tampil untuk Lunas maupun DP */}
+      {/* Rekening Sumber (Kas / Bank / Petty Cash) */}
       {bankAccounts.length > 0 && (isPaid || isDp) && (
-        <div>
-          <label className="text-xs font-semibold text-slate-700 block mb-1">
-            {isDp ? "Rekening Sumber Pembayaran DP" : "Rekening Sumber (Kas / Bank / Petty Cash)"}
+        <div className="space-y-1 pt-2.5 border-t border-border/70">
+          <label className="text-xs font-medium text-foreground block">
+            {isDp ? "Rekening Sumber Pembayaran DP" : "Rekening Sumber Dana"}
           </label>
-          <select
-            value={selectedBankAccountId ?? ""}
-            onChange={(e) =>
-              setValue("bank_account_id", e.target.value ? Number(e.target.value) : null)
+          <AdaptiveSelect
+            value={selectedBankAccountId ? String(selectedBankAccountId) : ""}
+            onValueChange={(val) =>
+              setValue("bank_account_id", val ? Number(val) : null)
             }
-            className="h-10 w-full rounded-xl border border-input bg-white px-3 text-xs font-medium text-slate-800"
-          >
-            <option value="">Otomatis (Sesuai Mapping Metode Bayar)</option>
-            {bankAccounts.map((acc) => (
-              <option key={acc.id} value={String(acc.id)}>
-                {acc.name} ({acc.account_code}) - {acc.bank_name}
-              </option>
-            ))}
-          </select>
+            options={bankAccountOptions}
+            placeholder="Otomatis (Sesuai Mapping Metode Bayar)"
+            searchPlaceholder="Cari rekening..."
+          />
         </div>
       )}
 
-      {/* Jatuh Tempo (Tampil menonjol saat Belum Lunas atau DP) */}
+      {/* Jatuh Tempo (Flat Hairline Section, Zero Preset Buttons) */}
       {isUnpaid && (
-        <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-2xl space-y-2">
-          <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5">
-            <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
-            <span>{isDp ? "Tempo Waktu Pelunasan Sisa" : "Tanggal Jatuh Tempo Tagihan"}</span>
+        <div className="pt-2.5 border-t border-border/70 space-y-1">
+          <label className="text-xs font-medium text-rose-700 dark:text-rose-400 block">
+            {isDp ? "Tanggal Jatuh Tempo Pelunasan Sisa" : "Tanggal Jatuh Tempo Tagihan"}
           </label>
           <DatePicker
-            value={dueDate || ""}
+            value={dueDate === "-" ? "" : dueDate || ""}
             onChange={(d) => setValue("due_date", toIsoDate(d), { shouldDirty: true })}
-            className="w-full h-10 text-xs rounded-xl bg-white border-rose-200"
+            className="w-full h-9 text-xs"
           />
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { label: "+7 Hari", val: getTempoQuickDate(7, expenseDate) },
-              { label: "+14 Hari", val: getTempoQuickDate(14, expenseDate) },
-              { label: "+30 Hari", val: getTempoQuickDate(30, expenseDate) },
-              { label: "Akhir Bulan", val: getEndOfMonthDate(expenseDate) },
-            ].map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => setValue("due_date", preset.val, { shouldDirty: true })}
-                className={`min-h-[32px] px-2.5 rounded-lg text-[11px] font-semibold border transition-colors ${
-                  dueDate === preset.val
-                    ? "bg-rose-700 text-white border-rose-800"
-                    : "bg-white text-slate-700 border-rose-200 hover:bg-rose-100"
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
         </div>
       )}
     </div>
@@ -813,18 +766,18 @@ export const IsolatedStickyFooter: React.FC<IsolatedStickyFooterProps> = React.m
   const dpRemaining = Math.max(0, Number(totalPrice) - dpPaid);
 
   return (
-    <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-between gap-3">
+    <div className="px-4 sm:px-6 py-3 border-t border-border/80 bg-background shrink-0 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <span className="text-[10px] font-semibold text-slate-600 block truncate">
+        <span className="text-[11px] font-medium text-muted-foreground block truncate">
           {isDp ? "Total Invoice (DP & Sisa)" : catProfile.totalLabel}
         </span>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm sm:text-base font-extrabold text-slate-900 tabular-nums">
+          <span className="text-sm sm:text-base font-bold text-foreground tabular-nums">
             {formatRupiah(Number(totalPrice))}
           </span>
           {isDp && (
-            <span className="text-[11px] font-semibold text-amber-800 tabular-nums">
-              DP {formatRupiah(dpPaid)} / Sisa {formatRupiah(dpRemaining)}
+            <span className="text-[11px] font-medium text-muted-foreground tabular-nums">
+              (DP {formatRupiah(dpPaid)} / Sisa {formatRupiah(dpRemaining)})
             </span>
           )}
         </div>
@@ -835,20 +788,20 @@ export const IsolatedStickyFooter: React.FC<IsolatedStickyFooterProps> = React.m
           type="button"
           variant="outline"
           onClick={onClose}
-          className="rounded-xl text-xs h-11 sm:h-10 px-4 font-semibold"
+          className="h-9 px-4 text-xs font-medium"
         >
           Batal
         </Button>
         <Button
           type="submit"
           disabled={isSubmitting}
-          className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold shadow-xs"
+          className="h-9 px-5 text-xs font-semibold"
         >
           {isSubmitting
             ? "Menyimpan..."
             : isEditing
             ? "Simpan Perubahan"
-            : "Tambah Catatan"}
+            : "Simpan Transaksi"}
         </Button>
       </div>
     </div>

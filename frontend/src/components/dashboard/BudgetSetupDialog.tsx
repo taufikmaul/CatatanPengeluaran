@@ -7,22 +7,23 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Target,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import {
   Percent,
   Copy,
   RotateCcw,
-  Calendar,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
   CheckCircle2,
-  Sliders,
-  ArrowRight,
   Wallet,
-  ArrowDownToLine,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/formatters";
 import { getMonthlyBudget, saveMonthlyBudget, copyMonthlyBudget } from "@/lib/api";
@@ -73,7 +74,6 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
   const [prevMonthEndingCash, setPrevMonthEndingCash] = useState<number | null>(null);
   const [prevMonthInfo, setPrevMonthInfo] = useState<{ month: number; year: number } | null>(null);
 
-  // Sync initial props when opened
   useEffect(() => {
     if (isOpen) {
       setSelectedYear(initialYear);
@@ -81,7 +81,6 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     }
   }, [isOpen, initialYear, initialMonth]);
 
-  // Fetch budget for the selected month/year
   const fetchBudget = async (year: number, month: number) => {
     setIsLoading(true);
     try {
@@ -91,12 +90,16 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
       setCategories(data.valid_categories || []);
       setIsCustom(Boolean(data.is_custom));
       setPrevMonthEndingCash(
-        data.previous_month_ending_balance !== undefined && data.previous_month_ending_balance !== null
+        data.previous_month_ending_balance !== undefined &&
+          data.previous_month_ending_balance !== null
           ? data.previous_month_ending_balance
           : 0
       );
       if (data.previous_month && data.previous_month_year) {
-        setPrevMonthInfo({ month: data.previous_month, year: data.previous_month_year });
+        setPrevMonthInfo({
+          month: data.previous_month,
+          year: data.previous_month_year,
+        });
       } else {
         const pm = month === 1 ? 12 : month - 1;
         const py = month === 1 ? year - 1 : year;
@@ -115,7 +118,6 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     }
   }, [isOpen, selectedYear, selectedMonth]);
 
-  // Navigate months
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
       setSelectedMonth(12);
@@ -134,7 +136,6 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     }
   };
 
-  // Calculations
   const totalAllocatedPercentage = useMemo(() => {
     return Object.values(percentages).reduce(
       (sum, val) => sum + (Number(val) || 0),
@@ -146,13 +147,13 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     return Math.round((totalBudget * totalAllocatedPercentage) / 100);
   }, [totalBudget, totalAllocatedPercentage]);
 
-  const remainingPercentage = Math.round((100 - totalAllocatedPercentage) * 10) / 10;
+  const remainingPercentage =
+    Math.round((100 - totalAllocatedPercentage) * 10) / 10;
   const remainingRupiah = Math.max(0, totalBudget - totalAllocatedRupiah);
 
   const isOverAllocated = totalAllocatedPercentage > 100;
   const isExactAllocated = Math.abs(totalAllocatedPercentage - 100) < 0.01;
 
-  // Handle category percentage change
   const handlePercentageChange = (cat: string, value: string) => {
     const num = Math.max(0, Math.min(100, parseFloat(value) || 0));
     setPercentages((prev) => ({
@@ -161,22 +162,19 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     }));
   };
 
-  // Quick preset total budget additions
-  const handleAddBudget = (amount: number) => {
-    setTotalBudget((prev) => Math.max(0, prev + amount));
-  };
-
-  // Distribute remaining % evenly among categories with 0% or all
   const handleDistributeRemaining = () => {
     if (remainingPercentage <= 0) {
       toast.info("Tidak ada sisa persentase untuk dibagikan.");
       return;
     }
-    const emptyCats = categories.filter((c) => !percentages[c] || percentages[c] === 0);
+    const emptyCats = categories.filter(
+      (c) => !percentages[c] || percentages[c] === 0
+    );
     const targetCats = emptyCats.length > 0 ? emptyCats : categories;
     if (targetCats.length === 0) return;
 
-    const share = Math.round((remainingPercentage / targetCats.length) * 10) / 10;
+    const share =
+      Math.round((remainingPercentage / targetCats.length) * 10) / 10;
     setPercentages((prev) => {
       const updated = { ...prev };
       targetCats.forEach((c) => {
@@ -184,10 +182,11 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
       });
       return updated;
     });
-    toast.success(`Sisa ${remainingPercentage}% dibagikan ke ${targetCats.length} kategori.`);
+    toast.success(
+      `Sisa ${remainingPercentage}% dibagikan ke ${targetCats.length} kategori.`
+    );
   };
 
-  // Distribute all categories equally to 100%
   const handleEvenAll = () => {
     if (categories.length === 0) return;
     const share = Math.round((100 / categories.length) * 10) / 10;
@@ -199,13 +198,11 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     toast.info(`Persentase dibagi rata (${share}% per kategori).`);
   };
 
-  // Reset all percentages
   const handleResetPercentages = () => {
     setPercentages({});
     toast.info("Alokasi persentase di-reset ke 0%.");
   };
 
-  // Copy from previous month (target budget or ending cash)
   const handleCopyPrevious = async (useCashBalance: boolean = false) => {
     setIsCopying(true);
     try {
@@ -222,8 +219,8 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
       toast.success(
         res.message ||
           (useCashBalance
-            ? "Berhasil menggunakan kas akhir bulan lalu!"
-            : "Berhasil menyalin anggaran dari bulan sebelumnya!")
+            ? "Berhasil menggunakan kas akhir bulan lalu."
+            : "Berhasil menyalin anggaran dari bulan sebelumnya.")
       );
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Gagal menyalin anggaran");
@@ -232,7 +229,6 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
     }
   };
 
-  // Save budget
   const handleSave = async () => {
     if (totalBudget < 0) {
       toast.error("Total anggaran tidak boleh bernilai negatif");
@@ -252,7 +248,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
         category_percentages: cleanPcts,
       });
 
-      toast.success(res.message || "Anggaran bulanan berhasil disimpan!");
+      toast.success(res.message || "Anggaran bulanan berhasil disimpan.");
       setIsCustom(true);
       if (onBudgetUpdated) {
         onBudgetUpdated();
@@ -267,59 +263,48 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto p-0 gap-0 rounded-2xl border-slate-200">
+      <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto p-0 gap-0 rounded-xl border-border bg-background">
         {/* Header with Month Selector */}
-        <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="px-5 py-4 border-b border-border/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pr-7">
             <div>
               <DialogHeader className="text-left space-y-1">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                    <Target className="w-4 h-4" />
-                  </div>
-                  <DialogTitle className="text-base md:text-lg font-bold text-slate-900">
+                  <DialogTitle className="text-base font-bold tracking-tight text-foreground">
                     Setup Anggaran Bulanan
                   </DialogTitle>
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                      isCustom
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : "bg-amber-50 text-amber-700 border-amber-200"
-                    }`}
-                  >
+                  <Badge variant="outline" className="text-[10px] px-2 py-0">
                     {isCustom ? "Kustom Bulan Ini" : "Standar Global"}
                   </Badge>
                 </div>
-                <DialogDescription className="text-xs text-slate-500">
+                <DialogDescription className="text-xs text-muted-foreground">
                   Tentukan plafon keseluruhan, lalu atur alokasi persentase per kategori dengan preview nominal Rupiah otomatis.
                 </DialogDescription>
               </DialogHeader>
             </div>
 
             {/* Month-Year Navigator */}
-            <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-2xs self-start sm:self-auto">
+            <div className="flex items-center border border-border rounded-md p-0.5 self-start sm:self-auto">
               <button
                 type="button"
                 onClick={handlePrevMonth}
                 disabled={isLoading}
                 aria-label="Bulan sebelumnya"
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
+                className="p-1.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <div className="px-3 text-center min-w-[130px]">
-                <span className="text-xs font-bold text-slate-800 block leading-tight">
+              <div className="px-3 text-center min-w-[120px]">
+                <span className="text-xs font-semibold text-foreground block leading-tight">
                   {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
                 </span>
-                <span className="text-[10px] text-slate-500">Pilih Bulan</span>
               </div>
               <button
                 type="button"
                 onClick={handleNextMonth}
                 disabled={isLoading}
                 aria-label="Bulan berikutnya"
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
+                className="p-1.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -327,128 +312,102 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className="p-5 md:p-6 space-y-6">
+        {/* Content Body (Zero Nested Card, Hairline Sections) */}
+        <div className="p-5 space-y-5">
           {/* Step 1: Overall Budget (Rupiah) */}
-          <div className="p-4 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl space-y-3">
+          <div className="space-y-2.5 pb-4 border-b border-border/70">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] font-bold flex items-center justify-center">
-                  1
-                </span>
-                Anggaran Keseluruhan ({MONTH_NAMES[selectedMonth - 1]} {selectedYear})
+              <label className="text-xs font-semibold text-foreground">
+                1. Anggaran Keseluruhan ({MONTH_NAMES[selectedMonth - 1]}{" "}
+                {selectedYear})
               </label>
-              <span className="text-xs font-bold text-emerald-800 tabular-nums">
+              <span className="text-xs font-bold text-foreground tabular-nums">
                 {formatRupiah(totalBudget)}
               </span>
             </div>
 
-            <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500">
-                Rp
-              </span>
-              <Input
+            <InputGroup className="h-10">
+              <InputGroupAddon align="inline-start" className="pl-3 pr-1">
+                <InputGroupText className="text-xs font-semibold">Rp</InputGroupText>
+              </InputGroupAddon>
+              <InputGroupInput
                 type="number"
                 step="any"
                 min="0"
                 value={totalBudget || ""}
-                onChange={(e) => setTotalBudget(Math.max(0, Number(e.target.value) || 0))}
+                onChange={(e) =>
+                  setTotalBudget(Math.max(0, Number(e.target.value) || 0))
+                }
                 placeholder="Contoh: 25000000"
-                className="pl-10 h-11 text-sm font-semibold rounded-xl bg-white border-emerald-200 focus:border-emerald-500 focus:ring-emerald-500"
+                className="text-sm font-semibold tabular-nums pl-1.5"
               />
-            </div>
-
-            {/* Quick Presets */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-              <span className="text-[11px] font-medium text-emerald-800 mr-1">Tambah Cepat:</span>
-              <button
-                type="button"
-                onClick={() => handleAddBudget(1_000_000)}
-                className="text-[11px] font-semibold bg-white text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100/70 transition-colors"
-              >
-                +1 Jt
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAddBudget(5_000_000)}
-                className="text-[11px] font-semibold bg-white text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100/70 transition-colors"
-              >
-                +5 Jt
-              </button>
-              <button
-                type="button"
-                onClick={() => handleAddBudget(10_000_000)}
-                className="text-[11px] font-semibold bg-white text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100/70 transition-colors"
-              >
-                +10 Jt
-              </button>
-              <button
-                type="button"
-                onClick={() => setTotalBudget(0)}
-                className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 ml-auto"
-              >
-                Reset 0
-              </button>
-            </div>
+              {totalBudget > 0 && (
+                <InputGroupAddon align="inline-end" className="pr-2">
+                  <InputGroupButton
+                    size="xs"
+                    onClick={() => setTotalBudget(0)}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Reset 0
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
 
             {/* Opsi Gunakan Akhir Kas Bulan Lalu */}
             {prevMonthEndingCash !== null && (
-              <div className="pt-2.5 mt-1 border-t border-emerald-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white/80 p-2.5 rounded-xl border border-emerald-100">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                    <Wallet className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[11px] text-slate-600 font-medium block leading-tight">
-                      Akhir Kas {prevMonthInfo ? `${MONTH_NAMES[prevMonthInfo.month - 1]} ${prevMonthInfo.year}` : "Bulan Lalu"}:
-                    </span>
-                    <span className="text-xs font-bold text-slate-900 tabular-nums">
-                      {formatRupiah(prevMonthEndingCash)}
-                    </span>
-                  </div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 text-xs">
+                <div className="text-muted-foreground">
+                  Akhir Kas{" "}
+                  {prevMonthInfo
+                    ? `${MONTH_NAMES[prevMonthInfo.month - 1]} ${prevMonthInfo.year}`
+                    : "Bulan Lalu"}
+                  :{" "}
+                  <strong className="text-foreground tabular-nums">
+                    {formatRupiah(prevMonthEndingCash)}
+                  </strong>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      const amount = Math.max(0, prevMonthEndingCash);
-                      setTotalBudget(amount);
-                      toast.success(
-                        `Kas awal bulanan diset ke akhir kas bulan lalu (${formatRupiah(amount)})`
-                      );
-                    }}
-                    className="h-7 text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800 rounded-lg px-2.5 gap-1 shadow-2xs"
-                  >
-                    <ArrowDownToLine className="w-3 h-3 text-sky-600" />
-                    Gunakan Kas Akhir
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const amount = Math.max(0, prevMonthEndingCash);
+                    setTotalBudget(amount);
+                    toast.success(
+                      `Kas awal bulanan diset ke akhir kas bulan lalu (${formatRupiah(
+                        amount
+                      )})`
+                    );
+                  }}
+                  className="h-7 text-[11px] font-medium px-2.5 self-start sm:self-auto"
+                >
+                  Gunakan Kas Akhir
+                </Button>
               </div>
             )}
           </div>
 
-          {/* Allocation Health Bar */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5">
+          {/* Allocation Health Strip */}
+          <div className="space-y-2.5 pb-4 border-b border-border/70">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-800">
+                <span className="font-semibold text-foreground">
                   Total Alokasi:{" "}
                   <span
                     className={
                       isOverAllocated
-                        ? "text-rose-600 font-extrabold"
+                        ? "text-rose-600 font-bold"
                         : isExactAllocated
-                        ? "text-emerald-600 font-extrabold"
-                        : "text-amber-600 font-extrabold"
+                        ? "text-emerald-600 font-bold"
+                        : "text-amber-600 font-bold"
                     }
                   >
                     {totalAllocatedPercentage}%
                   </span>
                 </span>
-                <span className="text-slate-500">•</span>
-                <span className="font-semibold text-slate-700 tabular-nums">
+                <span className="text-muted-foreground">•</span>
+                <span className="font-semibold text-foreground tabular-nums">
                   {formatRupiah(totalAllocatedRupiah)}
                 </span>
               </div>
@@ -457,7 +416,8 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                 {isOverAllocated ? (
                   <span className="text-rose-600 font-semibold flex items-center gap-1 text-[11px]">
                     <AlertCircle className="w-3.5 h-3.5" />
-                    Kelebihan {Math.round((totalAllocatedPercentage - 100) * 10) / 10}% (
+                    Kelebihan{" "}
+                    {Math.round((totalAllocatedPercentage - 100) * 10) / 10}% (
                     {formatRupiah(totalAllocatedRupiah - totalBudget)})
                   </span>
                 ) : isExactAllocated ? (
@@ -466,9 +426,9 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                     Alokasi Pas 100%
                   </span>
                 ) : (
-                  <span className="text-amber-700 font-medium text-[11px]">
+                  <span className="text-muted-foreground text-[11px]">
                     Sisa belum dialokasi:{" "}
-                    <strong>
+                    <strong className="text-foreground">
                       {remainingPercentage}% ({formatRupiah(remainingRupiah)})
                     </strong>
                   </span>
@@ -477,7 +437,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
             </div>
 
             {/* Progress Visual Bar */}
-            <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden flex">
+            <div className="w-full h-2 bg-muted rounded-full overflow-hidden flex">
               <div
                 className={`h-full transition-all duration-300 ${
                   isOverAllocated
@@ -499,17 +459,18 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                   size="sm"
                   onClick={handleDistributeRemaining}
                   disabled={remainingPercentage <= 0}
-                  className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-slate-200"
+                  className="h-7 text-[11px] px-2.5 font-medium"
                 >
-                  <Percent className="w-3 h-3 text-slate-600 mr-1" />
-                  Bagi Rata Sisa {remainingPercentage > 0 ? `(${remainingPercentage}%)` : ""}
+                  <Percent className="w-3 h-3 mr-1" />
+                  Bagi Rata Sisa{" "}
+                  {remainingPercentage > 0 ? `(${remainingPercentage}%)` : ""}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={handleEvenAll}
-                  className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-slate-200"
+                  className="h-7 text-[11px] px-2.5 font-medium"
                 >
                   Bagi Rata Semua
                 </Button>
@@ -518,7 +479,7 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                   variant="ghost"
                   size="sm"
                   onClick={handleResetPercentages}
-                  className="h-7 text-[11px] rounded-lg px-2 text-slate-500 hover:text-slate-800"
+                  className="h-7 text-[11px] px-2 text-muted-foreground hover:text-foreground"
                 >
                   <RotateCcw className="w-3 h-3 mr-1" />
                   Reset
@@ -533,9 +494,9 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                   onClick={() => handleCopyPrevious(false)}
                   disabled={isCopying}
                   title="Salin plafon dan alokasi persentase kategori bulan lalu"
-                  className="h-7 text-[11px] rounded-lg px-2.5 font-medium border-sky-200 text-sky-800 hover:bg-sky-50"
+                  className="h-7 text-[11px] px-2.5 font-medium"
                 >
-                  <Copy className="w-3 h-3 text-sky-600 mr-1" />
+                  <Copy className="w-3 h-3 mr-1" />
                   {isCopying ? "Menyalin..." : "Salin Bulan Lalu"}
                 </Button>
 
@@ -547,9 +508,9 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
                     onClick={() => handleCopyPrevious(true)}
                     disabled={isCopying}
                     title="Gunakan saldo akhir kas riil bulan lalu sebagai kas awal bulan ini"
-                    className="h-7 text-[11px] rounded-lg px-2.5 font-semibold border-emerald-300 text-emerald-800 bg-emerald-50/70 hover:bg-emerald-100/80"
+                    className="h-7 text-[11px] px-2.5 font-medium"
                   >
-                    <Wallet className="w-3 h-3 text-emerald-600 mr-1" />
+                    <Wallet className="w-3 h-3 mr-1" />
                     Salin + Pakai Kas Akhir
                   </Button>
                 )}
@@ -557,73 +518,64 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
             </div>
           </div>
 
-          {/* Step 2: Per Category Percentage Setup with Live Rupiah Preview */}
+          {/* Step 2: Per Category Percentage Setup with Live Rupiah Preview (Flat Hairline Rows) */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded-full bg-slate-800 text-white text-[11px] font-bold flex items-center justify-center">
-                  2
-                </span>
-                Alokasi Anggaran Per Kategori (%) & Preview Rupiah
+              <label className="text-xs font-semibold text-foreground">
+                2. Alokasi Anggaran Per Kategori (%) &amp; Preview Rupiah
               </label>
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] text-muted-foreground">
                 Isi persentase alokasi untuk tiap kategori
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="divide-y divide-border/60 border-y border-border/60">
               {categories.map((cat) => {
                 const pctVal = percentages[cat] || 0;
-                const rupiahVal = totalBudget > 0 ? Math.round((totalBudget * pctVal) / 100) : 0;
+                const rupiahVal =
+                  totalBudget > 0 ? Math.round((totalBudget * pctVal) / 100) : 0;
                 const spent = currentSpending[cat] || 0;
 
                 return (
                   <div
                     key={cat}
-                    className={`p-3 rounded-xl border transition-all ${
-                      pctVal > 0
-                        ? "border-slate-300 bg-white shadow-2xs"
-                        : "border-slate-200/70 bg-slate-50/50"
-                    }`}
+                    className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-xs font-semibold text-slate-800 truncate" title={cat}>
+                    <div className="min-w-0">
+                      <span
+                        className="text-xs font-medium text-foreground block truncate"
+                        title={cat}
+                      >
                         {cat}
                       </span>
                       {spent > 0 && (
-                        <span className="text-[10px] text-slate-500 shrink-0">
+                        <span className="text-[11px] text-muted-foreground">
                           Aktual: {formatRupiah(spent)}
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {/* Percentage Input */}
-                      <div className="relative w-28 shrink-0">
-                        <Input
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-semibold text-foreground tabular-nums min-w-[90px] text-right">
+                        {formatRupiah(rupiahVal)}
+                      </span>
+                      <InputGroup className="h-8 w-24">
+                        <InputGroupInput
                           type="number"
                           step="0.5"
                           min="0"
                           max="100"
                           value={percentages[cat] ?? ""}
-                          onChange={(e) => handlePercentageChange(cat, e.target.value)}
+                          onChange={(e) =>
+                            handlePercentageChange(cat, e.target.value)
+                          }
                           placeholder="0"
-                          className="h-8 text-xs font-bold text-slate-900 pr-6 rounded-lg bg-white"
+                          className="text-xs font-semibold tabular-nums text-right pr-1"
                         />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none">
-                          %
-                        </span>
-                      </div>
-
-                      {/* Live Rupiah Preview */}
-                      <div className="flex-1 bg-slate-100/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between min-w-0">
-                        <span className="text-[10px] font-medium text-slate-500 truncate mr-1">
-                          Preview Rp:
-                        </span>
-                        <span className="text-xs font-bold text-slate-900 tabular-nums truncate">
-                          {formatRupiah(rupiahVal)}
-                        </span>
-                      </div>
+                        <InputGroupAddon align="inline-end" className="pr-2">
+                          <InputGroupText className="text-xs">%</InputGroupText>
+                        </InputGroupAddon>
+                      </InputGroup>
                     </div>
                   </div>
                 );
@@ -633,13 +585,13 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 md:p-5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-3">
+        <div className="px-5 py-3.5 border-t border-border/80 bg-background flex items-center justify-between gap-3">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onClose}
-            className="text-xs rounded-xl"
+            className="h-9 px-4 text-xs"
           >
             Batal
           </Button>
@@ -649,9 +601,11 @@ export const BudgetSetupDialog: React.FC<BudgetSetupDialogProps> = ({
             size="sm"
             onClick={handleSave}
             disabled={isSaving || isLoading}
-            className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold px-4 h-9 gap-1.5"
+            className="h-9 px-5 text-xs font-semibold"
           >
-            {isSaving ? "Menyimpan..." : `Simpan Anggaran ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
+            {isSaving
+              ? "Menyimpan..."
+              : `Simpan Anggaran ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
           </Button>
         </div>
       </DialogContent>

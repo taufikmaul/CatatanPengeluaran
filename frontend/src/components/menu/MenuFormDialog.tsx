@@ -10,6 +10,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { formatRupiah } from "@/lib/formatters";
 import { getMenuConversionHint } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -89,18 +96,6 @@ function createBatchCostRow(
   };
 }
 
-const BATCH_COST_PRESETS: Array<{
-  category: BatchCostCategory;
-  label: string;
-}> = [
-  { category: "labor", label: "Tenaga Produksi / Baker" },
-  { category: "labor", label: "Tenaga Barista / Seduh" },
-  { category: "labor", label: "Tenaga Dekorasi / Finishing" },
-  { category: "operational", label: "Gas & Listrik Oven" },
-  { category: "operational", label: "Penyusutan Peralatan" },
-  { category: "operational", label: "Air, Es & Sanitasi" },
-];
-
 interface MenuFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -131,6 +126,7 @@ interface IngredientRowCardProps {
   isRecentlyAdded?: boolean;
   allowToggleCostGroup?: boolean;
   isInvalidForBundle?: boolean;
+  unitOptions: string[];
   onUpdateRow: (rowKey: string, patch: Partial<IngredientDraftRow>) => void;
   onUnitChange: (
     rowKey: string,
@@ -152,6 +148,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
   isRecentlyAdded = false,
   allowToggleCostGroup = true,
   isInvalidForBundle = false,
+  unitOptions,
   onUpdateRow,
   onUnitChange,
   onToggleCostGroup,
@@ -162,29 +159,19 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
   return (
     <div
       className={cn(
-        "rounded-xl border p-2.5 space-y-2 transition-all duration-300",
+        "py-2.5 space-y-2 transition-colors",
         isInvalidForBundle
-          ? "border-rose-300 bg-rose-50/70 dark:border-rose-800 dark:bg-rose-950/30"
+          ? "bg-rose-50/40 dark:bg-rose-950/20 px-2 rounded"
           : isRecentlyAdded
-          ? isPackaging
-            ? "border-amber-500 ring-2 ring-amber-400/40 bg-amber-50/70 dark:bg-amber-950/40"
-            : "border-blue-500 ring-2 ring-blue-500/35 bg-blue-50/60 dark:bg-blue-950/40"
-          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
+          ? "bg-muted/40 px-2 rounded"
+          : ""
       )}
     >
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Badge
             variant="outline"
-            className={
-              isInvalidForBundle
-                ? "text-[10px] px-1.5 py-0 shrink-0 bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/70 dark:text-rose-200 dark:border-rose-800"
-                : isSubMenu
-                ? "text-[10px] px-1.5 py-0 shrink-0 bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800"
-                : row.master_item_id !== null
-                ? "text-[10px] px-1.5 py-0 shrink-0 bg-blue-50 text-blue-900 border-blue-300 dark:bg-blue-950/50 dark:text-blue-200 dark:border-blue-800"
-                : "text-[10px] px-1.5 py-0 shrink-0 bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
-            }
+            className="text-[10px] px-1.5 py-0 shrink-0"
           >
             {isInvalidForBundle ? `${sourceLabel} (Tidak Valid)` : sourceLabel}
           </Badge>
@@ -199,7 +186,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
                 : `Nama bahan ${row.ingredient_name || ""}`.trim()
             }
             placeholder={isPackaging ? "Contoh: Box Mika 20cm" : "Nama bahan resep"}
-            className="h-9 sm:h-8 text-xs font-medium flex-1 min-w-0"
+            className="h-8 text-xs font-medium flex-1 min-w-0"
           />
         </div>
 
@@ -215,7 +202,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
                   ? `Pindahkan ${row.ingredient_name || "item"} ke Bahan Resep`
                   : `Pindahkan ${row.ingredient_name || "item"} ke Kemasan`
               }
-              className="h-9 sm:h-7 px-2 text-[11px] gap-1 text-slate-700 hover:text-blue-700 dark:text-slate-300 dark:hover:text-blue-300"
+              className="h-7 px-2 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
             >
               <ArrowRightLeft className="w-3 h-3 shrink-0" />
               <span>{isPackaging ? "Ke Bahan" : "Ke Kemasan"}</span>
@@ -227,7 +214,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
             size="sm"
             onClick={() => onRemove(row.key)}
             aria-label={`Hapus ${row.ingredient_name || "baris"}`}
-            className="h-9 w-9 sm:h-7 sm:w-7 p-0 text-slate-600 hover:text-rose-700 dark:text-slate-400 dark:hover:text-rose-400"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
@@ -236,7 +223,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
 
       <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-start">
         <div className="col-span-1 sm:col-span-2">
-          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-0.5">
+          <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
             Takaran
           </label>
           <Input
@@ -245,31 +232,35 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
             step="any"
             value={row.qty}
             onChange={(e) => onUpdateRow(row.key, { qty: e.target.value })}
-            className="h-9 sm:h-8 text-xs tabular-nums"
+            className="h-8 text-xs tabular-nums"
           />
         </div>
 
         <div className="col-span-1 sm:col-span-2">
-          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-0.5">
+          <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
             Satuan
           </label>
-          <Input
-            list="menu-unit-list"
+          <AdaptiveSelect
             value={row.unit}
-            onChange={(e) =>
+            onValueChange={(nextUnit) =>
               onUnitChange(
                 row.key,
-                e.target.value,
+                nextUnit,
                 row.master_item_id,
                 row.sub_menu_id
               )
             }
-            className="h-9 sm:h-8 text-xs"
+            options={unitOptions}
+            creatable={true}
+            creatablePrefix="Satuan"
+            placeholder="Satuan..."
+            searchPlaceholder="Cari satuan..."
+            triggerClassName="h-8"
           />
         </div>
 
         <div className="col-span-1 sm:col-span-2">
-          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-0.5">
+          <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
             Pembagi (Yield)
           </label>
           <Input
@@ -280,10 +271,10 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
             onChange={(e) =>
               onUpdateRow(row.key, { yield_factor: e.target.value })
             }
-            className="h-9 sm:h-8 text-xs tabular-nums"
+            className="h-8 text-xs tabular-nums"
           />
           {row.conversion_hint && (
-            <div className="text-[10px] text-blue-700 dark:text-blue-300 mt-0.5">
+            <div className="text-[10px] text-blue-600 dark:text-blue-400 mt-0.5">
               {row.conversion_hint}
             </div>
           )}
@@ -291,20 +282,25 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
 
         {!isPackaging && (
           <div className="col-span-1 sm:col-span-2">
-            <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-0.5">
-              Susut Prep (%)
+            <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+              Susut Prep
             </label>
-            <Input
-              type="number"
-              min={0}
-              max={99}
-              step="any"
-              value={row.waste_pct}
-              onChange={(e) =>
-                onUpdateRow(row.key, { waste_pct: e.target.value })
-              }
-              className="h-9 sm:h-8 text-xs tabular-nums"
-            />
+            <InputGroup className="h-8">
+              <InputGroupInput
+                type="number"
+                min={0}
+                max={99}
+                step="any"
+                value={row.waste_pct}
+                onChange={(e) =>
+                  onUpdateRow(row.key, { waste_pct: e.target.value })
+                }
+                className="text-xs tabular-nums"
+              />
+              <InputGroupAddon align="inline-end" className="pr-2">
+                <InputGroupText className="text-[11px]">%</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
           </div>
         )}
 
@@ -313,46 +309,46 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
             isPackaging ? "col-span-2 sm:col-span-3" : "col-span-2 sm:col-span-2"
           }
         >
-          <label className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-0.5">
-            Override Harga (Rp)
+          <label className="block text-[11px] font-medium text-muted-foreground mb-0.5">
+            Override Harga
           </label>
-          <Input
-            type="number"
-            min={0}
-            step="any"
-            value={row.unit_cost_override}
-            onChange={(e) =>
-              onUpdateRow(row.key, { unit_cost_override: e.target.value })
-            }
-            placeholder={
-              sourceUnitPrice > 0
-                ? `Auto: ${formatRupiah(sourceUnitPrice)}`
-                : "Isi harga beli"
-            }
-            className="h-9 sm:h-8 text-xs tabular-nums"
-          />
+          <InputGroup className="h-8">
+            <InputGroupAddon align="inline-start" className="pl-2 pr-1">
+              <InputGroupText className="text-[11px]">Rp</InputGroupText>
+            </InputGroupAddon>
+            <InputGroupInput
+              type="number"
+              min={0}
+              step="any"
+              value={row.unit_cost_override}
+              onChange={(e) =>
+                onUpdateRow(row.key, { unit_cost_override: e.target.value })
+              }
+              placeholder={
+                sourceUnitPrice > 0
+                  ? `${formatRupiah(sourceUnitPrice)}`
+                  : "Auto"
+              }
+              className="text-xs tabular-nums pl-1"
+            />
+          </InputGroup>
         </div>
 
         <div
           className={`${
             isPackaging ? "col-span-2 sm:col-span-3" : "col-span-2 sm:col-span-2"
-          } flex flex-col items-start sm:items-end justify-center gap-1 pt-1 sm:pt-4`}
+          } flex flex-col items-start sm:items-end justify-center gap-0.5 pt-1 sm:pt-4`}
         >
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-600 dark:text-slate-400">
-              Subtotal:
-            </span>
-            <Badge
-              variant="outline"
-              className="text-xs font-semibold tabular-nums"
-            >
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-[11px] text-muted-foreground">Subtotal:</span>
+            <span className="font-semibold text-foreground tabular-nums">
               {formatRupiah(cost)}
-            </Badge>
+            </span>
           </div>
           {row.price_drift_alert &&
             row.price_change_pct !== null &&
             row.price_change_pct !== undefined && (
-              <div className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-700 dark:text-rose-400">
+              <div className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 dark:text-rose-400">
                 <TrendingUp className="w-3 h-3 shrink-0" />
                 <span>
                   Naik +{row.price_change_pct}%
@@ -364,8 +360,8 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
       </div>
 
       {isSubMenu && (
-        <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-          <div className="inline-flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-medium">
+        <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <div className="inline-flex items-center gap-1.5 font-medium">
             <Layers className="w-3.5 h-3.5" />
             <span>
               Tipe:{" "}
@@ -376,7 +372,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
                 : "Menu Jual"}
             </span>
           </div>
-          <label className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer">
+          <label className="inline-flex items-center gap-1.5 text-foreground cursor-pointer">
             <input
               type="checkbox"
               checked={row.include_sub_packaging}
@@ -385,7 +381,7 @@ const IngredientRowCard: React.FC<IngredientRowCardProps> = ({
                   include_sub_packaging: e.target.checked,
                 })
               }
-              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600"
+              className="h-3.5 w-3.5 rounded border-input"
             />
             <span>Sertakan kemasan sub-produk</span>
           </label>
@@ -1028,29 +1024,6 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     flashRowHighlight(newRow.key);
   };
 
-  const handleAddPresetBatchCost = (
-    category: BatchCostCategory,
-    label: string
-  ) => {
-    setBatchCostRows((prev) => {
-      const emptyIdx = prev.findIndex(
-        (r) =>
-          r.category === category &&
-          r.name.trim() === "" &&
-          (Number(r.amount) || 0) === 0
-      );
-      if (emptyIdx >= 0) {
-        const next = [...prev];
-        next[emptyIdx] = { ...next[emptyIdx], name: label };
-        flashRowHighlight(next[emptyIdx].key);
-        return next;
-      }
-      const newRow = createBatchCostRow(category, label, "");
-      flashRowHighlight(newRow.key);
-      return [...prev, newRow];
-    });
-  };
-
   const handleRemoveBatchCostRow = (rowKey: string) => {
     setBatchCostRows((prev) => {
       if (prev.length <= 1) {
@@ -1274,6 +1247,23 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
     return invalid;
   }, [isBundle, ingredients, subMenuMap]);
 
+  const menuUnitOptions = useMemo(() => {
+    return Array.from(
+      new Set([
+        "Gram",
+        "ml",
+        "Kg",
+        "Liter",
+        "Pcs",
+        "Porsi",
+        "Slice",
+        "Box",
+        "Paket",
+        ...units,
+      ])
+    );
+  }, [units]);
+
   const renderIngredientRowCard = (row: IngredientDraftRow) => {
     const calc = recipeSummary.rowMap.get(row.key) || {
       sourceUnitPrice: 0,
@@ -1311,6 +1301,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
           isRecentlyAdded={recentlyAddedKey === row.key}
           allowToggleCostGroup={!isBundle}
           isInvalidForBundle={invalidBundleRowKeys.has(row.key)}
+          unitOptions={menuUnitOptions}
           onUpdateRow={handleUpdateRow}
           onUnitChange={handleUnitChange}
           onToggleCostGroup={handleToggleCostGroup}
@@ -1614,21 +1605,21 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
             >
               {/* Split Studio Body */}
               <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12">
-                {/* LEFT STUDIO CANVAS */}
-                <div className="lg:col-span-8 lg:min-h-0 lg:overflow-y-auto p-4 sm:p-5 space-y-4">
+                {/* LEFT STUDIO CANVAS (Zero Nested Card, Hairline Sections) */}
+                <div className="lg:col-span-8 lg:min-h-0 lg:overflow-y-auto p-4 sm:p-5 space-y-5">
                   {/* Tipe Item Selector */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3 space-y-2.5">
+                  <div className="space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                      <span className="text-xs font-semibold text-foreground">
                         Tipe Item
                       </span>
                       {itemType === "prepared" && (
-                        <label className="inline-flex items-center gap-2 text-xs text-slate-800 dark:text-slate-200 cursor-pointer font-medium">
+                        <label className="inline-flex items-center gap-2 text-xs text-foreground cursor-pointer font-medium">
                           <input
                             type="checkbox"
                             checked={isSellable}
                             onChange={(e) => setIsSellable(e.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                            className="h-3.5 w-3.5 rounded border-input"
                           />
                           <span>
                             Bisa dijual langsung (Dual-Use: Kondimen / Jar)
@@ -1665,37 +1656,17 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             onClick={() => handleSelectItemType(opt.value)}
                             aria-pressed={active}
                             className={cn(
-                              "relative text-left rounded-lg border px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+                              "text-left rounded-md border px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                               active
-                                ? "border-blue-600 dark:border-blue-400"
-                                : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900"
+                                ? "border-foreground bg-muted/50"
+                                : "border-border bg-background hover:bg-muted/30"
                             )}
                           >
-                            {active && (
-                              <motion.span
-                                layoutId="recipe-item-type-pill"
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 480,
-                                  damping: 36,
-                                }}
-                                className="absolute inset-0 rounded-lg bg-blue-50/95 dark:bg-blue-950/60"
-                              />
-                            )}
-                            <div className="relative z-10">
-                              <div
-                                className={cn(
-                                  "text-xs font-semibold",
-                                  active
-                                    ? "text-blue-900 dark:text-blue-100"
-                                    : "text-slate-900 dark:text-slate-100"
-                                )}
-                              >
-                                {opt.title}
-                              </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                                {opt.desc}
-                              </div>
+                            <div className="text-xs font-semibold text-foreground">
+                              {opt.title}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5">
+                              {opt.desc}
                             </div>
                           </button>
                         );
@@ -1703,13 +1674,13 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     </div>
                   </div>
 
-                  {/* Identitas & Master Kategori Menu */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3.5 space-y-3">
+                  {/* Identitas & Master Kategori Menu (Zero Nested Card & Zero Quick Pick Chips) */}
+                  <div className="pt-4 border-t border-border/70 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
+                      <div className="space-y-1">
                         <label
                           htmlFor="menu-name"
-                          className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
                           Nama Item <span className="text-rose-600">*</span>
                         </label>
@@ -1729,10 +1700,10 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         />
                       </div>
 
-                      <div>
+                      <div className="space-y-1">
                         <label
                           htmlFor="menu-anon"
-                          className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
                           Kode / Nama Anonim
                         </label>
@@ -1753,11 +1724,11 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
-                      <div className="sm:col-span-6 space-y-1.5">
+                      <div className="sm:col-span-6 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <label
                             htmlFor="menu-category"
-                            className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                            className="block text-xs font-medium text-foreground"
                           >
                             Kategori Menu
                           </label>
@@ -1765,31 +1736,29 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             <button
                               type="button"
                               onClick={onOpenCategoryManager}
-                              className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded px-1"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
                             >
                               <Tags className="w-3 h-3" />
                               <span>Kelola Master</span>
                             </button>
                           )}
                         </div>
-                        <select
+                        <AdaptiveSelect
                           id="menu-category"
                           value={category}
-                          onChange={(e) => setCategory(e.target.value)}
-                          className="h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        >
-                          {categorySelectOptions.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
-                            </option>
-                          ))}
-                        </select>
+                          onValueChange={setCategory}
+                          options={categorySelectOptions}
+                          placeholder="Pilih kategori menu..."
+                          searchPlaceholder="Cari kategori menu..."
+                          creatable={true}
+                          creatablePrefix="Kategori"
+                        />
                       </div>
 
-                      <div className="sm:col-span-3">
+                      <div className="sm:col-span-3 space-y-1">
                         <label
                           htmlFor="menu-sku"
-                          className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
                           SKU (Opsional)
                         </label>
@@ -1802,69 +1771,41 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         />
                       </div>
 
-                      <div className="sm:col-span-3">
+                      <div className="sm:col-span-3 space-y-1">
                         <label
                           htmlFor="menu-unit"
-                          className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
                           Satuan Utama
                         </label>
-                        <Input
+                        <AdaptiveSelect
                           id="menu-unit"
                           value={unit}
-                          onChange={(e) => {
-                            const nextU = e.target.value;
+                          onValueChange={(nextU) => {
                             setUnit(nextU);
                             if (!editingMenu || batchYieldUnit === unit) {
                               setBatchYieldUnit(nextU);
                             }
                           }}
+                          options={menuUnitOptions}
+                          creatable={true}
+                          creatablePrefix="Satuan"
                           placeholder={
                             itemType === "prepared" ? "Gram / ml" : "Porsi / Box"
                           }
-                          className="h-9 text-xs"
+                          searchPlaceholder="Cari satuan..."
                         />
                       </div>
                     </div>
-
-                    {/* Quick-pick master kategori pills */}
-                    {activeMasterCategories.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                        <span className="text-[11px] text-slate-600 dark:text-slate-400 mr-0.5">
-                          Pilih cepat:
-                        </span>
-                        {activeMasterCategories.slice(0, 8).map((catObj) => {
-                          const selected =
-                            category.trim().toLowerCase() ===
-                            catObj.name.trim().toLowerCase();
-                          return (
-                            <button
-                              key={catObj.id}
-                              type="button"
-                              aria-pressed={selected}
-                              onClick={() => setCategory(catObj.name)}
-                              className={cn(
-                                "px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
-                                selected
-                                  ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
-                                  : "bg-white text-slate-700 border-slate-300 hover:border-slate-500 hover:bg-slate-50 dark:bg-slate-950 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-900"
-                              )}
-                            >
-                              {catObj.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Batch Yield, Susut, & Storage */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3 space-y-2.5">
+                  {/* Batch Yield, Susut, & Storage (Flat Hairline Section + ReUI InputGroup) */}
+                  <div className="pt-4 border-t border-border/70 space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <button
                         type="button"
                         onClick={() => setShowBatchOptions((p) => !p)}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"
                         aria-expanded={showBatchOptions}
                       >
                         {showBatchOptions ? (
@@ -1874,11 +1815,11 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         )}
                         <span>Hasil Batch &amp; Susut Produksi</span>
                       </button>
-                      <span className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
+                      <span className="text-[11px] text-muted-foreground tabular-nums">
                         Hasil bersih:{" "}
-                        <strong>{Number(netYieldQty.toFixed(2))}</strong>{" "}
+                        <strong className="text-foreground">{Number(netYieldQty.toFixed(2))}</strong>{" "}
                         {batchYieldUnit || unit} | Modal isi/unit:{" "}
-                        <strong className="text-blue-700 dark:text-blue-300">
+                        <strong className="text-foreground">
                           {formatRupiah(recipeSummary.coreUnitHpp)}
                         </strong>
                       </span>
@@ -1890,117 +1831,126 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
                           exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                          transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                           className="overflow-hidden"
                         >
-                          <div className="space-y-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                              <div>
+                          <div className="space-y-3 pt-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="space-y-1">
                                 <label
                                   htmlFor="batch-yield-qty"
-                                  className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                                  className="block text-xs font-medium text-foreground"
                                 >
-                                  Hasil 1 Batch (Qty)
+                                  Hasil 1 Batch
                                 </label>
-                                <Input
-                                  id="batch-yield-qty"
-                                  type="number"
-                                  min={0.001}
-                                  step="any"
-                                  value={batchYieldQty}
-                                  onChange={(e) =>
-                                    setBatchYieldQty(e.target.value)
-                                  }
-                                  className="h-8 text-xs tabular-nums"
-                                />
+                                <InputGroup className="h-9">
+                                  <InputGroupInput
+                                    id="batch-yield-qty"
+                                    type="number"
+                                    min={0.001}
+                                    step="any"
+                                    value={batchYieldQty}
+                                    onChange={(e) =>
+                                      setBatchYieldQty(e.target.value)
+                                    }
+                                    className="text-xs tabular-nums"
+                                  />
+                                  <InputGroupAddon align="inline-end" className="pr-2.5">
+                                    <InputGroupText className="text-xs">
+                                      {batchYieldUnit || unit}
+                                    </InputGroupText>
+                                  </InputGroupAddon>
+                                </InputGroup>
                               </div>
-                              <div>
+                              <div className="space-y-1">
                                 <label
                                   htmlFor="batch-yield-unit"
-                                  className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                                  className="block text-xs font-medium text-foreground"
                                 >
                                   Satuan Hasil Batch
                                 </label>
-                                <Input
+                                <AdaptiveSelect
                                   id="batch-yield-unit"
-                                  list="menu-unit-list"
                                   value={batchYieldUnit}
-                                  onChange={(e) =>
-                                    setBatchYieldUnit(e.target.value)
-                                  }
+                                  onValueChange={setBatchYieldUnit}
+                                  options={menuUnitOptions}
+                                  creatable={true}
+                                  creatablePrefix="Satuan"
                                   placeholder="Gram / ml / Slice"
-                                  className="h-8 text-xs"
+                                  searchPlaceholder="Cari satuan..."
                                 />
                               </div>
-                              <div>
+                              <div className="space-y-1">
                                 <label
                                   htmlFor="waste-loss-pct"
-                                  className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                                  className="block text-xs font-medium text-foreground"
                                 >
-                                  Susut Masak / Panggang (%)
+                                  Susut Masak / Panggang
                                 </label>
-                                <Input
-                                  id="waste-loss-pct"
-                                  type="number"
-                                  min={0}
-                                  max={99}
-                                  step="any"
-                                  value={wasteLossPct}
-                                  onChange={(e) =>
-                                    setWasteLossPct(e.target.value)
-                                  }
-                                  className="h-8 text-xs tabular-nums"
-                                />
+                                <InputGroup className="h-9">
+                                  <InputGroupInput
+                                    id="waste-loss-pct"
+                                    type="number"
+                                    min={0}
+                                    max={99}
+                                    step="any"
+                                    value={wasteLossPct}
+                                    onChange={(e) =>
+                                      setWasteLossPct(e.target.value)
+                                    }
+                                    className="text-xs tabular-nums"
+                                  />
+                                  <InputGroupAddon align="inline-end" className="pr-2.5">
+                                    <InputGroupText className="text-xs">%</InputGroupText>
+                                  </InputGroupAddon>
+                                </InputGroup>
                               </div>
                             </div>
 
                             {itemType === "prepared" && (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                <div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
                                   <label
                                     htmlFor="shelf-life-days"
-                                    className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                                    className="block text-xs font-medium text-foreground"
                                   >
-                                    Masa Simpan Dapur (Hari, Opsional)
+                                    Masa Simpan Dapur (Opsional)
                                   </label>
-                                  <Input
-                                    id="shelf-life-days"
-                                    type="number"
-                                    min={0}
-                                    value={shelfLifeDays}
-                                    onChange={(e) =>
-                                      setShelfLifeDays(e.target.value)
-                                    }
-                                    placeholder="Contoh: 5"
-                                    className="h-8 text-xs tabular-nums"
-                                  />
+                                  <InputGroup className="h-9">
+                                    <InputGroupInput
+                                      id="shelf-life-days"
+                                      type="number"
+                                      min={0}
+                                      value={shelfLifeDays}
+                                      onChange={(e) =>
+                                        setShelfLifeDays(e.target.value)
+                                      }
+                                      placeholder="Contoh: 5"
+                                      className="text-xs tabular-nums"
+                                    />
+                                    <InputGroupAddon align="inline-end" className="pr-2.5">
+                                      <InputGroupText className="text-xs">Hari</InputGroupText>
+                                    </InputGroupAddon>
+                                  </InputGroup>
                                 </div>
-                                <div>
+                                <div className="space-y-1">
                                   <label
                                     htmlFor="storage-method"
-                                    className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                                    className="block text-xs font-medium text-foreground"
                                   >
                                     Cara Penyimpanan (Opsional)
                                   </label>
-                                  <select
+                                  <AdaptiveSelect
                                     id="storage-method"
                                     value={storageMethod}
-                                    onChange={(e) =>
-                                      setStorageMethod(e.target.value)
-                                    }
-                                    className="h-8 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 text-xs text-slate-900 dark:text-slate-100"
-                                  >
-                                    <option value="">Tidak ditentukan</option>
-                                    <option value="Chiller">
-                                      Chiller (Kulkas)
-                                    </option>
-                                    <option value="Freezer">
-                                      Freezer (Beku)
-                                    </option>
-                                    <option value="Suhu Ruang">
-                                      Suhu Ruang
-                                    </option>
-                                  </select>
+                                    onValueChange={setStorageMethod}
+                                    options={[
+                                      { value: "", label: "Tidak ditentukan" },
+                                      { value: "Chiller", label: "Chiller (Kulkas)" },
+                                      { value: "Freezer", label: "Freezer (Beku)" },
+                                      { value: "Suhu Ruang", label: "Suhu Ruang" },
+                                    ]}
+                                  />
                                 </div>
                               </div>
                             )}
@@ -2023,15 +1973,15 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   />
 
                   {invalidBundleRowKeys.size > 0 && (
-                    <div className="rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50/90 dark:bg-rose-950/40 px-3 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-rose-900 dark:text-rose-200">
+                    <div className="py-2.5 border-y border-rose-300 dark:border-rose-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-rose-700 dark:text-rose-300">
                       <span>
                         {isBundle ? (
                           <>
-                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> yang bukan Menu Jual (bahan mentah, 1/2 jadi, atau manual). Paket / Hampers hanya memperbolehkan Menu Jual yang sudah jadi sebagai item penyusun.
+                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> yang bukan Menu Jual. Paket / Hampers hanya memperbolehkan Menu Jual yang sudah jadi sebagai item penyusun.
                           </>
                         ) : (
                           <>
-                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> bertipe Menu Jual atau Paket. Resep {itemType === "prepared" ? "Prepared / Setengah Jadi" : "Menu Jual"} hanya boleh disusun dari Bahan, Kemasan, dan Menu Prepared.
+                            Ditemukan <strong>{invalidBundleRowKeys.size} item</strong> bertipe Menu Jual atau Paket. Resep hanya boleh disusun dari Bahan, Kemasan, dan Menu Prepared.
                           </>
                         )}
                       </span>
@@ -2044,39 +1994,36 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             prev.filter((r) => !invalidBundleRowKeys.has(r.key))
                           )
                         }
-                        className="h-8 text-xs shrink-0 border-rose-300 text-rose-900 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-100 dark:hover:bg-rose-900/60"
+                        className="h-8 text-xs shrink-0"
                       >
                         Hapus item tidak sesuai
                       </Button>
                     </div>
                   )}
 
-                  {/* SECTION 1: BAHAN RESEP / ISI PRODUK */}
-                  <div className="space-y-2.5">
+                  {/* SECTION 1: BAHAN RESEP / ISI PRODUK (Flat Hairline Ledger) */}
+                  <div className="pt-3 border-t border-border/70 space-y-2">
                     <div>
-                      <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                        <Calculator className="w-3.5 h-3.5 text-blue-600" />
-                        <span>
-                          {isBundle
-                            ? `1. Item Penyusun Paket / Menu Jadi (${ingredientRows.length} item)`
-                            : `1. Bahan Resep / Isi Produk (${ingredientRows.length} item)`}
-                        </span>
-                      </h3>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                      <h3 className="text-xs font-semibold text-foreground">
                         {isBundle
-                          ? "Hanya dapat diisi Menu Jual yang sudah jadi (bukan 1/2 jadi / Prepared dan bukan bahan mentah). Kemasan serta biaya lainnya tetap dapat ditambahkan di bawah."
-                          : `Biaya bahan mentah dan Sub-Resep dihitung per batch lalu dibagi hasil bersih (${Number(netYieldQty.toFixed(2))} ${batchYieldUnit || unit}).`}
+                          ? `1. Item Penyusun Paket / Menu Jadi (${ingredientRows.length} item)`
+                          : `1. Bahan Resep / Isi Produk (${ingredientRows.length} item)`}
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isBundle
+                          ? "Diisi dari Menu Jual yang sudah jadi."
+                          : `Dihitung per batch lalu dibagi hasil bersih (${Number(netYieldQty.toFixed(2))} ${batchYieldUnit || unit}).`}
                       </p>
                     </div>
 
                     {ingredientRows.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-4 px-3 text-center text-xs text-slate-600 dark:text-slate-400">
+                      <div className="border border-dashed border-border rounded-lg py-4 px-3 text-center text-xs text-muted-foreground">
                         {isBundle
-                          ? "Belum ada menu penyusun paket. Ketik nama Menu Jual yang sudah jadi di kolom pencarian di atas lalu tekan Enter."
-                          : "Belum ada bahan resep / isi produk. Ketik nama bahan di kolom pencarian di atas lalu tekan Enter."}
+                          ? "Belum ada menu penyusun paket. Ketik nama Menu Jual di kolom pencarian di atas lalu tekan Enter."
+                          : "Belum ada bahan resep. Ketik nama bahan di kolom pencarian di atas lalu tekan Enter."}
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="divide-y divide-border/60 border-y border-border/60">
                         <AnimatePresence mode="popLayout" initial={false}>
                           {ingredientRows.map(renderIngredientRowCard)}
                         </AnimatePresence>
@@ -2084,27 +2031,23 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     )}
                   </div>
 
-                  {/* SECTION 2: KEMASAN & PACKAGING (DIPISAH DARI BAHAN) */}
-                  <div className="space-y-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+                  {/* SECTION 2: KEMASAN & PACKAGING (Flat Hairline Ledger) */}
+                  <div className="pt-3 border-t border-border/70 space-y-2">
                     <div>
-                      <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
-                        <span>
-                          2. Kemasan &amp; Packaging ({packagingRows.length}{" "}
-                          item)
-                        </span>
+                      <h3 className="text-xs font-semibold text-foreground">
+                        2. Kemasan &amp; Packaging ({packagingRows.length} item)
                       </h3>
-                      <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                        Dipisah dari bahan makanan (box, mika, pita, stiker, kartu ucapan). Dihitung per 1 satuan jual (tidak dibagi batch yield).
+                      <p className="text-[11px] text-muted-foreground">
+                        Dipisah dari bahan makanan. Dihitung per 1 satuan jual (tidak dibagi batch yield).
                       </p>
                     </div>
 
                     {packagingRows.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-amber-300 dark:border-amber-800 bg-white/70 dark:bg-slate-950/60 py-3.5 px-3 text-center text-xs text-slate-600 dark:text-slate-400">
+                      <div className="border border-dashed border-border rounded-lg py-3.5 px-3 text-center text-xs text-muted-foreground">
                         Belum ada komponen kemasan terpisah. Ketik nama kemasan di kolom pencarian di atas lalu tekan Enter.
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="divide-y divide-border/60 border-y border-border/60">
                         <AnimatePresence mode="popLayout" initial={false}>
                           {packagingRows.map(renderIngredientRowCard)}
                         </AnimatePresence>
@@ -2112,40 +2055,20 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     )}
                   </div>
 
-                  <datalist id="menu-unit-list">
-                    {units.map((u) => (
-                      <option key={u} value={u} />
-                    ))}
-                    <option value="Gram" />
-                    <option value="ml" />
-                    <option value="Kg" />
-                    <option value="Liter" />
-                    <option value="Pcs" />
-                    <option value="Porsi" />
-                    <option value="Slice" />
-                    <option value="Box" />
-                    <option value="Paket" />
-                  </datalist>
-
-                  {/* SECTION 3: TENAGA KERJA & BIAYA OPERASIONAL BATCH (MULTI-KOMPONEN) */}
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 p-3 space-y-2.5">
+                  {/* SECTION 3: TENAGA KERJA & BIAYA OPERASIONAL BATCH (Flat Hairline Ledger, Zero Presets) */}
+                  <div className="pt-3 border-t border-border/70 space-y-2.5">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                       <div>
-                        <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
+                        <div className="text-xs font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
                           <span>
                             3. Tenaga Kerja (Labor) &amp; Biaya Operasional Batch
                           </span>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700"
-                          >
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                             {recipeSummary.activeBatchCostItems.length} komponen
                           </Badge>
                         </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                          Bisa lebih dari 1 komponen rincian per batch (ikut terbagi ke hasil bersih{" "}
-                          {Number(netYieldQty.toFixed(2))}{" "}
-                          {batchYieldUnit || unit}).
+                        <p className="text-[11px] text-muted-foreground">
+                          Ikut terbagi ke hasil bersih {Number(netYieldQty.toFixed(2))} {batchYieldUnit || unit}.
                         </p>
                       </div>
 
@@ -2155,7 +2078,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                           variant="outline"
                           size="sm"
                           onClick={() => handleAddBatchCostRow("labor")}
-                          className="h-7 px-2.5 text-[11px] gap-1 bg-white dark:bg-slate-950 border-indigo-200 text-indigo-800 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/50"
+                          className="h-7 px-2.5 text-[11px] gap-1"
                         >
                           <Plus className="w-3 h-3" />
                           <span>Tambah Labor</span>
@@ -2165,7 +2088,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                           variant="outline"
                           size="sm"
                           onClick={() => handleAddBatchCostRow("operational")}
-                          className="h-7 px-2.5 text-[11px] gap-1 bg-white dark:bg-slate-950"
+                          className="h-7 px-2.5 text-[11px] gap-1"
                         >
                           <Plus className="w-3 h-3" />
                           <span>Tambah Operasional</span>
@@ -2175,36 +2098,34 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
 
                     {(recipeSummary.laborNum > 0 ||
                       recipeSummary.otherFeeNum > 0) && (
-                      <div className="rounded-lg border border-indigo-200/80 dark:border-indigo-900/70 bg-indigo-50/60 dark:bg-indigo-950/30 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                        <div className="flex flex-wrap items-center gap-2 text-slate-700 dark:text-slate-300">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground py-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span>
                             Labor Batch:{" "}
-                            <strong className="tabular-nums text-indigo-900 dark:text-indigo-200">
+                            <strong className="tabular-nums text-foreground">
                               {formatRupiah(recipeSummary.laborNum)}
                             </strong>
                           </span>
                           <span>•</span>
                           <span>
                             Operasional Batch:{" "}
-                            <strong className="tabular-nums text-slate-900 dark:text-slate-100">
+                            <strong className="tabular-nums text-foreground">
                               {formatRupiah(recipeSummary.otherFeeNum)}
                             </strong>
                           </span>
                         </div>
-                        <div className="font-semibold tabular-nums text-indigo-900 dark:text-indigo-200">
-                          Per {batchYieldUnit || unit}:{" "}
-                          {formatRupiah(unitLaborAndOther)}
+                        <div className="font-semibold tabular-nums text-foreground">
+                          Per {batchYieldUnit || unit}: {formatRupiah(unitLaborAndOther)}
                         </div>
                       </div>
                     )}
 
-                    <div className="space-y-2">
+                    <div className="divide-y divide-border/60 border-y border-border/60">
                       <AnimatePresence mode="popLayout" initial={false}>
                         {batchCostRows.map((bcRow, idx) => {
                           const rowAmt = Math.max(0, Number(bcRow.amount) || 0);
                           const rowUnitAmt = rowAmt / netYieldQty;
                           const isLabor = bcRow.category === "labor";
-                          const isHighlighted = recentlyAddedKey === bcRow.key;
 
                           return (
                             <motion.div
@@ -2217,50 +2138,36 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                                 duration: 0.16,
                                 ease: [0.16, 1, 0.3, 1],
                               }}
-                              className={cn(
-                                "rounded-lg border p-2.5 bg-white dark:bg-slate-950 transition-colors",
-                                isHighlighted
-                                  ? "border-blue-500 ring-2 ring-blue-500/20"
-                                  : "border-slate-200 dark:border-slate-800"
-                              )}
+                              className="py-2.5"
                             >
                               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
-                                <div className="sm:col-span-3">
+                                <div className="sm:col-span-3 space-y-0.5">
                                   <label
                                     htmlFor={`bc-cat-${bcRow.key}`}
-                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                    className="block text-[11px] font-medium text-muted-foreground"
                                   >
                                     Jenis Biaya #{idx + 1}
                                   </label>
-                                  <select
+                                  <AdaptiveSelect
                                     id={`bc-cat-${bcRow.key}`}
                                     value={bcRow.category}
-                                    onChange={(e) =>
+                                    onValueChange={(nextCat) =>
                                       handleUpdateBatchCostRow(bcRow.key, {
-                                        category: e.target
-                                          .value as BatchCostCategory,
+                                        category: nextCat as BatchCostCategory,
                                       })
                                     }
-                                    className={cn(
-                                      "h-8 w-full rounded-md border px-2 text-xs font-medium",
-                                      isLabor
-                                        ? "border-indigo-300 bg-indigo-50/60 text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200"
-                                        : "border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                                    )}
-                                  >
-                                    <option value="labor">
-                                      Tenaga Kerja (Labor)
-                                    </option>
-                                    <option value="operational">
-                                      Biaya Operasional
-                                    </option>
-                                  </select>
+                                    options={[
+                                      { value: "labor", label: "Tenaga Kerja (Labor)" },
+                                      { value: "operational", label: "Biaya Operasional" },
+                                    ]}
+                                    triggerClassName="h-8"
+                                  />
                                 </div>
 
-                                <div className="sm:col-span-5">
+                                <div className="sm:col-span-5 space-y-0.5">
                                   <label
                                     htmlFor={`bc-name-${bcRow.key}`}
-                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                    className="block text-[11px] font-medium text-muted-foreground"
                                   >
                                     Nama / Rincian Komponen
                                   </label>
@@ -2277,50 +2184,56 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                                         ? "Contoh: Tenaga baker, barista, dekorasi"
                                         : "Contoh: Gas oven, listrik mixer, penyusutan"
                                     }
-                                    className="h-8 text-xs bg-white dark:bg-slate-950"
+                                    className="h-8 text-xs"
                                   />
                                 </div>
 
-                                <div className="sm:col-span-4">
+                                <div className="sm:col-span-4 space-y-0.5">
                                   <label
                                     htmlFor={`bc-amt-${bcRow.key}`}
-                                    className="block text-[10px] font-medium text-slate-600 dark:text-slate-400 mb-0.5"
+                                    className="block text-[11px] font-medium text-muted-foreground"
                                   >
-                                    Biaya per Batch (Rp)
+                                    Biaya per Batch
                                   </label>
                                   <div className="flex items-center gap-1.5">
-                                    <Input
-                                      id={`bc-amt-${bcRow.key}`}
-                                      type="number"
-                                      min={0}
-                                      step="any"
-                                      value={bcRow.amount}
-                                      onChange={(e) =>
-                                        handleUpdateBatchCostRow(bcRow.key, {
-                                          amount: e.target.value,
-                                        })
-                                      }
-                                      placeholder="0"
-                                      className="h-8 text-xs tabular-nums bg-white dark:bg-slate-950"
-                                    />
-                                    <button
+                                    <InputGroup className="h-8 flex-1">
+                                      <InputGroupAddon align="inline-start" className="pl-2 pr-1">
+                                        <InputGroupText className="text-[11px]">Rp</InputGroupText>
+                                      </InputGroupAddon>
+                                      <InputGroupInput
+                                        id={`bc-amt-${bcRow.key}`}
+                                        type="number"
+                                        min={0}
+                                        step="any"
+                                        value={bcRow.amount}
+                                        onChange={(e) =>
+                                          handleUpdateBatchCostRow(bcRow.key, {
+                                            amount: e.target.value,
+                                          })
+                                        }
+                                        placeholder="0"
+                                        className="text-xs tabular-nums pl-1"
+                                      />
+                                    </InputGroup>
+                                    <Button
                                       type="button"
+                                      variant="ghost"
+                                      size="sm"
                                       onClick={() =>
                                         handleRemoveBatchCostRow(bcRow.key)
                                       }
                                       aria-label={`Hapus komponen biaya ${
                                         bcRow.name || idx + 1
                                       }`}
-                                      title="Hapus komponen biaya ini"
-                                      className="h-8 w-8 shrink-0 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-800 text-slate-600 hover:text-rose-700 hover:border-rose-300 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-300 dark:hover:bg-rose-950/40 transition-colors"
+                                      className="h-8 w-8 p-0 shrink-0 text-muted-foreground hover:text-rose-600"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    </Button>
                                   </div>
                                   {rowAmt > 0 && netYieldQty !== 1 && (
-                                    <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums mt-0.5">
+                                    <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
                                       Per {batchYieldUnit || unit}:{" "}
-                                      <strong className="text-slate-800 dark:text-slate-200">
+                                      <strong className="text-foreground">
                                         {formatRupiah(rowUnitAmt)}
                                       </strong>
                                     </div>
@@ -2332,40 +2245,14 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         })}
                       </AnimatePresence>
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      <span className="text-[10px] font-medium text-slate-600 dark:text-slate-400 mr-0.5">
-                        Tambah cepat:
-                      </span>
-                      {BATCH_COST_PRESETS.map((preset) => (
-                        <button
-                          key={`${preset.category}-${preset.label}`}
-                          type="button"
-                          onClick={() =>
-                            handleAddPresetBatchCost(
-                              preset.category,
-                              preset.label
-                            )
-                          }
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[11px] border transition-colors",
-                            preset.category === "labor"
-                              ? "bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-200 hover:border-indigo-500"
-                              : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-600 hover:text-blue-700 dark:hover:text-blue-300"
-                          )}
-                        >
-                          + {preset.label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
-                  {/* Status & Notes */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3">
-                    <div>
+                  {/* Status & Notes (Flat Hairline Section) */}
+                  <div className="pt-3 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                    <div className="space-y-1">
                       <label
                         htmlFor="menu-notes"
-                        className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                        className="block text-xs font-medium text-foreground"
                       >
                         Catatan (Opsional)
                       </label>
@@ -2379,12 +2266,12 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     </div>
 
                     <div className="sm:pt-6">
-                      <label className="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <label className="inline-flex items-center gap-2 text-xs text-foreground cursor-pointer">
                         <input
                           type="checkbox"
                           checked={isActive}
                           onChange={(e) => setIsActive(e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+                          className="h-3.5 w-3.5 rounded border-input"
                         />
                         <span>
                           {itemType === "prepared"
@@ -2396,25 +2283,22 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                   </div>
                 </div>
 
-                {/* RIGHT LIVE TELEMETRY RAIL */}
-                <div className="lg:col-span-4 lg:min-h-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/70 p-4 sm:p-5 space-y-4">
-                  {/* Live HPP Hero & Animated Cost Composition Card */}
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 shadow-xs space-y-3.5">
+                {/* RIGHT LIVE TELEMETRY RAIL (Flat Hairline Sections, Zero Nested Card) */}
+                <div className="lg:col-span-4 lg:min-h-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-border/80 bg-background p-4 sm:p-5 space-y-5">
+                  {/* Live HPP Hero & Animated Cost Composition */}
+                  <div className="space-y-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <div className="text-[11px] font-medium text-muted-foreground">
                           Total HPP Efektif /{batchYieldUnit || unit}
                         </div>
-                        <div className="text-2xl font-bold tracking-tight tabular-nums text-slate-950 dark:text-slate-50 mt-0.5">
+                        <div className="text-2xl font-bold tracking-tight tabular-nums text-foreground mt-0.5">
                           {formatRupiah(effectiveHpp)}
                         </div>
                       </div>
 
                       {!isSellable ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800"
-                        >
+                        <Badge variant="outline" className="text-[10px] px-2 py-0.5">
                           Internal Prepared
                         </Badge>
                       ) : sellingPriceNum > 0 ? (
@@ -2423,19 +2307,16 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                           className={cn(
                             "text-[11px] px-2 py-0.5 font-semibold tabular-nums",
                             foodCostPct <= 35
-                              ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800"
+                              ? "text-emerald-700 border-emerald-300 dark:text-emerald-400"
                               : foodCostPct <= 45
-                              ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800"
-                              : "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800"
+                              ? "text-amber-700 border-amber-300 dark:text-amber-400"
+                              : "text-rose-700 border-rose-300 dark:text-rose-400"
                           )}
                         >
                           FC {foodCostPct.toFixed(1)}%
                         </Badge>
                       ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 text-slate-600 dark:text-slate-400"
-                        >
+                        <Badge variant="outline" className="text-[10px] px-2 py-0.5 text-muted-foreground">
                           Isi Harga Jual
                         </Badge>
                       )}
@@ -2444,7 +2325,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     {/* Animated Stacked Cost Composition Bar */}
                     <div className="space-y-1.5">
                       <div
-                        className="h-2.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex"
+                        className="h-2 w-full rounded-full bg-muted overflow-hidden flex"
                         role="img"
                         aria-label="Komposisi biaya bahan, kemasan, labor, dan margin"
                       >
@@ -2487,62 +2368,61 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                       </div>
 
                       {isManualEffective && (
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                        <div className="text-[10px] text-muted-foreground">
                           Menggunakan HPP Manual ({formatRupiah(hppManualNum)})
                         </div>
                       )}
                     </div>
 
                     {/* 4-Metric Legend */}
-                    <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+                    <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-border/60 text-xs">
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
                           <span>{isBundle ? "Menu Penyusun" : "Bahan / Isi"}</span>
                         </div>
-                        <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        <div className="font-semibold tabular-nums text-foreground">
                           {formatRupiah(recipeSummary.unitIngredientCost)}
                         </div>
                         {isSellable && sellingPriceNum > 0 && (
-                          <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
+                          <div className="text-[10px] text-muted-foreground tabular-nums">
                             {pureFoodCostPct.toFixed(1)}% dari jual
                           </div>
                         )}
                       </div>
 
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
                           <span>Kemasan</span>
                         </div>
-                        <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        <div className="font-semibold tabular-nums text-foreground">
                           {formatRupiah(recipeSummary.subtotalPackaging)}
                         </div>
                         {isSellable && sellingPriceNum > 0 && (
-                          <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
+                          <div className="text-[10px] text-muted-foreground tabular-nums">
                             {packagingCostPct.toFixed(1)}% dari jual
                           </div>
                         )}
                       </div>
 
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
                           <span>Labor &amp; Lainnya</span>
                         </div>
-                        <div className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        <div className="font-semibold tabular-nums text-foreground">
                           {formatRupiah(unitLaborAndOther)}
                         </div>
                         {recipeSummary.activeBatchCostItems.length > 0 && (
-                          <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
-                            {recipeSummary.activeBatchCostItems.length} komponen
-                            batch
+                          <div className="text-[10px] text-muted-foreground tabular-nums">
+                            {recipeSummary.activeBatchCostItems.length} komponen batch
                           </div>
                         )}
                       </div>
 
                       <div className="space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                           <span>{isSellable ? "Margin Kotor" : "Status"}</span>
                         </div>
@@ -2551,7 +2431,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             "font-semibold tabular-nums",
                             isSellable && sellingPriceNum > 0 && grossMargin < 0
                               ? "text-rose-700 dark:text-rose-400"
-                              : "text-slate-900 dark:text-slate-100"
+                              : "text-foreground"
                           )}
                         >
                           {isSellable
@@ -2564,48 +2444,58 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                     </div>
                   </div>
 
-                  {/* Pricing & HPP Mode Card */}
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 shadow-xs space-y-3">
+                  {/* Pricing & HPP Mode Section (Flat Hairline + ReUI InputGroup + AdaptiveSelect) */}
+                  <div className="pt-4 border-t border-border/70 space-y-3">
                     {isSellable && (
                       <div className="grid grid-cols-2 gap-2.5">
-                        <div>
+                        <div className="space-y-1">
                           <label
                             htmlFor="menu-price"
-                            className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                            className="block text-xs font-medium text-foreground"
                           >
-                            Harga Jual (Rp)
+                            Harga Jual
                           </label>
-                          <Input
-                            id="menu-price"
-                            type="number"
-                            min={0}
-                            step="any"
-                            value={sellingPrice}
-                            onChange={(e) => setSellingPrice(e.target.value)}
-                            placeholder="0"
-                            className="h-9 text-xs tabular-nums"
-                          />
+                          <InputGroup className="h-9">
+                            <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                              <InputGroupText className="text-xs">Rp</InputGroupText>
+                            </InputGroupAddon>
+                            <InputGroupInput
+                              id="menu-price"
+                              type="number"
+                              min={0}
+                              step="any"
+                              value={sellingPrice}
+                              onChange={(e) => setSellingPrice(e.target.value)}
+                              placeholder="0"
+                              className="text-xs tabular-nums pl-1 font-semibold"
+                            />
+                          </InputGroup>
                         </div>
-                        <div>
+                        <div className="space-y-1">
                           <label
                             htmlFor="menu-target-fc"
-                            className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                            className="block text-xs font-medium text-foreground"
                           >
-                            Target Food Cost (%)
+                            Target Food Cost
                           </label>
-                          <Input
-                            id="menu-target-fc"
-                            type="number"
-                            min={1}
-                            max={99}
-                            step="any"
-                            value={targetFoodCostPct}
-                            onChange={(e) =>
-                              setTargetFoodCostPct(e.target.value)
-                            }
-                            placeholder="35"
-                            className="h-9 text-xs tabular-nums"
-                          />
+                          <InputGroup className="h-9">
+                            <InputGroupInput
+                              id="menu-target-fc"
+                              type="number"
+                              min={1}
+                              max={99}
+                              step="any"
+                              value={targetFoodCostPct}
+                              onChange={(e) =>
+                                setTargetFoodCostPct(e.target.value)
+                              }
+                              placeholder="35"
+                              className="text-xs tabular-nums"
+                            />
+                            <InputGroupAddon align="inline-end" className="pr-2.5">
+                              <InputGroupText className="text-xs">%</InputGroupText>
+                            </InputGroupAddon>
+                          </InputGroup>
                         </div>
                       </div>
                     )}
@@ -2616,7 +2506,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                         onClick={() =>
                           setSellingPrice(String(suggestedTargetPrice))
                         }
-                        className="w-full rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/40 px-2.5 py-2 text-left text-[11px] flex items-center justify-between gap-2 text-blue-900 dark:text-blue-200 hover:bg-blue-100/70 dark:hover:bg-blue-950/70 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                        className="w-full rounded-md border border-border bg-muted/40 px-2.5 py-2 text-left text-[11px] flex items-center justify-between gap-2 text-foreground hover:bg-muted/70 transition-colors"
                       >
                         <span>
                           Saran Harga (FC {targetFcNum}%):{" "}
@@ -2624,67 +2514,73 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                             {formatRupiah(suggestedTargetPrice)}
                           </strong>
                         </span>
-                        <span className="font-semibold shrink-0 underline">
+                        <span className="font-semibold shrink-0 underline text-blue-600 dark:text-blue-400">
                           Terapkan
                         </span>
                       </button>
                     )}
 
                     <div className="space-y-2.5">
-                      <div>
+                      <div className="space-y-1">
                         <label
                           htmlFor="menu-hpp-mode"
-                          className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
                           Sumber Perhitungan HPP
                         </label>
-                        <select
+                        <AdaptiveSelect
                           id="menu-hpp-mode"
                           value={hppMode}
-                          onChange={(e) =>
-                            setHppMode(e.target.value as MenuHppMode)
+                          onValueChange={(val) =>
+                            setHppMode(val as MenuHppMode)
                           }
-                          className="h-9 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 text-xs text-slate-900 dark:text-slate-100"
-                        >
-                          <option value="auto">
-                            Otomatis (Resep jika ada, atau Manual)
-                          </option>
-                          <option value="manual">HPP Manual</option>
-                          <option value="recipe">Selalu dari Resep</option>
-                        </select>
+                          options={[
+                            {
+                              value: "auto",
+                              label: "Otomatis (Resep jika ada, atau Manual)",
+                            },
+                            { value: "manual", label: "HPP Manual" },
+                            { value: "recipe", label: "Selalu dari Resep" },
+                          ]}
+                        />
                       </div>
 
-                      <div>
+                      <div className="space-y-1">
                         <label
                           htmlFor="menu-hpp-manual"
-                          className="block text-[11px] font-medium text-slate-700 dark:text-slate-300 mb-1"
+                          className="block text-xs font-medium text-foreground"
                         >
-                          HPP Manual (Rp)
+                          HPP Manual
                         </label>
-                        <Input
-                          id="menu-hpp-manual"
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={hppManual}
-                          onChange={(e) => setHppManual(e.target.value)}
-                          placeholder="0"
-                          className="h-9 text-xs tabular-nums"
-                        />
+                        <InputGroup className="h-9">
+                          <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                            <InputGroupText className="text-xs">Rp</InputGroupText>
+                          </InputGroupAddon>
+                          <InputGroupInput
+                            id="menu-hpp-manual"
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={hppManual}
+                            onChange={(e) => setHppManual(e.target.value)}
+                            placeholder="0"
+                            className="text-xs tabular-nums pl-1"
+                          />
+                        </InputGroup>
                       </div>
                     </div>
                   </div>
 
-                  {/* Multi-Channel Pricing Panel */}
+                  {/* Multi-Channel Pricing Section (Flat Hairline) */}
                   {isSellable &&
                     effectiveHpp > 0 &&
                     pricingChannels.length > 0 && (
-                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-3.5 shadow-xs space-y-2.5">
+                      <div className="pt-4 border-t border-border/70 space-y-2.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => setShowChannelPricing((p) => !p)}
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded"
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground hover:underline"
                             aria-expanded={showChannelPricing}
                           >
                             <Percent className="w-3.5 h-3.5 shrink-0" />
@@ -2701,7 +2597,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                               variant="ghost"
                               size="sm"
                               onClick={onOpenChannelSettings}
-                              className="h-7 px-2 text-[11px] gap-1 text-slate-700 dark:text-slate-300"
+                              className="h-7 px-2 text-[11px] gap-1 text-muted-foreground"
                             >
                               <Settings2 className="w-3 h-3" />
                               <span>Atur Komisi</span>
@@ -2716,32 +2612,32 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                               animate={{ opacity: 1, height: "auto" }}
                               exit={{ opacity: 0, height: 0 }}
                               transition={{
-                                duration: 0.18,
+                                duration: 0.16,
                                 ease: [0.16, 1, 0.3, 1],
                               }}
                               className="overflow-hidden"
                             >
-                              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                              <div className="overflow-x-auto border-y border-border/70">
                                 <table className="w-full text-[11px]">
-                                  <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300">
+                                  <thead className="text-muted-foreground border-b border-border/60">
                                     <tr>
-                                      <th className="text-left px-2 py-1.5 font-semibold">
+                                      <th className="text-left py-1.5 font-medium">
                                         Channel
                                       </th>
-                                      <th className="text-right px-2 py-1.5 font-semibold">
+                                      <th className="text-right py-1.5 font-medium">
                                         Net Margin
                                       </th>
-                                      <th className="text-right px-2 py-1.5 font-semibold">
+                                      <th className="text-right py-1.5 font-medium">
                                         Saran
                                       </th>
                                     </tr>
                                   </thead>
-                                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                  <tbody className="divide-y divide-border/50">
                                     {channelAnalysis.map((ch) => (
                                       <tr key={ch.key}>
-                                        <td className="px-2 py-1.5 font-medium text-slate-900 dark:text-slate-100">
+                                        <td className="py-1.5 font-medium text-foreground">
                                           <div>{ch.name}</div>
-                                          <div className="text-[10px] text-slate-600 dark:text-slate-400 font-normal tabular-nums">
+                                          <div className="text-[10px] text-muted-foreground font-normal tabular-nums">
                                             Komisi {ch.commission_pct}%
                                             {ch.fixed_fee > 0
                                               ? ` + ${formatRupiah(ch.fixed_fee)}`
@@ -2750,7 +2646,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                                         </td>
                                         <td
                                           className={cn(
-                                            "px-2 py-1.5 text-right tabular-nums font-semibold",
+                                            "py-1.5 text-right tabular-nums font-semibold",
                                             ch.netMargin >= 0
                                               ? "text-emerald-700 dark:text-emerald-400"
                                               : "text-rose-700 dark:text-rose-400"
@@ -2769,7 +2665,7 @@ export const MenuFormDialog: React.FC<MenuFormDialogProps> = ({
                                             "-"
                                           )}
                                         </td>
-                                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-blue-700 dark:text-blue-300">
+                                        <td className="py-1.5 text-right tabular-nums font-semibold text-blue-600 dark:text-blue-400">
                                           {ch.suggestedPrice
                                             ? formatRupiah(ch.suggestedPrice)
                                             : "-"}

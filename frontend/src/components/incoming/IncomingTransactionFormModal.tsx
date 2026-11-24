@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, PlusCircle, Pencil, Receipt, Sparkles } from "lucide-react";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -78,7 +85,9 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
       } else {
         const today = new Date().toISOString().split("T")[0];
         const now = new Date();
-        const curTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        const curTime = `${String(now.getHours()).padStart(2, "0")}:${String(
+          now.getMinutes()
+        ).padStart(2, "0")}`;
         setDate(today);
         setTime(curTime);
         setReceiptNo("");
@@ -137,7 +146,9 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
     try {
       if (isEdit && initialData) {
         await updateIncomingTransaction(initialData.id, payload);
-        toast.success(`Transaksi ${receiptNo || `#${initialData.id}`} berhasil diperbarui.`);
+        toast.success(
+          `Transaksi ${receiptNo || `#${initialData.id}`} berhasil diperbarui.`
+        );
       } else {
         await createManualIncomingTransaction(payload);
         toast.success("Transaksi masuk satuan berhasil ditambahkan.");
@@ -145,58 +156,91 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
       onSuccess();
       onClose();
     } catch (err: any) {
-      const msg = err.response?.data?.detail || "Gagal menyimpan transaksi masuk.";
+      const msg =
+        err.response?.data?.detail || "Gagal menyimpan transaksi masuk.";
       toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const defaultOrderTypes = Array.from(
-    new Set(["Take Away", "Dine In", "Cakeflow", "GoFood", "GrabFood", "ShopeeFood", "WhatsApp", ...orderTypeOptions])
+  const defaultOrderTypes = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          "Take Away",
+          "Dine In",
+          "Cakeflow",
+          "GoFood",
+          "GrabFood",
+          "ShopeeFood",
+          "WhatsApp",
+          ...orderTypeOptions,
+        ])
+      ),
+    [orderTypeOptions]
   );
 
-  const defaultPaymentMethods = Array.from(
-    new Set(["Tunai", "QRIS", "BCA Transfer", "Mandiri", "EDC", "GoFood Integrasi", "ShopeePay", ...paymentMethodOptions])
+  const defaultPaymentMethods = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          "Tunai",
+          "QRIS",
+          "BCA Transfer",
+          "Mandiri",
+          "EDC",
+          "GoFood Integrasi",
+          "ShopeePay",
+          ...paymentMethodOptions,
+        ])
+      ),
+    [paymentMethodOptions]
   );
+
+  const bankAccountOptions = useMemo(() => {
+    return [
+      { value: "", label: "-- Otomatis (Sesuai Channel / Saluran) --" },
+      ...accounts.map((acc) => ({
+        value: String(acc.id),
+        label: acc.name,
+        sublabel: acc.bank_name,
+      })),
+    ];
+  }, [accounts]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">
-              {isEdit ? <Pencil className="w-4 h-4" /> : <PlusCircle className="w-4 h-4" />}
-            </div>
-            <div>
-              <DialogTitle className="text-base font-semibold text-slate-900">
-                {isEdit ? "Edit Transaksi Masuk" : "Tambah Transaksi Masuk Satuan"}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                {isEdit
-                  ? `Perbarui informasi struk/order #${initialData?.receipt_no || initialData?.id}`
-                  : "Input transaksi penjualan kasir atau pesanan masuk secara manual"}
-              </DialogDescription>
-            </div>
-          </div>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl">
+        <DialogHeader className="pb-3 border-b border-border/80">
+          <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+            {isEdit ? "Edit Transaksi Masuk" : "Tambah Transaksi Masuk Satuan"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            {isEdit
+              ? `Perbarui informasi struk/order #${
+                  initialData?.receipt_no || initialData?.id
+                }`
+              : "Input transaksi penjualan kasir atau pesanan masuk secara manual"}
+          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 py-1 text-xs">
-          {/* Identitas Struk & Tanggal */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-slate-700">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2 text-xs">
+          {/* Identitas Struk & Tanggal (Flat Grid, Zero Nested Card) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-medium text-foreground">
                 Tanggal Transaksi <span className="text-rose-500">*</span>
               </Label>
               <DatePicker
                 value={date}
                 onChange={(d) => setDate(toIsoDate(d))}
-                className="w-full h-8 text-xs bg-white dark:bg-slate-900"
+                className="w-full h-9 text-xs"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-time" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-time" className="text-xs font-medium text-foreground">
                 Waktu / Jam Transaksi
               </Label>
               <Input
@@ -204,12 +248,12 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
                 placeholder="Contoh: 13:45"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="h-8 text-xs bg-white"
+                className="h-9 text-xs"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-receipt" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-receipt" className="text-xs font-medium text-foreground">
                 Nomor Struk / Receipt No
               </Label>
               <Input
@@ -217,12 +261,12 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
                 placeholder="Contoh: POS-001 / RkiNqGO"
                 value={receiptNo}
                 onChange={(e) => setReceiptNo(e.target.value)}
-                className="h-8 text-xs font-mono bg-white"
+                className="h-9 text-xs font-mono"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-order-no" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-order-no" className="text-xs font-medium text-foreground">
                 Nomor Order / Order ID
               </Label>
               <Input
@@ -230,92 +274,79 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
                 placeholder="Contoh: ORD-001 / F-3429057006"
                 value={orderNo}
                 onChange={(e) => setOrderNo(e.target.value)}
-                className="h-8 text-xs font-mono bg-white"
+                className="h-9 text-xs font-mono"
               />
             </div>
           </div>
 
-          {/* Saluran & Pembayaran */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60">
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-order-type" className="text-xs font-medium text-slate-700">
+          {/* Saluran & Pembayaran (Flat Hairline Section + Shadcn AdaptiveSelect) */}
+          <div className="pt-4 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="tx-order-type" className="text-xs font-medium text-foreground">
                 Tipe Order / Saluran Penjualan <span className="text-rose-500">*</span>
               </Label>
-              <Input
+              <AdaptiveSelect
                 id="tx-order-type"
-                list="incoming-order-types"
-                placeholder="Pilih atau ketik tipe order"
                 value={orderType}
-                onChange={(e) => setOrderType(e.target.value)}
-                required
-                className="h-8 text-xs bg-white"
+                onValueChange={setOrderType}
+                options={defaultOrderTypes}
+                creatable={true}
+                creatablePrefix="Saluran"
+                placeholder="Pilih atau ketik tipe order..."
+                searchPlaceholder="Cari atau ketik saluran..."
               />
-              <datalist id="incoming-order-types">
-                {defaultOrderTypes.map((ot) => (
-                  <option key={ot} value={ot} />
-                ))}
-              </datalist>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-payment-method" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-payment-method" className="text-xs font-medium text-foreground">
                 Metode Pembayaran <span className="text-rose-500">*</span>
               </Label>
-              <Input
+              <AdaptiveSelect
                 id="tx-payment-method"
-                list="incoming-payment-methods"
-                placeholder="Pilih atau ketik metode bayar"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                required
-                className="h-8 text-xs bg-white"
+                onValueChange={setPaymentMethod}
+                options={defaultPaymentMethods}
+                creatable={true}
+                creatablePrefix="Metode"
+                placeholder="Pilih atau ketik metode bayar..."
+                searchPlaceholder="Cari atau ketik metode..."
               />
-              <datalist id="incoming-payment-methods">
-                {defaultPaymentMethods.map((pm) => (
-                  <option key={pm} value={pm} />
-                ))}
-              </datalist>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-bank-account" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-bank-account" className="text-xs font-medium text-foreground">
                 Rekening Bank Tujuan
               </Label>
-              <select
+              <AdaptiveSelect
                 id="tx-bank-account"
                 value={bankAccountId}
-                onChange={(e) => setBankAccountId(e.target.value)}
-                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="">-- Otomatis (Sesuai Channel / Saluran) --</option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={String(acc.id)}>
-                    {acc.name} ({acc.bank_name})
-                  </option>
-                ))}
-              </select>
+                onValueChange={setBankAccountId}
+                options={bankAccountOptions}
+                placeholder="-- Otomatis (Sesuai Channel / Saluran) --"
+                searchPlaceholder="Cari rekening..."
+              />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-status" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-status" className="text-xs font-medium text-foreground">
                 Status Transaksi
               </Label>
-              <select
+              <AdaptiveSelect
                 id="tx-status"
                 value={status}
-                onChange={(e) => setStatus(e.target.value as "paid" | "void")}
-                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
-              >
-                <option value="paid">Dibayar (Paid)</option>
-                <option value="void">Void / Dibatalkan</option>
-              </select>
+                onValueChange={(val) => setStatus(val as "paid" | "void")}
+                options={[
+                  { value: "paid", label: "Dibayar (Paid)" },
+                  { value: "void", label: "Void / Dibatalkan" },
+                ]}
+              />
             </div>
           </div>
 
           {/* Pelanggan & Kasir */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-customer" className="text-xs font-medium text-slate-700">
+          <div className="pt-4 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="tx-customer" className="text-xs font-medium text-foreground">
                 Nama Pelanggan (Opsional)
               </Label>
               <Input
@@ -323,12 +354,12 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
                 placeholder="Contoh: Ibu Rina"
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="h-8 text-xs bg-white"
+                className="h-9 text-xs"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tx-cashier" className="text-xs font-medium text-slate-700">
+            <div className="space-y-1">
+              <Label htmlFor="tx-cashier" className="text-xs font-medium text-foreground">
                 Nama Kasir (Opsional)
               </Label>
               <Input
@@ -336,103 +367,117 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
                 placeholder="Contoh: Kasir 1"
                 value={cashierName}
                 onChange={(e) => setCashierName(e.target.value)}
-                className="h-8 text-xs bg-white"
+                className="h-9 text-xs"
               />
             </div>
           </div>
 
-          {/* Rincian Nominal & Realtime Kalkulasi */}
-          <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+          {/* Rincian Nominal & Realtime Kalkulasi (Flat Hairline Section + ReUI InputGroup) */}
+          <div className="pt-4 border-t border-border/70 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-800 text-xs flex items-center gap-1.5">
-                <Receipt className="w-3.5 h-3.5 text-blue-600" />
+              <span className="font-semibold text-foreground text-xs">
                 Rincian Nilai Transaksi
               </span>
               {status === "void" && (
-                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
+                <Badge variant="outline" className="text-[10px]">
                   Transaksi Dibatalkan (Void)
                 </Badge>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="tx-gross" className="text-[11px] font-medium text-slate-600">
-                  Penjualan Kotor (Rp) <span className="text-rose-500">*</span>
+                <Label htmlFor="tx-gross" className="text-xs font-medium text-foreground">
+                  Penjualan Kotor <span className="text-rose-500">*</span>
                 </Label>
-                <Input
-                  id="tx-gross"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={grossSales}
-                  onChange={(e) => setGrossSales(e.target.value)}
-                  required
-                  className="h-8 text-xs font-mono bg-white text-right"
-                />
+                <InputGroup className="h-9">
+                  <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                    <InputGroupText className="text-xs">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="tx-gross"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={grossSales}
+                    onChange={(e) => setGrossSales(e.target.value)}
+                    required
+                    className="text-xs font-semibold tabular-nums pl-1"
+                  />
+                </InputGroup>
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="tx-discount" className="text-[11px] font-medium text-slate-600">
-                  Diskon Penjualan (Rp)
+                <Label htmlFor="tx-discount" className="text-xs font-medium text-foreground">
+                  Diskon Penjualan
                 </Label>
-                <Input
-                  id="tx-discount"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={discountAmount}
-                  onChange={(e) => setDiscountAmount(e.target.value)}
-                  className="h-8 text-xs font-mono bg-white text-right"
-                />
+                <InputGroup className="h-9">
+                  <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                    <InputGroupText className="text-xs">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="tx-discount"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
+                    className="text-xs tabular-nums pl-1"
+                  />
+                </InputGroup>
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="tx-fee" className="text-[11px] font-medium text-slate-600">
-                  Fee / Komisi Platform (Rp)
+                <Label htmlFor="tx-fee" className="text-xs font-medium text-foreground">
+                  Fee / Komisi Platform
                 </Label>
-                <Input
-                  id="tx-fee"
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={platformFee}
-                  onChange={(e) => setPlatformFee(e.target.value)}
-                  className="h-8 text-xs font-mono bg-white text-right"
-                />
+                <InputGroup className="h-9">
+                  <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                    <InputGroupText className="text-xs">Rp</InputGroupText>
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="tx-fee"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={platformFee}
+                    onChange={(e) => setPlatformFee(e.target.value)}
+                    className="text-xs tabular-nums pl-1"
+                  />
+                </InputGroup>
               </div>
             </div>
 
-            {/* Live Calculation Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/80">
-              <div className="p-2 rounded-lg bg-white border border-slate-200">
-                <div className="text-[10px] text-slate-500">Penjualan Bersih (Net)</div>
-                <div className="text-xs font-semibold text-slate-800 tabular-nums">
+            {/* Live Calculation Hairline Strip */}
+            <div className="flex flex-wrap items-center justify-between gap-4 py-2 border-y border-border/60 text-xs">
+              <div>
+                <span className="text-muted-foreground mr-1.5">Penjualan Bersih:</span>
+                <span className="font-semibold text-foreground tabular-nums">
                   {formatRupiah(calculatedNetSales)}
-                </div>
+                </span>
               </div>
 
-              <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
-                <div className="text-[10px] text-emerald-700 font-medium">Bersih Diterima Toko</div>
-                <div className="text-xs font-bold text-emerald-800 tabular-nums">
+              <div>
+                <span className="text-muted-foreground mr-1.5">Bersih Diterima Toko:</span>
+                <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
                   {formatRupiah(calculatedNetReceived)}
-                </div>
+                </span>
               </div>
 
               {status === "void" && (
-                <div className="col-span-2 sm:col-span-1 p-2 rounded-lg bg-amber-50 border border-amber-200">
-                  <div className="text-[10px] text-amber-700 font-medium">Nilai Void / Batal</div>
-                  <div className="text-xs font-bold text-amber-800 tabular-nums">
+                <div>
+                  <span className="text-muted-foreground mr-1.5">Nilai Void:</span>
+                  <span className="font-bold text-amber-700 dark:text-amber-400 tabular-nums">
                     {formatRupiah(calculatedVoidTotal)}
-                  </div>
+                  </span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Catatan */}
-          <div className="space-y-1.5">
-            <Label htmlFor="tx-notes" className="text-xs font-medium text-slate-700">
+          <div className="space-y-1">
+            <Label htmlFor="tx-notes" className="text-xs font-medium text-foreground">
               Catatan Transaksi (Opsional)
             </Label>
             <Textarea
@@ -441,18 +486,18 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
-              className="text-xs bg-white"
+              className="text-xs"
             />
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border/70">
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={isSubmitting}
               onClick={onClose}
-              className="h-8 text-xs"
+              className="h-9 px-4 text-xs"
             >
               Batal
             </Button>
@@ -460,23 +505,17 @@ export const IncomingTransactionFormModal: React.FC<IncomingTransactionFormModal
               type="submit"
               size="sm"
               disabled={isSubmitting}
-              className="h-8 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+              className="h-9 px-5 text-xs font-semibold"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                   Menyimpan...
                 </>
               ) : isEdit ? (
-                <>
-                  <Pencil className="w-3.5 h-3.5" />
-                  Perbarui Transaksi
-                </>
+                "Perbarui Transaksi"
               ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Simpan Transaksi
-                </>
+                "Simpan Transaksi"
               )}
             </Button>
           </DialogFooter>

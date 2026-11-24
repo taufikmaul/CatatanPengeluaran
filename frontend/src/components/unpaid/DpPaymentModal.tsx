@@ -6,7 +6,6 @@ import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
   getDueUrgencyInfo,
-  getEndOfMonthDate,
   getExpensePaymentBreakdown,
   getTempoQuickDate,
   isCodExpense,
@@ -19,6 +18,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,17 +34,10 @@ import confetti from "canvas-confetti";
 import {
   AlertCircle,
   Building2,
-  CalendarClock,
   CheckCircle2,
   Clock,
-  CreditCard,
-  History,
   Loader2,
-  Percent,
   Trash2,
-  Wallet,
-  Package,
-  Briefcase,
 } from "lucide-react";
 
 interface DpPaymentModalProps {
@@ -50,7 +49,6 @@ interface DpPaymentModalProps {
   onPaymentUpdated?: (updated: Expense) => void;
 }
 
-const DP_PRESET_PERCENTS = [20, 30, 50, 70];
 const PAYMENT_METHODS = ["Transfer", "Tunai", "QRIS", "Debit", "Kredit"];
 
 export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
@@ -116,7 +114,6 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
     enabled: isOpen && Boolean(expense?.id),
   });
 
-  // Hitung nominal bayar aktual berdasarkan mode
   const payAmountNow = useMemo(() => {
     if (!expense || breakdown.remaining <= 0) return 0;
     if (payMode === "full") return breakdown.remaining;
@@ -132,6 +129,17 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
   const willBeFull = remainingAfterPay <= 1;
   const effectivePctOfTotal =
     breakdown.total > 0 ? Math.round((payAmountNow / breakdown.total) * 1000) / 10 : 0;
+
+  const bankAccountOptions = useMemo(() => {
+    return [
+      { value: "", label: "Otomatis (Sesuai Mapping Metode)" },
+      ...bankAccounts.map((acc) => ({
+        value: String(acc.id),
+        label: `${acc.name} (${acc.account_code})`,
+        sublabel: acc.bank_name,
+      })),
+    ];
+  }, [bankAccounts]);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
@@ -260,34 +268,24 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl max-h-[92dvh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl border-slate-200 dark:border-slate-800 shadow-2xl bg-white dark:bg-slate-900">
+      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl max-h-[92dvh] flex flex-col p-0 overflow-hidden rounded-xl border-border shadow-xl bg-background">
         {/* Header */}
-        <DialogHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 shrink-0 text-left">
+        <DialogHeader className="px-4 sm:px-6 py-3.5 border-b border-border/80 bg-background shrink-0 text-left">
           <div className="flex flex-wrap items-start justify-between gap-2 pr-7">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  {isCod ? (
-                    <Package className="w-5 h-5 text-amber-600 shrink-0" />
-                  ) : (
-                    <Wallet className="w-5 h-5 text-amber-600 shrink-0" />
-                  )}
-                  <span>
-                    {isCod
-                      ? "Pelunasan COD / Bayar di Kasir"
-                      : breakdown.isDp
-                      ? "DP & Pelunasan Tagihan"
-                      : "Cicilan & Pelunasan Hutang (Termin)"}
-                  </span>
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {isCod
+                    ? "Pelunasan COD / Bayar di Kasir"
+                    : breakdown.isDp
+                    ? "DP & Pelunasan Tagihan"
+                    : "Cicilan & Pelunasan Hutang (Termin)"}
                 </DialogTitle>
-                <Badge
-                  variant="outline"
-                  className="font-mono text-[11px] text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700"
-                >
+                <Badge variant="outline" className="font-mono text-[11px]">
                   #{expense.id}
                 </Badge>
               </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 truncate">
+              <p className="text-xs text-muted-foreground mt-0.5 truncate">
                 {expense.item_name}
                 {expense.supplier && expense.supplier !== "-" ? ` (${expense.supplier})` : ""}
               </p>
@@ -301,21 +299,21 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
           </div>
         </DialogHeader>
 
-        {/* Scrollable Body */}
+        {/* Scrollable Body (Zero Nested Card, Hairline Sections) */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
-          {/* Progress Summary Card */}
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3">
+          {/* Progress Summary Strip */}
+          <div className="space-y-3 pb-4 border-b border-border/70">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 block">
+                <span className="text-[11px] font-medium text-muted-foreground block">
                   Total Nilai Invoice
                 </span>
-                <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                <span className="text-sm sm:text-base font-bold text-foreground tabular-nums">
                   {formatRupiah(breakdown.total)}
                 </span>
               </div>
               <div>
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 block">
+                <span className="text-[11px] font-medium text-muted-foreground block">
                   Sudah Dibayar (DP / Termin)
                 </span>
                 <span className="text-sm sm:text-base font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
@@ -323,11 +321,11 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                 </span>
               </div>
               <div>
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 block">
+                <span className="text-[11px] font-medium text-muted-foreground block">
                   Sisa Pelunasan
                 </span>
                 <span
-                  className={`text-sm sm:text-base font-extrabold tabular-nums ${
+                  className={`text-sm sm:text-base font-bold tabular-nums ${
                     breakdown.remaining > 0
                       ? "text-rose-700 dark:text-rose-400"
                       : "text-emerald-700 dark:text-emerald-400"
@@ -340,25 +338,27 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
 
             {/* Progress bar */}
             <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+              <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
                 <span>Progres Pembayaran</span>
-                <span className="tabular-nums">{breakdown.progressPct}% Terbayar</span>
+                <span className="tabular-nums text-foreground font-semibold">
+                  {breakdown.progressPct}% Terbayar
+                </span>
               </div>
-              <div className="h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     breakdown.isPaid
                       ? "bg-emerald-600"
                       : breakdown.paid > 0
                       ? "bg-amber-500"
-                      : "bg-slate-400"
+                      : "bg-muted-foreground"
                   }`}
                   style={{ width: `${Math.max(0, Math.min(100, breakdown.progressPct))}%` }}
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/80 dark:border-slate-700/80">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               <span>Tanggal Nota: {formatDateId(expense.expense_date)}</span>
               {expense.invoice_number && expense.invoice_number !== "-" && (
                 <span className="font-mono">No. Invoice: {expense.invoice_number}</span>
@@ -372,90 +372,37 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
           {/* Payment Form (only if remaining > 0) */}
           {breakdown.remaining > 0 ? (
             <form id="dp-payment-form" onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                  Pilih Jenis Pembayaran
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPayMode("percent");
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
+                    Pilih Jenis Pembayaran
+                  </label>
+                  <AdaptiveSelect
+                    value={payMode}
+                    onValueChange={(val) => {
+                      setPayMode(val as "full" | "percent" | "amount");
                       setFormError(null);
                     }}
-                    className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                      payMode === "percent"
-                        ? "bg-amber-700 text-white border-amber-800 shadow-xs"
-                        : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <Percent className="w-3.5 h-3.5" />
-                    <span>DP / Persentase (%)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPayMode("amount");
-                      setFormError(null);
-                    }}
-                    className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                      payMode === "amount"
-                        ? "bg-amber-700 text-white border-amber-800 shadow-xs"
-                        : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Nominal Angka (Rp)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPayMode("full");
-                      setFormError(null);
-                    }}
-                    className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${
-                      payMode === "full"
-                        ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
-                        : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Lunasi Sisa</span>
-                  </button>
+                    options={[
+                      { value: "percent", label: "DP / Persentase (%)" },
+                      { value: "amount", label: "Nominal Angka (Rp)" },
+                      { value: "full", label: "Lunasi Seluruh Sisa" },
+                    ]}
+                  />
                 </div>
-              </div>
 
-              {/* Mode Input */}
-              {payMode === "percent" && (
-                <div className="p-3.5 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      Persentase Pembayaran dari Total Invoice
-                    </span>
-                    <span className="text-xs font-bold text-amber-900 dark:text-amber-200 tabular-nums">
-                      = {formatRupiah(payAmountNow)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {DP_PRESET_PERCENTS.map((pct) => (
-                      <button
-                        key={pct}
-                        type="button"
-                        onClick={() => setPercentVal(pct)}
-                        className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold border transition-colors ${
-                          Number(percentVal) === pct
-                            ? "bg-amber-700 text-white border-amber-800"
-                            : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-amber-300 dark:border-amber-700 hover:bg-amber-100"
-                        }`}
-                      >
-                        {pct}%
-                      </button>
-                    ))}
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <Input
+                {payMode === "percent" ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-foreground">
+                        Persentase Pembayaran
+                      </label>
+                      <span className="text-[11px] font-semibold text-foreground tabular-nums">
+                        = {formatRupiah(payAmountNow)}
+                      </span>
+                    </div>
+                    <InputGroup className="h-9">
+                      <InputGroupInput
                         type="number"
                         min={1}
                         max={100}
@@ -463,58 +410,62 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                         value={percentVal}
                         onChange={(e) => setPercentVal(Number(e.target.value))}
                         aria-label="Persentase DP kustom"
-                        className="w-20 h-10 text-xs font-bold text-center rounded-xl bg-white dark:bg-slate-900"
+                        className="text-xs font-semibold tabular-nums"
                       />
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">%</span>
+                      <InputGroupAddon align="inline-end" className="pr-2.5">
+                        <InputGroupText className="text-xs">%</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </div>
+                ) : payMode === "amount" ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-foreground">
+                        Nominal Pembayaran
+                      </label>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">
+                        ({effectivePctOfTotal}% dari invoice)
+                      </span>
+                    </div>
+                    <InlineMathInput
+                      value={amountVal}
+                      onChange={(val) => {
+                        setAmountVal(val);
+                        setFormError(null);
+                      }}
+                      inputClassName="font-semibold"
+                      placeholder={`Maksimal ${formatRupiah(breakdown.remaining)}`}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
+                      Nominal Pelunasan
+                    </label>
+                    <div className="h-9 px-3 rounded-md border border-input bg-muted/40 flex items-center justify-between text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                      <span>Lunas Penuh</span>
+                      <span>{formatRupiah(breakdown.remaining)}</span>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {payMode === "amount" && (
-                <div className="p-3.5 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                      Nominal Pembayaran (bisa ketik rumus, misal 500k)
-                    </label>
-                    <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 tabular-nums">
-                      ({effectivePctOfTotal}% dari invoice)
-                    </span>
-                  </div>
-                  <InlineMathInput
-                    value={amountVal}
-                    onChange={(val) => {
-                      setAmountVal(val);
-                      setFormError(null);
-                    }}
-                    className="h-11 text-sm font-bold rounded-xl bg-white dark:bg-slate-900 tabular-nums"
-                    placeholder={`Maksimal ${formatRupiah(breakdown.remaining)}`}
-                  />
-                </div>
-              )}
-
-              {/* Preview Box */}
-              <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+              {/* Preview Hairline Strip */}
+              <div className="flex flex-wrap items-center justify-between gap-3 py-2 border-y border-border/60 text-xs">
                 <div>
-                  <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
-                    Dibayar Sekarang
-                  </span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                  <span className="text-muted-foreground mr-1.5">Dibayar Sekarang:</span>
+                  <span className="font-bold text-foreground tabular-nums">
                     {formatRupiah(payAmountNow)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
-                    Sisa Setelah Bayar
-                  </span>
+                  <span className="text-muted-foreground mr-1.5">Sisa Setelah Bayar:</span>
                   <span className="font-bold text-rose-700 dark:text-rose-400 tabular-nums">
                     {formatRupiah(remainingAfterPay)}
                   </span>
                 </div>
                 <div>
-                  <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
-                    Status Setelah Simpan
-                  </span>
+                  <span className="text-muted-foreground mr-1.5">Status:</span>
                   <span
                     className={`font-bold ${
                       willBeFull
@@ -527,113 +478,76 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                 </div>
               </div>
 
-              {/* Tempo Waktu Pelunasan (bila masih ada sisa) */}
-              {!willBeFull && (
-                <div className="p-3.5 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50/60 dark:bg-rose-950/20 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-xs font-bold text-rose-900 dark:text-rose-200 flex items-center gap-1.5">
-                      <CalendarClock className="w-4 h-4 text-rose-700 dark:text-rose-400" />
-                      <span>Tempo Waktu Pelunasan Sisa</span>
-                    </label>
-                    <span className="text-[11px] font-medium text-rose-800 dark:text-rose-300">
-                      Sisa: {formatRupiah(remainingAfterPay)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <DatePicker
-                      value={dueDate}
-                      onChange={(d) => setDueDate(toIsoDate(d))}
-                      className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900 border-rose-300 dark:border-rose-700 sm:w-44"
-                    />
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {[
-                        { label: "+7 Hari", val: getTempoQuickDate(7, paymentDate) },
-                        { label: "+14 Hari", val: getTempoQuickDate(14, paymentDate) },
-                        { label: "+30 Hari", val: getTempoQuickDate(30, paymentDate) },
-                        { label: "Akhir Bulan", val: getEndOfMonthDate(paymentDate) },
-                      ].map((preset) => (
-                        <button
-                          key={preset.label}
-                          type="button"
-                          onClick={() => setDueDate(preset.val)}
-                          className={`min-h-[38px] px-2.5 rounded-lg text-[11px] font-semibold border transition-colors ${
-                            dueDate === preset.val
-                              ? "bg-rose-700 text-white border-rose-800"
-                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-rose-200 dark:border-rose-800 hover:bg-rose-100"
-                          }`}
-                        >
-                          {preset.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Payment Metadata Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Tanggal Bayar
                   </label>
                   <DatePicker
                     value={paymentDate}
                     onChange={(d) => setPaymentDate(toIsoDate(d))}
-                    className="w-full h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
+                    className="w-full h-9 text-xs"
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Metode Pembayaran
                   </label>
-                  <select
+                  <AdaptiveSelect
                     value={payMethod}
-                    onChange={(e) => setPayMethod(e.target.value)}
-                    className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white dark:bg-slate-900 px-3 text-xs font-semibold text-slate-800 dark:text-slate-200"
-                  >
-                    {PAYMENT_METHODS.map((pm) => (
-                      <option key={pm} value={pm}>
-                        {pm}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={setPayMethod}
+                    options={PAYMENT_METHODS}
+                  />
                 </div>
 
                 {bankAccounts.length > 0 && (
-                  <div>
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
                       Rekening Sumber Dana
                     </label>
-                    <select
+                    <AdaptiveSelect
                       value={bankAccountId}
-                      onChange={(e) => setBankAccountId(e.target.value)}
-                      className="h-11 sm:h-10 w-full rounded-xl border border-input bg-white dark:bg-slate-900 px-3 text-xs font-medium text-slate-800 dark:text-slate-200"
-                    >
-                      <option value="">Otomatis (Sesuai Mapping Metode)</option>
-                      {bankAccounts.map((acc) => (
-                        <option key={acc.id} value={String(acc.id)}>
-                          {acc.name} ({acc.account_code})
-                        </option>
-                      ))}
-                    </select>
+                      onValueChange={setBankAccountId}
+                      options={bankAccountOptions}
+                      placeholder="Otomatis (Sesuai Mapping Metode)"
+                      searchPlaceholder="Cari rekening..."
+                    />
                   </div>
                 )}
 
-                <div>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     No. Referensi / Bukti (Opsional)
                   </label>
                   <Input
                     value={referenceNo}
                     onChange={(e) => setReferenceNo(e.target.value)}
                     placeholder="Contoh: TRF-BCA-1102"
-                    className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
+                    className="h-9 text-xs"
                   />
                 </div>
 
-                <div className={bankAccounts.length > 0 ? "sm:col-span-2" : ""}>
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-200 block mb-1">
+                {!willBeFull && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-rose-700 dark:text-rose-400 block">
+                      Tanggal Jatuh Tempo Pelunasan Sisa
+                    </label>
+                    <DatePicker
+                      value={dueDate}
+                      onChange={(d) => setDueDate(toIsoDate(d))}
+                      className="w-full h-9 text-xs"
+                    />
+                  </div>
+                )}
+
+                <div
+                  className={`space-y-1 ${
+                    bankAccounts.length > 0 && willBeFull ? "sm:col-span-2" : ""
+                  }`}
+                >
+                  <label className="text-xs font-medium text-foreground block">
                     Catatan Pembayaran
                   </label>
                   <Input
@@ -644,7 +558,7 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                         ? "Contoh: Pelunasan sisa tagihan"
                         : "Contoh: DP tahap 1, sisa dilunasi saat barang tiba"
                     }
-                    className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
+                    className="h-9 text-xs"
                   />
                 </div>
               </div>
@@ -652,7 +566,7 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
               {formError && (
                 <div
                   role="alert"
-                  className="p-3 rounded-xl border border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/50 dark:border-rose-800 dark:text-rose-200 text-xs flex items-start gap-2"
+                  className="text-rose-600 dark:text-rose-400 text-xs flex items-start gap-2"
                 >
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{formError}</span>
@@ -660,83 +574,80 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
               )}
             </form>
           ) : (
-            <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/20 flex items-center gap-3 text-xs text-emerald-900 dark:text-emerald-200">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+            <div className="py-3 border-b border-border/70 flex items-center gap-3 text-xs text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="w-5 h-5 shrink-0" />
               <div>
                 <div className="font-bold">Tagihan Ini Sudah Lunas</div>
-                <div className="text-[11px] mt-0.5">
+                <div className="text-[11px] text-muted-foreground mt-0.5">
                   Seluruh nilai invoice telah dibayar. Anda tetap dapat meninjau atau menghapus riwayat pembayaran di bawah bila ada kesalahan input.
                 </div>
               </div>
             </div>
           )}
 
-          {/* Payment History Timeline */}
-          <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <History className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                <span>Riwayat Pembayaran ({payments.length})</span>
-              </h4>
-            </div>
+          {/* Payment History Timeline (Flat Hairline Rows) */}
+          <div className="space-y-2.5 pt-3 border-t border-border/70">
+            <h4 className="text-xs font-semibold text-foreground">
+              Riwayat Pembayaran ({payments.length})
+            </h4>
 
             {isPaymentsLoading ? (
               <div className="space-y-2" aria-label="Memuat riwayat pembayaran">
-                <Skeleton className="h-14 w-full rounded-xl" />
-                <Skeleton className="h-14 w-full rounded-xl" />
+                <Skeleton className="h-12 w-full rounded-md" />
+                <Skeleton className="h-12 w-full rounded-md" />
               </div>
             ) : isPaymentsError ? (
-              <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs flex items-center justify-between gap-2">
+              <div className="text-rose-600 text-xs flex items-center justify-between gap-2">
                 <span>Gagal memuat riwayat pembayaran.</span>
                 <Button type="button" size="sm" variant="outline" onClick={() => refetchPayments()}>
                   Coba Lagi
                 </Button>
               </div>
             ) : payments.length === 0 ? (
-              <div className="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-4 rounded-lg border border-dashed border-border text-center text-xs text-muted-foreground">
                 Belum ada pembayaran DP atau cicilan yang tercatat untuk tagihan ini.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="divide-y divide-border/60 border-y border-border/60">
                 {payments.map((p, idx) => {
                   let typeLabel = `Tahap #${idx + 1}`;
-                  let typeClass = "bg-slate-50 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200";
-
                   if (p.payment_type === "reimbursement") {
                     typeLabel = "Penggantian Talangan";
-                    typeClass = "bg-purple-50 text-purple-800 border-purple-300 dark:bg-purple-950/40 dark:text-purple-200 dark:border-purple-800";
                   } else if (p.payment_type === "settlement") {
-                    typeLabel = isCod ? "Pelunasan COD (Kasir)" : hasInst ? "Pelunasan Akhir (Termin)" : "Pelunasan";
-                    typeClass = "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800";
+                    typeLabel = isCod
+                      ? "Pelunasan COD (Kasir)"
+                      : hasInst
+                      ? "Pelunasan Akhir (Termin)"
+                      : "Pelunasan";
                   } else if (p.payment_type === "dp") {
                     typeLabel = "DP Awal";
-                    typeClass = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800";
                   } else if (p.payment_type === "installment") {
-                    const instIdx = payments.filter((item, i) => i <= idx && item.payment_type === "installment").length;
+                    const instIdx = payments.filter(
+                      (item, i) => i <= idx && item.payment_type === "installment"
+                    ).length;
                     typeLabel = `Termin #${instIdx}`;
-                    typeClass = "bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800";
                   }
 
                   return (
                     <div
                       key={p.id}
-                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                     >
-                      <div className="space-y-1 min-w-0">
+                      <div className="space-y-0.5 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className={`text-[10px] font-bold ${typeClass}`}>
+                          <Badge variant="outline" className="text-[10px] font-medium">
                             {typeLabel}
                           </Badge>
-                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+                          <span className="text-xs font-bold text-foreground tabular-nums">
                             {formatRupiah(p.amount)}
                           </span>
                           {p.dp_percent !== null && p.dp_percent !== undefined && (
-                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 tabular-nums">
+                            <span className="text-[11px] text-muted-foreground tabular-nums">
                               ({p.dp_percent}%)
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {formatDateId(p.payment_date)}
@@ -746,10 +657,12 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                             {p.pay_method}
                             {p.bank_account_name ? ` (${p.bank_account_name})` : ""}
                           </span>
-                          {p.reference_no && <span className="font-mono">Ref: {p.reference_no}</span>}
+                          {p.reference_no && (
+                            <span className="font-mono">Ref: {p.reference_no}</span>
+                          )}
                         </div>
                         {p.notes && p.notes !== "-" && (
-                          <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                          <p className="text-[11px] text-muted-foreground italic">
                             {p.notes}
                           </p>
                         )}
@@ -769,11 +682,11 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                             deletePaymentMutation.mutate(p.id);
                           }
                         }}
-                        className="min-h-[40px] sm:min-h-[34px] px-2.5 text-rose-700 hover:text-rose-800 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40 rounded-lg shrink-0 self-end sm:self-center"
+                        className="h-8 px-2.5 text-rose-600 hover:text-rose-700 shrink-0 self-end sm:self-center"
                         title="Hapus pembayaran ini"
                       >
                         <Trash2 className="w-3.5 h-3.5 mr-1" />
-                        <span className="text-[11px] font-semibold">Hapus</span>
+                        <span className="text-[11px] font-medium">Hapus</span>
                       </Button>
                     </div>
                   );
@@ -784,14 +697,14 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
         </div>
 
         {/* Sticky Footer */}
-        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 shrink-0 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-3 border-t border-border/80 bg-background shrink-0 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             {breakdown.remaining > 0 ? (
               <>
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 block">
+                <span className="text-[11px] font-medium text-muted-foreground block">
                   {willBeFull ? "Pelunasan Penuh" : "Pembayaran DP / Termin"}
                 </span>
-                <span className="text-sm font-extrabold text-slate-900 dark:text-slate-100 tabular-nums">
+                <span className="text-sm font-bold text-foreground tabular-nums">
                   {formatRupiah(payAmountNow)}
                 </span>
               </>
@@ -807,7 +720,7 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
               type="button"
               variant="outline"
               onClick={onClose}
-              className="min-h-[44px] sm:min-h-[40px] px-4 rounded-xl text-xs font-semibold"
+              className="h-9 px-4 text-xs font-medium"
             >
               Tutup
             </Button>
@@ -816,15 +729,11 @@ export const DpPaymentModal: React.FC<DpPaymentModalProps> = ({
                 type="submit"
                 form="dp-payment-form"
                 disabled={recordMutation.isPending || payAmountNow <= 0}
-                className={`min-h-[44px] sm:min-h-[40px] px-5 rounded-xl text-xs font-bold text-white shadow-xs ${
-                  willBeFull
-                    ? "bg-emerald-700 hover:bg-emerald-800"
-                    : "bg-amber-700 hover:bg-amber-800"
-                }`}
+                className="h-9 px-5 text-xs font-semibold"
               >
                 {recordMutation.isPending ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                     <span>Menyimpan...</span>
                   </>
                 ) : willBeFull ? (

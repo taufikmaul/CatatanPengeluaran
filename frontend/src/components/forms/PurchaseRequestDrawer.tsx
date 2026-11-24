@@ -1,5 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { PurchaseRequest, PurchaseRequestFormData, PurchaseRequestItemFormData, ItemSuggestion } from "@/types";
+import {
+  PurchaseRequest,
+  PurchaseRequestFormData,
+  PurchaseRequestItemFormData,
+  ItemSuggestion,
+} from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,18 +14,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { formatRupiah } from "@/lib/formatters";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 import {
-  ShoppingBag,
   Plus,
   Minus,
   Trash2,
   Search,
-  User,
-  Clock,
   AlertCircle,
-  FileText,
   X,
   CornerDownLeft,
   CheckCircle2,
@@ -103,10 +111,6 @@ function parseNumericToken(token: string): number {
   return Number.isFinite(num) && num > 0 ? Number(num.toFixed(2)) : 1;
 }
 
-/**
- * Memisahkan qty & satuan inline dari input cepat (mis. "3 kg gula pasir", "tepung x5")
- * tanpa memecah nama produk master yang memang mengandung ukuran (mis. "Gas LPG 12kg").
- */
 function parseInlineQtyAndUnit(
   rawInput: string,
   itemSuggestions: ItemSuggestion[]
@@ -123,7 +127,6 @@ function parseInlineQtyAndUnit(
       (s.aliases && s.aliases.toLowerCase().includes(lower))
   );
 
-  // 1. Prefix dengan satuan eksplisit: "3 kg gula pasir" atau "2.5ltr susu"
   const prefixUnitMatch = trimmed.match(/^(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)\s+(.+)$/);
   if (prefixUnitMatch) {
     const canonicalUnit = UNIT_ALIASES[prefixUnitMatch[2].toLowerCase()];
@@ -138,8 +141,8 @@ function parseInlineQtyAndUnit(
     }
   }
 
-  // 2. Prefix pengali: "5x tepung" atau "5 x tepung"
-  const prefixMulMatch = trimmed.match(/^(\d+(?:[.,]\d+)?)\s*[xX*]\s+(.+)$/) ||
+  const prefixMulMatch =
+    trimmed.match(/^(\d+(?:[.,]\d+)?)\s*[xX*]\s+(.+)$/) ||
     trimmed.match(/^(\d+(?:[.,]\d+)?)[xX]\s+(.+)$/);
   if (prefixMulMatch && prefixMulMatch[2].trim()) {
     return {
@@ -150,7 +153,6 @@ function parseInlineQtyAndUnit(
     };
   }
 
-  // 3. Prefix angka polos: "5 telur ayam"
   const prefixNumMatch = trimmed.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/);
   if (prefixNumMatch) {
     const qty = parseNumericToken(prefixNumMatch[1]);
@@ -165,10 +167,9 @@ function parseInlineQtyAndUnit(
     }
   }
 
-  // Suffix hanya diproses jika input mentah bukan bagian dari nama Master Item (mis. "Gas LPG 12kg")
   if (!hasDirectSuggestionMatch) {
-    // 4. Suffix pengali: "tepung x5" atau "tepung x 5"
-    const suffixMulMatch = trimmed.match(/^(.+?)\s+[xX*]\s*(\d+(?:[.,]\d+)?)$/) ||
+    const suffixMulMatch =
+      trimmed.match(/^(.+?)\s+[xX*]\s*(\d+(?:[.,]\d+)?)$/) ||
       trimmed.match(/^(.+?)\s+(\d+(?:[.,]\d+)?)[xX]$/);
     if (suffixMulMatch && suffixMulMatch[1].trim()) {
       return {
@@ -179,7 +180,6 @@ function parseInlineQtyAndUnit(
       };
     }
 
-    // 5. Suffix angka + satuan: "gula pasir 3 kg"
     const suffixUnitMatch = trimmed.match(/^(.+?)\s+(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)$/);
     if (suffixUnitMatch) {
       const canonicalUnit = UNIT_ALIASES[suffixUnitMatch[3].toLowerCase()];
@@ -193,7 +193,6 @@ function parseInlineQtyAndUnit(
       }
     }
 
-    // 6. Suffix angka polos: "telur 5"
     const suffixNumMatch = trimmed.match(/^(.+?)\s+(\d+(?:[.,]\d+)?)$/);
     if (suffixNumMatch) {
       const qty = parseNumericToken(suffixNumMatch[2]);
@@ -252,7 +251,10 @@ function buildQuickItem(
   };
 }
 
-function filterQuickSuggestions(query: string, itemSuggestions: ItemSuggestion[]): ItemSuggestion[] {
+function filterQuickSuggestions(
+  query: string,
+  itemSuggestions: ItemSuggestion[]
+): ItemSuggestion[] {
   const q = query.trim().toLowerCase();
   if (!q) {
     return [...itemSuggestions]
@@ -278,32 +280,6 @@ function filterQuickSuggestions(query: string, itemSuggestions: ItemSuggestion[]
     .slice(0, 8);
 }
 
-function mergeShoppingItems(
-  currentItems: PurchaseRequestItemFormData[],
-  incomingItems: PurchaseRequestItemFormData[]
-): PurchaseRequestItemFormData[] {
-  const next = currentItems.map((it) => ({ ...it }));
-  for (const incoming of incomingItems) {
-    const cleanName = incoming.item_name.trim();
-    if (!cleanName) continue;
-    const existingIdx = next.findIndex(
-      (it) =>
-        it.item_name.trim().toLowerCase() === cleanName.toLowerCase() &&
-        !(it.notes || "").trim() &&
-        !(incoming.notes || "").trim()
-    );
-    if (existingIdx !== -1) {
-      next[existingIdx] = {
-        ...next[existingIdx],
-        qty: Number((next[existingIdx].qty + incoming.qty).toFixed(2)),
-      };
-    } else {
-      next.push({ ...incoming, item_name: cleanName });
-    }
-  }
-  return next;
-}
-
 export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   isOpen,
   onClose,
@@ -311,7 +287,6 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   initialData,
   isSubmitting = false,
   itemSuggestions = [],
-  recentRequests = [],
   categories = [
     "Bahan Kue", "Bahan Minuman", "Kebersihan", "Kantor",
     "Kemasan", "Operasional", "Topper & Mainan", "Renovasi"
@@ -322,12 +297,12 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   const [urgency, setUrgency] = useState<"NORMAL" | "URGENT">("NORMAL");
   const [requesterName, setRequesterName] = useState(currentUser || "Staf Dapur");
   const [generalNotes, setGeneralNotes] = useState("");
-  const [requestDate, setRequestDate] = useState(new Date().toISOString().split("T")[0]);
+  const [requestDate, setRequestDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
 
-  // List of items
   const [items, setItems] = useState<PurchaseRequestItemFormData[]>([]);
 
-  // Quick add autocomplete state
   const [quickQuery, setQuickQuery] = useState("");
   const [isQuickDropdownOpen, setIsQuickDropdownOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
@@ -342,7 +317,6 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   const skipNextFocusOpenRef = useRef(false);
   const blurTimeoutRef = useRef<number | null>(null);
 
-  // Sync initialData and reset quick input state when modal opens/changes
   useEffect(() => {
     if (blurTimeoutRef.current !== null) {
       window.clearTimeout(blurTimeoutRef.current);
@@ -355,7 +329,9 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
       setUrgency(initialData.urgency || "NORMAL");
       setRequesterName(initialData.requester_name || currentUser || "Staf Dapur");
       setGeneralNotes(initialData.notes === "-" ? "" : initialData.notes);
-      setRequestDate(initialData.request_date || new Date().toISOString().split("T")[0]);
+      setRequestDate(
+        initialData.request_date || new Date().toISOString().split("T")[0]
+      );
 
       if (initialData.items && initialData.items.length > 0) {
         setItems(
@@ -370,7 +346,10 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
             notes: i.notes === "-" ? "" : i.notes,
           }))
         );
-      } else if (initialData.item_name && initialData.item_name !== "Draft Belanja") {
+      } else if (
+        initialData.item_name &&
+        initialData.item_name !== "Draft Belanja"
+      ) {
         setItems([
           {
             item_name: initialData.item_name,
@@ -416,24 +395,6 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     if (!q) return false;
     return itemSuggestions.some((s) => s.item_name.trim().toLowerCase() === q);
   }, [parsedQuickInput.itemQuery, itemSuggestions]);
-
-  const quickAddChips = useMemo(() => {
-    if (itemSuggestions.length > 0) {
-      return [...itemSuggestions]
-        .sort((a, b) => (b.tx_count || 0) - (a.tx_count || 0))
-        .slice(0, 6)
-        .map((s) => s.item_name);
-    }
-    return getCategoryFormProfile("Bahan Kue").quickItemChips?.slice(0, 6) || [];
-  }, [itemSuggestions]);
-
-  const usableRecentRequests = useMemo(
-    () =>
-      recentRequests
-        .filter((r) => r.status !== "DRAFT" && ((r.items && r.items.length > 0) || Boolean(r.item_name)))
-        .slice(0, 3),
-    [recentRequests]
-  );
 
   const footerSummary = useMemo(() => {
     const validItems = items.filter((i) => i.item_name.trim().length > 0);
@@ -496,10 +457,14 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
         }
         return updated;
       });
-      setLastAddedNotice(`Jumlah diperbarui: ${current.item_name} (${nextQty} ${current.unit})`);
+      setLastAddedNotice(
+        `Jumlah diperbarui: ${current.item_name} (${nextQty} ${current.unit})`
+      );
     } else {
       setItems((prev) => [...prev, { ...nextItem, item_name: cleanName }]);
-      setLastAddedNotice(`Masuk daftar: ${cleanName} (${nextItem.qty} ${nextItem.unit})`);
+      setLastAddedNotice(
+        `Masuk daftar: ${cleanName} (${nextItem.qty} ${nextItem.unit})`
+      );
     }
 
     setUndoState(null);
@@ -507,54 +472,6 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     setQuickQuery("");
     setHighlightedIndex(-1);
     setIsQuickDropdownOpen(false);
-    focusQuickInput();
-  };
-
-  const handleApplyRecentRequest = (req: PurchaseRequest) => {
-    const sourceItems: PurchaseRequestItemFormData[] =
-      req.items && req.items.length > 0
-        ? req.items.map((i) => {
-            const matched = itemSuggestions.find(
-              (s) => s.item_name.trim().toLowerCase() === i.item_name.trim().toLowerCase()
-            );
-            return {
-              item_name: i.item_name,
-              qty: i.qty || 1,
-              unit: i.unit || matched?.satuan_beli || "Pcs",
-              category: i.category || matched?.category || "Bahan Kue",
-              estimated_price:
-                i.estimated_price ||
-                (matched && matched.last_unit_price > 0 ? matched.last_unit_price : undefined),
-              supplier_name:
-                i.supplier_name && i.supplier_name !== "-"
-                  ? i.supplier_name
-                  : matched?.last_supplier && matched.last_supplier !== "-"
-                  ? matched.last_supplier
-                  : "-",
-              notes: i.notes && i.notes !== "-" ? i.notes : "",
-            };
-          })
-        : req.item_name
-        ? [
-            buildQuickItem(
-              req.item_name,
-              itemSuggestions,
-              req.qty || 1,
-              req.unit || undefined
-            ),
-          ]
-        : [];
-
-    if (sourceItems.length === 0) return;
-
-    const previousSnapshot = items.map((it) => ({ ...it }));
-    setItems((prev) => mergeShoppingItems(prev, sourceItems));
-    setUndoState({
-      label: `Diisi ${sourceItems.length} barang dari "${req.title || "Belanja Rutin"}"`,
-      previousItems: previousSnapshot,
-    });
-    setLastAddedNotice(null);
-    setValidationError(null);
     focusQuickInput();
   };
 
@@ -567,7 +484,11 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   };
 
   const handleQuickAddAction = () => {
-    if (isQuickDropdownOpen && highlightedIndex >= 0 && matchedSuggestions[highlightedIndex]) {
+    if (
+      isQuickDropdownOpen &&
+      highlightedIndex >= 0 &&
+      matchedSuggestions[highlightedIndex]
+    ) {
       addItemToShoppingList(
         buildItemFromSuggestion(
           matchedSuggestions[highlightedIndex],
@@ -591,12 +512,16 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     focusQuickInput();
   };
 
-  const submitCurrentRequest = (targetStatus: "DRAFT" | "PENDING" = "PENDING") => {
+  const submitCurrentRequest = (
+    targetStatus: "DRAFT" | "PENDING" = "PENDING"
+  ) => {
     if (isSubmitting) return;
 
     const validItems = items.filter((i) => i.item_name.trim().length > 0);
     if (targetStatus === "PENDING" && validItems.length === 0) {
-      setValidationError("Tambahkan minimal 1 barang ke daftar belanja sebelum mengirim.");
+      setValidationError(
+        "Tambahkan minimal 1 barang ke daftar belanja sebelum mengirim."
+      );
       focusQuickInput();
       return;
     }
@@ -604,8 +529,14 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     const hasDraftMetadata =
       (title.trim().length > 0 && title.trim() !== "Request Belanja") ||
       generalNotes.trim().length > 0;
-    if (targetStatus === "DRAFT" && validItems.length === 0 && !hasDraftMetadata) {
-      setValidationError("Isi judul khusus, catatan, atau tambahkan minimal 1 barang untuk menyimpan draft.");
+    if (
+      targetStatus === "DRAFT" &&
+      validItems.length === 0 &&
+      !hasDraftMetadata
+    ) {
+      setValidationError(
+        "Isi judul khusus, catatan, atau tambahkan minimal 1 barang untuk menyimpan draft."
+      );
       focusQuickInput();
       return;
     }
@@ -619,14 +550,16 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
       request_date: requestDate,
       status: targetStatus,
       items: validItems,
-      // Fallback ringkasan single-item untuk kompatibilitas
       item_name: firstItem ? firstItem.item_name : "Draft Belanja",
       qty: firstItem ? firstItem.qty : 1,
       unit: firstItem ? firstItem.unit : "Pcs",
       category: firstItem ? firstItem.category : undefined,
     };
 
-    onSubmit(payload, initialData?.id && initialData.id > 0 ? initialData.id : undefined);
+    onSubmit(
+      payload,
+      initialData?.id && initialData.id > 0 ? initialData.id : undefined
+    );
   };
 
   const handleQuickKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -685,7 +618,11 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   };
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing) {
+    if (
+      (e.metaKey || e.ctrlKey) &&
+      e.key === "Enter" &&
+      !e.nativeEvent.isComposing
+    ) {
       e.preventDefault();
       submitCurrentRequest();
     }
@@ -702,7 +639,11 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
     setLastAddedNotice(null);
   };
 
-  const handleUpdateItem = (idx: number, field: keyof PurchaseRequestItemFormData, val: any) => {
+  const handleUpdateItem = (
+    idx: number,
+    field: keyof PurchaseRequestItemFormData,
+    val: any
+  ) => {
     setItems((prev) => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: val };
@@ -713,7 +654,10 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   const handleStepQty = (idx: number, delta: number) => {
     setItems((prev) => {
       const updated = [...prev];
-      const nextQty = Math.max(0.1, Number((updated[idx].qty + delta).toFixed(2)));
+      const nextQty = Math.max(
+        0.1,
+        Number((updated[idx].qty + delta).toFixed(2))
+      );
       updated[idx] = { ...updated[idx], qty: nextQty };
       return updated;
     });
@@ -728,7 +672,9 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
   const isEditingDraft = isEditingExisting && initialData?.status === "DRAFT";
   const canSaveAsDraft = !isEditingExisting || isEditingDraft;
   const primarySubmitLabel =
-    isEditingExisting && !isEditingDraft ? "Simpan Perubahan" : "Kirim Daftar Belanja";
+    isEditingExisting && !isEditingDraft
+      ? "Simpan Perubahan"
+      : "Kirim Daftar Belanja";
   const showQuickDropdown =
     isQuickDropdownOpen &&
     (matchedSuggestions.length > 0 || parsedQuickInput.itemQuery.length > 0);
@@ -742,35 +688,27 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
             focusQuickInput();
           }
         }}
-        className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-3xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl sm:rounded-3xl"
+        className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-3xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden bg-background border-border shadow-xl rounded-xl"
       >
-        <DialogHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/40 shrink-0 text-left">
-          <div className="flex items-center gap-3 pr-7">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
-              <ShoppingBag className="w-5 h-5" />
+        <DialogHeader className="px-4 sm:px-6 py-3.5 border-b border-border/80 bg-background shrink-0 text-left">
+          <div className="pr-7">
+            <div className="flex items-center gap-2 flex-wrap">
+              <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                {isEditingDraft
+                  ? "Edit Draft Belanja"
+                  : isEditingExisting
+                  ? "Edit Daftar Belanja"
+                  : "Listing Request Belanja"}
+              </DialogTitle>
+              {isEditingDraft && (
+                <Badge variant="outline" className="text-[11px]">
+                  Draft
+                </Badge>
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <DialogTitle className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                  {isEditingDraft
-                    ? "Edit Draft Belanja"
-                    : isEditingExisting
-                    ? "Edit Daftar Belanja"
-                    : "Listing Request Belanja"}
-                </DialogTitle>
-                {isEditingDraft && (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] border-dashed border-zinc-400 text-zinc-700 bg-zinc-100 dark:border-zinc-600 dark:text-zinc-200 dark:bg-zinc-800"
-                  >
-                    Draft
-                  </Badge>
-                )}
-              </div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                Catat beberapa barang kebutuhan dapur atau toko dalam 1 pengajuan untuk diteruskan ke Purchasing, atau simpan sebagai draft terlebih dahulu.
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Catat beberapa barang kebutuhan dapur atau toko dalam 1 pengajuan untuk diteruskan ke Purchasing.
+            </p>
           </div>
         </DialogHeader>
 
@@ -779,12 +717,12 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
           onKeyDown={handleFormKeyDown}
           className="flex-1 flex flex-col min-h-0 overflow-hidden"
         >
-          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
-            {/* Header Data: Judul, Pemohon, Urgensi & Catatan Umum */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3.5 bg-zinc-50/70 dark:bg-zinc-900/50 rounded-2xl border border-zinc-200/80 dark:border-zinc-800">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
+            {/* Header Data: Judul, Pemohon, Urgensi & Catatan Umum (Flat Hairline Section) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pb-4 border-b border-border/70">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5 text-zinc-500" /> Keperluan / Judul
+                <label className="text-xs font-medium text-foreground block">
+                  Keperluan / Judul
                 </label>
                 <Input
                   value={title}
@@ -793,13 +731,13 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                     if (e.key === "Enter") e.preventDefault();
                   }}
                   placeholder="Mis: Bahan Roti Manis / Stok Mingguan"
-                  className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                  className="h-9 text-xs"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-zinc-500" /> Pemohon (Staf/Bagian)
+                <label className="text-xs font-medium text-foreground block">
+                  Pemohon (Staf/Bagian)
                 </label>
                 <Input
                   value={requesterName}
@@ -808,44 +746,28 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                     if (e.key === "Enter") e.preventDefault();
                   }}
                   placeholder="Misal: Dapur / Siti"
-                  className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                  className="h-9 text-xs"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-zinc-500" /> Tingkat Urgensi
+                <label className="text-xs font-medium text-foreground block">
+                  Tingkat Urgensi
                 </label>
-                <div className="grid grid-cols-2 gap-1.5 h-11 sm:h-10">
-                  <button
-                    type="button"
-                    onClick={() => setUrgency("NORMAL")}
-                    className={`rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 ${
-                      urgency === "NORMAL"
-                        ? "border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                    <span>Biasa</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUrgency("URGENT")}
-                    className={`rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 ${
-                      urgency === "URGENT"
-                        ? "border-rose-600 bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 ring-1 ring-rose-500"
-                        : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-rose-600" />
-                    <span>Urgent</span>
-                  </button>
-                </div>
+                <AdaptiveSelect
+                  value={urgency}
+                  onValueChange={(val) =>
+                    setUrgency(val as "NORMAL" | "URGENT")
+                  }
+                  options={[
+                    { value: "NORMAL", label: "Biasa (Normal)" },
+                    { value: "URGENT", label: "Urgent / Mendesak" },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                <label className="text-xs font-medium text-foreground block">
                   Catatan Pengajuan (Opsional)
                 </label>
                 <Input
@@ -855,79 +777,78 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                     if (e.key === "Enter") e.preventDefault();
                   }}
                   placeholder="Mis: Untuk produksi akhir pekan..."
-                  className="h-11 sm:h-10 text-xs rounded-xl bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700"
+                  className="h-9 text-xs"
                 />
               </div>
             </div>
 
-            {/* Quick Add Form: 1 Input Autocomplete + Smart Qty/Satuan + Enter -> Fokus Tetap di Input */}
-            <div className="p-3.5 rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 space-y-2.5">
+            {/* Quick Add Bar using ReUI InputGroup (Zero Nested Card & Zero Quick Pick Chips) */}
+            <div className="space-y-2 pb-4 border-b border-border/70">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label
                   htmlFor="quick-item-autocomplete"
-                  className="text-xs font-bold text-zinc-900 dark:text-zinc-100"
+                  className="text-xs font-semibold text-foreground"
                 >
-                  Quick Add Daftar Belanja
+                  Tambah Barang ke Daftar Belanja
                 </label>
-                <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                   <CornerDownLeft className="w-3 h-3" aria-hidden="true" />
                   Enter masuk daftar, Ctrl/⌘+Enter kirim
                 </span>
               </div>
 
               <div className="relative">
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1 min-w-0">
-                    <Search
-                      className="w-4 h-4 text-zinc-500 dark:text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                      aria-hidden="true"
-                    />
-                    <Input
-                      id="quick-item-autocomplete"
-                      ref={quickInputRef}
-                      type="text"
-                      role="combobox"
-                      aria-expanded={showQuickDropdown}
-                      aria-autocomplete="list"
-                      aria-controls="quick-item-listbox"
-                      aria-activedescendant={
-                        highlightedIndex >= 0 && matchedSuggestions[highlightedIndex]
-                          ? `quick-suggestion-${highlightedIndex}`
-                          : undefined
+                <InputGroup className="h-10">
+                  <InputGroupAddon align="inline-start" className="pl-3 pr-1">
+                    <Search className="size-4 text-muted-foreground" />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    id="quick-item-autocomplete"
+                    ref={quickInputRef}
+                    type="text"
+                    role="combobox"
+                    aria-expanded={showQuickDropdown}
+                    aria-autocomplete="list"
+                    aria-controls="quick-item-listbox"
+                    aria-activedescendant={
+                      highlightedIndex >= 0 &&
+                      matchedSuggestions[highlightedIndex]
+                        ? `quick-suggestion-${highlightedIndex}`
+                        : undefined
+                    }
+                    value={quickQuery}
+                    onChange={(e) => {
+                      setQuickQuery(e.target.value);
+                      setIsQuickDropdownOpen(true);
+                      setHighlightedIndex(-1);
+                      if (validationError) setValidationError(null);
+                    }}
+                    onFocus={() => {
+                      if (blurTimeoutRef.current !== null) {
+                        window.clearTimeout(blurTimeoutRef.current);
+                        blurTimeoutRef.current = null;
                       }
-                      value={quickQuery}
-                      onChange={(e) => {
-                        setQuickQuery(e.target.value);
-                        setIsQuickDropdownOpen(true);
+                      if (skipNextFocusOpenRef.current) {
+                        skipNextFocusOpenRef.current = false;
+                        return;
+                      }
+                      setIsQuickDropdownOpen(true);
+                    }}
+                    onBlur={() => {
+                      blurTimeoutRef.current = window.setTimeout(() => {
+                        setIsQuickDropdownOpen(false);
                         setHighlightedIndex(-1);
-                        if (validationError) setValidationError(null);
-                      }}
-                      onFocus={() => {
-                        if (blurTimeoutRef.current !== null) {
-                          window.clearTimeout(blurTimeoutRef.current);
-                          blurTimeoutRef.current = null;
-                        }
-                        if (skipNextFocusOpenRef.current) {
-                          skipNextFocusOpenRef.current = false;
-                          return;
-                        }
-                        setIsQuickDropdownOpen(true);
-                      }}
-                      onBlur={() => {
-                        blurTimeoutRef.current = window.setTimeout(() => {
-                          setIsQuickDropdownOpen(false);
-                          setHighlightedIndex(-1);
-                          blurTimeoutRef.current = null;
-                        }, 150);
-                      }}
-                      onKeyDown={handleQuickKeyDown}
-                      placeholder='Ketik barang atau qty (mis. "3 kg gula pasir", "tepung x5") + Enter...'
-                      className="h-11 sm:h-10 pl-9 pr-9 text-xs sm:text-sm rounded-xl bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 font-medium text-zinc-900 dark:text-zinc-100 focus-visible:ring-amber-600"
-                    />
-                    {quickQuery.length > 0 && (
-                      <button
-                        type="button"
-                        tabIndex={-1}
+                        blurTimeoutRef.current = null;
+                      }, 150);
+                    }}
+                    onKeyDown={handleQuickKeyDown}
+                    placeholder='Ketik barang atau qty (mis. "3 kg gula pasir", "tepung x5") + Enter...'
+                    className="text-xs sm:text-sm"
+                  />
+                  {quickQuery.length > 0 && (
+                    <InputGroupAddon align="inline-end" className="pr-1">
+                      <InputGroupButton
+                        size="icon-xs"
                         aria-label="Hapus kata pencarian"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
@@ -936,45 +857,54 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                           setIsQuickDropdownOpen(true);
                           focusQuickInput();
                         }}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  <Button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={handleQuickAddAction}
-                    disabled={!parsedQuickInput.itemQuery && highlightedIndex < 0}
-                    className="h-11 sm:h-10 px-4 text-xs font-semibold bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-xl shrink-0 flex items-center gap-1.5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Tambah</span>
-                  </Button>
-                </div>
+                        <X className="size-3.5" />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  )}
+                  <InputGroupAddon align="inline-end" className="pr-1.5">
+                    <InputGroupButton
+                      size="sm"
+                      variant="default"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={handleQuickAddAction}
+                      disabled={
+                        !parsedQuickInput.itemQuery && highlightedIndex < 0
+                      }
+                      className="h-7 px-3 text-xs font-semibold"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Tambah</span>
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
 
                 {/* Autocomplete Dropdown */}
                 {showQuickDropdown && (
                   <div
                     id="quick-item-listbox"
                     role="listbox"
-                    className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl max-h-64 overflow-y-auto py-1 divide-y divide-zinc-100 dark:divide-zinc-800"
+                    className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto py-1 divide-y divide-border/50"
                   >
-                    {parsedQuickInput.hasInlineModifier && parsedQuickInput.itemQuery && (
-                      <div className="px-3.5 py-1.5 text-[11px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50/90 dark:bg-amber-950/50 flex items-center justify-between gap-2">
-                        <span>
-                          Qty terdeteksi: {parsedQuickInput.qty}{" "}
-                          {parsedQuickInput.unit ? parsedQuickInput.unit : "(sesuai satuan barang)"}
-                        </span>
-                        <span className="truncate">Cari: "{parsedQuickInput.itemQuery}"</span>
-                      </div>
-                    )}
+                    {parsedQuickInput.hasInlineModifier &&
+                      parsedQuickInput.itemQuery && (
+                        <div className="px-3 py-1.5 text-[11px] font-medium text-muted-foreground bg-muted/40 flex items-center justify-between gap-2">
+                          <span>
+                            Qty terdeteksi: {parsedQuickInput.qty}{" "}
+                            {parsedQuickInput.unit
+                              ? parsedQuickInput.unit
+                              : "(sesuai satuan barang)"}
+                          </span>
+                          <span className="truncate">
+                            Cari: &quot;{parsedQuickInput.itemQuery}&quot;
+                          </span>
+                        </div>
+                      )}
 
                     {matchedSuggestions.map((s, sIdx) => {
                       const isHighlighted = highlightedIndex === sIdx;
-                      const previewUnit = parsedQuickInput.unit || s.satuan_beli || "Pcs";
+                      const previewUnit =
+                        parsedQuickInput.unit || s.satuan_beli || "Pcs";
                       return (
                         <button
                           key={`${s.item_name}-${s.is_master}-${sIdx}`}
@@ -992,122 +922,82 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                               )
                             )
                           }
-                          className={`w-full text-left px-3.5 py-2.5 min-h-[44px] text-xs flex items-center justify-between gap-2 transition-colors ${
-                            isHighlighted
-                              ? "bg-amber-100 dark:bg-amber-950/70"
-                              : "hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                          className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors ${
+                            isHighlighted ? "bg-accent" : "hover:bg-accent/60"
                           }`}
                         >
                           <div className="min-w-0">
-                            <p className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                            <p className="font-medium text-foreground truncate">
                               {s.item_name}
                               {parsedQuickInput.hasInlineModifier && (
-                                <span className="ml-1.5 font-semibold text-amber-800 dark:text-amber-300">
+                                <span className="ml-1.5 font-semibold text-blue-600 dark:text-blue-400">
                                   ({parsedQuickInput.qty} {previewUnit})
                                 </span>
                               )}
                             </p>
-                            <p className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
-                              {s.category || "Bahan Kue"} • {s.satuan_beli || "Pcs"}
-                              {s.last_supplier && s.last_supplier !== "-" ? ` • Biasa di: ${s.last_supplier}` : ""}
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {s.category || "Bahan Kue"} •{" "}
+                              {s.satuan_beli || "Pcs"}
+                              {s.last_supplier && s.last_supplier !== "-"
+                                ? ` • Biasa di: ${s.last_supplier}`
+                                : ""}
                             </p>
                           </div>
                           {s.last_unit_price > 0 && (
                             <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums shrink-0">
-                              ~{formatRupiah(s.last_unit_price * parsedQuickInput.qty)}
+                              ~
+                              {formatRupiah(
+                                s.last_unit_price * parsedQuickInput.qty
+                              )}
                             </span>
                           )}
                         </button>
                       );
                     })}
 
-                    {parsedQuickInput.itemQuery.length > 0 && !hasExactSuggestionMatch && (
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() =>
-                          addItemToShoppingList(
-                            buildQuickItem(
-                              parsedQuickInput.itemQuery,
-                              itemSuggestions,
-                              parsedQuickInput.qty,
-                              parsedQuickInput.unit
+                    {parsedQuickInput.itemQuery.length > 0 &&
+                      !hasExactSuggestionMatch && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() =>
+                            addItemToShoppingList(
+                              buildQuickItem(
+                                parsedQuickInput.itemQuery,
+                                itemSuggestions,
+                                parsedQuickInput.qty,
+                                parsedQuickInput.unit
+                              )
                             )
-                          )
-                        }
-                        className="w-full text-left px-3.5 py-2.5 min-h-[44px] text-xs bg-zinc-50/80 dark:bg-zinc-950/60 hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center justify-between gap-2"
-                      >
-                        <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                          + Tambah "{parsedQuickInput.itemQuery}" ({parsedQuickInput.qty}{" "}
-                          {parsedQuickInput.unit || "Pcs"}) sebagai barang baru
-                        </span>
-                        <span className="text-[11px] text-zinc-600 dark:text-zinc-400 shrink-0">
-                          Enter
-                        </span>
-                      </button>
-                    )}
+                          }
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-accent/60 flex items-center justify-between gap-2"
+                        >
+                          <span className="font-medium text-foreground">
+                            + Tambah &quot;{parsedQuickInput.itemQuery}&quot; (
+                            {parsedQuickInput.qty}{" "}
+                            {parsedQuickInput.unit || "Pcs"}) sebagai barang baru
+                          </span>
+                          <span className="text-[11px] text-muted-foreground shrink-0">
+                            Enter
+                          </span>
+                        </button>
+                      )}
                   </div>
                 )}
               </div>
-
-              {/* Quick Chips untuk sekali tap tanpa mengetik */}
-              {quickAddChips.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 mr-1">
-                    Sering dibeli:
-                  </span>
-                  {quickAddChips.map((chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => addItemToShoppingList(buildQuickItem(chip, itemSuggestions))}
-                      className="min-h-[36px] sm:min-h-[30px] px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-900 border border-amber-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-amber-100 dark:hover:bg-amber-950/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
-                    >
-                      + {chip}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Isi Cepat dari Request Sebelumnya (Belanja Rutin) */}
-              {!isEditingExisting && usableRecentRequests.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-amber-200/70 dark:border-amber-900/40">
-                  <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300 mr-1">
-                    Belanja rutin:
-                  </span>
-                  {usableRecentRequests.map((req) => {
-                    const itemCount = req.items?.length || (req.item_name ? 1 : 0);
-                    return (
-                      <button
-                        key={req.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handleApplyRecentRequest(req)}
-                        className="min-h-[36px] sm:min-h-[30px] px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-100/80 dark:bg-zinc-900 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-300 hover:bg-amber-200/80 dark:hover:bg-amber-950/60 transition-colors flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
-                      >
-                        <RotateCcw className="w-3 h-3 shrink-0" aria-hidden="true" />
-                        <span>
-                          {req.title || "Request Belanja"} ({itemCount} item)
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
 
               {/* Feedback & Undo bar */}
               {undoState && (
                 <div
                   aria-live="polite"
-                  className="text-xs font-medium text-zinc-800 dark:text-zinc-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 flex items-center justify-between gap-2"
+                  className="text-xs text-foreground flex items-center justify-between gap-2 pt-1"
                 >
                   <span>{undoState.label}</span>
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={handleUndo}
-                    className="inline-flex items-center gap-1 font-bold text-amber-800 dark:text-amber-300 hover:underline px-2 py-1 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 shrink-0"
+                    className="inline-flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
                   >
                     <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
                     Urungkan
@@ -1118,7 +1008,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               {lastAddedNotice && !undoState && (
                 <p
                   aria-live="polite"
-                  className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5"
+                  className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   <span>{lastAddedNotice}</span>
@@ -1128,7 +1018,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               {validationError && (
                 <p
                   role="alert"
-                  className="text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl px-3 py-2 flex items-center gap-2"
+                  className="text-xs font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1.5"
                 >
                   <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
                   <span>{validationError}</span>
@@ -1136,51 +1026,64 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               )}
             </div>
 
-            {/* List Item Belanja */}
+            {/* List Item Belanja (Flat Hairline Ledger Rows) */}
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-2">
                   <span>Daftar Barang Belanjaan</span>
-                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300">
+                  <Badge variant="outline" className="text-[11px] px-2 py-0">
                     {items.length} Item
                   </Badge>
                 </span>
               </div>
 
               {items.length === 0 ? (
-                <div className="border border-dashed border-zinc-300 dark:border-zinc-700 rounded-2xl p-6 text-center bg-zinc-50/50 dark:bg-zinc-900/30 space-y-1">
-                  <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                <div className="border border-dashed border-border rounded-lg p-6 text-center space-y-1">
+                  <p className="text-xs font-medium text-foreground">
                     Daftar belanja masih kosong.
                   </p>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                    Ketik nama barang (atau qty + satuan) di kolom Quick Add di atas lalu tekan Enter, atau pilih dari Belanja Rutin.
+                  <p className="text-xs text-muted-foreground">
+                    Ketik nama barang (atau qty + satuan) di kolom pencarian di atas lalu tekan Enter.
                   </p>
                 </div>
               ) : (
-                <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl divide-y divide-zinc-100 dark:divide-zinc-800/80 bg-white dark:bg-zinc-900">
+                <div className="divide-y divide-border/70 border-y border-border/70">
                   {items.map((item, idx) => {
-                    const rowProfile = getCategoryFormProfile(item.category || "Bahan Kue");
+                    const rowProfile = getCategoryFormProfile(
+                      item.category || "Bahan Kue"
+                    );
                     const baseUnits = rowProfile.allowedUnits || COMMON_UNITS;
                     const rowUnits = baseUnits.includes(item.unit)
                       ? baseUnits
                       : [item.unit, ...baseUnits];
 
                     return (
-                      <div key={idx} className="p-3 sm:p-3.5 space-y-2 hover:bg-zinc-50/50 dark:hover:bg-zinc-900/60 transition-colors">
+                      <div key={idx} className="py-3 space-y-2">
                         <div className="grid grid-cols-12 gap-2 items-center">
                           {/* Nomor & Nama Barang */}
                           <div className="col-span-10 sm:col-span-5 flex items-center gap-2 min-w-0">
-                            <span className="w-5 text-center text-xs font-mono font-bold text-zinc-500 shrink-0">
+                            <span className="w-5 text-center text-xs font-mono text-muted-foreground shrink-0">
                               {idx + 1}.
                             </span>
                             <Input
                               value={item.item_name}
-                              onChange={(e) => handleUpdateItem(idx, "item_name", e.target.value)}
+                              onChange={(e) =>
+                                handleUpdateItem(
+                                  idx,
+                                  "item_name",
+                                  e.target.value
+                                )
+                              }
                               onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) e.preventDefault();
+                                if (
+                                  e.key === "Enter" &&
+                                  !e.metaKey &&
+                                  !e.ctrlKey
+                                )
+                                  e.preventDefault();
                               }}
                               aria-label={`Nama barang baris ${idx + 1}`}
-                              className="h-11 sm:h-9 text-xs rounded-xl bg-white dark:bg-zinc-950 border-zinc-300 dark:border-zinc-700 font-semibold"
+                              className="h-9 text-xs font-medium"
                             />
                           </div>
 
@@ -1190,99 +1093,118 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              aria-label={`Hapus ${item.item_name || `baris ${idx + 1}`}`}
+                              aria-label={`Hapus ${
+                                item.item_name || `baris ${idx + 1}`
+                              }`}
                               onClick={() => handleRemoveItemRow(idx)}
-                              className="h-11 w-11 p-0 text-zinc-500 hover:text-rose-700 rounded-xl"
+                              className="h-9 w-9 p-0 text-muted-foreground hover:text-rose-600"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
 
-                          {/* Kategori */}
+                          {/* Kategori (Shadcn AdaptiveSelect) */}
                           <div className="col-span-12 sm:col-span-3">
-                            <select
+                            <AdaptiveSelect
                               aria-label={`Kategori ${item.item_name}`}
                               value={item.category || "Bahan Kue"}
-                              onChange={(e) => {
-                                const nextCat = e.target.value;
-                                const nextProf = getCategoryFormProfile(nextCat);
+                              onValueChange={(nextCat) => {
+                                const nextProf =
+                                  getCategoryFormProfile(nextCat);
                                 handleUpdateItem(idx, "category", nextCat);
                                 if (nextProf.defaultUnit) {
-                                  handleUpdateItem(idx, "unit", nextProf.defaultUnit);
+                                  handleUpdateItem(
+                                    idx,
+                                    "unit",
+                                    nextProf.defaultUnit
+                                  );
                                 }
                               }}
-                              className="w-full h-11 sm:h-9 px-2.5 text-xs bg-zinc-50 dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-xl font-semibold text-zinc-800 dark:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
-                            >
-                              {categories.map((c) => (
-                                <option key={c} value={c}>
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
+                              options={categories}
+                              placeholder="Kategori..."
+                              searchPlaceholder="Cari kategori..."
+                            />
                           </div>
 
-                          {/* Qty Stepper */}
-                          <div className="col-span-6 sm:col-span-2 flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Kurangi jumlah ${item.item_name}`}
-                              onClick={() => handleStepQty(idx, -1)}
-                              className="h-11 sm:h-9 w-9 p-0 rounded-xl shrink-0 border-zinc-300 dark:border-zinc-700"
-                            >
-                              <Minus className="w-3.5 h-3.5" />
-                            </Button>
-                            <Input
-                              type="number"
-                              step="any"
-                              min="0.1"
-                              aria-label={`Jumlah ${item.item_name}`}
-                              value={item.qty}
-                              onChange={(e) =>
-                                handleUpdateItem(idx, "qty", parseFloat(e.target.value) || 1)
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) e.preventDefault();
-                              }}
-                              className="h-11 sm:h-9 px-1.5 text-xs rounded-xl text-center font-bold tabular-nums"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              aria-label={`Tambah jumlah ${item.item_name}`}
-                              onClick={() => handleStepQty(idx, 1)}
-                              className="h-11 sm:h-9 w-9 p-0 rounded-xl shrink-0 border-zinc-300 dark:border-zinc-700"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </Button>
+                          {/* Qty Stepper (ReUI InputGroup) */}
+                          <div className="col-span-6 sm:col-span-2">
+                            <InputGroup className="h-9">
+                              <InputGroupAddon
+                                align="inline-start"
+                                className="pl-1 pr-0"
+                              >
+                                <InputGroupButton
+                                  size="icon-xs"
+                                  aria-label={`Kurangi jumlah ${item.item_name}`}
+                                  onClick={() => handleStepQty(idx, -1)}
+                                >
+                                  <Minus className="size-3" />
+                                </InputGroupButton>
+                              </InputGroupAddon>
+                              <InputGroupInput
+                                type="number"
+                                step="any"
+                                min="0.1"
+                                aria-label={`Jumlah ${item.item_name}`}
+                                value={item.qty}
+                                onChange={(e) =>
+                                  handleUpdateItem(
+                                    idx,
+                                    "qty",
+                                    parseFloat(e.target.value) || 1
+                                  )
+                                }
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.key === "Enter" &&
+                                    !e.metaKey &&
+                                    !e.ctrlKey
+                                  )
+                                    e.preventDefault();
+                                }}
+                                className="px-1 text-xs text-center font-semibold tabular-nums"
+                              />
+                              <InputGroupAddon
+                                align="inline-end"
+                                className="pr-1 pl-0"
+                              >
+                                <InputGroupButton
+                                  size="icon-xs"
+                                  aria-label={`Tambah jumlah ${item.item_name}`}
+                                  onClick={() => handleStepQty(idx, 1)}
+                                >
+                                  <Plus className="size-3" />
+                                </InputGroupButton>
+                              </InputGroupAddon>
+                            </InputGroup>
                           </div>
 
                           {/* Satuan & Hapus Desktop */}
                           <div className="col-span-6 sm:col-span-2 flex items-center gap-1.5">
-                            <select
+                            <AdaptiveSelect
                               aria-label={`Satuan ${item.item_name}`}
                               value={item.unit}
-                              onChange={(e) => handleUpdateItem(idx, "unit", e.target.value)}
-                              className="w-full h-11 sm:h-9 px-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-xl font-semibold text-zinc-800 dark:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-600"
-                            >
-                              {rowUnits.map((u) => (
-                                <option key={u} value={u}>
-                                  {u}
-                                </option>
-                              ))}
-                            </select>
+                              onValueChange={(nextUnit) =>
+                                handleUpdateItem(idx, "unit", nextUnit)
+                              }
+                              options={rowUnits}
+                              placeholder="Satuan"
+                              searchPlaceholder="Cari satuan..."
+                              creatable={true}
+                              creatablePrefix="Satuan"
+                            />
 
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              aria-label={`Hapus ${item.item_name || `baris ${idx + 1}`}`}
+                              aria-label={`Hapus ${
+                                item.item_name || `baris ${idx + 1}`
+                              }`}
                               onClick={() => handleRemoveItemRow(idx)}
-                              className="hidden sm:inline-flex h-9 w-9 p-0 text-zinc-500 hover:text-rose-700 rounded-xl shrink-0"
+                              className="hidden sm:inline-flex h-8 w-8 p-0 text-muted-foreground hover:text-rose-600 shrink-0"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         </div>
@@ -1291,25 +1213,35 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:pl-7">
                           <Input
                             value={item.notes || ""}
-                            onChange={(e) => handleUpdateItem(idx, "notes", e.target.value)}
+                            onChange={(e) =>
+                              handleUpdateItem(idx, "notes", e.target.value)
+                            }
                             onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) e.preventDefault();
+                              if (
+                                e.key === "Enter" &&
+                                !e.metaKey &&
+                                !e.ctrlKey
+                              )
+                                e.preventDefault();
                             }}
                             placeholder={
                               rowProfile.notesPlaceholder ||
                               "Catatan tambahan (merek, ukuran kemasan, spesifikasi)..."
                             }
-                            className="h-9 text-xs rounded-xl bg-zinc-50/70 dark:bg-zinc-950/70 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                            className="h-8 text-xs text-muted-foreground flex-1"
                           />
                           {item.supplier_name && item.supplier_name !== "-" && (
-                            <Badge variant="outline" className="text-[11px] shrink-0 text-zinc-600 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700">
+                            <span className="text-[11px] text-muted-foreground shrink-0">
                               Toko: {item.supplier_name}
-                            </Badge>
+                            </span>
                           )}
                           {item.estimated_price && item.estimated_price > 0 && (
-                            <Badge variant="outline" className="text-[11px] shrink-0 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900 tabular-nums">
-                              ~{formatRupiah(item.estimated_price * (item.qty || 1))}
-                            </Badge>
+                            <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 tabular-nums shrink-0">
+                              ~
+                              {formatRupiah(
+                                item.estimated_price * (item.qty || 1)
+                              )}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1321,16 +1253,16 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
           </div>
 
           {/* Sticky Footer Submit */}
-          <div className="px-4 sm:px-6 py-3 border-t border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/80 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-700 dark:text-zinc-300">
+          <div className="px-4 sm:px-6 py-3 border-t border-border/80 bg-background shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span>
-                Total <strong>{footerSummary.totalItems}</strong> barang
+                Total <strong className="text-foreground">{footerSummary.totalItems}</strong> barang
               </span>
               {footerSummary.estimatedTotal > 0 && (
-                <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
                   Est. ~{formatRupiah(footerSummary.estimatedTotal)}
                   {footerSummary.pricedCount < footerSummary.totalItems && (
-                    <span className="font-normal text-zinc-600 dark:text-zinc-400 ml-1">
+                    <span className="font-normal text-muted-foreground ml-1">
                       ({footerSummary.pricedCount}/{footerSummary.totalItems} ada harga)
                     </span>
                   )}
@@ -1339,7 +1271,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               {footerSummary.suppliers.length > 0 && (
                 <span
                   title={footerSummary.suppliers.join(", ")}
-                  className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300"
+                  className="inline-flex items-center gap-1"
                 >
                   <Store className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   {footerSummary.suppliers.length === 1
@@ -1354,7 +1286,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                 variant="outline"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="h-11 sm:h-10 px-4 text-xs font-semibold rounded-xl"
+                className="h-9 px-4 text-xs font-medium"
               >
                 Batal
               </Button>
@@ -1364,7 +1296,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                   variant="outline"
                   onClick={() => submitCurrentRequest("DRAFT")}
                   disabled={isSubmitting}
-                  className="h-11 sm:h-10 px-4 text-xs font-semibold rounded-xl border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-1.5"
+                  className="h-9 px-4 text-xs font-medium flex items-center gap-1.5"
                 >
                   <Save className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Simpan Draft</span>
@@ -1373,11 +1305,13 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="h-11 sm:h-10 px-5 text-xs font-semibold bg-amber-700 hover:bg-amber-800 text-white rounded-xl shadow-xs flex items-center gap-2"
+                className="h-9 px-5 text-xs font-semibold flex items-center gap-2"
               >
-                <span>{isSubmitting ? "Menyimpan..." : primarySubmitLabel}</span>
+                <span>
+                  {isSubmitting ? "Menyimpan..." : primarySubmitLabel}
+                </span>
                 {!isSubmitting && (
-                  <kbd className="hidden sm:inline-block text-[10px] font-mono bg-amber-800/80 text-amber-50 px-1.5 py-0.5 rounded">
+                  <kbd className="hidden sm:inline-block text-[10px] font-mono opacity-80 px-1.5 py-0.5 rounded bg-background/20">
                     Ctrl/⌘+↵
                   </kbd>
                 )}

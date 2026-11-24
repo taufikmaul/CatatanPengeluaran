@@ -1,7 +1,12 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   IngredientCostGroup,
   MasterItem,
@@ -497,23 +502,20 @@ export const RecipeQuickAddAutocomplete: React.FC<
   return (
     <div
       ref={containerRef}
-      className="rounded-xl border border-blue-200/90 dark:border-blue-900/70 bg-blue-50/40 dark:bg-blue-950/20 p-3 space-y-2.5 transition-colors focus-within:border-blue-400 dark:focus-within:border-blue-700"
+      className="space-y-2 pt-3 border-t border-border/70"
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <label
           htmlFor={inputId}
-          className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5"
+          className="text-xs font-semibold text-foreground"
         >
-          <Search className="w-3.5 h-3.5 text-blue-700 dark:text-blue-300 shrink-0" />
-          <span>
-            {isBundle
-              ? "Cari & Tambah Menu Jadi / Kemasan (Tekan Enter)"
-              : "Cari & Tambah Bahan / Kemasan (Tekan Enter)"}
-          </span>
+          {isBundle
+            ? "Cari & Tambah Menu Jadi / Kemasan (Tekan Enter)"
+            : "Cari & Tambah Bahan / Kemasan (Tekan Enter)"}
         </label>
 
         <div
-          className="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-0.5 self-start sm:self-auto"
+          className="inline-flex items-center rounded-md border border-border bg-muted/40 p-0.5 self-start sm:self-auto"
           role="group"
           aria-label="Target kelompok item"
         >
@@ -530,82 +532,74 @@ export const RecipeQuickAddAutocomplete: React.FC<
                   inputRef.current?.focus();
                 }}
                 className={cn(
-                  "relative px-2.5 py-1.5 sm:py-1 text-[11px] font-medium rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+                  "px-2.5 py-1 text-[11px] font-medium rounded transition-colors",
                   active
-                    ? "text-white"
-                    : "text-slate-700 hover:text-slate-950 dark:text-slate-200 dark:hover:text-white"
+                    ? "bg-background text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {active && (
-                  <motion.span
-                    layoutId="quickadd-mode-pill"
-                    transition={{ type: "spring", stiffness: 500, damping: 36 }}
-                    className={cn(
-                      "absolute inset-0 rounded-md",
-                      btn.value === "packaging"
-                        ? "bg-amber-700"
-                        : "bg-blue-700"
-                    )}
-                  />
-                )}
-                <span className="relative z-10">{btn.label}</span>
+                {btn.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="relative rounded-lg transition-shadow focus-within:ring-2 focus-within:ring-blue-500/20">
-        <Search className="w-4 h-4 text-slate-600 dark:text-slate-400 pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 z-10" />
-        <Input
-          ref={inputRef}
-          id={inputId}
-          type="text"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={open}
-          aria-controls={listboxId}
-          aria-activedescendant={activeOptionId}
-          value={query}
-          onFocus={() => {
-            setOpen(true);
-            if (options.length > 0 && highlightedIndex < 0) {
-              setHighlightedIndex(0);
+      <div className="relative">
+        <InputGroup className="h-9 bg-background">
+          <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+            <Search className="size-3.5 text-muted-foreground" />
+          </InputGroupAddon>
+          <InputGroupInput
+            ref={inputRef}
+            id={inputId}
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={open}
+            aria-controls={listboxId}
+            aria-activedescendant={activeOptionId}
+            value={query}
+            onFocus={() => {
+              setOpen(true);
+              if (options.length > 0 && highlightedIndex < 0) {
+                setHighlightedIndex(0);
+              }
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onKeyDown={handleInputKeyDown}
+            placeholder={
+              isBundle
+                ? "Ketik nama Menu Jual (sudah jadi) atau kemasan... lalu Enter"
+                : "Ketik nama bahan, sub-resep prepared, atau kemasan... lalu Enter"
             }
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={handleInputKeyDown}
-          placeholder={
-            isBundle
-              ? "Ketik nama Menu Jual (sudah jadi) atau kemasan... lalu Enter"
-              : "Ketik nama bahan, sub-resep prepared, atau kemasan... lalu Enter"
-          }
-          className="h-10 sm:h-9 pl-9 pr-24 sm:pr-28 text-xs bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus-visible:ring-1 focus-visible:ring-blue-600"
-        />
-
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
+            className="text-xs"
+          />
           {query && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setOpen(true);
-                inputRef.current?.focus();
-              }}
-              aria-label="Bersihkan pencarian"
-              className="h-7 w-7 sm:h-6 sm:w-6 inline-flex items-center justify-center rounded text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <InputGroupAddon align="inline-end" className="pr-1">
+              <InputGroupButton
+                size="icon-xs"
+                onClick={() => {
+                  setQuery("");
+                  setOpen(true);
+                  inputRef.current?.focus();
+                }}
+                aria-label="Bersihkan pencarian"
+              >
+                <X className="size-3" />
+              </InputGroupButton>
+            </InputGroupAddon>
           )}
-          <kbd className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-[10px] font-medium text-slate-700 dark:text-slate-300">
-            <CornerDownLeft className="w-2.5 h-2.5" />
-            <span>Enter</span>
-          </kbd>
-        </div>
+          <InputGroupAddon align="inline-end" className="pr-2 hidden sm:flex">
+            <kbd className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-medium text-muted-foreground">
+              <CornerDownLeft className="w-2.5 h-2.5" />
+              <span>Enter</span>
+            </kbd>
+          </InputGroupAddon>
+        </InputGroup>
 
         <AnimatePresence>
           {open && (
@@ -618,7 +612,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.99 }}
               transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 shadow-lg max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800"
+              className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg max-h-72 overflow-y-auto divide-y divide-border/50"
             >
             {options.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-slate-600 dark:text-slate-400">

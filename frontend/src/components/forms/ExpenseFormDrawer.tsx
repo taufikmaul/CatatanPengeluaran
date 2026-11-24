@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { BankAccount, Expense, ExpenseFormData, ExpenseUser, FixedAsset, ItemSuggestion, OcrExtractedItem, Supplier } from "@/types";
+import {
+  BankAccount,
+  Expense,
+  ExpenseFormData,
+  ExpenseUser,
+  FixedAsset,
+  ItemSuggestion,
+  OcrExtractedItem,
+  Supplier,
+} from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,26 +19,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DatePicker } from "@/components/ui/date-picker";
-import { scanExpenseOcr, getExpenseUsers, checkInvoiceDuplicate, getBankAccounts, getSuppliers, createSupplier, getAssets } from "@/lib/api";
 import {
-  CalendarClock,
-  Store,
+  scanExpenseOcr,
+  getExpenseUsers,
+  checkInvoiceDuplicate,
+  getBankAccounts,
+  getSuppliers,
+  createSupplier,
+  getAssets,
+} from "@/lib/api";
+import {
   Camera,
-  UploadCloud,
   FileText,
   ScanLine,
   Loader2,
   CheckCircle2,
-  Receipt,
-  FileSearch,
   ExternalLink,
-  Clock,
   Check,
-  Briefcase,
-  Package,
-  ShoppingBag,
   AlertTriangle,
   Layers,
 } from "lucide-react";
@@ -123,9 +139,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   useEffect(() => {
     if (isOpen) {
       getBankAccounts(true).then(setBankAccounts).catch(() => {});
-      getExpenseUsers().then((res) => {
-        if (Array.isArray(res)) setUsersList(res);
-      }).catch(() => {});
+      getExpenseUsers()
+        .then((res) => {
+          if (Array.isArray(res)) setUsersList(res);
+        })
+        .catch(() => {});
       getSuppliers({ supplier_type: "kurir", is_active: true, limit: 100 })
         .then((res) => setCourierList(res.items || []))
         .catch(() => {});
@@ -151,7 +169,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showItemDropdown, setShowItemDropdown] = useState(false);
-  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [selectedSuggestionHint, setSelectedSuggestionHint] = useState<ItemSuggestion | null>(null);
   const [invoiceWarning, setInvoiceWarning] = useState<string | null>(null);
 
@@ -175,6 +192,8 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   const itemNameVal = watch("item_name") || "";
   const supplierVal = watch("supplier") || "";
   const categoryVal = watch("category") || "";
+  const userIdVal = watch("user_id");
+  const assetIdVal = watch("asset_id");
   const catProfile = useMemo(() => getCategoryFormProfile(categoryVal), [categoryVal]);
   const isOngkir = catProfile.archetype === "ongkir";
   const isTukarCash = catProfile.archetype === "tukar_cash";
@@ -211,11 +230,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       setIsAddingCourier(false);
     }
   };
+
   const msgLinkVal = watch("msg_link") || "";
   const notesVal = watch("notes") || "";
   const initialTgMeta = parseTelegramLink(initialData?.msg_link);
 
-  // Helper untuk membaca/menyimpan tag metadata kontekstual di dalam kolom notes
   const upsertNoteTag = (tagPrefix: string, val: string) => {
     const curNotes = getValues("notes") || "";
     const regex = new RegExp(`(?:\\|\\s*)?${tagPrefix}:\\s*[^|]+`, "gi");
@@ -236,7 +255,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     return match ? match[1].trim() : "";
   };
 
-  // Auto-set defaults saat kategori berubah
   useEffect(() => {
     if (isTukarCash) {
       setValue("supplier", "-");
@@ -271,7 +289,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     }
   }, [categoryVal, isTukarCash, isOngkir, catProfile, initialData, setValue]);
 
-  // Filter suggestions based on input and prioritize active category
   const filteredItemSuggestions = useMemo(() => {
     const q = itemNameVal.trim().toLowerCase();
     const activeCatLower = categoryVal.trim().toLowerCase();
@@ -290,16 +307,71 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       .slice(0, 8);
   }, [itemNameVal, itemSuggestions, categoryVal]);
 
-  // Filter supplier suggestions based on input
-  const filteredSupplierSuggestions = useMemo(() => {
-    const q = supplierVal.trim().toLowerCase();
-    if (!q || q === "-") return supplierSuggestions.slice(0, 10);
-    return supplierSuggestions
-      .filter((s) => s.toLowerCase().includes(q))
-      .slice(0, 10);
-  }, [supplierVal, supplierSuggestions]);
+  const courierOptions = useMemo(() => {
+    if (courierList.length > 0) {
+      const sorted = [
+        ...courierList.filter((c) => c.is_subscribed),
+        ...courierList.filter((c) => !c.is_subscribed),
+      ];
+      return sorted.map((c) => ({
+        value: c.name,
+        label: c.name,
+        badge: c.is_subscribed ? "Langganan" : undefined,
+      }));
+    }
+    return [
+      "GoSend",
+      "GoCar",
+      "Lalamove",
+      "GrabExpress",
+      "Shopee Express",
+      "Maxim",
+      "JNE",
+      "Kurir Lainnya",
+    ].map((name) => ({ value: name, label: name }));
+  }, [courierList]);
 
-  // Set form values when opening, editing, or repeating an order
+  const supplierComboboxOptions = useMemo(() => {
+    if (isPayroll) {
+      return usersList.map((u) => ({
+        value: u.name,
+        label: u.name,
+        sublabel: u.telegram_id ? `@${u.telegram_id}` : undefined,
+      }));
+    }
+    const merged = Array.from(
+      new Set([
+        ...(catProfile.quickSupplierChips || []),
+        ...supplierSuggestions.filter((s) => s && s !== "-"),
+      ])
+    );
+    return merged.map((s) => ({ value: s, label: s }));
+  }, [isPayroll, usersList, catProfile.quickSupplierChips, supplierSuggestions]);
+
+  const assetSelectOptions = useMemo(() => {
+    return [
+      { value: "", label: "-- Tidak ditautkan --" },
+      ...assetsList
+        .filter((a) => a.status !== "Dihapuskan" && a.status !== "Dijual")
+        .map((a) => ({
+          value: String(a.id),
+          label: `[${a.asset_code}] ${a.name}`,
+          sublabel: a.location || undefined,
+        })),
+    ];
+  }, [assetsList]);
+
+  const userSelectOptions = useMemo(() => {
+    return [
+      { value: "", label: "Otomatis (Web Dashboard)" },
+      ...usersList.map((u) => ({
+        value: String(u.id),
+        label: u.name,
+        sublabel: u.telegram_id ? `@${u.telegram_id}` : undefined,
+      })),
+    ];
+  }, [usersList]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -405,7 +477,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       });
     }
     setInvoiceWarning(null);
-    // Deliberately exclude `categories` array ref so background refetches don't wipe user's category choice
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, repeatData, reset, isOpen, defaultCategory]);
 
@@ -494,10 +565,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         applyExtractedItemToForm(res.items[0]);
         setActiveTab("form");
         setOcrSuccessBanner(
-          `Berhasil membaca ${res.items.length} item dari struk! Silakan periksa rincian data lalu simpan.`
+          `Berhasil membaca ${res.items.length} item dari struk. Silakan periksa rincian data lalu simpan.`
         );
       } else {
-        setOcrError(res.message || "Gagal membaca struk/nota. Pastikan gambar jelas dan tidak terpotong.");
+        setOcrError(
+          res.message || "Gagal membaca struk/nota. Pastikan gambar jelas dan tidak terpotong."
+        );
       }
     } catch (err: any) {
       setOcrError(err.response?.data?.detail || "Gagal memproses gambar struk via AI.");
@@ -525,7 +598,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         return;
       }
       if (totalVal > 0 && dpVal >= totalVal) {
-        toast.error("Nominal DP tidak boleh sama atau melebihi total invoice. Pilih status Lunas jika dibayar penuh.");
+        toast.error(
+          "Nominal DP tidak boleh sama atau melebihi total invoice. Pilih status Lunas jika dibayar penuh."
+        );
         return;
       }
       data.paid_amount = dpVal;
@@ -558,10 +633,14 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       const otherFee = Number(it.other_fee ?? it.biaya_lainnya ?? 0);
       const discount = Number(it.diskon || 0);
       const tot = Number(it.total_harga || 0);
-      const totalPrice = tot > 0 ? tot : (qty * unitPrice) + shippingFee + tax + otherFee - discount;
+      const totalPrice =
+        tot > 0 ? tot : qty * unitPrice + shippingFee + tax + otherFee - discount;
 
       const itPm = it.metode_bayar || currentPayMethod;
-      const itPs = itPm === "COD" ? (it.status_pembayaran || currentPayStatus || "Belum Lunas") : "Lunas";
+      const itPs =
+        itPm === "COD"
+          ? it.status_pembayaran || currentPayStatus || "Belum Lunas"
+          : "Lunas";
 
       return {
         expense_date: it.tanggal || currentExpenseDate,
@@ -569,7 +648,10 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         item_name: it.barang || "Barang",
         qty,
         unit: it.satuan || it.unit || "Pcs",
-        category: (it.kategori && categories.includes(it.kategori)) ? it.kategori : currentCategory,
+        category:
+          it.kategori && categories.includes(it.kategori)
+            ? it.kategori
+            : currentCategory,
         unit_price: unitPrice,
         shipping_fee: shippingFee,
         tax,
@@ -579,9 +661,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         pay_method: itPm,
         pay_status: itPs,
         due_date: currentDueDate,
-        notes: (it.keterangan && it.keterangan !== "-") ? it.keterangan : currentNotes,
-        invoice_number: (it.no_invoice && it.no_invoice !== "-") ? it.no_invoice : currentInvoice,
-        is_reimbursement: it.is_reimbursement !== undefined ? Boolean(it.is_reimbursement) : currentIsReimb,
+        notes: it.keterangan && it.keterangan !== "-" ? it.keterangan : currentNotes,
+        invoice_number:
+          it.no_invoice && it.no_invoice !== "-" ? it.no_invoice : currentInvoice,
+        is_reimbursement:
+          it.is_reimbursement !== undefined
+            ? Boolean(it.is_reimbursement)
+            : currentIsReimb,
         msg_link: "Web Dashboard",
         user_id: watch("user_id") || null,
       };
@@ -593,52 +679,44 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl border-slate-200 shadow-2xl bg-white">
-        {/* Sticky Top Header + Mode Switcher + Category Quick Rail */}
-        <DialogHeader className="px-4 sm:px-6 pt-4 pb-3 border-b border-slate-200/80 bg-slate-50/80 shrink-0 space-y-3 text-left">
+      <DialogContent className="w-[calc(100vw-1rem)] sm:w-[95vw] sm:max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[94dvh] flex flex-col p-0 overflow-hidden rounded-xl border-border shadow-xl bg-background">
+        {/* Clean Editorial Header */}
+        <DialogHeader className="px-4 sm:px-6 py-3.5 border-b border-border/80 bg-background shrink-0 text-left">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pr-7">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <DialogTitle className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="truncate">
-                    {initialData
-                      ? "Edit Catatan Pengeluaran"
-                      : repeatData
-                      ? `Beli Lagi: ${repeatData.item_name}`
-                      : activeTab === "multi"
-                      ? "Input 1 Nota (Multi-Item & Multi-Kategori)"
-                      : "Tambah Catatan Pengeluaran"}
-                  </span>
+                <DialogTitle className="text-base font-bold tracking-tight text-foreground">
+                  {initialData
+                    ? "Edit Catatan Pengeluaran"
+                    : repeatData
+                    ? `Beli Lagi: ${repeatData.item_name}`
+                    : activeTab === "multi"
+                    ? "Input 1 Nota (Multi-Item & Multi-Kategori)"
+                    : "Tambah Catatan Pengeluaran"}
                 </DialogTitle>
                 {activeTab === "form" && (
-                  <>
-                    <span className="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-lg">
-                      {catProfile.badgeLabel}
-                    </span>
-                    <span className="text-[11px] font-mono font-semibold bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-lg">
-                      {catProfile.coaLabel}
-                    </span>
-                  </>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    {catProfile.badgeLabel} ({catProfile.coaLabel})
+                  </span>
                 )}
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1">
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
                 {activeTab === "multi"
                   ? "Catat beberapa barang dari kategori berbeda dalam 1 nota/struk belanja sekaligus."
                   : catProfile.description}
               </p>
             </div>
 
-            {/* Mode Switcher (1 Item vs Multi-Item 1 Nota vs OCR Scan) - Only when adding fresh new expense */}
+            {/* Mode Switcher */}
             {!initialData && !repeatData && (
-              <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-xl shrink-0 self-start sm:self-auto w-full sm:w-auto">
+              <div className="flex items-center gap-1 p-0.5 bg-muted rounded-lg shrink-0 self-start sm:self-auto w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setActiveTab("form")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md transition-colors ${
                     activeTab === "form"
-                      ? "bg-white text-slate-900 shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-background text-foreground shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
@@ -648,23 +726,23 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab("multi")}
-                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md transition-colors ${
                       activeTab === "multi"
-                        ? "bg-white text-blue-700 shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
+                        ? "bg-background text-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>Multi-Item (1 Nota)</span>
+                    <span>Multi-Item</span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setActiveTab("ocr")}
-                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-[34px] text-xs font-semibold rounded-lg transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 h-8 text-xs font-medium rounded-md transition-colors ${
                     activeTab === "ocr"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
+                      ? "bg-foreground text-background shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <ScanLine className="w-3.5 h-3.5" />
@@ -673,32 +751,6 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             )}
           </div>
-
-          {/* Interactive Category Pill Bar (Horizontal scroll on mobile, wrapped/scrollable rail on desktop) */}
-          {activeTab === "form" && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
-              <span className="text-[11px] font-semibold text-slate-500 shrink-0 mr-1">
-                Kategori:
-              </span>
-              {categories.map((c) => {
-                const isSelected = categoryVal === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setValue("category", c, { shouldValidate: true })}
-                    className={`shrink-0 px-2.5 py-1.5 min-h-[34px] sm:min-h-[30px] rounded-xl text-xs font-semibold transition-all border ${
-                      isSelected
-                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                        : "bg-white text-slate-600 border-slate-200/90 hover:border-blue-300 hover:text-blue-700"
-                    }`}
-                  >
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </DialogHeader>
 
         {/* MULTI-ITEM & MULTI-CATEGORY 1 NOTA VIEW */}
@@ -718,7 +770,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
           />
         ) : activeTab === "ocr" && !initialData && !repeatData ? (
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
@@ -728,7 +780,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                     handleFileSelect(e.dataTransfer.files[0]);
                   }
                 }}
-                className="lg:col-span-7 border-2 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50/70 hover:bg-blue-50/30 rounded-2xl p-6 sm:p-8 text-center cursor-pointer transition-all"
+                className="lg:col-span-7 border border-dashed border-border hover:border-foreground/50 rounded-lg p-6 sm:p-8 text-center cursor-pointer transition-colors"
               >
                 <input
                   ref={fileInputRef}
@@ -745,57 +797,55 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
                 {ocrPreview ? (
                   <div className="space-y-3">
-                    <div className="relative mx-auto max-w-[260px] max-h-64 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
+                    <div className="relative mx-auto max-w-[260px] max-h-64 overflow-hidden rounded-md border border-border bg-background">
                       <img
                         src={ocrPreview}
                         alt="Pratinjau Nota"
                         className="w-full h-auto object-contain"
                       />
                     </div>
-                    <p className="text-xs font-medium text-slate-700">
+                    <p className="text-xs font-medium text-foreground">
                       {ocrFile?.name} ({(Number(ocrFile?.size) / 1024).toFixed(1)} KB)
                     </p>
-                    <span className="text-xs text-blue-600 hover:underline font-medium inline-block py-1">
+                    <span className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium inline-block py-1">
                       Klik untuk ganti foto nota
                     </span>
                   </div>
                 ) : (
-                  <div className="space-y-2.5 py-4">
-                    <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
-                      <Camera className="w-7 h-7" />
-                    </div>
-                    <h4 className="text-sm sm:text-base font-bold text-slate-800">
+                  <div className="space-y-2 py-4">
+                    <Camera className="w-7 h-7 text-muted-foreground mx-auto" />
+                    <h4 className="text-sm font-semibold text-foreground">
                       Foto Struk atau Unggah Gambar Nota
                     </h4>
-                    <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                    <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
                       Ambil foto langsung dari kamera ponsel atau tarik file gambar (JPG, PNG, WEBP) ke area ini.
                     </p>
                   </div>
                 )}
               </div>
 
-              <div className="lg:col-span-5 space-y-4 bg-slate-50 border border-slate-200/80 rounded-2xl p-4 sm:p-5">
-                <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              <div className="lg:col-span-5 space-y-4 lg:pl-6 lg:border-l border-border/70">
+                <h5 className="text-xs font-semibold text-foreground uppercase tracking-wider">
                   Ekstraksi Nota Otomatis
                 </h5>
-                <ul className="space-y-2 text-xs text-slate-600 leading-relaxed">
+                <ul className="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
                   <li>1. Sistem membaca nama barang, kuantitas, harga satuan, nama toko, dan nomor nota.</li>
                   <li>2. Kategori pengeluaran otomatis disesuaikan dan tetap dapat dikoreksi sebelum disimpan.</li>
                   <li>3. Jika nota memiliki banyak baris barang, Anda dapat memilih per item atau simpan sekaligus.</li>
                 </ul>
 
                 {ocrError && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+                  <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
                     {ocrError}
-                  </div>
+                  </p>
                 )}
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2">
+                <div className="flex items-center justify-end gap-2 pt-2">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setActiveTab("form")}
-                    className="rounded-xl text-xs h-11 sm:h-10 px-4"
+                    className="h-9 text-xs px-4"
                   >
                     Kembali ke Form
                   </Button>
@@ -803,16 +853,16 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                     type="button"
                     disabled={!ocrFile || isScanningOcr}
                     onClick={handleScanOcr}
-                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold gap-1.5"
+                    className="h-9 text-xs px-5 font-semibold gap-1.5"
                   >
                     {isScanningOcr ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>Menganalisis Struk...</span>
                       </>
                     ) : (
                       <>
-                        <ScanLine className="w-4 h-4" />
+                        <ScanLine className="w-3.5 h-3.5" />
                         <span>Pindai Struk (OCR)</span>
                       </>
                     )}
@@ -822,20 +872,20 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
             </div>
           </div>
         ) : (
-          /* MANUAL / REVIEW FORM VIEW (Wide 2-Column Desktop + Adaptive Mobile Sheet) */
-          <form onSubmit={handleSubmit(handleFormSubmit)} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          /* MANUAL / REVIEW FORM VIEW (2-Column Editorial Hairline Ledger) */
+          <form
+            onSubmit={handleSubmit(handleFormSubmit)}
+            className="flex-1 flex flex-col min-h-0 overflow-hidden"
+          >
             <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
               {/* Banner saat berhasil OCR */}
               {ocrSuccessBanner && (
-                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-start gap-2.5">
+                <div className="pb-3 border-b border-border/70 flex items-start gap-2.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <div className="flex-1 text-xs text-emerald-800">
-                    <p className="font-semibold">{ocrSuccessBanner}</p>
+                  <div className="flex-1 text-xs">
+                    <p className="font-semibold text-foreground">{ocrSuccessBanner}</p>
                     {ocrExtractedItems.length > 1 && (
-                      <div className="mt-2 space-y-1.5">
-                        <span className="text-[11px] text-emerald-700 block font-medium">
-                          Pilih item dari struk untuk dimuat ke form:
-                        </span>
+                      <div className="mt-2 space-y-2">
                         <div className="flex flex-wrap gap-1.5">
                           {ocrExtractedItems.map((it, idx) => (
                             <button
@@ -845,42 +895,42 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                                 setSelectedOcrIndex(idx);
                                 applyExtractedItemToForm(it);
                               }}
-                              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-all ${
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
                                 selectedOcrIndex === idx
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                  : "bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100"
+                                  ? "bg-foreground text-background border-foreground"
+                                  : "bg-background text-foreground border-input hover:bg-muted/60"
                               }`}
                             >
-                              {it.barang || `Item #${idx + 1}`} ({formatRupiah(Number(it.total_harga || 0))})
+                              {it.barang || `Item #${idx + 1}`} (
+                              {formatRupiah(Number(it.total_harga || 0))})
                             </button>
                           ))}
                         </div>
 
                         {onBatchSubmit && (
-                          <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[11px] text-emerald-700">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <span className="text-[11px] text-muted-foreground">
                               Total {ocrExtractedItems.length} item terbaca di nota ini.
                             </span>
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setActiveTab("multi")}
-                                className="bg-white hover:bg-emerald-100 text-emerald-900 border-emerald-300 rounded-xl text-xs h-9 px-3 font-semibold flex items-center gap-1.5"
+                                className="h-8 text-xs px-3"
                               >
-                                <Layers className="w-3.5 h-3.5" />
-                                <span>Edit Semua di Tabel Multi-Item</span>
+                                Edit di Tabel Multi-Item
                               </Button>
                               <Button
                                 type="button"
                                 size="sm"
                                 disabled={isSubmitting}
                                 onClick={handleBatchSaveAll}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs h-9 px-3.5 shadow-sm font-semibold flex items-center gap-1.5"
+                                className="h-8 text-xs px-3 font-semibold"
                               >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Simpan Semua ({ocrExtractedItems.length} Item)</span>
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Simpan Semua ({ocrExtractedItems.length})
                               </Button>
                             </div>
                           </div>
@@ -891,31 +941,21 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 </div>
               )}
 
-              {/* Telegram Cross-Check Banner for existing expense */}
+              {/* Telegram Cross-Check Line for existing expense */}
               {initialData && initialTgMeta.isUrl && (
-                <div className="p-3.5 bg-sky-50/80 border border-sky-200/90 rounded-2xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-[#229ED9] text-white flex items-center justify-center shrink-0">
-                      <TelegramIcon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-bold text-sky-950">Chat Telegram Asli</span>
-                        <span className="text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded-md">
-                          {initialTgMeta.badgeLabel}
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-mono text-sky-700 truncate block mt-0.5 max-w-[220px] sm:max-w-[380px]">
-                        {initialData.msg_link}
-                      </span>
-                    </div>
+                <div className="pb-3 border-b border-border/70 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <TelegramIcon className="w-4 h-4 text-[#229ED9] shrink-0" />
+                    <span className="font-medium text-foreground">Sumber Telegram:</span>
+                    <span className="text-muted-foreground font-mono truncate">
+                      {initialData.msg_link}
+                    </span>
                   </div>
                   <a
                     href={initialData.msg_link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#229ED9] hover:bg-[#1d8ec4] text-white text-xs font-semibold shrink-0 transition-all"
-                    title="Buka pesan Telegram di tab baru"
+                    className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium shrink-0"
                   >
                     <span>Cross Check</span>
                     <ExternalLink className="w-3 h-3" />
@@ -923,526 +963,351 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                 </div>
               )}
 
-              {/* MAIN 2-COLUMN DESKTOP GRID (Reflows to 1 column on mobile/tablet) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
-                {/* LEFT COLUMN (7 cols on Desktop): Identitas Item, Supplier/Penerima, Metadata Kategori, & Referensi */}
-                <div className="lg:col-span-7 space-y-4">
-                  {/* Baris Tanggal & Dropdown Kategori */}
+              {/* MAIN 2-COLUMN DESKTOP GRID WITH HAIRLINE DIVIDER */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-0 items-start lg:divide-x lg:divide-border/70">
+                {/* LEFT COLUMN (7 cols on Desktop) */}
+                <div className="lg:col-span-7 lg:pr-6 space-y-4">
+                  {/* Baris Tanggal & Dropdown Kategori (Shadcn SearchableSelect > 10 options) */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
                         Tanggal Nota
                       </label>
                       <DatePicker
                         value={watch("expense_date")}
-                        onChange={(d) => setValue("expense_date", toIsoDate(d), { shouldValidate: true })}
-                        className="w-full h-11 sm:h-10 text-xs rounded-xl"
+                        onChange={(d) =>
+                          setValue("expense_date", toIsoDate(d), { shouldValidate: true })
+                        }
+                        className="w-full h-9 text-xs"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
                         Kategori Pengeluaran
                       </label>
-                      <select
-                        {...register("category")}
-                        className="h-11 sm:h-10 w-full rounded-xl border border-input bg-background px-3 text-xs font-semibold focus:ring-2 focus:ring-blue-500"
-                      >
-                        {categories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                      <AdaptiveSelect
+                        value={categoryVal}
+                        onValueChange={(nextCat) =>
+                          setValue("category", nextCat, { shouldValidate: true })
+                        }
+                        options={categories}
+                        placeholder="Pilih kategori..."
+                        searchPlaceholder="Cari kategori..."
+                      />
                     </div>
                   </div>
 
-                  {/* Nama Barang / Judul Transaksi / Jenis Keperluan */}
-                  <div className="relative">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-slate-700">
-                        {catProfile.itemLabel}
-                      </label>
-                      {catProfile.showMasterItemAutocomplete && selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setValue("unit_price", selectedSuggestionHint.last_unit_price)}
-                          className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-semibold"
-                        >
-                          <Clock className="w-3 h-3" />
-                          Harga terakhir: {formatRupiah(selectedSuggestionHint.last_unit_price)}
-                        </button>
-                      )}
-                    </div>
-                    <Input
-                      placeholder={catProfile.itemPlaceholder}
-                      autoComplete="off"
-                      {...register("item_name", {
-                        required: "Kolom ini wajib diisi",
-                        onChange: () => {
-                          setValue("master_item_id", null);
-                          setSelectedSuggestionHint(null);
-                        },
-                      })}
-                      onFocus={() => {
-                        if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
-                      }}
-                      onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
-                      className="h-11 sm:h-10 text-xs rounded-xl font-medium"
-                    />
-                    {errors.item_name && (
-                      <span className="text-[11px] text-red-500 mt-0.5 block">{errors.item_name.message}</span>
-                    )}
-
-                    {/* Quick Item Chips sesuai Kategori */}
-                    {catProfile.quickItemChips && catProfile.quickItemChips.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                        <span className="text-[10px] font-medium text-slate-400">Pilihan cepat:</span>
-                        {catProfile.quickItemChips.map((chip) => {
-                          const isSelected = itemNameVal.trim().toLowerCase() === chip.toLowerCase();
-                          return (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => setValue("item_name", chip, { shouldValidate: true })}
-                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
-                                isSelected
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
-                              }`}
-                            >
-                              {chip}
-                            </button>
-                          );
+                  {/* Nama Barang / Judul Transaksi / Jenis Keperluan (ReUI InputGroup) */}
+                  <div className="relative space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
+                      {catProfile.itemLabel}
+                    </label>
+                    <InputGroup className="h-9">
+                      <InputGroupInput
+                        placeholder={catProfile.itemPlaceholder}
+                        autoComplete="off"
+                        {...register("item_name", {
+                          required: "Kolom ini wajib diisi",
+                          onChange: () => {
+                            setValue("master_item_id", null);
+                            setSelectedSuggestionHint(null);
+                          },
                         })}
-                      </div>
+                        onFocus={() => {
+                          if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
+                        }}
+                        onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
+                        className="text-xs"
+                      />
+                      {catProfile.showMasterItemAutocomplete &&
+                        selectedSuggestionHint &&
+                        selectedSuggestionHint.last_unit_price > 0 && (
+                          <InputGroupAddon align="inline-end" className="pr-1.5">
+                            <InputGroupButton
+                              size="xs"
+                              onClick={() =>
+                                setValue("unit_price", selectedSuggestionHint.last_unit_price)
+                              }
+                              className="text-[11px] font-medium text-blue-600 dark:text-blue-400"
+                            >
+                              Harga terakhir: {formatRupiah(selectedSuggestionHint.last_unit_price)}
+                            </InputGroupButton>
+                          </InputGroupAddon>
+                        )}
+                    </InputGroup>
+                    {errors.item_name && (
+                      <span className="text-[11px] text-rose-500 block">
+                        {errors.item_name.message}
+                      </span>
                     )}
 
-                    {/* Dropdown Autocomplete hanya untuk kategori yang terhubung ke Master Item */}
-                    {catProfile.showMasterItemAutocomplete && showItemDropdown && filteredItemSuggestions.length > 0 && (
-                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto divide-y divide-slate-100">
-                        {filteredItemSuggestions.map((s) => (
-                          <button
-                            key={`${s.item_name}-${s.is_master}`}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              handleSelectSuggestion(s);
-                            }}
-                            className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between group"
-                          >
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-600">
-                                  {s.item_name}
+                    {/* Dropdown Autocomplete Master Item */}
+                    {catProfile.showMasterItemAutocomplete &&
+                      showItemDropdown &&
+                      filteredItemSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto divide-y divide-border/50">
+                          {filteredItemSuggestions.map((s) => (
+                            <button
+                              key={`${s.item_name}-${s.is_master}`}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleSelectSuggestion(s);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-accent/60 transition-colors flex items-center justify-between gap-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium text-foreground truncate">
+                                    {s.item_name}
+                                  </span>
+                                  {s.is_master && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                      Master
+                                    </Badge>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-muted-foreground block truncate">
+                                  {s.category}
+                                  {s.last_supplier && s.last_supplier !== "-"
+                                    ? ` • ${s.last_supplier}`
+                                    : ""}
+                                  {s.isi_paket
+                                    ? ` • ${s.satuan_beli}: ${s.isi_paket}`
+                                    : s.satuan_beli && s.satuan_beli !== "Pcs"
+                                    ? ` • ${s.satuan_beli}`
+                                    : ""}
                                 </span>
-                                {s.is_master && (
-                                  <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 text-[10px] px-1.5 py-0 h-4">
-                                    Master
-                                  </Badge>
-                                )}
                               </div>
-                              <span className="text-[11px] text-slate-500">
-                                {s.category} {s.last_supplier !== "-" ? `• ${s.last_supplier}` : ""}
-                                {s.isi_paket ? ` • ${s.satuan_beli}: ${s.isi_paket}` : (s.satuan_beli && s.satuan_beli !== "Pcs" ? ` • ${s.satuan_beli}` : "")}
-                              </span>
-                            </div>
-                            {s.last_unit_price > 0 && (
-                              <div className="text-right">
-                                <span className="text-xs font-bold text-slate-700 block tabular-nums">
+                              {s.last_unit_price > 0 && (
+                                <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">
                                   {formatRupiah(s.last_unit_price)}
                                 </span>
-                                <span className="text-[10px] text-slate-500">harga satuan</span>
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
 
-                  {/* Toko / Supplier / Kurir / Penerima Gaji / Vendor */}
+                  {/* Toko / Supplier / Kurir / Penerima Gaji / Vendor (Shadcn AdaptiveSelect, Zero Chips) */}
                   {isTukarCash ? (
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex items-center gap-2.5">
-                      <Store className="w-4 h-4 text-slate-400 shrink-0" />
-                      <span><strong>Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di kolom keterangan.</span>
+                    <div className="py-2 border-y border-border/60 text-xs text-muted-foreground">
+                      <strong className="text-foreground">Tukar Cash:</strong> Tanpa supplier (kas fisik keluar dari laci kasir). Bukti transfer bank dicatat di kolom keterangan.
                       <input type="hidden" {...register("supplier")} value="-" />
                     </div>
                   ) : isOngkir ? (
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-slate-700 block">
+                        <label className="text-xs font-medium text-foreground block">
                           {catProfile.supplierLabel}
                         </label>
                         <button
                           type="button"
                           onClick={() => setShowAddCourier((v) => !v)}
-                          className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                          className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
                         >
                           {showAddCourier ? "Tutup" : "+ Kurir Langganan"}
                         </button>
                       </div>
-                      <Input
-                        placeholder={catProfile.supplierPlaceholder}
-                        list="ongkir-courier-list"
-                        {...register("supplier", { required: isOngkir ? "Nama kurir wajib diisi" : false })}
-                        onChange={(e) => {
-                          setValue("supplier", e.target.value);
+                      <AdaptiveSelect
+                        value={supplierVal === "-" ? "" : supplierVal}
+                        onValueChange={(nextCourier) => {
+                          setValue("supplier", nextCourier || "-", { shouldValidate: true });
                           const matched = courierList.find(
-                            (c) => c.name.toLowerCase() === e.target.value.trim().toLowerCase()
+                            (c) => c.name.toLowerCase() === (nextCourier || "").trim().toLowerCase()
                           );
                           setValue("supplier_id", matched ? matched.id : null);
                         }}
-                        className="h-11 sm:h-10 text-xs rounded-xl"
+                        options={courierOptions}
+                        searchable={true}
+                        creatable={true}
+                        creatablePrefix="Gunakan kurir"
+                        placeholder={catProfile.supplierPlaceholder}
+                        searchPlaceholder="Cari atau ketik nama kurir..."
                       />
-                      <datalist id="ongkir-courier-list">
-                        {(courierList.length > 0
-                          ? courierList.map((c) => c.name)
-                          : ["GoSend", "GoCar", "Lalamove", "GrabExpress", "Shopee Express", "Maxim", "JNE", "Kurir Lainnya"]
-                        ).map((cname) => (
-                          <option key={cname} value={cname} />
-                        ))}
-                      </datalist>
 
                       {showAddCourier && (
-                        <div className="flex flex-col sm:flex-row gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                          <Input
+                        <InputGroup className="h-9">
+                          <InputGroupInput
                             value={newCourierName}
                             onChange={(e) => setNewCourierName(e.target.value)}
-                            placeholder="Nama kurir langganan (mis: Pak Budi Kurir)"
-                            className="h-9 text-xs bg-white flex-1"
+                            placeholder="Nama kurir langganan baru..."
+                            className="text-xs"
                           />
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={isAddingCourier}
-                            onClick={handleAddSubscribedCourier}
-                            className="h-9 text-xs shrink-0"
-                          >
-                            {isAddingCourier ? "Menyimpan..." : "Simpan Kurir"}
-                          </Button>
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] text-slate-400">Pilih kurir:</span>
-                        {(courierList.length > 0
-                          ? [
-                              ...courierList.filter((c) => c.is_subscribed),
-                              ...courierList.filter((c) => !c.is_subscribed),
-                            ].slice(0, 12)
-                          : (catProfile.quickSupplierChips || []).map((name, idx) => ({
-                              id: -(idx + 1),
-                              name,
-                              is_subscribed: false,
-                            }))
-                        ).map((c) => {
-                          const isSelected = supplierVal.trim().toLowerCase() === c.name.toLowerCase();
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setValue("supplier", c.name);
-                                setValue("supplier_id", c.id > 0 ? c.id : null);
-                              }}
-                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
-                                isSelected
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : c.is_subscribed
-                                    ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200"
-                                    : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
-                              }`}
+                          <InputGroupAddon align="inline-end" className="pr-1.5">
+                            <InputGroupButton
+                              disabled={isAddingCourier}
+                              onClick={handleAddSubscribedCourier}
+                              className="font-semibold text-blue-600 dark:text-blue-400"
                             >
-                              {c.name}
-                              {c.is_subscribed ? " (Langganan)" : ""}
-                            </button>
-                          );
-                        })}
-                      </div>
+                              {isAddingCourier ? "Menyimpan..." : "Simpan Kurir"}
+                            </InputGroupButton>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      )}
                     </div>
                   ) : (
-                    <div className="relative">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-slate-700">
-                          {catProfile.supplierLabel}
-                        </label>
-                        {supplierVal && supplierVal !== "-" && (
-                          <button
-                            type="button"
-                            onClick={() => setValue("supplier", "-")}
-                            className="text-[11px] text-slate-400 hover:text-slate-600"
-                          >
-                            Reset (-)
-                          </button>
-                        )}
-                      </div>
-                      <Input
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
+                        {catProfile.supplierLabel}
+                      </label>
+                      <AdaptiveSelect
+                        value={supplierVal === "-" ? "" : supplierVal}
+                        onValueChange={(val) => setValue("supplier", val || "-")}
+                        options={supplierComboboxOptions}
+                        searchable={true}
+                        creatable={true}
+                        creatablePrefix="Gunakan"
+                        allowClear={true}
+                        clearValue="-"
                         placeholder={catProfile.supplierPlaceholder}
-                        autoComplete="off"
-                        {...register("supplier")}
-                        onFocus={() => {
-                          if (!isPayroll) setShowSupplierDropdown(true);
-                        }}
-                        onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 180)}
-                        className="h-11 sm:h-10 text-xs rounded-xl"
+                        searchPlaceholder={`Cari atau ketik ${catProfile.supplierLabel.toLowerCase()}...`}
                       />
-
-                      {/* Untuk Gaji: Tampilkan daftar karyawan terdaftar dari usersList agar 1-klik */}
-                      {isPayroll && usersList.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-[10px] text-slate-400">Staf terdaftar:</span>
-                          {usersList.slice(0, 6).map((u) => (
-                            <button
-                              key={u.id}
-                              type="button"
-                              onClick={() => setValue("supplier", u.name)}
-                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
-                                supplierVal === u.name
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
-                              }`}
-                            >
-                              {u.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Untuk Kategori dengan Quick Supplier Chips (Operasional, Software, Marketing) */}
-                      {!isPayroll && catProfile.quickSupplierChips && catProfile.quickSupplierChips.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-[10px] text-slate-400">Saran penyedia:</span>
-                          {catProfile.quickSupplierChips.map((s) => (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() => setValue("supplier", s)}
-                              className={`text-[11px] px-2.5 py-1 rounded-lg transition-colors font-medium border ${
-                                supplierVal === s
-                                  ? "bg-blue-600 text-white border-blue-600"
-                                  : "bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 border-slate-200/70"
-                              }`}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Dropdown Autocomplete Toko/Supplier */}
-                      {!isPayroll && showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
-                          <div className="px-3 py-1.5 bg-slate-50/80 text-[10px] font-semibold text-slate-500 flex items-center gap-1">
-                            <Store className="w-3 h-3 text-slate-400" />
-                            <span>Riwayat {catProfile.supplierLabel}</span>
-                          </div>
-                          {filteredSupplierSuggestions.map((s) => (
-                            <button
-                              key={s}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setValue("supplier", s);
-                                setShowSupplierDropdown(false);
-                              }}
-                              className="w-full text-left px-3.5 py-2 hover:bg-blue-50/60 transition-colors flex items-center justify-between group"
-                            >
-                              <span className="text-xs font-medium text-slate-800 group-hover:text-blue-600">
-                                {s}
-                              </span>
-                              <Check className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Quick suggestions chips untuk kategori belanja reguler */}
-                      {!isPayroll && !catProfile.quickSupplierChips && (!supplierVal || supplierVal === "-") && supplierSuggestions.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          <span className="text-[10px] text-slate-400">Paling sering:</span>
-                          {supplierSuggestions.slice(0, 5).map((s) => (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() => setValue("supplier", s)}
-                              className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 transition-colors font-medium border border-slate-200/70"
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )}
 
-                  {/* Field Kontekstual Spesifik Kategori (Periode Gaji, Durasi Sewa, Siklus Software, Kondisi Aset, Area Servis, dll.) */}
+                  {/* Field Kontekstual Spesifik Kategori (Flat Hairline Section, Zero Chips) */}
                   {(catProfile.metaField1Label || catProfile.metaField2Label) && (
-                    <div className="p-3.5 bg-blue-50/40 border border-blue-200/70 rounded-2xl grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="pt-3 border-t border-border/70 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {catProfile.metaField1Label && catProfile.metaField1TagPrefix && (
-                        <div className={catProfile.metaField2Label ? "" : "sm:col-span-2"}>
-                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        <div
+                          className={`space-y-1 ${
+                            catProfile.metaField2Label ? "" : "sm:col-span-2"
+                          }`}
+                        >
+                          <label className="text-xs font-medium text-foreground block">
                             {catProfile.metaField1Label}
                           </label>
-                          <Input
-                            value={extractNoteTag(catProfile.metaField1TagPrefix, notesVal)}
-                            onChange={(e) => upsertNoteTag(catProfile.metaField1TagPrefix!, e.target.value)}
-                            placeholder={catProfile.metaField1Placeholder}
-                            className="h-10 text-xs rounded-xl bg-white"
-                          />
-                          {catProfile.metaField1Chips && (
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              {catProfile.metaField1Chips.map((chip) => {
-                                const curVal = extractNoteTag(catProfile.metaField1TagPrefix, notesVal);
-                                const active = curVal.toLowerCase() === chip.toLowerCase();
-                                return (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => upsertNoteTag(catProfile.metaField1TagPrefix!, active ? "" : chip)}
-                                    className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium border ${
-                                      active
-                                        ? "bg-blue-600 text-white border-blue-600"
-                                        : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
-                                    }`}
-                                  >
-                                    {chip}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
+                          <InputGroup className="h-9">
+                            <InputGroupInput
+                              value={extractNoteTag(catProfile.metaField1TagPrefix, notesVal)}
+                              onChange={(e) =>
+                                upsertNoteTag(catProfile.metaField1TagPrefix!, e.target.value)
+                              }
+                              placeholder={catProfile.metaField1Placeholder}
+                              className="text-xs"
+                            />
+                          </InputGroup>
                         </div>
                       )}
 
                       {catProfile.metaField2Label && catProfile.metaField2TagPrefix && (
-                        <div className={catProfile.metaField1Label ? "" : "sm:col-span-2"}>
-                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        <div
+                          className={`space-y-1 ${
+                            catProfile.metaField1Label ? "" : "sm:col-span-2"
+                          }`}
+                        >
+                          <label className="text-xs font-medium text-foreground block">
                             {catProfile.metaField2Label}
                           </label>
-                          <Input
-                            value={extractNoteTag(catProfile.metaField2TagPrefix, notesVal)}
-                            onChange={(e) => upsertNoteTag(catProfile.metaField2TagPrefix!, e.target.value)}
-                            placeholder={catProfile.metaField2Placeholder}
-                            className="h-10 text-xs rounded-xl bg-white"
-                          />
-                          {catProfile.metaField2Chips && (
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                              {catProfile.metaField2Chips.map((chip) => {
-                                const curVal = extractNoteTag(catProfile.metaField2TagPrefix, notesVal);
-                                const active = curVal.toLowerCase() === chip.toLowerCase();
-                                return (
-                                  <button
-                                    key={chip}
-                                    type="button"
-                                    onClick={() => upsertNoteTag(catProfile.metaField2TagPrefix!, active ? "" : chip)}
-                                    className={`text-[10px] px-2 py-1 rounded-lg transition-colors font-medium border ${
-                                      active
-                                        ? "bg-blue-600 text-white border-blue-600"
-                                        : "bg-white hover:bg-blue-50 text-slate-600 border-slate-200"
-                                    }`}
-                                  >
-                                    {chip}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
+                          <InputGroup className="h-9">
+                            <InputGroupInput
+                              value={extractNoteTag(catProfile.metaField2TagPrefix, notesVal)}
+                              onChange={(e) =>
+                                upsertNoteTag(catProfile.metaField2TagPrefix!, e.target.value)
+                              }
+                              placeholder={catProfile.metaField2Placeholder}
+                              className="text-xs"
+                            />
+                          </InputGroup>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Pengaturan Otomatis Inventaris Aset (saat kategori Asset dipilih) */}
+                  {/* Pengaturan Otomatis Inventaris Aset (Flat Hairline Section + ReUI InputGroup) */}
                   {isAssetCategory && !initialData && (
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">
-                            Otomatis Masuk Inventaris Aset Tetap (SAK EMKM)
-                          </p>
-                          <p className="text-[11px] text-slate-600">
-                            Batas kapitalisasi aktif: <span className="font-semibold">{formatRupiah(assetThreshold)}</span>/unit.{" "}
-                            {totalPriceVal > 0 && (
-                              totalPriceVal / qtyVal >= assetThreshold
-                                ? "Aset ini akan dikapitalisasi ke Neraca (1-2100) dan disusutkan garis lurus."
-                                : "Nilai per unit di bawah batas minimal — masuk inventaris & QR label sebagai Peralatan Nilai Rendah (6-2200)."
-                            )}
-                          </p>
-                        </div>
+                    <div className="pt-3 border-t border-border/70 space-y-2.5">
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">
+                          Inventaris Aset Tetap (SAK EMKM)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Batas kapitalisasi aktif: {formatRupiah(assetThreshold)}/unit.{" "}
+                          {totalPriceVal > 0 &&
+                            (totalPriceVal / qtyVal >= assetThreshold
+                              ? "Dikapitalisasi ke Neraca (1-2100)."
+                              : "Peralatan Nilai Rendah (6-2200).")}
+                        </p>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                            Masa Garansi (Bulan)
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
+                            Masa Garansi
                           </label>
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder="mis: 12 (0 = tanpa garansi)"
-                            {...register("warranty_months", {
-                              setValueAs: (v) => (v === "" ? undefined : Number(v)),
-                            })}
-                            className="h-9 text-xs rounded-xl bg-white"
-                          />
+                          <InputGroup className="h-9">
+                            <InputGroupInput
+                              type="number"
+                              min={0}
+                              placeholder="12"
+                              {...register("warranty_months", {
+                                setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                              })}
+                              className="text-xs tabular-nums"
+                            />
+                            <InputGroupAddon align="inline-end" className="pr-2.5">
+                              <InputGroupText className="text-xs">Bulan</InputGroupText>
+                            </InputGroupAddon>
+                          </InputGroup>
                         </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                            Masa Manfaat Penyusutan (Bulan)
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
+                            Masa Manfaat Penyusutan
                           </label>
-                          <Input
-                            type="number"
-                            min={0}
-                            placeholder="Default 48 bln (4 tahun)"
-                            {...register("useful_life_months", {
-                              setValueAs: (v) => (v === "" ? undefined : Number(v)),
-                            })}
-                            className="h-9 text-xs rounded-xl bg-white"
-                          />
+                          <InputGroup className="h-9">
+                            <InputGroupInput
+                              type="number"
+                              min={0}
+                              placeholder="48"
+                              {...register("useful_life_months", {
+                                setValueAs: (v) => (v === "" ? undefined : Number(v)),
+                              })}
+                              className="text-xs tabular-nums"
+                            />
+                            <InputGroupAddon align="inline-end" className="pr-2.5">
+                              <InputGroupText className="text-xs">Bulan</InputGroupText>
+                            </InputGroupAddon>
+                          </InputGroup>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Tautan Unit Aset (saat kategori Maintenance dipilih) */}
+                  {/* Tautan Unit Aset (Flat Hairline Section + Shadcn AdaptiveSelect) */}
                   {isMaintenanceCategory && !initialData && (
-                    <div className="p-3.5 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-3">
+                    <div className="pt-3 border-t border-border/70 space-y-2.5">
                       <div>
-                        <p className="text-xs font-bold text-slate-800">
+                        <p className="text-xs font-semibold text-foreground">
                           Tautkan ke Inventaris Aset (Opsional)
                         </p>
-                        <p className="text-[11px] text-slate-600">
-                          Pilih unit mesin/aset yang diservis agar biaya ini otomatis tercatat ke riwayat maintenance aset tersebut.
+                        <p className="text-[11px] text-muted-foreground">
+                          Pilih unit aset yang diservis agar tercatat ke riwayat maintenance aset.
                         </p>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
                             Pilih Unit Aset
                           </label>
-                          <select
-                            {...register("asset_id", {
-                              setValueAs: (v) => (v === "" ? null : Number(v)),
-                            })}
-                            className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white"
-                          >
-                            <option value="">-- Tidak ditautkan --</option>
-                            {assetsList
-                              .filter((a) => a.status !== "Dihapuskan" && a.status !== "Dijual")
-                              .map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  [{a.asset_code}] {a.name} ({a.location})
-                                </option>
-                              ))}
-                          </select>
+                          <AdaptiveSelect
+                            value={assetIdVal ? String(assetIdVal) : ""}
+                            onValueChange={(val) =>
+                              setValue("asset_id", val ? Number(val) : null)
+                            }
+                            options={assetSelectOptions}
+                            placeholder="-- Tidak ditautkan --"
+                            searchPlaceholder="Cari kode atau nama aset..."
+                          />
                         </div>
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 block mb-1">
-                            Jadwal Servis Berikutnya (Opsional)
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
+                            Jadwal Servis Berikutnya
                           </label>
                           <DatePicker
                             value={watch("next_service_date") || ""}
                             onChange={(d) => setValue("next_service_date", toIsoDate(d))}
-                            className="w-full h-9 text-xs rounded-xl bg-white"
+                            className="w-full h-9 text-xs"
                           />
                         </div>
                       </div>
@@ -1450,103 +1315,103 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                   )}
 
                   {/* Baris Referensi: No. Invoice, Reimbursement, & Penginput Transaksi */}
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-1">
+                  <div className="pt-3 border-t border-border/70 grid grid-cols-1 sm:grid-cols-12 gap-3">
                     {!isTukarCash && (
                       <>
-                        <div className="sm:col-span-4">
-                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        <div className="sm:col-span-4 space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
                             {isPayroll ? "No. Slip / Ref" : "No. Invoice / Nota"}
                           </label>
                           <Input
                             placeholder="INV-2026/.. atau -"
                             {...register("invoice_number")}
                             onBlur={(e) => handleCheckInvoice(e.target.value)}
-                            className="h-11 sm:h-10 text-xs rounded-xl font-mono"
+                            className="h-9 text-xs font-mono"
                           />
                         </div>
 
-                        <div className="sm:col-span-4">
-                          <label className="text-xs font-semibold text-slate-700 block mb-1">
+                        <div className="sm:col-span-4 space-y-1">
+                          <label className="text-xs font-medium text-foreground block">
                             Tipe Dana
                           </label>
-                          <label className="flex items-center gap-2 h-11 sm:h-10 px-3 rounded-xl border border-input bg-slate-50/60 hover:bg-slate-100/70 cursor-pointer transition-colors">
+                          <label className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background hover:bg-muted/40 cursor-pointer transition-colors">
                             <input
                               type="checkbox"
                               {...register("is_reimbursement")}
-                              className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                              className="w-3.5 h-3.5 rounded border-input cursor-pointer"
                             />
-                            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 truncate">
-                              <Briefcase className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                              <span className="truncate">Talangan / Reimburse</span>
-                            </div>
+                            <span className="text-xs font-medium text-foreground truncate">
+                              Talangan / Reimburse
+                            </span>
                           </label>
                         </div>
                       </>
                     )}
 
-                    <div className={isTukarCash ? "sm:col-span-12" : "sm:col-span-4"}>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    <div
+                      className={`space-y-1 ${
+                        isTukarCash ? "sm:col-span-12" : "sm:col-span-4"
+                      }`}
+                    >
+                      <label className="text-xs font-medium text-foreground block">
                         Penginput (User)
                       </label>
-                      <select
-                        {...register("user_id", {
-                          setValueAs: (v) => (v === "" || v === null || v === undefined ? null : Number(v)),
-                        })}
-                        className="w-full h-11 sm:h-10 px-3 text-xs rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Otomatis (Web Dashboard)</option>
-                        {usersList.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} {u.telegram_id ? `(@${u.telegram_id})` : ""}
-                          </option>
-                        ))}
-                      </select>
+                      <AdaptiveSelect
+                        value={userIdVal ? String(userIdVal) : ""}
+                        onValueChange={(val) =>
+                          setValue("user_id", val ? Number(val) : null)
+                        }
+                        options={userSelectOptions}
+                        placeholder="Otomatis (Web Dashboard)"
+                        searchPlaceholder="Cari penginput..."
+                      />
                     </div>
                   </div>
 
                   {invoiceWarning && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2 leading-snug">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>{invoiceWarning}</span>
                     </div>
                   )}
 
                   {/* Keterangan / Catatan & Link Sumber Telegram */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
                         {catProfile.notesLabel}
                       </label>
                       <Input
                         placeholder={catProfile.notesPlaceholder}
                         {...register("notes")}
-                        className="h-11 sm:h-10 text-xs rounded-xl"
+                        className="h-9 text-xs"
                       />
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                          <TelegramIcon className="w-3.5 h-3.5 text-[#229ED9]" />
-                          <span>Link Bukti / Sumber</span>
-                        </label>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-foreground block">
+                        Link Bukti / Sumber
+                      </label>
+                      <InputGroup className="h-9">
+                        <InputGroupInput
+                          placeholder="https://t.me/c/... atau Web Dashboard"
+                          {...register("msg_link")}
+                          className="text-xs"
+                        />
                         {msgLinkVal && parseTelegramLink(msgLinkVal).isUrl && (
-                          <a
-                            href={msgLinkVal}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 font-medium"
-                          >
-                            <span>Buka Link</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
+                          <InputGroupAddon align="inline-end" className="pr-1.5">
+                            <a
+                              href={msgLinkVal}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              <span>Buka</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </InputGroupAddon>
                         )}
-                      </div>
-                      <Input
-                        placeholder="https://t.me/c/... atau Web Dashboard"
-                        {...register("msg_link")}
-                        className="h-11 sm:h-10 text-xs rounded-xl"
-                      />
+                      </InputGroup>
                     </div>
                   </div>
                 </div>
@@ -1567,7 +1432,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
               </div>
             </div>
 
-            {/* Sticky Bottom Action Bar (Isolated Watcher) */}
+            {/* Sticky Bottom Action Bar */}
             <IsolatedStickyFooter
               control={control}
               catProfile={catProfile}

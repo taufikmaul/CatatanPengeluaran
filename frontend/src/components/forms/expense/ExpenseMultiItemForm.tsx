@@ -12,17 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
+import { InputGroupButton } from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import {
   Plus,
   Trash2,
   Copy,
-  Store,
-  Check,
   AlertTriangle,
-  Briefcase,
-  CalendarClock,
-  Calculator,
-  Layers,
 } from "lucide-react";
 import { InlineMathInput } from "./InlineMathInput";
 import { PriceSpikeAlert } from "./PriceSpikeAlert";
@@ -88,12 +84,10 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     categories[0] ||
     "Bahan Kue";
 
-  // Header Nota Bersama
   const [expenseDate, setExpenseDate] = useState(
     new Date().toISOString().split("T")[0]
   );
   const [supplier, setSupplier] = useState("-");
-  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("-");
   const [invoiceWarning, setInvoiceWarning] = useState<string | null>(null);
   const [payMethod, setPayMethod] = useState("Transfer");
@@ -101,15 +95,13 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
   const [dueDate, setDueDate] = useState("-");
   const [isReimbursement, setIsReimbursement] = useState(false);
   const [userId, setUserId] = useState<number | null>(null);
-  const [msgLink, setMsgLink] = useState("Web Dashboard");
+  const [msgLink] = useState("Web Dashboard");
 
-  // Biaya Nota Gabungan
   const [shippingFee, setShippingFee] = useState(0);
   const [tax, setTax] = useState(0);
   const [otherFee, setOtherFee] = useState(0);
   const [discount, setDiscount] = useState(0);
 
-  // Daftar Baris Item Belanja
   const [rows, setRows] = useState<MultiExpenseRow[]>(() => [
     createEmptyRow(initialCat),
     createEmptyRow(initialCat),
@@ -119,7 +111,6 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
   >(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Jika ada hasil OCR multi-item yang dikirim ke tab ini, muat otomatis
   useEffect(() => {
     if (ocrSeedItems && ocrSeedItems.length > 0) {
       const first = ocrSeedItems[0];
@@ -146,11 +137,12 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
               : initialCat;
           const prof = getCategoryFormProfile(cat);
           const q = Number(it.qty) > 0 ? Number(it.qty) : 1;
-          const up = Number(it.harga_satuan) > 0
-            ? Number(it.harga_satuan)
-            : Number(it.total_harga) > 0
-            ? Math.round(Number(it.total_harga) / q)
-            : 0;
+          const up =
+            Number(it.harga_satuan) > 0
+              ? Number(it.harga_satuan)
+              : Number(it.total_harga) > 0
+              ? Math.round(Number(it.total_harga) / q)
+              : 0;
           return {
             rowId: `ocr-${idx}-${Date.now()}`,
             category: cat,
@@ -184,13 +176,22 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     }
   };
 
-  const filteredSupplierSuggestions = useMemo(() => {
-    const q = supplier.trim().toLowerCase();
-    if (!q || q === "-") return supplierSuggestions.slice(0, 8);
+  const supplierOptions = useMemo(() => {
     return supplierSuggestions
-      .filter((s) => s.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [supplier, supplierSuggestions]);
+      .filter((s) => s && s !== "-")
+      .map((s) => ({ value: s, label: s }));
+  }, [supplierSuggestions]);
+
+  const userSelectOptions = useMemo(() => {
+    return [
+      { value: "", label: "Otomatis (Web Dashboard)" },
+      ...usersList.map((u) => ({
+        value: String(u.id),
+        label: u.name,
+        sublabel: u.telegram_id ? `@${u.telegram_id}` : undefined,
+      })),
+    ];
+  }, [usersList]);
 
   const updateRow = (rowId: string, patch: Partial<MultiExpenseRow>) => {
     setRows((prev) =>
@@ -243,11 +244,11 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     setActiveAutocompleteRow(null);
   };
 
-  // Ringkasan kalkulasi seluruh baris
   const itemsSubtotal = useMemo(
     () =>
       rows.reduce(
-        (acc, r) => acc + Math.max(0, Number(r.qty || 0) * Number(r.unit_price || 0)),
+        (acc, r) =>
+          acc + Math.max(0, Number(r.qty || 0) * Number(r.unit_price || 0)),
         0
       ),
     [rows]
@@ -260,7 +261,6 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
     itemsSubtotal + extraFeesTotal - Number(discount || 0)
   );
 
-  // Ringkasan alokasi per kategori di dalam nota ini
   const categoryBreakdown = useMemo(() => {
     const map: Record<string, { count: number; subtotal: number }> = {};
     for (const r of rows) {
@@ -291,7 +291,6 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       const prof = getCategoryFormProfile(r.category);
       const q = prof.hideQty ? 1 : Number(r.qty) > 0 ? Number(r.qty) : 1;
       const up = Number(r.unit_price) || 0;
-      // Alokasikan ongkir/pajak/biaya lain/diskon nota pada baris pertama agar total laporan tidak ganda
       const rowShip = idx === 0 ? Number(shippingFee || 0) : 0;
       const rowTax = idx === 0 ? Number(tax || 0) : 0;
       const rowOther = idx === 0 ? Number(otherFee || 0) : 0;
@@ -335,80 +334,50 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       onSubmit={handleSubmitMulti}
       className="flex-1 flex flex-col min-h-0 overflow-hidden"
     >
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
-        {/* Header Informasi Nota Gabungan */}
-        <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-3">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-5">
+        {/* Header Informasi Nota Gabungan (Zero Nested Card) */}
+        <div className="space-y-3 pb-4 border-b border-border/70">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-600" />
-              <span className="text-xs font-bold text-slate-800">
-                Informasi Nota Gabungan (Berlaku untuk Semua Baris di Bawah)
-              </span>
-            </div>
-            <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200/70 px-2 py-0.5 rounded-md flex items-center gap-1">
-              <Calculator className="w-3 h-3" />
-              <span>Kolom Qty & Harga mendukung rumus (mis: 12*15k)</span>
+            <span className="text-xs font-semibold text-foreground tracking-tight">
+              Informasi Nota Gabungan
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Kolom Qty &amp; Harga mendukung rumus (12*15k)
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-            <div className="lg:col-span-3">
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="lg:col-span-3 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Tanggal Nota
               </label>
               <DatePicker
                 value={expenseDate}
                 onChange={(d) => setExpenseDate(toIsoDate(d))}
-                className="w-full h-10 text-xs rounded-xl bg-white dark:bg-slate-900"
+                className="w-full h-9 text-xs"
               />
             </div>
 
-            <div className="lg:col-span-4 relative">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-semibold text-slate-700">
-                  Toko / Supplier Nota
-                </label>
-                {supplier && supplier !== "-" && (
-                  <button
-                    type="button"
-                    onClick={() => setSupplier("-")}
-                    className="text-[10px] text-slate-400 hover:text-slate-600"
-                  >
-                    Reset (-)
-                  </button>
-                )}
-              </div>
-              <Input
-                value={supplier}
-                onChange={(e) => setSupplier(e.target.value)}
-                onFocus={() => setShowSupplierDropdown(true)}
-                onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 180)}
-                placeholder="Mis: Superindo, Toko Wahab, Titan..."
-                className="h-10 text-xs rounded-xl bg-white"
+            <div className="lg:col-span-4 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
+                Toko / Supplier Nota
+              </label>
+              <AdaptiveSelect
+                value={supplier === "-" ? "" : supplier}
+                onValueChange={(val) => setSupplier(val || "-")}
+                options={supplierOptions}
+                searchable={true}
+                creatable={true}
+                creatablePrefix="Gunakan"
+                allowClear={true}
+                clearValue="-"
+                placeholder="Pilih atau ketik toko/supplier..."
+                searchPlaceholder="Cari atau ketik supplier..."
               />
-              {showSupplierDropdown && filteredSupplierSuggestions.length > 0 && (
-                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-44 overflow-y-auto divide-y divide-slate-100">
-                  {filteredSupplierSuggestions.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setSupplier(s);
-                        setShowSupplierDropdown(false);
-                      }}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between"
-                    >
-                      <span className="font-medium text-slate-800">{s}</span>
-                      <Check className="w-3.5 h-3.5 text-blue-600" />
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
-            <div className="lg:col-span-3">
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="lg:col-span-3 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 No. Invoice / Struk
               </label>
               <Input
@@ -416,22 +385,22 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                 onChange={(e) => setInvoiceNumber(e.target.value)}
                 onBlur={(e) => handleCheckInvoice(e.target.value)}
                 placeholder="INV-2026/... atau -"
-                className="h-10 text-xs rounded-xl bg-white font-mono"
+                className="h-9 text-xs font-mono"
               />
             </div>
 
-            <div className="lg:col-span-2">
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="lg:col-span-2 space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Tipe Dana
               </label>
-              <label className="flex items-center gap-2 h-10 px-3 rounded-xl border border-input bg-white hover:bg-slate-50 cursor-pointer">
+              <label className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background hover:bg-muted/40 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={isReimbursement}
                   onChange={(e) => setIsReimbursement(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded border-slate-300"
+                  className="w-3.5 h-3.5 rounded border-input"
                 />
-                <span className="text-xs font-semibold text-slate-700 truncate">
+                <span className="text-xs font-medium text-foreground truncate">
                   Talangan
                 </span>
               </label>
@@ -439,29 +408,29 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
           </div>
 
           {invoiceWarning && (
-            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{invoiceWarning}</span>
             </div>
           )}
         </div>
 
-        {/* Tabel Daftar Barang Multi-Item & Multi-Kategori */}
-        <div className="space-y-2.5">
+        {/* Daftar Barang Multi-Item (Flat Hairline Ledger Rows) */}
+        <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-slate-800">
-                Daftar Barang & Kategori dalam Nota Ini
+              <span className="text-xs font-semibold text-foreground">
+                Daftar Barang &amp; Kategori
               </span>
-              <Badge variant="outline" className="text-[11px] font-semibold">
+              <Badge variant="outline" className="text-[11px] font-medium">
                 {rows.length} Baris
               </Badge>
               {categoryBreakdown.map(([cat, info]) => (
                 <span
                   key={cat}
-                  className="text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-lg tabular-nums"
+                  className="text-[11px] text-muted-foreground tabular-nums"
                 >
-                  {cat} ({info.count}): {formatRupiah(info.subtotal)}
+                  • {cat} ({info.count}): {formatRupiah(info.subtotal)}
                 </span>
               ))}
             </div>
@@ -469,21 +438,22 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
             <Button
               type="button"
               size="sm"
+              variant="outline"
               onClick={() => handleAddRow()}
-              className="h-9 px-3 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold gap-1.5"
+              className="h-8 px-3 text-xs font-medium gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tambah Baris Barang</span>
+              <span>Tambah Baris</span>
             </Button>
           </div>
 
           {formError && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
+            <p className="text-xs font-medium text-rose-600 dark:text-rose-400">
               {formError}
-            </div>
+            </p>
           )}
 
-          <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-200/80 bg-white">
+          <div className="divide-y divide-border/70 border-y border-border/70">
             {rows.map((row, idx) => {
               const rowProfile = getCategoryFormProfile(row.category);
               const rowSubtotal = Math.max(
@@ -491,7 +461,6 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                 Number(row.qty || 0) * Number(row.unit_price || 0)
               );
 
-              // Filter saran barang dengan prioritas kategori baris ini
               const q = row.item_name.trim().toLowerCase();
               const catLower = row.category.toLowerCase();
               const rowSuggestions =
@@ -513,7 +482,6 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                       .slice(0, 6)
                   : [];
 
-              // Cari harga referensi untuk deteksi anomali harga pada baris ini
               const matchedItemRef =
                 row.reference_price ||
                 itemSuggestions.find(
@@ -525,19 +493,18 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
               return (
                 <div
                   key={row.rowId}
-                  className="p-3.5 space-y-2.5 hover:bg-slate-50/50 transition-colors"
+                  className="py-3 space-y-2"
                 >
-                  <div className="grid grid-cols-12 gap-2.5 items-start">
-                    {/* Nomor & Pemilih Kategori Baris */}
+                  <div className="grid grid-cols-12 gap-2 items-start">
+                    {/* Nomor & Pemilih Kategori Baris (Shadcn SearchableSelect) */}
                     <div className="col-span-12 sm:col-span-4 lg:col-span-3 flex items-center gap-2">
-                      <span className="w-5 text-center text-xs font-mono font-bold text-slate-400 shrink-0">
+                      <span className="w-5 text-center text-xs font-mono text-muted-foreground shrink-0">
                         {idx + 1}.
                       </span>
                       <div className="flex-1 min-w-0">
-                        <select
+                        <AdaptiveSelect
                           value={row.category}
-                          onChange={(e) => {
-                            const nextCat = e.target.value;
+                          onValueChange={(nextCat) => {
                             const nextProf = getCategoryFormProfile(nextCat);
                             updateRow(row.rowId, {
                               category: nextCat,
@@ -545,17 +512,10 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                               qty: nextProf.hideQty ? 1 : row.qty,
                             });
                           }}
-                          className="w-full h-10 px-2.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500"
-                        >
-                          {categories.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="text-[10px] font-mono text-slate-500 block mt-0.5 pl-1 truncate">
-                          {rowProfile.badgeLabel} ({rowProfile.coaLabel})
-                        </span>
+                          options={categories}
+                          placeholder="Kategori..."
+                          searchPlaceholder="Cari kategori..."
+                        />
                       </div>
                     </div>
 
@@ -572,14 +532,13 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                           setTimeout(() => setActiveAutocompleteRow(null), 180)
                         }
                         placeholder={rowProfile.itemPlaceholder}
-                        className="h-10 text-xs rounded-xl font-medium"
+                        className="h-9 text-xs"
                       />
 
-                      {/* Autocomplete Master Item per Baris */}
                       {activeAutocompleteRow === row.rowId &&
                         rowProfile.showMasterItemAutocomplete &&
                         rowSuggestions.length > 0 && (
-                          <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto divide-y divide-slate-100">
+                          <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg max-h-52 overflow-y-auto divide-y divide-border/50">
                             {rowSuggestions.map((s) => (
                               <button
                                 key={`${s.item_name}-${s.is_master}`}
@@ -588,18 +547,18 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                                   e.preventDefault();
                                   handleSelectSuggestion(row.rowId, s);
                                 }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between gap-2"
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-accent/60 flex items-center justify-between gap-2"
                               >
                                 <div className="min-w-0">
-                                  <p className="font-bold text-slate-800 truncate">
+                                  <p className="font-medium text-foreground truncate">
                                     {s.item_name}
                                   </p>
-                                  <p className="text-[10px] text-slate-500">
+                                  <p className="text-[10px] text-muted-foreground">
                                     {s.category} • {s.satuan_beli || "Pcs"}
                                   </p>
                                 </div>
                                 {s.last_unit_price > 0 && (
-                                  <span className="text-[11px] font-bold text-blue-700 tabular-nums shrink-0">
+                                  <span className="text-[11px] font-semibold text-foreground tabular-nums shrink-0">
                                     {formatRupiah(s.last_unit_price)}
                                   </span>
                                 )}
@@ -607,60 +566,40 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                             ))}
                           </div>
                         )}
-
-                      {/* Quick Chips jika nama barang masih kosong */}
-                      {!row.item_name &&
-                        rowProfile.quickItemChips &&
-                        rowProfile.quickItemChips.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {rowProfile.quickItemChips.slice(0, 4).map((chip) => (
-                              <button
-                                key={chip}
-                                type="button"
-                                onClick={() =>
-                                  updateRow(row.rowId, { item_name: chip })
-                                }
-                                className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors"
-                              >
-                                + {chip}
-                              </button>
-                            ))}
-                          </div>
-                        )}
                     </div>
 
-                    {/* Qty & Satuan */}
-                    <div className="col-span-5 sm:col-span-3 lg:col-span-1">
+                    {/* Qty */}
+                    <div className="col-span-4 sm:col-span-3 lg:col-span-1">
                       <InlineMathInput
                         value={row.qty}
                         formatCurrencyHint={false}
+                        prefixText=""
                         disabled={rowProfile.hideQty}
                         onChange={(val) =>
                           updateRow(row.rowId, { qty: val > 0 ? val : 1 })
                         }
-                        className="h-10 text-xs rounded-xl text-center font-bold tabular-nums"
+                        inputClassName="text-center font-semibold"
                         placeholder="Qty"
                       />
                     </div>
 
-                    <div className="col-span-7 sm:col-span-3 lg:col-span-1">
-                      <select
+                    {/* Satuan (Shadcn AdaptiveSelect) */}
+                    <div className="col-span-8 sm:col-span-3 lg:col-span-1">
+                      <AdaptiveSelect
                         value={row.unit}
                         disabled={rowProfile.lockUnit}
-                        onChange={(e) =>
-                          updateRow(row.rowId, { unit: e.target.value })
+                        onValueChange={(nextUnit) =>
+                          updateRow(row.rowId, { unit: nextUnit })
                         }
-                        className="w-full h-10 px-2 text-xs bg-white border border-slate-300 rounded-xl font-semibold"
-                      >
-                        {(rowProfile.allowedUnits || units).map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
+                        options={rowProfile.allowedUnits || units}
+                        placeholder="Satuan"
+                        searchPlaceholder="Cari satuan..."
+                        creatable={true}
+                        creatablePrefix="Satuan"
+                      />
                     </div>
 
-                    {/* Harga Satuan (Rumus Inline) */}
+                    {/* Harga Satuan */}
                     <div className="col-span-8 sm:col-span-4 lg:col-span-2">
                       <InlineMathInput
                         value={row.unit_price}
@@ -668,19 +607,19 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                           updateRow(row.rowId, { unit_price: val })
                         }
                         placeholder="Harga / rumus"
-                        className="h-10 text-xs rounded-xl font-bold tabular-nums"
+                        inputClassName="font-semibold"
                       />
                     </div>
 
-                    {/* Subtotal Baris & Aksi */}
-                    <div className="col-span-4 sm:col-span-2 lg:col-span-1 flex items-center justify-end gap-1 h-10">
+                    {/* Aksi Baris */}
+                    <div className="col-span-4 sm:col-span-2 lg:col-span-1 flex items-center justify-end gap-1 h-9">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         title="Duplikat baris ini"
                         onClick={() => handleDuplicateRow(row)}
-                        className="h-9 w-8 p-0 text-slate-400 hover:text-blue-600 rounded-lg"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </Button>
@@ -690,14 +629,13 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                         size="sm"
                         title="Hapus baris"
                         onClick={() => handleRemoveRow(row.rowId)}
-                        className="h-9 w-8 p-0 text-slate-400 hover:text-rose-600 rounded-lg"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-600"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>
 
-                  {/* Deteksi Anomali Harga Spesifik Baris */}
                   <PriceSpikeAlert
                     currentPrice={row.unit_price}
                     referencePrice={matchedItemRef}
@@ -718,11 +656,11 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                         rowProfile.notesPlaceholder ||
                         "Keterangan baris ini (opsional)..."
                       }
-                      className="h-8 text-[11px] rounded-xl bg-slate-50/70 border-slate-200 text-slate-600 flex-1"
+                      className="h-8 text-xs text-muted-foreground flex-1"
                     />
                     <div className="flex items-center justify-end gap-1.5 text-xs shrink-0">
-                      <span className="text-slate-400">Subtotal baris:</span>
-                      <span className="font-bold text-slate-800 tabular-nums">
+                      <span className="text-muted-foreground">Subtotal:</span>
+                      <span className="font-semibold text-foreground tabular-nums">
                         {formatRupiah(rowSubtotal)}
                       </span>
                     </div>
@@ -731,166 +669,122 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
               );
             })}
           </div>
-
-          {/* Shortcut Tambah Baris dengan Kategori Berbeda */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-slate-500">
-                + Tambah baris kategori lain:
-              </span>
-              {[
-                "Bahan Kue",
-                "Bahan Minuman",
-                "Kemasan",
-                "Kebersihan",
-                "Operasional",
-                "Kantor",
-              ]
-                .filter((c) => categories.includes(c))
-                .map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => handleAddRow(c)}
-                    className="px-2.5 py-1 rounded-xl text-[11px] font-semibold bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 border border-slate-200/80 transition-colors"
-                  >
-                    + {c}
-                  </button>
-                ))}
-            </div>
-          </div>
         </div>
 
-        {/* Panel Bawah: Biaya Tambahan Nota & Metode Pembayaran */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/90">
+        {/* Panel Bawah: Biaya Tambahan Nota & Metode Pembayaran (Flat Hairline Section) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-2">
           <div className="lg:col-span-6 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                Ongkir Nota (Rp)
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                Ongkir Nota
               </label>
               <InlineMathInput
                 value={shippingFee}
                 onChange={setShippingFee}
                 placeholder="0"
-                className="h-9 text-xs rounded-xl bg-white tabular-nums"
               />
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-semibold text-slate-600">
-                  Pajak PPN
-                </label>
-                {itemsSubtotal > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setTax(Math.round(itemsSubtotal * 0.11))}
-                    className="text-[10px] text-blue-600 hover:underline font-semibold"
-                  >
-                    +11%
-                  </button>
-                )}
-              </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
+                Pajak PPN
+              </label>
               <InlineMathInput
                 value={tax}
                 onChange={setTax}
                 placeholder="0"
-                className="h-9 text-xs rounded-xl bg-white tabular-nums"
+                suffixAddon={
+                  itemsSubtotal > 0 ? (
+                    <InputGroupButton
+                      size="xs"
+                      onClick={() => setTax(Math.round(itemsSubtotal * 0.11))}
+                      className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 h-6 px-1.5"
+                    >
+                      +11%
+                    </InputGroupButton>
+                  ) : undefined
+                }
               />
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
                 Biaya Lain
               </label>
               <InlineMathInput
                 value={otherFee}
                 onChange={setOtherFee}
                 placeholder="0"
-                className="h-9 text-xs rounded-xl bg-white tabular-nums"
               />
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground block">
                 Diskon Nota
               </label>
               <InlineMathInput
                 value={discount}
                 onChange={setDiscount}
                 placeholder="0"
-                className="h-9 text-xs rounded-xl bg-white tabular-nums"
               />
             </div>
           </div>
 
           <div className="lg:col-span-6 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div>
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground block">
                 Metode Bayar
               </label>
-              <select
+              <AdaptiveSelect
                 value={payMethod}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onValueChange={(val) => {
                   setPayMethod(val);
                   if (val === "COD") setPayStatus("Belum Lunas");
                 }}
-                className="h-9 w-full rounded-xl border border-input bg-white px-2.5 text-xs font-semibold"
-              >
-                {paymentMethods.map((pm) => (
-                  <option key={pm} value={pm}>
-                    {pm}
-                  </option>
-                ))}
-              </select>
+                options={paymentMethods}
+                placeholder="Metode bayar..."
+              />
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground block">
                 Status Pembayaran
               </label>
-              <select
+              <AdaptiveSelect
                 value={payStatus}
-                onChange={(e) => setPayStatus(e.target.value)}
-                className="h-9 w-full rounded-xl border border-input bg-white px-2.5 text-xs font-semibold"
-              >
-                <option value="Lunas">Lunas</option>
-                <option value="Belum Lunas">Belum Lunas (Hutang)</option>
-              </select>
+                onValueChange={setPayStatus}
+                options={[
+                  { value: "Lunas", label: "Lunas" },
+                  { value: "Belum Lunas", label: "Belum Lunas (Hutang)" },
+                ]}
+              />
             </div>
 
-            <div>
-              <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground block">
                 Penginput (User)
               </label>
-              <select
-                value={userId ?? ""}
-                onChange={(e) =>
-                  setUserId(e.target.value ? Number(e.target.value) : null)
+              <AdaptiveSelect
+                value={userId ? String(userId) : ""}
+                onValueChange={(val) =>
+                  setUserId(val ? Number(val) : null)
                 }
-                className="h-9 w-full rounded-xl border border-input bg-white px-2.5 text-xs"
-              >
-                <option value="">Otomatis (Web Dashboard)</option>
-                {usersList.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+                options={userSelectOptions}
+                placeholder="Otomatis (Web Dashboard)"
+                searchPlaceholder="Cari penginput..."
+              />
             </div>
           </div>
 
           {isUnpaid && (
-            <div className="lg:col-span-12 p-3 bg-rose-50/80 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <label className="text-xs font-semibold text-rose-800 flex items-center gap-1.5">
-                <CalendarClock className="w-3.5 h-3.5 text-rose-600" />
+            <div className="lg:col-span-12 pt-2 border-t border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="text-xs font-medium text-rose-700 dark:text-rose-400">
                 Tanggal Jatuh Tempo Nota Ini
               </label>
               <DatePicker
                 value={dueDate === "-" ? "" : dueDate}
                 onChange={(d) => setDueDate(toIsoDate(d))}
-                className="w-full sm:w-56 h-9 text-xs rounded-xl bg-white border-rose-200"
+                className="w-full sm:w-56 h-9 text-xs"
               />
             </div>
           )}
@@ -898,12 +792,12 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
       </div>
 
       {/* Sticky Bottom Action Bar */}
-      <div className="px-4 sm:px-6 py-3 border-t border-slate-200/80 bg-slate-50/90 shrink-0 flex items-center justify-between gap-3">
+      <div className="px-4 sm:px-6 py-3 border-t border-border/80 bg-background shrink-0 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <span className="text-[10px] font-semibold text-slate-500 block truncate">
-            Total Gabungan ({rows.filter((r) => r.item_name.trim()).length} Barang di Nota Ini)
+          <span className="text-[11px] font-medium text-muted-foreground block truncate">
+            Total Gabungan ({rows.filter((r) => r.item_name.trim()).length} Barang)
           </span>
-          <span className="text-sm sm:text-base font-extrabold text-blue-700 tabular-nums">
+          <span className="text-sm sm:text-base font-bold text-foreground tabular-nums">
             {formatRupiah(grandTotal)}
           </span>
         </div>
@@ -913,14 +807,14 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
             type="button"
             variant="outline"
             onClick={onClose}
-            className="rounded-xl text-xs h-11 sm:h-10 px-4 font-semibold"
+            className="h-9 text-xs px-4 font-medium"
           >
             Batal
           </Button>
           <Button
             type="submit"
             disabled={isSubmitting}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-11 sm:h-10 px-5 font-semibold shadow-xs"
+            className="h-9 text-xs px-5 font-semibold"
           >
             {isSubmitting
               ? "Menyimpan Nota..."

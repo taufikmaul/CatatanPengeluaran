@@ -24,6 +24,13 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
 import {
   dataGridFeatures,
@@ -1491,17 +1498,14 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-slate-600">Kategori Default:</span>
-                <select
+                <AdaptiveSelect
                   value={bulkCategory}
-                  onChange={(e) => setBulkCategory(e.target.value)}
-                  className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setBulkCategory}
+                  options={categories}
+                  className="w-44 h-8"
+                  placeholder="Kategori..."
+                  searchPlaceholder="Cari kategori..."
+                />
               </div>
             </div>
 
@@ -1537,15 +1541,14 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         </Card>
       )}
 
-      {/* Dialog Tambah Master Item */}
+      {/* Dialog Tambah Master Item (Zero Nested Card, Hairline Sections) */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <PackageCheck className="w-5 h-5 text-blue-600" />
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-xl p-6">
+          <DialogHeader className="pb-3 border-b border-border/80">
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground">
               Tambah Master Item Baku
             </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
+            <DialogDescription className="text-xs text-muted-foreground">
               Daftarkan item bahan baku atau kemasan baru untuk standardisasi transaksi &amp; resep menu.
             </DialogDescription>
           </DialogHeader>
@@ -1558,62 +1561,57 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             }}
             className="space-y-4 pt-2"
           >
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Nama Item Baku <span className="text-rose-500">*</span>
               </label>
               <Input
                 placeholder="Contoh: Susu Carnation"
                 value={itemName}
                 onChange={(e) => setItemName(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 text-xs"
                 required
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Kategori
                 </label>
-                <select
+                <AdaptiveSelect
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={setCategory}
+                  options={categories}
+                  placeholder="Pilih kategori..."
+                  searchPlaceholder="Cari kategori..."
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Tipe Satuan
                 </label>
-                <select
+                <AdaptiveSelect
                   value={tipeSatuan}
-                  onChange={(e) => setTipeSatuan(e.target.value as any)}
-                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  <option value="keduanya">Paket &amp; Ecer</option>
-                  <option value="paket">Hanya Paket</option>
-                  <option value="ecer">Hanya Ecer</option>
-                </select>
+                  onValueChange={(val) => setTipeSatuan(val as any)}
+                  options={[
+                    { value: "keduanya", label: "Paket & Ecer" },
+                    { value: "paket", label: "Hanya Paket" },
+                    { value: "ecer", label: "Hanya Ecer" },
+                  ]}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Satuan Beli / Kemasan
                 </label>
-                <select
+                <AdaptiveSelect
                   value={satuanBeli}
-                  onChange={(e) => {
-                    const nextBeli = e.target.value;
+                  onValueChange={(nextBeli) => {
                     setSatuanBeli(nextBeli);
                     if (!recipeUnitTouched) {
                       const nextHint = suggestLocalRecipeUnit(nextBeli, isiPaket);
@@ -1621,38 +1619,34 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                       setKonversiResep(nextHint ? nextHint.factor : "");
                     }
                   }}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  {units.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+                  options={units}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Pilih satuan beli..."
+                  searchPlaceholder="Cari satuan..."
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Satuan Eceran
                 </label>
-                <select
+                <AdaptiveSelect
                   value={satuanEcer}
-                  onChange={(e) => setSatuanEcer(e.target.value)}
+                  onValueChange={setSatuanEcer}
                   disabled={tipeSatuan === "paket"}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
-                >
-                  {units.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+                  options={units}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Pilih satuan ecer..."
+                  searchPlaceholder="Cari satuan..."
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Turunan / Isi Kemasan
                 </label>
                 <Input
@@ -1667,96 +1661,97 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                       setKonversiResep(nextHint ? nextHint.factor : "");
                     }
                   }}
-                  className="h-9 text-xs rounded-xl"
+                  className="h-9 text-xs"
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Supplier / Toko Default
                 </label>
                 <Input
                   placeholder="Opsional (mis. Toko Makmur)"
                   value={defaultSupplier}
                   onChange={(e) => setDefaultSupplier(e.target.value)}
-                  className="h-9 text-xs rounded-xl"
+                  className="h-9 text-xs"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Kata Kunci / Alias di Struk (Opsional)
               </label>
               <Input
                 placeholder="Pisahkan koma: carnation pouch, skm carnation"
                 value={aliases}
                 onChange={(e) => setAliases(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 text-xs"
               />
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+            <div className="pt-3 border-t border-border/70 space-y-2.5">
+              <span className="text-xs font-semibold text-foreground block">
                 Konfigurasi Satuan Resep (Terkecil)
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Satuan Resep (Terkecil)
                   </label>
-                  <select
+                  <AdaptiveSelect
                     value={satuanResep}
-                    onChange={(e) => {
+                    onValueChange={(val) => {
                       setRecipeUnitTouched(true);
-                      setSatuanResep(e.target.value);
+                      setSatuanResep(val);
                     }}
-                    className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="">Auto dari satuan beli / isi paket</option>
-                    {recipeUnitOptions.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "Auto dari satuan beli / isi paket" },
+                      ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
+                    ]}
+                    creatable={true}
+                    creatablePrefix="Satuan"
+                    placeholder="Auto dari satuan beli..."
+                    searchPlaceholder="Cari satuan resep..."
+                  />
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Isi / 1 {satuanBeli || "Satuan Beli"}
                   </label>
-                  <Input
-                    type="number"
-                    min={0.0001}
-                    step="any"
-                    placeholder="Contoh: 1000"
-                    value={konversiResep}
-                    onChange={(e) => {
-                      setRecipeUnitTouched(true);
-                      setKonversiResep(e.target.value);
-                    }}
-                    className="h-9 text-xs rounded-xl tabular-nums"
-                  />
+                  <InputGroup className="h-9">
+                    <InputGroupInput
+                      type="number"
+                      min={0.0001}
+                      step="any"
+                      placeholder="Contoh: 1000"
+                      value={konversiResep}
+                      onChange={(e) => {
+                        setRecipeUnitTouched(true);
+                        setKonversiResep(e.target.value);
+                      }}
+                      className="text-xs tabular-nums"
+                    />
+                    {satuanResep && (
+                      <InputGroupAddon align="inline-end" className="pr-2.5">
+                        <InputGroupText className="text-xs">{satuanResep}</InputGroupText>
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+              <div className="text-[11px] text-muted-foreground">
                 {satuanResep && Number(konversiResep) > 0 ? (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 font-medium">
-                    <span className="font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
-                      1 {satuanBeli || "Pcs"}
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    {isiPaket ? (
-                      <span className="text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800">
-                        ({isiPaket})
-                      </span>
-                    ) : null}
-                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
+                    <span>1 {satuanBeli || "Pcs"}</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    {isiPaket ? <span>({isiPaket})</span> : null}
+                    <span>=</span>
+                    <strong className="tabular-nums">
                       {konversiResep} {satuanResep}
-                    </span>
+                    </strong>
                   </div>
                 ) : (
                   <span>Kosongkan jika ingin sistem mendeteksi otomatis (mis. 1 Kg = 1000 Gram).</span>
@@ -1764,13 +1759,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            <DialogFooter className="gap-2 pt-2 border-t border-slate-100 flex justify-end">
+            <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setIsAddDialogOpen(false)}
-                className="rounded-xl text-xs"
+                className="h-9 px-4 text-xs"
               >
                 Batal
               </Button>
@@ -1778,9 +1773,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 type="submit"
                 size="sm"
                 disabled={addMutation.isPending || !itemName.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
+                className="h-9 px-5 text-xs font-semibold"
               >
-                <Plus className="w-3.5 h-3.5" />
                 {addMutation.isPending ? "Menyimpan..." : "Simpan Item Baku"}
               </Button>
             </DialogFooter>
@@ -1788,15 +1782,14 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Edit Master Item */}
+      {/* Dialog Edit Master Item (Zero Nested Card, Hairline Sections) */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-2xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Edit3 className="w-5 h-5 text-blue-600" />
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto rounded-xl p-6">
+          <DialogHeader className="pb-3 border-b border-border/80">
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground">
               Edit Master Item Baku
             </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
+            <DialogDescription className="text-xs text-muted-foreground">
               Perbarui rincian, satuan beli/ecer, konversi resep, dan supplier item baku.
             </DialogDescription>
           </DialogHeader>
@@ -1827,135 +1820,136 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             }}
             className="space-y-4 pt-2"
           >
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Nama Item Baku <span className="text-rose-500">*</span>
               </label>
               <Input
                 placeholder="Contoh: Susu Carnation"
                 value={editForm.item_name}
                 onChange={(e) => setEditForm({ ...editForm, item_name: e.target.value })}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 text-xs"
                 required
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Kategori
                 </label>
-                <select
+                <AdaptiveSelect
                   value={editForm.category}
-                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  {categories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(val) => setEditForm({ ...editForm, category: val })}
+                  options={categories}
+                  placeholder="Pilih kategori..."
+                  searchPlaceholder="Cari kategori..."
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Tipe Satuan
                 </label>
-                <select
+                <AdaptiveSelect
                   value={editForm.tipe_satuan}
-                  onChange={(e) => setEditForm({ ...editForm, tipe_satuan: e.target.value as any })}
-                  className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  <option value="keduanya">Paket &amp; Ecer</option>
-                  <option value="paket">Hanya Paket</option>
-                  <option value="ecer">Hanya Ecer</option>
-                </select>
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, tipe_satuan: val as any })
+                  }
+                  options={[
+                    { value: "keduanya", label: "Paket & Ecer" },
+                    { value: "paket", label: "Hanya Paket" },
+                    { value: "ecer", label: "Hanya Ecer" },
+                  ]}
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Satuan Beli / Kemasan
                 </label>
-                <select
+                <AdaptiveSelect
                   value={editForm.satuan_beli}
-                  onChange={(e) => setEditForm({ ...editForm, satuan_beli: e.target.value })}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                >
-                  {units.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, satuan_beli: val })
+                  }
+                  options={units}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Pilih satuan beli..."
+                  searchPlaceholder="Cari satuan..."
+                />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Satuan Eceran
                 </label>
-                <select
+                <AdaptiveSelect
                   value={editForm.satuan_ecer}
-                  onChange={(e) => setEditForm({ ...editForm, satuan_ecer: e.target.value })}
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, satuan_ecer: val })
+                  }
                   disabled={editForm.tipe_satuan === "paket"}
-                  className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50"
-                >
-                  {units.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+                  options={units}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Pilih satuan ecer..."
+                  searchPlaceholder="Cari satuan..."
+                />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Turunan / Isi Kemasan
                 </label>
                 <Input
                   placeholder="Contoh: 1Kg, 500g"
                   value={editForm.isi_paket}
                   onChange={(e) => setEditForm({ ...editForm, isi_paket: e.target.value })}
-                  className="h-9 text-xs rounded-xl"
+                  className="h-9 text-xs"
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Supplier / Toko Default
                 </label>
                 <Input
                   placeholder="Opsional (mis. Toko Makmur)"
                   value={editForm.default_supplier}
                   onChange={(e) => setEditForm({ ...editForm, default_supplier: e.target.value })}
-                  className="h-9 text-xs rounded-xl"
+                  className="h-9 text-xs"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Kata Kunci / Alias di Struk (Opsional)
               </label>
               <Input
                 placeholder="Pisahkan koma: alias1, alias2"
                 value={editForm.aliases}
                 onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 text-xs"
               />
             </div>
 
-            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+            <div className="pt-3 border-t border-border/70 space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                <span className="text-xs font-semibold text-foreground">
                   Konfigurasi Satuan Resep (Terkecil)
                 </span>
                 {(() => {
-                  const suggested = suggestLocalRecipeUnit(editForm.satuan_beli, editForm.isi_paket);
+                  const suggested = suggestLocalRecipeUnit(
+                    editForm.satuan_beli,
+                    editForm.isi_paket
+                  );
                   return suggested ? (
                     <button
                       type="button"
@@ -1966,7 +1960,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                           konversi_resep: suggested.factor,
                         }))
                       }
-                      className="text-[11px] text-blue-700 dark:text-blue-400 hover:underline font-medium"
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
                       Saran: {suggested.factor} {suggested.unit}
                     </button>
@@ -1975,56 +1969,63 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Satuan Resep (Terkecil)
                   </label>
-                  <select
+                  <AdaptiveSelect
                     value={editForm.satuan_resep}
-                    onChange={(e) => setEditForm({ ...editForm, satuan_resep: e.target.value })}
-                    className="h-9 w-full rounded-xl border border-input bg-background px-2.5 text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="">Belum diatur</option>
-                    {recipeUnitOptions.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={(val) =>
+                      setEditForm({ ...editForm, satuan_resep: val })
+                    }
+                    options={[
+                      { value: "", label: "Belum diatur" },
+                      ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
+                    ]}
+                    creatable={true}
+                    creatablePrefix="Satuan"
+                    placeholder="Belum diatur"
+                    searchPlaceholder="Cari satuan resep..."
+                  />
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground block">
                     Isi / 1 {editForm.satuan_beli || "Beli"}
                   </label>
-                  <Input
-                    type="number"
-                    min={0.0001}
-                    step="any"
-                    placeholder="mis. 1000"
-                    value={editForm.konversi_resep}
-                    onChange={(e) => setEditForm({ ...editForm, konversi_resep: e.target.value })}
-                    className="h-9 text-xs rounded-xl tabular-nums"
-                  />
+                  <InputGroup className="h-9">
+                    <InputGroupInput
+                      type="number"
+                      min={0.0001}
+                      step="any"
+                      placeholder="mis. 1000"
+                      value={editForm.konversi_resep}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, konversi_resep: e.target.value })
+                      }
+                      className="text-xs tabular-nums"
+                    />
+                    {editForm.satuan_resep && (
+                      <InputGroupAddon align="inline-end" className="pr-2.5">
+                        <InputGroupText className="text-xs">
+                          {editForm.satuan_resep}
+                        </InputGroupText>
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+              <div className="text-[11px] text-muted-foreground">
                 {editForm.satuan_resep && Number(editForm.konversi_resep) > 0 ? (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300 font-medium">
-                    <span className="font-semibold px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
-                      1 {editForm.satuan_beli || "Pcs"}
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    {editForm.isi_paket ? (
-                      <span className="text-slate-600 dark:text-slate-400 text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800">
-                        ({editForm.isi_paket})
-                      </span>
-                    ) : null}
-                    <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span className="font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
+                    <span>1 {editForm.satuan_beli || "Pcs"}</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    {editForm.isi_paket ? <span>({editForm.isi_paket})</span> : null}
+                    <span>=</span>
+                    <strong className="tabular-nums">
                       {editForm.konversi_resep} {editForm.satuan_resep}
-                    </span>
+                    </strong>
                   </div>
                 ) : (
                   <span>Belum ada konversi resep.</span>
@@ -2032,13 +2033,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            <DialogFooter className="gap-2 pt-2 border-t border-slate-100 flex justify-end">
+            <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setIsEditDialogOpen(false)}
-                className="rounded-xl text-xs"
+                className="h-9 px-4 text-xs"
               >
                 Batal
               </Button>
@@ -2046,9 +2047,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 type="submit"
                 size="sm"
                 disabled={updateMutation.isPending || !editForm.item_name.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
+                className="h-9 px-5 text-xs font-semibold"
               >
-                <Check className="w-3.5 h-3.5" />
                 {updateMutation.isPending ? "Menyimpan..." : "Simpan Perubahan"}
               </Button>
             </DialogFooter>
@@ -2127,48 +2127,51 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 onQueryChange={handleMasterQueryChange}
                 className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
               />
-              <select
+              <AdaptiveSelect
                 value={filterCat}
-                onChange={(e) => setFilterCat(e.target.value)}
+                onValueChange={setFilterCat}
                 aria-label="Filter kategori master item"
-                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
-              >
-                <option value="">Semua Kategori ({masterItems.length})</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <select
+                placeholder={`Semua Kategori (${masterItems.length})`}
+                searchPlaceholder="Cari kategori..."
+                className="w-48 text-xs"
+                options={[
+                  { value: "", label: `Semua Kategori (${masterItems.length})` },
+                  ...categories.map((c) => ({ value: c, label: c })),
+                ]}
+              />
+              <AdaptiveSelect
                 value={filterRecipeStatus}
-                onChange={(e) =>
+                onValueChange={(val) =>
                   setFilterRecipeStatus(
-                    e.target.value as "" | "configured" | "unconfigured"
+                    val as "" | "configured" | "unconfigured"
                   )
                 }
                 aria-label="Filter status satuan resep"
-                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
-              >
-                <option value="">Semua Satuan Resep</option>
-                <option value="configured">Resep: Sudah Diatur</option>
-                <option value="unconfigured">Resep: Belum Diatur</option>
-              </select>
-              <select
+                placeholder="Semua Satuan Resep"
+                className="w-44 text-xs"
+                options={[
+                  { value: "", label: "Semua Satuan Resep" },
+                  { value: "configured", label: "Resep: Sudah Diatur" },
+                  { value: "unconfigured", label: "Resep: Belum Diatur" },
+                ]}
+              />
+              <AdaptiveSelect
                 value={filterTipeSatuan}
-                onChange={(e) =>
+                onValueChange={(val) =>
                   setFilterTipeSatuan(
-                    e.target.value as "" | "keduanya" | "paket" | "ecer"
+                    val as "" | "keduanya" | "paket" | "ecer"
                   )
                 }
                 aria-label="Filter tipe satuan master item"
-                className="h-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-xs font-medium text-slate-700 dark:text-slate-200"
-              >
-                <option value="">Semua Tipe Satuan</option>
-                <option value="keduanya">Paket & Ecer</option>
-                <option value="paket">Hanya Paket</option>
-                <option value="ecer">Hanya Ecer</option>
-              </select>
+                placeholder="Semua Tipe Satuan"
+                className="w-40 text-xs"
+                options={[
+                  { value: "", label: "Semua Tipe Satuan" },
+                  { value: "keduanya", label: "Paket & Ecer" },
+                  { value: "paket", label: "Hanya Paket" },
+                  { value: "ecer", label: "Hanya Ecer" },
+                ]}
+              />
             </div>
           </div>
 
@@ -2357,16 +2360,18 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
                 <span className="font-medium">Tingkat Kemiripan:</span>
-                <select
-                  value={auditMinScore}
-                  onChange={(e) => setAuditMinScore(parseFloat(e.target.value))}
-                  className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                >
-                  <option value={0.90}>Sangat Ketat (90% kemiripan)</option>
-                  <option value={0.80}>Ketat (80% kemiripan)</option>
-                  <option value={0.70}>Normal (70% kemiripan - Rekomendasi)</option>
-                  <option value={0.60}>Sensitif / Luas (60% kemiripan)</option>
-                </select>
+                <AdaptiveSelect
+                  value={String(auditMinScore)}
+                  onValueChange={(val) => setAuditMinScore(parseFloat(val))}
+                  aria-label="Tingkat kemiripan audit duplikat"
+                  className="w-56 h-8 text-xs"
+                  options={[
+                    { value: "0.9", label: "Sangat Ketat (90% kemiripan)" },
+                    { value: "0.8", label: "Ketat (80% kemiripan)" },
+                    { value: "0.7", label: "Normal (70% kemiripan - Rekomendasi)" },
+                    { value: "0.6", label: "Sensitif / Luas (60% kemiripan)" },
+                  ]}
+                />
               </div>
 
               <div className="flex items-center gap-2">
@@ -2668,17 +2673,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   <label className="text-[11px] font-medium text-slate-600 block mb-1">
                     Kategori
                   </label>
-                  <select
+                  <AdaptiveSelect
                     value={customMergeCategory}
-                    onChange={(e) => setCustomMergeCategory(e.target.value)}
-                    className="h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-medium"
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onValueChange={setCustomMergeCategory}
+                    options={categories}
+                    placeholder="Pilih kategori..."
+                    searchPlaceholder="Cari kategori..."
+                  />
                 </div>
                 <div>
                   <label className="text-[11px] font-medium text-slate-600 block mb-1">

@@ -12,6 +12,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -607,12 +608,11 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
         </CardContent>
       </Card>
 
-      {/* Dialog Add / Edit */}
+      {/* Dialog Add / Edit (Zero Nested Card, Hairline Sections) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
-              <ActiveIcon className="w-4 h-4 text-blue-600" />
+        <DialogContent className="sm:max-w-md rounded-xl">
+          <DialogHeader className="pb-2 border-b border-border/80">
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground">
               {editingItem
                 ? `Edit ${TYPE_CONFIG[activeType].singular}`
                 : `Tambah ${TYPE_CONFIG[activeType].singular} Baru`}
@@ -620,155 +620,162 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
           </DialogHeader>
 
           <form onSubmit={handleSave} className="space-y-4 pt-2">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Nama {TYPE_CONFIG[activeType].singular} *
               </label>
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder={TYPE_CONFIG[activeType].placeholder}
-                className="h-10 text-xs rounded-xl"
+                className="h-9 text-xs"
                 autoFocus
                 required
               />
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground block">
                 Deskripsi / Keterangan (Opsional)
               </label>
               <Input
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder={TYPE_CONFIG[activeType].defaultDesc}
-                className="h-10 text-xs rounded-xl"
+                className="h-9 text-xs"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Urutan Tampilan
                 </label>
                 <Input
                   type="number"
                   min="1"
                   value={formData.sort_order}
-                  onChange={(e) => setFormData({ ...formData, sort_order: parseInt(e.target.value, 10) || 1 })}
-                  className="h-10 text-xs rounded-xl"
+                  onChange={(e) =>
+                    setFormData({ ...formData, sort_order: parseInt(e.target.value, 10) || 1 })
+                  }
+                  className="h-9 text-xs tabular-nums"
                 />
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
                   Status Opsi
                 </label>
-                <label className="flex items-center gap-2 h-10 px-3 rounded-xl border border-input bg-slate-50/50 cursor-pointer">
+                <label className="flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.is_active}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded border-slate-300"
+                    className="w-3.5 h-3.5 rounded border-input"
                   />
-                  <span className="text-xs font-medium text-slate-700">Aktif Digunakan</span>
+                  <span className="text-xs font-medium text-foreground">Aktif Digunakan</span>
                 </label>
               </div>
             </div>
 
-            {/* Pemetaan Akuntansi (COA) Khusus Kategori & Metode Bayar */}
+            {/* Pemetaan Akuntansi (COA) Khusus Kategori & Metode Bayar (Flat Hairline Section) */}
             {(activeType === "kategori" || activeType === "metode_bayar") && (
-              <div className="p-3.5 rounded-xl border border-sky-200/80 bg-sky-50/40 space-y-3">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-950">
-                  <BookOpen className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                  <span>Pemetaan Akuntansi Standar (Chart of Accounts / COA)</span>
+              <div className="pt-3 border-t border-border/70 space-y-3">
+                <div>
+                  <div className="text-xs font-semibold text-foreground">
+                    Pemetaan Akuntansi Standar (Chart of Accounts / COA)
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {activeType === "kategori"
+                      ? "Hubungkan kategori ini dengan kode akun buku besar untuk integrasi Laporan Laba Rugi dan Neraca."
+                      : "Hubungkan metode pembayaran ini dengan akun kas/bank pada Neraca."}
+                  </p>
                 </div>
-                <p className="text-[11px] text-sky-800 leading-tight">
-                  {activeType === "kategori"
-                    ? "Hubungkan kategori ini dengan kode akun buku besar untuk integrasi Laporan Laba Rugi dan Neraca."
-                    : "Hubungkan metode pembayaran ini dengan akun kas/bank pada Neraca."}
-                </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
                       Kode Akun (COA)
                     </label>
                     <Input
                       value={formData.account_code}
                       onChange={(e) => setFormData({ ...formData, account_code: e.target.value })}
                       placeholder={activeType === "kategori" ? "Contoh: 5-1100" : "Contoh: 1-1110"}
-                      className="h-9 text-xs rounded-xl font-mono bg-white"
+                      className="h-9 text-xs font-mono"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
                       Kelompok Akun
                     </label>
-                    <select
+                    <AdaptiveSelect
                       value={formData.account_group}
-                      onChange={(e) => setFormData({ ...formData, account_group: e.target.value })}
-                      className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    >
-                      <option value="">Pilih Kelompok...</option>
-                      <option value="HPP">HPP (Harga Pokok Penjualan / Bahan Baku)</option>
-                      <option value="OPEX">OPEX (Beban Operasional & Umum)</option>
-                      <option value="ASSET">ASSET (Aset Tetap / Peralatan Tahan Lama)</option>
-                      <option value="CASH_TRANSFER">CASH_TRANSFER (Mutasi / Kliring Kas)</option>
-                      <option value="KAS">KAS (Kas Tunai Kasir)</option>
-                      <option value="BANK">BANK (Kas Rekening Bank)</option>
-                      <option value="HUTANG">HUTANG (Hutang Usaha / Supplier)</option>
-                    </select>
+                      onValueChange={(val) =>
+                        setFormData({ ...formData, account_group: val })
+                      }
+                      options={[
+                        { value: "", label: "Pilih Kelompok..." },
+                        { value: "HPP", label: "HPP (Harga Pokok Penjualan / Bahan Baku)" },
+                        { value: "OPEX", label: "OPEX (Beban Operasional & Umum)" },
+                        { value: "ASSET", label: "ASSET (Aset Tetap / Peralatan Tahan Lama)" },
+                        { value: "CASH_TRANSFER", label: "CASH_TRANSFER (Mutasi / Kliring Kas)" },
+                        { value: "KAS", label: "KAS (Kas Tunai Kasir)" },
+                        { value: "BANK", label: "BANK (Kas Rekening Bank)" },
+                        { value: "HUTANG", label: "HUTANG (Hutang Usaha / Supplier)" },
+                      ]}
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
                       Nama Akun Standar
                     </label>
                     <Input
                       value={formData.account_name}
                       onChange={(e) => setFormData({ ...formData, account_name: e.target.value })}
                       placeholder="Contoh: Beban Pokok Bahan Baku Kue"
-                      className="h-9 text-xs rounded-xl bg-white"
+                      className="h-9 text-xs"
                     />
                   </div>
 
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-foreground block">
                       Masuk ke Laporan
                     </label>
-                    <select
+                    <AdaptiveSelect
                       value={formData.report_type}
-                      onChange={(e) => setFormData({ ...formData, report_type: e.target.value })}
-                      className="w-full h-9 px-2.5 text-xs rounded-xl border border-input bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    >
-                      <option value="">Pilih Laporan...</option>
-                      <option value="LABA_RUGI">Laba Rugi (Income Statement)</option>
-                      <option value="NERACA">Neraca (Balance Sheet)</option>
-                      <option value="ARUS_KAS">Arus Kas (Cash Flow)</option>
-                    </select>
+                      onValueChange={(val) =>
+                        setFormData({ ...formData, report_type: val })
+                      }
+                      options={[
+                        { value: "", label: "Pilih Laporan..." },
+                        { value: "LABA_RUGI", label: "Laba Rugi (Income Statement)" },
+                        { value: "NERACA", label: "Neraca (Balance Sheet)" },
+                        { value: "ARUS_KAS", label: "Arus Kas (Cash Flow)" },
+                      ]}
+                    />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Default Checkbox (Metode Bayar / Satuan / Kategori Menu) */}
+            {/* Default Checkbox */}
             {activeType !== "kategori" && (
-              <label className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-200/80 bg-amber-50/40 cursor-pointer">
+              <label className="flex items-start gap-2.5 pt-3 border-t border-border/70 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={formData.is_default}
                   onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                  className="w-4 h-4 text-amber-600 rounded border-amber-300 mt-0.5"
+                  className="w-3.5 h-3.5 rounded border-input mt-0.5"
                 />
                 <div className="space-y-0.5">
-                  <span className="text-xs font-semibold text-amber-900 block">
+                  <span className="text-xs font-medium text-foreground block">
                     Jadikan Pilihan Bawaan (Default)
                   </span>
-                  <p className="text-[11px] text-amber-800 leading-tight">
+                  <p className="text-[11px] text-muted-foreground leading-tight">
                     {activeType === "kategori_menu"
                       ? "Opsi ini otomatis terpilih terlebih dahulu saat membuat menu / resep baru."
                       : "Opsi ini otomatis terpilih terlebih dahulu saat membuat transaksi baru."}
@@ -777,13 +784,13 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
               </label>
             )}
 
-            <DialogFooter className="pt-2 gap-2 sm:gap-0">
+            <DialogFooter className="pt-3 border-t border-border/70 gap-2 sm:gap-0">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setIsDialogOpen(false)}
-                className="rounded-xl text-xs"
+                className="h-9 px-4 text-xs"
               >
                 Batal
               </Button>
@@ -791,7 +798,7 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                 type="submit"
                 size="sm"
                 disabled={createMutation.isPending || updateMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold px-4"
+                className="h-9 px-5 text-xs font-semibold"
               >
                 {createMutation.isPending || updateMutation.isPending
                   ? "Menyimpan..."
