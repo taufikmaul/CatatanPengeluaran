@@ -264,7 +264,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
         </motion.div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         {cards.map((card, i) => {
           const Icon = card.icon;
           return (
@@ -281,7 +281,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
                 }`}
               >
                 <div className={`absolute inset-0 bg-gradient-to-br ${card.bgGradient} pointer-events-none`} />
-                <CardContent className="p-4 md:p-5 relative">
+                <CardContent className="p-3 sm:p-3.5 relative">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium text-slate-500">{card.title}</span>
                     <div className={`p-2 rounded-xl ${card.iconBg}`}>
@@ -350,8 +350,8 @@ export const StatCards: React.FC<StatCardsProps> = ({
             : null);
 
         return (
-          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-white/10 pb-2.5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-white/10 backdrop-blur-md rounded-xl text-amber-300">
                   <BookOpen className="w-4 h-4" />
@@ -522,7 +522,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
       })()}
 
       {/* 2 Card Terpisah: Tukar Cash & Ongkir Kurir */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
         {/* Card 1: Tukar Cash (Tarik Tunai Karyawan) */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}
@@ -533,7 +533,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
             onClick={() => onOpenTukarCashOngkir?.("tukar_cash")}
             className="relative overflow-hidden border-indigo-200/90 bg-gradient-to-br from-indigo-50/50 via-white to-white hover:border-indigo-300 transition-all cursor-pointer hover:shadow-md group"
           >
-            <CardContent className="p-4 md:p-5 relative">
+            <CardContent className="p-3 sm:p-3.5 relative">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className="p-2 rounded-xl bg-indigo-50 text-indigo-700">
@@ -578,7 +578,7 @@ export const StatCards: React.FC<StatCardsProps> = ({
             onClick={() => onOpenTukarCashOngkir?.("ongkir")}
             className="relative overflow-hidden border-sky-200/90 bg-gradient-to-br from-sky-50/50 via-white to-white hover:border-sky-300 transition-all cursor-pointer hover:shadow-md group"
           >
-            <CardContent className="p-4 md:p-5 relative">
+            <CardContent className="p-3 sm:p-3.5 relative">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div className="p-2 rounded-xl bg-sky-50 text-sky-700">

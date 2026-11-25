@@ -31,9 +31,9 @@ export const CatalogHubView: React.FC<CatalogHubViewProps> = ({
   const isSupplierActive = activeSubTab === "suppliers" || activeSubTab === "supplier-detail";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Sub-Pills Navigation */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
         {/* Tab 1: Master Item Bahan */}
         {(isOwner || isPurchasing || isWarehouse) && (
           <Button
@@ -104,7 +104,7 @@ export const CatalogHubView: React.FC<CatalogHubViewProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="min-h-[450px]">
+      <div className="min-h-0">
         {children}
       </div>
     </div>

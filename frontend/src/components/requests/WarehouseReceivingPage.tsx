@@ -116,7 +116,7 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
   };
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto pb-16">
+    <div className="space-y-3 max-w-6xl mx-auto pb-8">
       {/* Action Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">

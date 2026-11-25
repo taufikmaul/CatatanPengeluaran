@@ -45,7 +45,7 @@ export const InvoiceViewModeToggle: React.FC<ViewModeToggleProps> = ({
       role="group"
       aria-label="Mode tampilan daftar transaksi"
       className={cn(
-        "inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80",
+        "inline-flex items-center p-0.5 rounded-lg bg-[var(--ledger-recessed)] border border-[color:var(--ledger-hairline)]",
         mobileFull && "w-full",
         className
       )}
@@ -55,11 +55,11 @@ export const InvoiceViewModeToggle: React.FC<ViewModeToggleProps> = ({
         onClick={() => onChange("grouped")}
         aria-pressed={mode === "grouped"}
         className={cn(
-          "inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
-          mobileFull ? "flex-1 min-h-[40px]" : "h-7",
+          "inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          mobileFull ? "flex-1 min-h-[44px]" : "h-8",
           mode === "grouped"
-            ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs"
-            : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+            ? "bg-[var(--ledger-surface)] text-[var(--ledger-ink)] shadow-2xs"
+            : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
         )}
       >
         <Layers className="w-3.5 h-3.5 shrink-0" />
@@ -70,11 +70,11 @@ export const InvoiceViewModeToggle: React.FC<ViewModeToggleProps> = ({
         onClick={() => onChange("items")}
         aria-pressed={mode === "items"}
         className={cn(
-          "inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
-          mobileFull ? "flex-1 min-h-[40px]" : "h-7",
+          "inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-[6px] text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          mobileFull ? "flex-1 min-h-[44px]" : "h-8",
           mode === "items"
-            ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-2xs"
-            : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+            ? "bg-[var(--ledger-surface)] text-[var(--ledger-ink)] shadow-2xs"
+            : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
         )}
       >
         <List className="w-3.5 h-3.5 shrink-0" />

@@ -117,7 +117,7 @@ function DataTableCore<TData extends object>({
   children,
   emptyState,
   onRowClick,
-  tableLayout = { columnsResizable: true },
+  tableLayout = { dense: true, columnsResizable: true },
   i18n,
   emptyMessage,
 }: DataTableBaseProps<TData> & {
@@ -142,6 +142,15 @@ function DataTableCore<TData extends object>({
     [i18n]
   );
 
+  const resolvedTableLayout = useMemo(
+    () => ({
+      dense: true,
+      columnsResizable: true,
+      ...tableLayout,
+    }),
+    [tableLayout]
+  );
+
   const isEmpty = !isLoading && recordCount === 0;
 
   return (
@@ -151,7 +160,7 @@ function DataTableCore<TData extends object>({
       isLoading={isLoading}
       loadingMode={loadingMode}
       onRowClick={onRowClick}
-      tableLayout={tableLayout}
+      tableLayout={resolvedTableLayout}
       i18n={mergedI18n}
       emptyMessage={emptyMessage}
     >
@@ -164,7 +173,7 @@ function DataTableCore<TData extends object>({
         {header && (
           <div
             className={cn(
-              "border-b border-slate-100 dark:border-slate-800 p-4",
+              "border-b border-slate-100 dark:border-slate-800 p-3 sm:px-3.5 sm:py-2.5",
               headerClassName
             )}
           >
@@ -188,7 +197,7 @@ function DataTableCore<TData extends object>({
         {showPagination && (!isEmpty || isLoading) && (
           <div
             className={cn(
-              "border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 bg-slate-50/50 dark:bg-slate-900/50",
+              "border-t border-slate-100 dark:border-slate-800 px-3.5 py-2 bg-slate-50/50 dark:bg-slate-900/50",
               footerClassName
             )}
           >

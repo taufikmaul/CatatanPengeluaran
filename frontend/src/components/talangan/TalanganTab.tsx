@@ -1,9 +1,23 @@
-import React, { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, settleReimbursements, getReimbursementSummary, getBankAccounts, getGroupedExpenses } from "@/lib/api";
-import { Expense, ExpenseInvoiceGroup, ExpenseInvoiceListResponse, ExpenseUser, ReimbursementSummaryResponse, ReimbursementUserSummary } from "@/types";
-import { formatRupiah, formatDateId } from "@/lib/formatters";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  api,
+  getBankAccounts,
+  getGroupedExpenses,
+  getReimbursementSummary,
+  settleReimbursements,
+} from "@/lib/api";
+import {
+  Expense,
+  ExpenseInvoiceGroup,
+  ExpenseInvoiceListResponse,
+  ExpenseUser,
+  ReimbursementSummaryResponse,
+  ReimbursementUserSummary,
+} from "@/types";
+import { formatDateId, formatRupiah, toIsoDate } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
+import { cn } from "@/lib/utils";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import {
   ExpenseViewMode,
@@ -11,14 +25,25 @@ import {
   InvoiceViewModeToggle,
   getInvoiceItemSummaryText,
 } from "@/components/common/InvoiceGroupShared";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  LedgerBatchDock,
+  LedgerConfirmDialog,
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+  type LedgerStatusTabOption,
+} from "@/components/common/LedgerPrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
 import {
   dataGridFeatures,
@@ -29,30 +54,26 @@ import { ColumnDef, ExpandedState, PaginationState, useTable } from "@tanstack/r
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import {
-  HandCoins,
+  AlertCircle,
+  CheckCheck,
   CheckCircle2,
-  Clock,
-  Search,
-  RotateCcw,
-  Plus,
-  Trash2,
-  Edit2,
-  Eye,
-  ExternalLink,
-  Users,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Calendar,
-  AlertCircle,
+  Clock,
+  Edit2,
+  ExternalLink,
+  Eye,
   FileCheck2,
-  Filter,
-  CheckCheck,
-  Undo2,
+  Plus,
   Receipt,
-  Wallet,
-  Truck,
+  RotateCcw,
+  Search,
   ShoppingBag,
+  Trash2,
+  Truck,
+  Undo2,
+  X,
 } from "lucide-react";
 
 interface TalanganTabProps {
@@ -69,19 +90,88 @@ interface TalanganTabProps {
   userRole?: string;
 }
 
-const MONTH_NAMES = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-];
-
+type TalanganStatusFilter = "pending" | "reimbursed" | "all";
+type TalanganTypeFilter = "all" | "belanja" | "ongkir";
 type PeriodMode = "all" | "month" | "custom";
 
-const toIsoDate = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
+const MONTH_NAMES = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
+function getInitials(name: string): string {
+  return (name || "HC")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function isTalanganOngkirItem(e: Expense): boolean {
+  return (
+    (e.category || "").toLowerCase() === "ongkir" ||
+    (e.item_name || "").toLowerCase().startsWith("ongkir") ||
+    Boolean(
+      e.supplier &&
+        ["gosend", "grabexpress", "lalamove", "maxim", "sicepat", "j&t"].some((k) =>
+          e.supplier!.toLowerCase().includes(k)
+        )
+    )
+  );
+}
+
+function renderTalanganTypeBadge(hasOngkir: boolean, hasBelanja: boolean, compact = false) {
+  const sizeCls = compact ? "text-[10px] px-1.5 py-0" : "text-[9px] px-1.5 py-0";
+  if (hasOngkir && !hasBelanja) {
+    return (
+      <Badge
+        className={cn(
+          sizeCls,
+          "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/50 dark:text-sky-200 dark:border-sky-800 font-semibold gap-1 shrink-0"
+        )}
+      >
+        <Truck className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" />
+        Ongkir Kurir
+      </Badge>
+    );
+  }
+  if (hasOngkir && hasBelanja) {
+    return (
+      <Badge
+        className={cn(
+          sizeCls,
+          "bg-indigo-50 text-indigo-800 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-200 dark:border-indigo-800 font-semibold gap-1 shrink-0"
+        )}
+      >
+        <Receipt className="w-2.5 h-2.5" />
+        Belanja &amp; Ongkir
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      className={cn(
+        sizeCls,
+        "bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/50 dark:text-purple-200 dark:border-purple-800 font-semibold gap-1 shrink-0"
+      )}
+    >
+      <ShoppingBag className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
+      Belanja
+    </Badge>
+  );
+}
 
 export const TalanganTab: React.FC<TalanganTabProps> = ({
   currentMonth,
@@ -100,16 +190,19 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   const isSettleAllowed = canSettle && userRole !== "admin_input";
 
   // Filter states
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "reimbursed">("pending");
-  // Default "all" agar owner bisa langsung lihat seluruh talangan tertunda
+  const [statusFilter, setStatusFilter] = useState<TalanganStatusFilter>("pending");
   const [periodMode, setPeriodMode] = useState<PeriodMode>("all");
-  const [customStart, setCustomStart] = useState<string>(() => toIsoDate(new Date(currentYear, currentMonth - 1, 1)));
+  const [customStart, setCustomStart] = useState<string>(() =>
+    toIsoDate(new Date(currentYear, currentMonth - 1, 1))
+  );
   const [customEnd, setCustomEnd] = useState<string>(() => toIsoDate(new Date()));
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
-  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(
+    currentMonthEnd || currentMonth
+  );
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
-  const [talanganType, setTalanganType] = useState<"all" | "belanja" | "ongkir">("all");
+  const [talanganType, setTalanganType] = useState<TalanganTypeFilter>("all");
   const [viewMode, setViewMode] = useState<ExpenseViewMode>("grouped");
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [mobileExpandedKeys, setMobileExpandedKeys] = useState<Record<string, boolean>>({});
@@ -125,16 +218,20 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     setSelectedYear(currentYear);
   }, [currentMonth, currentMonthEnd, currentYear]);
 
-  // Selection states for batch action
+  // Batch selection & confirmation states
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [settleBankAccountId, setSettleBankAccountId] = useState<string>("");
+  const [isUsersExpanded, setIsUsersExpanded] = useState<boolean>(true);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmUserGroup, setConfirmUserGroup] =
+    useState<ReimbursementUserSummary | null>(null);
+  const [userSettleBankId, setUserSettleBankId] = useState<string>("");
 
   const { data: bankAccounts = [] } = useQuery({
     queryKey: ["bank-accounts", "active"],
     queryFn: () => getBankAccounts(true),
   });
-  const [isUsersExpanded, setIsUsersExpanded] = useState<boolean>(true);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const handleViewModeChange = (nextMode: ExpenseViewMode) => {
     setViewMode(nextMode);
@@ -144,44 +241,43 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     setSelectedIds([]);
   };
 
-  // Parameter periode efektif yang dikirim ke API
+  // Effective period params
   const isCustomRangeInvalid =
     periodMode === "custom" && !!customStart && !!customEnd && customStart > customEnd;
-  const rangeStart = periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
-  const rangeEnd = periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
+  const rangeStart =
+    periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
+  const rangeEnd =
+    periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
   const monthParam = periodMode === "month" ? selectedMonth : null;
   const monthEndParam = periodMode === "month" ? selectedMonthEnd : null;
   const yearParam = periodMode === "month" ? selectedYear : null;
 
-  // 1. Fetch Ringkasan Talangan (Summary KPI + User breakdown)
-  const {
-    data: summaryData,
-    isLoading: isSummaryLoading,
-    refetch: refetchSummary,
-  } = useQuery<ReimbursementSummaryResponse>({
-    queryKey: [
-      "talangan-summary",
-      monthParam,
-      yearParam,
-      rangeStart,
-      rangeEnd,
-      selectedUserId,
-      talanganType,
-    ],
-    queryFn: () =>
-      getReimbursementSummary({
-        month: monthParam,
-        year: yearParam,
-        startDate: rangeStart,
-        endDate: rangeEnd,
-        userId: selectedUserId,
-        includeOngkir: talanganType !== "belanja",
+  // 1. Summary KPI + user breakdown
+  const { data: summaryData, isLoading: isSummaryLoading } =
+    useQuery<ReimbursementSummaryResponse>({
+      queryKey: [
+        "talangan-summary",
+        monthParam,
+        yearParam,
+        rangeStart,
+        rangeEnd,
+        selectedUserId,
         talanganType,
-      }),
-    enabled: !isCustomRangeInvalid,
-  });
+      ],
+      queryFn: () =>
+        getReimbursementSummary({
+          month: monthParam,
+          year: yearParam,
+          startDate: rangeStart,
+          endDate: rangeEnd,
+          userId: selectedUserId,
+          includeOngkir: talanganType !== "belanja",
+          talanganType,
+        }),
+      enabled: !isCustomRangeInvalid,
+    });
 
-  // 2. Fetch Data Talangan Terpaginasi (Flat & Grouped Per Invoice)
+  // 2a. Flat item list
   const {
     data: expensesData,
     isLoading: isExpensesLoading,
@@ -246,6 +342,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     },
   });
 
+  // 2b. Grouped per invoice list
   const {
     data: groupedData,
     isLoading: isGroupedLoading,
@@ -267,8 +364,8 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       talanganType,
     ],
     enabled: !isCustomRangeInvalid && isGroupedMode,
-    queryFn: () => {
-      return getGroupedExpenses({
+    queryFn: () =>
+      getGroupedExpenses({
         page,
         per_page: perPage,
         is_reimbursement: true,
@@ -286,8 +383,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         reimbursed_status: statusFilter !== "all" ? statusFilter : undefined,
         user_id: selectedUserId !== null ? selectedUserId : undefined,
         search: search.trim() || undefined,
-      });
-    },
+      }),
   });
 
   const expenses: Expense[] = expensesData?.data || [];
@@ -301,17 +397,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     ? groupedData?.total_items || 0
     : expensesData?.total || 0;
 
-  const isTalanganOngkirItem = (e: Expense) =>
-    (e.category || "").toLowerCase() === "ongkir" ||
-    (e.item_name || "").toLowerCase().startsWith("ongkir") ||
-    Boolean(
-      e.supplier &&
-        ["gosend", "grabexpress", "lalamove", "maxim", "sicepat", "j&t"].some((k) =>
-          e.supplier!.toLowerCase().includes(k)
-        )
-    );
-
-  // 3. Settle Mutation (Mark / Unmark Reimbursed)
+  // 3. Settle Mutation
   const settleMutation = useMutation({
     mutationFn: settleReimbursements,
     onSuccess: (data) => {
@@ -327,26 +413,28 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ["auth-status"] });
 
       if (data.action === "mark_reimbursed") {
-        toast.success(`Berhasil menandai ${data.updated_count} talangan telah diganti!`);
+        toast.success(`Berhasil menandai ${data.updated_count} talangan telah diganti.`);
         confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 },
+          particleCount: 45,
+          spread: 55,
+          origin: { y: 0.75 },
         });
       } else {
         toast.info(`Status penggantian ${data.updated_count} talangan dibatalkan.`);
       }
       setSelectedIds([]);
+      setConfirmUserGroup(null);
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Gagal memproses status talangan.");
     },
   });
 
-  // Handle single item settlement toggle
   const handleToggleReimbursed = (expense: Expense) => {
     if (!isSettleAllowed) {
-      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      toast.error(
+        "Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan."
+      );
       return;
     }
     const isCurrentlyReimbursed = !!expense.reimbursed_at;
@@ -354,14 +442,18 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     settleMutation.mutate({
       expense_ids: [expense.id],
       action,
-      bank_account_id: action === "mark_reimbursed" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+      bank_account_id:
+        action === "mark_reimbursed" && settleBankAccountId
+          ? Number(settleBankAccountId)
+          : undefined,
     });
   };
 
-  // Handle invoice-group settlement toggle (pays all pending items in invoice, or unmarks all if already settled)
   const handleToggleGroupReimbursed = (group: ExpenseInvoiceGroup) => {
     if (!isSettleAllowed) {
-      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      toast.error(
+        "Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan."
+      );
       return;
     }
     const pendingItems = group.items.filter((it) => !it.reimbursed_at);
@@ -381,39 +473,51 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     });
   };
 
-  // Handle settle all for a specific user
-  const handleSettleUserPending = (userGroup: ReimbursementUserSummary) => {
+  const executeSettleUserPending = () => {
+    if (!confirmUserGroup || confirmUserGroup.pending_count === 0) return;
     if (!isSettleAllowed) {
-      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      toast.error(
+        "Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan."
+      );
+      setConfirmUserGroup(null);
       return;
     }
-    if (userGroup.pending_count === 0) return;
-    const confirmMsg = `Ganti semua ${userGroup.pending_count} talangan milik ${userGroup.user_name} senilai ${formatRupiah(userGroup.pending_total)}?`;
-    if (!window.confirm(confirmMsg)) return;
+    const userGroup = confirmUserGroup;
+    const chosenBankId = userSettleBankId || settleBankAccountId;
+    const typeParam =
+      talanganType !== "belanja"
+        ? `&include_ongkir=true&talangan_type=${talanganType}`
+        : `&talangan_type=belanja`;
 
-    // Ambil semua expense pending milik user ini dari query expenses atau fetch
-    const typeParam = talanganType !== "belanja" ? `&include_ongkir=true&talangan_type=${talanganType}` : `&talangan_type=belanja`;
     api
-      .get(`/expenses?is_reimbursement=true&reimbursed_status=pending&special_type=talangan&user_id=${userGroup.user_id ?? ""}&per_page=100${typeParam}`)
+      .get(
+        `/expenses?is_reimbursement=true&reimbursed_status=pending&special_type=talangan&user_id=${
+          userGroup.user_id ?? ""
+        }&per_page=100${typeParam}`
+      )
       .then((res) => {
         const ids = (res.data?.data || []).map((e: Expense) => e.id);
         if (ids.length === 0) {
           toast.error("Tidak ada item talangan pending yang dapat diproses.");
+          setConfirmUserGroup(null);
           return;
         }
         settleMutation.mutate({
           expense_ids: ids,
           action: "mark_reimbursed",
+          bank_account_id: chosenBankId ? Number(chosenBankId) : undefined,
         });
       })
       .catch(() => {
-        toast.error("Gagal mengambil data talangan user.");
+        toast.error("Gagal mengambil data talangan karyawan.");
       });
   };
 
   const getGroupSelectableIds = (group: ExpenseInvoiceGroup): number[] => {
     if (statusFilter !== "reimbursed") {
-      const pendingIds = group.items.filter((it) => !it.reimbursed_at).map((it) => it.id);
+      const pendingIds = group.items
+        .filter((it) => !it.reimbursed_at)
+        .map((it) => it.id);
       if (pendingIds.length > 0) return pendingIds;
     }
     return group.items.map((it) => it.id);
@@ -430,13 +534,8 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     return Array.from(idSet);
   }, [isGroupedMode, expenses, invoiceGroups, statusFilter]);
 
-  // Handle batch selection
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(allVisibleSelectableIds);
-    } else {
-      setSelectedIds([]);
-    }
+    setSelectedIds(checked ? allVisibleSelectableIds : []);
   };
 
   const handleToggleSelect = (id: number) => {
@@ -454,25 +553,28 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         const removeSet = new Set(ids);
         return prev.filter((id) => !removeSet.has(id));
       }
-      const merged = new Set([...prev, ...ids]);
-      return Array.from(merged);
+      return Array.from(new Set([...prev, ...ids]));
     });
   };
 
   const handleBatchSettle = (action: "mark_reimbursed" | "unmark") => {
     if (!isSettleAllowed) {
-      toast.error("Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan.");
+      toast.error(
+        "Akses ditolak: Admin Input tidak memiliki izin untuk menyetujui penggantian talangan."
+      );
       return;
     }
     if (selectedIds.length === 0) return;
     settleMutation.mutate({
       expense_ids: selectedIds,
       action,
-      bank_account_id: action === "mark_reimbursed" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+      bank_account_id:
+        action === "mark_reimbursed" && settleBankAccountId
+          ? Number(settleBankAccountId)
+          : undefined,
     });
   };
 
-  // Total nominal selected
   const selectedNominal = useMemo(() => {
     const sourceItems = isGroupedMode
       ? invoiceGroups.flatMap((grp) => grp.items)
@@ -483,23 +585,33 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       .reduce((sum, e) => sum + (e.total_price || 0), 0);
   }, [isGroupedMode, invoiceGroups, expenses, selectedIds]);
 
-  // Handle delete confirmation
-  const handleDelete = (id: number) => {
-    if (window.confirm("Apakah Anda yakin ingin menghapus catatan talangan ini?")) {
-      setDeletingId(id);
-      onDeleteExpense(id);
-      setTimeout(() => setDeletingId(null), 1000);
-    }
+  const executeDeleteExpense = () => {
+    if (confirmDeleteId === null) return;
+    const id = confirmDeleteId;
+    setDeletingId(id);
+    setConfirmDeleteId(null);
+    onDeleteExpense(id);
+    window.setTimeout(() => setDeletingId(null), 1000);
   };
 
-  const getInitials = (name: string) => {
-    return (name || "HC")
-      .split(" ")
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
+  const handleResetFilters = () => {
+    setStatusFilter("pending");
+    setPeriodMode("all");
+    setSelectedUserId(null);
+    setTalanganType("all");
+    setSearch("");
+    setPage(1);
+    setExpanded({});
+    setMobileExpandedKeys({});
+    setSelectedIds([]);
   };
+
+  const hasActiveFilters =
+    statusFilter !== "pending" ||
+    periodMode !== "all" ||
+    selectedUserId !== null ||
+    talanganType !== "all" ||
+    search.trim() !== "";
 
   const talanganColumns = useMemo<ColumnDef<DataGridFeatures, Expense>[]>(
     () => [
@@ -515,25 +627,24 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   ? "indeterminate"
                   : false
               }
-              onCheckedChange={handleSelectAll}
+              onCheckedChange={(chk) => handleSelectAll(Boolean(chk))}
               aria-label="Pilih semua di halaman ini"
             />
           </div>
         ),
         cell: ({ row }) => {
           const e = row.original;
-          const isChecked = selectedIds.includes(e.id);
           return (
             <div className="flex justify-center">
               <Checkbox
-                checked={isChecked}
+                checked={selectedIds.includes(e.id)}
                 onCheckedChange={() => handleToggleSelect(e.id)}
                 aria-label={`Pilih talangan #${e.id}`}
               />
             </div>
           );
         },
-        size: 44,
+        size: 38,
         enableSorting: false,
       },
       {
@@ -543,13 +654,17 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         cell: ({ row }) => {
           const e = row.original;
           return (
-            <div className="whitespace-nowrap text-slate-700 dark:text-slate-300">
-              <span className="font-medium">{formatDateId(e.expense_date)}</span>
-              <div className="text-[10px] text-slate-400">ID #{e.id}</div>
+            <div className="whitespace-nowrap">
+              <div className="font-semibold text-[var(--ledger-ink)] tabular-nums text-xs">
+                {formatDateId(e.expense_date)}
+              </div>
+              <div className="text-[10px] text-[var(--ledger-muted)] font-mono-ledger">
+                #{e.id}
+              </div>
             </div>
           );
         },
-        size: 110,
+        size: 96,
       },
       {
         accessorKey: "user_name",
@@ -559,16 +674,19 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           const e = row.original;
           return (
             <div className="flex items-center gap-2">
-              <Avatar className="h-6 w-6 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 text-[10px] font-bold">
-                <AvatarFallback>{getInitials(e.user_name || "HC")}</AvatarFallback>
-              </Avatar>
-              <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+              <div
+                aria-hidden="true"
+                className="h-6 w-6 rounded-md bg-[var(--signal-talangan-soft)] text-[var(--signal-talangan)] text-[10px] font-bold flex items-center justify-center shrink-0"
+              >
+                {getInitials(e.user_name || "HC")}
+              </div>
+              <span className="font-semibold text-xs text-[var(--ledger-ink)] truncate max-w-[95px] xl:max-w-[130px]">
                 {e.user_name || "Web / Kasir"}
               </span>
             </div>
           );
         },
-        size: 150,
+        size: 145,
       },
       {
         accessorKey: "item_name",
@@ -578,54 +696,78 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         ),
         cell: ({ row }) => {
           const e = row.original;
-          const isOngkir =
-            (e.category || "").toLowerCase() === "ongkir" ||
-            (e.item_name || "").toLowerCase().startsWith("ongkir") ||
-            (e.supplier && ["gosend", "grabexpress", "lalamove", "maxim", "sicepat", "j&t"].some(k => e.supplier.toLowerCase().includes(k)));
+          const isOngkir = isTalanganOngkirItem(e);
           return (
             <div>
-              <div className="font-bold text-slate-900 dark:text-slate-100 leading-tight flex items-center gap-1.5 flex-wrap">
-                {isOngkir ? (
-                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                    <Truck className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" />
-                    Ongkir Kurir
-                  </Badge>
-                ) : (
-                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                    <ShoppingBag className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                    Belanja
-                  </Badge>
-                )}
-                <span>{e.item_name}</span>
+              <div className="font-semibold text-xs text-[var(--ledger-ink)] leading-tight flex items-center gap-1.5 flex-wrap">
+                {renderTalanganTypeBadge(isOngkir, !isOngkir)}
+                <span className="truncate max-w-[160px] xl:max-w-[210px]" title={e.item_name}>
+                  {e.item_name}
+                </span>
               </div>
               <div className="flex items-center gap-1.5 mt-1">
                 {e.category && (
                   <Badge
                     variant="outline"
-                    className="text-[9px] px-1.5 py-0 font-medium text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                    className="text-[9px] px-1.5 py-0 font-medium text-[var(--ledger-muted)] border-[color:var(--ledger-hairline)]"
                   >
                     {e.category}
                   </Badge>
                 )}
-                <span className="text-[11px] text-slate-500 tabular-nums">
+                <span className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                   {e.qty} {e.unit || "Pcs"}
                 </span>
               </div>
             </div>
           );
         },
-        size: 230,
+        size: 265,
       },
       {
         accessorKey: "supplier",
         id: "supplier",
-        header: ({ column }) => <DataGridColumnHeader title="Toko / Supplier" column={column} />,
-        cell: ({ row }) => (
-          <span className="truncate block max-w-[130px] text-slate-600 dark:text-slate-400">
-            {row.original.supplier || "-"}
-          </span>
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Toko &amp; Nota" column={column} />
         ),
-        size: 135,
+        cell: ({ row }) => {
+          const e = row.original;
+          const tgLink = parseTelegramLink(e.msg_link);
+          return (
+            <div className="space-y-0.5">
+              <div
+                className="truncate max-w-[135px] xl:max-w-[165px] font-medium text-xs text-[var(--ledger-ink)]"
+                title={e.supplier || "-"}
+              >
+                {e.supplier || "-"}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[var(--ledger-muted)]">
+                {e.invoice_number && e.invoice_number !== "-" && (
+                  <span className="font-mono-ledger text-[var(--ledger-ink)]">
+                    #{e.invoice_number}
+                  </span>
+                )}
+                {tgLink?.isUrl && tgLink.url && (
+                  <a
+                    href={tgLink.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 hover:underline"
+                  >
+                    <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
+                    <span>Nota</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              {e.notes && e.notes !== "-" && (
+                <span className="truncate block max-w-[135px] text-[10.5px] text-[var(--ledger-muted)] italic">
+                  {e.notes}
+                </span>
+              )}
+            </div>
+          );
+        },
+        size: 175,
       },
       {
         accessorKey: "total_price",
@@ -641,14 +783,16 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           const e = row.original;
           return (
             <div className="text-right">
-              <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              <div className="font-bold text-xs sm:text-sm text-[var(--ledger-ink)] tabular-nums">
                 {formatRupiah(e.total_price)}
               </div>
-              <div className="text-[10px] text-slate-400">{e.pay_method || "Tunai"}</div>
+              <div className="text-[10px] text-[var(--ledger-muted)]">
+                {e.pay_method || "Tunai"}
+              </div>
             </div>
           );
         },
-        size: 120,
+        size: 138,
       },
       {
         accessorKey: "reimbursed_at",
@@ -661,13 +805,13 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             <div className="space-y-0.5 whitespace-nowrap">
               <Badge
                 variant="outline"
-                className="text-[10px] font-semibold text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 gap-1"
+                className="text-[10px] font-semibold text-emerald-800 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 gap-1"
               >
                 <CheckCircle2 className="w-3 h-3" />
                 <span>Sudah Diganti</span>
               </Badge>
               {e.reimbursed_at && (
-                <div className="text-[10px] text-slate-400 tabular-nums">
+                <div className="text-[10px] text-[var(--ledger-muted)] tabular-nums">
                   {formatDateId(e.reimbursed_at)}
                 </div>
               )}
@@ -676,7 +820,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             <div className="space-y-1 whitespace-nowrap">
               <Badge
                 variant="outline"
-                className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 gap-1"
+                className="text-[10px] font-semibold text-amber-900 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 gap-1"
               >
                 <Clock className="w-3 h-3" />
                 <span>Belum Diganti</span>
@@ -686,7 +830,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   type="button"
                   onClick={() => handleToggleReimbursed(e)}
                   disabled={settleMutation.isPending}
-                  className="text-[10px] font-semibold text-purple-700 hover:text-purple-800 dark:text-purple-300 underline block"
+                  className="text-[11px] font-semibold text-[var(--signal-talangan)] hover:underline block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
                 >
                   Tandai Diganti
                 </button>
@@ -694,40 +838,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             </div>
           );
         },
-        size: 140,
-      },
-      {
-        id: "notes",
-        header: () => <span>Ket / Nota</span>,
-        cell: ({ row }) => {
-          const e = row.original;
-          const tgLink = parseTelegramLink(e.msg_link);
-          return (
-            <div className="text-slate-500 dark:text-slate-400">
-              {e.invoice_number && e.invoice_number !== "-" && (
-                <div className="font-mono text-[10px] text-slate-700 dark:text-slate-300">
-                  #{e.invoice_number}
-                </div>
-              )}
-              <span className="truncate block max-w-[125px] text-[11px]">
-                {e.notes && e.notes !== "-" ? e.notes : "-"}
-              </span>
-              {tgLink?.isUrl && tgLink.url && (
-                <a
-                  href={tgLink.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:underline mt-0.5"
-                >
-                  <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
-                  <span>Telegram</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              )}
-            </div>
-          );
-        },
-        size: 140,
+        size: 145,
       },
       {
         id: "actions",
@@ -735,40 +846,49 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         cell: ({ row }) => {
           const e = row.original;
           return (
-            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-0.5 whitespace-nowrap">
               {onViewExpense && (
-                <button
+                <Button
                   type="button"
+                  size="icon"
+                  variant="ghost"
                   onClick={() => onViewExpense(e)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition-colors"
+                  className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                  aria-label={`Lihat detail ${e.item_name}`}
                   title="Lihat Detail Nota"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                </button>
+                </Button>
               )}
-              <button
+              <Button
                 type="button"
+                size="icon"
+                variant="ghost"
                 onClick={() => onEditExpense(e)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50 transition-colors"
+                className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                aria-label={`Edit ${e.item_name}`}
                 title="Edit Data"
               >
                 <Edit2 className="w-3.5 h-3.5" />
-              </button>
+              </Button>
               {canDelete && (
-                <button
+                <Button
                   type="button"
-                  onClick={() => handleDelete(e.id)}
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setConfirmDeleteId(e.id)}
                   disabled={deletingId === e.id}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors disabled:opacity-50"
+                  className="h-7 w-7 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)]"
+                  aria-label={`Hapus ${e.item_name}`}
                   title="Hapus"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                </Button>
               )}
             </div>
           );
         },
-        size: 110,
+        size: 120,
       },
     ],
     [
@@ -798,9 +918,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     manualPagination: true,
     rowCount: expensesData?.total || 0,
     getRowId: (row: Expense) => String(row.id),
-    state: {
-      pagination: talanganPagination,
-    },
+    state: { pagination: talanganPagination },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(talanganPagination) : updater;
       if (next.pageSize !== perPage) {
@@ -825,8 +943,12 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                 type="button"
                 onClick={row.getToggleExpandedHandler()}
                 aria-expanded={isExpanded}
-                aria-label={isExpanded ? "Tutup rincian item talangan" : "Lihat rincian item talangan"}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
+                aria-label={
+                  isExpanded
+                    ? "Tutup rincian item talangan"
+                    : "Lihat rincian item talangan"
+                }
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] hover:bg-[var(--ledger-recessed)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {isExpanded ? (
                   <ChevronDown className="w-4 h-4" />
@@ -837,94 +959,95 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             </div>
           );
         },
-        size: 40,
+        size: 36,
         enableSorting: false,
         meta: {
           expandedContent: (group: ExpenseInvoiceGroup) => (
-            <div className="bg-slate-50/90 dark:bg-slate-900/70 px-4 sm:px-6 py-3 border-t border-slate-200/70 dark:border-slate-800 space-y-2.5">
+            <div className="ledger-recessed-band px-3.5 py-2.5 border-t border-[color:var(--ledger-hairline)] space-y-1.5">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  <Receipt className="w-3.5 h-3.5 text-purple-700 dark:text-purple-400" />
+                <div className="flex items-center gap-2 text-xs font-semibold text-[var(--ledger-ink)] flex-wrap">
+                  <Receipt className="w-3.5 h-3.5 text-[var(--signal-talangan)]" />
                   <span>Rincian Item Talangan ({group.items.length} item)</span>
                   {group.invoice_number && group.invoice_number !== "-" && (
-                    <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0">
+                    <span className="font-mono-ledger text-[11px] text-[var(--ledger-muted)]">
                       #{group.invoice_number}
-                    </Badge>
+                    </span>
                   )}
                   {group.group_key.startsWith("grp:") && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-purple-700 border-purple-200 dark:text-purple-300 dark:border-purple-800">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 text-purple-800 border-purple-200 dark:text-purple-200 dark:border-purple-800"
+                    >
                       Grup Multi-Item
                     </Badge>
                   )}
                   {group.group_key.startsWith("tg:") && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-sky-700 border-sky-200 dark:text-sky-300 dark:border-sky-800">
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 text-sky-800 border-sky-200 dark:text-sky-200 dark:border-sky-800"
+                    >
                       Grup Telegram
                     </Badge>
                   )}
                 </div>
-                {isSettleAllowed && group.items.some((it) => !it.reimbursed_at) && group.items.length > 1 && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleToggleGroupReimbursed(group)}
-                    disabled={settleMutation.isPending}
-                    className="h-7 text-[11px] rounded-lg px-2.5 font-semibold text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-300 dark:border-emerald-800"
-                  >
-                    Tandai Semua Diganti
-                  </Button>
-                )}
+                {isSettleAllowed &&
+                  group.items.some((it) => !it.reimbursed_at) &&
+                  group.items.length > 1 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleToggleGroupReimbursed(group)}
+                      disabled={settleMutation.isPending}
+                      className="h-7 text-[11px] rounded-md px-2.5 font-semibold text-emerald-800 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-200 dark:border-emerald-800 dark:hover:bg-emerald-950/40"
+                    >
+                      Tandai Semua Diganti
+                    </Button>
+                  )}
               </div>
 
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-950/60 overflow-x-auto">
+              <div className="overflow-x-auto border-y border-[color:var(--ledger-hairline)]">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-400 bg-slate-50/70 dark:bg-slate-900/60">
-                      <th className="text-left py-2 px-3">Barang / Keperluan</th>
-                      <th className="text-left py-2 px-3">Kategori</th>
-                      <th className="text-right py-2 px-3">Qty</th>
-                      <th className="text-right py-2 px-3">Harga</th>
-                      <th className="text-left py-2 px-3">Status Ganti</th>
-                      <th className="text-center py-2 px-3">Aksi</th>
+                    <tr className="border-b border-[color:var(--ledger-hairline)] text-[11px] font-semibold text-[var(--ledger-muted)]">
+                      <th className="text-left py-1.5 px-2">Barang / Keperluan</th>
+                      <th className="text-left py-1.5 px-2">Kategori</th>
+                      <th className="text-right py-1.5 px-2">Qty</th>
+                      <th className="text-right py-1.5 px-2">Harga</th>
+                      <th className="text-left py-1.5 px-2">Status Ganti</th>
+                      <th className="text-center py-1.5 px-2">Aksi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-[color:var(--ledger-hairline)]">
                     {group.items.map((item) => {
                       const itemOngkir = isTalanganOngkirItem(item);
                       const isDone = !!item.reimbursed_at;
                       return (
-                        <tr key={item.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40">
-                          <td className="py-2 px-3">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 flex-wrap">
-                              {itemOngkir ? (
-                                <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                                  <Truck className="w-2.5 h-2.5" />
-                                  Ongkir
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                                  <ShoppingBag className="w-2.5 h-2.5" />
-                                  Belanja
-                                </Badge>
-                              )}
+                        <tr
+                          key={item.id}
+                          className="ledger-hover-surface"
+                        >
+                          <td className="py-1.5 px-2">
+                            <div className="font-semibold text-[var(--ledger-ink)] flex items-center gap-1.5 flex-wrap">
+                              {renderTalanganTypeBadge(itemOngkir, !itemOngkir)}
                               <span>{item.item_name}</span>
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
+                          <td className="py-1.5 px-2 text-[var(--ledger-muted)]">
                             {item.category || "-"}
                           </td>
-                          <td className="py-2 px-3 text-right tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[var(--ledger-muted)] whitespace-nowrap">
                             {item.qty} {item.unit || "Pcs"}
                           </td>
-                          <td className="py-2 px-3 text-right font-semibold tabular-nums text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                          <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[var(--ledger-ink)] whitespace-nowrap">
                             {formatRupiah(item.total_price)}
                           </td>
-                          <td className="py-2 px-3 whitespace-nowrap">
+                          <td className="py-1.5 px-2 whitespace-nowrap">
                             {isDone ? (
                               <div className="flex items-center gap-2">
                                 <Badge
                                   variant="outline"
-                                  className="text-[10px] font-semibold text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 gap-1"
+                                  className="text-[10px] font-semibold text-emerald-800 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 gap-1"
                                 >
                                   <CheckCircle2 className="w-3 h-3" />
                                   <span>Sudah Diganti</span>
@@ -934,7 +1057,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                                     type="button"
                                     onClick={() => handleToggleReimbursed(item)}
                                     disabled={settleMutation.isPending}
-                                    className="text-[10px] font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 underline"
+                                    className="text-[10px] font-medium text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] underline"
                                   >
                                     Batal
                                   </button>
@@ -944,7 +1067,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                               <div className="flex items-center gap-2">
                                 <Badge
                                   variant="outline"
-                                  className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 gap-1"
+                                  className="text-[10px] font-semibold text-amber-900 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 gap-1"
                                 >
                                   <Clock className="w-3 h-3" />
                                   <span>Belum Diganti</span>
@@ -954,7 +1077,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                                     type="button"
                                     onClick={() => handleToggleReimbursed(item)}
                                     disabled={settleMutation.isPending}
-                                    className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 dark:text-purple-300 underline"
+                                    className="text-[10px] font-semibold text-[var(--signal-talangan)] hover:underline"
                                   >
                                     Diganti
                                   </button>
@@ -962,39 +1085,45 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                               </div>
                             )}
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-1.5 px-2">
                             <div className="flex items-center justify-center gap-1 whitespace-nowrap">
                               {onViewExpense && (
-                                <button
+                                <Button
                                   type="button"
+                                  size="icon"
+                                  variant="ghost"
                                   onClick={() => onViewExpense(item)}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50 dark:text-slate-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 transition-colors"
+                                  className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
                                   aria-label={`Lihat detail ${item.item_name}`}
                                   title="Lihat Detail Nota"
                                 >
                                   <Eye className="w-3.5 h-3.5" />
-                                </button>
+                                </Button>
                               )}
-                              <button
+                              <Button
                                 type="button"
+                                size="icon"
+                                variant="ghost"
                                 onClick={() => onEditExpense(item)}
-                                className="p-1.5 rounded-lg text-slate-500 hover:text-amber-700 hover:bg-amber-50 dark:text-slate-400 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 transition-colors"
+                                className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
                                 aria-label={`Edit ${item.item_name}`}
                                 title="Edit Data"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
-                              </button>
+                              </Button>
                               {canDelete && (
-                                <button
+                                <Button
                                   type="button"
-                                  onClick={() => handleDelete(item.id)}
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => setConfirmDeleteId(item.id)}
                                   disabled={deletingId === item.id}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 transition-colors disabled:opacity-50"
+                                  className="h-7 w-7 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)]"
                                   aria-label={`Hapus ${item.item_name}`}
                                   title="Hapus"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </td>
@@ -1023,7 +1152,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             <div className="flex justify-center">
               <Checkbox
                 checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                onCheckedChange={handleSelectAll}
+                onCheckedChange={(chk) => handleSelectAll(Boolean(chk))}
                 aria-label="Pilih semua invoice di halaman ini"
               />
             </div>
@@ -1033,7 +1162,8 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           const grp = row.original;
           const selectableIds = getGroupSelectableIds(grp);
           const allChecked =
-            selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
+            selectableIds.length > 0 &&
+            selectableIds.every((id) => selectedIds.includes(id));
           const someChecked =
             !allChecked && selectableIds.some((id) => selectedIds.includes(id));
           return (
@@ -1041,12 +1171,14 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               <Checkbox
                 checked={allChecked ? true : someChecked ? "indeterminate" : false}
                 onCheckedChange={() => handleToggleSelectGroup(grp)}
-                aria-label={`Pilih invoice talangan ${grp.supplier || grp.user_name || grp.group_key}`}
+                aria-label={`Pilih invoice talangan ${
+                  grp.supplier || grp.user_name || grp.group_key
+                }`}
               />
             </div>
           );
         },
-        size: 44,
+        size: 38,
         enableSorting: false,
       },
       {
@@ -1056,15 +1188,19 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         cell: ({ row }) => {
           const grp = row.original;
           return (
-            <div className="whitespace-nowrap text-slate-700 dark:text-slate-300">
-              <span className="font-medium">{formatDateId(grp.expense_date)}</span>
-              <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                {grp.items_count > 1 ? `${grp.items_count} item` : `ID #${grp.items[0]?.id ?? "-"}`}
+            <div className="whitespace-nowrap">
+              <div className="font-semibold text-[var(--ledger-ink)] tabular-nums text-xs">
+                {formatDateId(grp.expense_date)}
+              </div>
+              <div className="text-[10px] text-[var(--ledger-muted)] font-mono-ledger">
+                {grp.items_count > 1
+                  ? `${grp.items_count} item`
+                  : `#${grp.items[0]?.id ?? "-"}`}
               </div>
             </div>
           );
         },
-        size: 112,
+        size: 96,
       },
       {
         accessorKey: "user_name",
@@ -1074,16 +1210,19 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           const grp = row.original;
           return (
             <div className="flex items-center gap-2">
-              <Avatar className="h-6 w-6 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 text-[10px] font-bold">
-                <AvatarFallback>{getInitials(grp.user_name || "HC")}</AvatarFallback>
-              </Avatar>
-              <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[120px]">
+              <div
+                aria-hidden="true"
+                className="h-6 w-6 rounded-md bg-[var(--signal-talangan-soft)] text-[var(--signal-talangan)] text-[10px] font-bold flex items-center justify-center shrink-0"
+              >
+                {getInitials(grp.user_name || "HC")}
+              </div>
+              <span className="font-semibold text-xs text-[var(--ledger-ink)] truncate max-w-[105px] xl:max-w-[140px]">
                 {grp.user_name || "Web / Kasir"}
               </span>
             </div>
           );
         },
-        size: 150,
+        size: 140,
       },
       {
         id: "item_summary",
@@ -1099,31 +1238,15 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
 
           return (
             <div>
-              <div className="font-bold text-slate-900 dark:text-slate-100 leading-tight flex items-center gap-1.5 flex-wrap">
-                {hasOngkir && !hasBelanja ? (
-                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                    <Truck className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400" />
-                    Ongkir Kurir
-                  </Badge>
-                ) : hasOngkir && hasBelanja ? (
-                  <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                    <Receipt className="w-2.5 h-2.5" />
-                    Belanja &amp; Ongkir
-                  </Badge>
-                ) : (
-                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 text-[9px] px-1.5 py-0 font-semibold gap-1 shrink-0">
-                    <ShoppingBag className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
-                    Belanja
-                  </Badge>
-                )}
-                <span className="truncate max-w-[185px]">{summary.title}</span>
+              <div className="font-semibold text-xs text-[var(--ledger-ink)] leading-tight flex items-center gap-1.5 flex-wrap">
+                {renderTalanganTypeBadge(hasOngkir, hasBelanja)}
+                <span className="truncate max-w-[185px] xl:max-w-[240px]" title={summary.title}>
+                  {summary.title}
+                </span>
                 {summary.extraCount > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] px-1.5 py-0 font-semibold text-purple-700 bg-purple-50 dark:bg-purple-950/60 dark:text-purple-300"
-                  >
+                  <span className="text-xs font-semibold text-[var(--signal-talangan)]">
                     +{summary.extraCount} item
-                  </Badge>
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
@@ -1131,12 +1254,12 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   <Badge
                     key={cat}
                     variant="outline"
-                    className="text-[9px] px-1.5 py-0 font-medium text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    className="text-[9px] px-1.5 py-0 font-medium text-[var(--ledger-muted)] border-[color:var(--ledger-hairline)]"
                   >
                     {cat}
                   </Badge>
                 ))}
-                <span className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
+                <span className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                   {grp.items.length === 1
                     ? `${grp.items[0].qty} ${grp.items[0].unit || "Pcs"}`
                     : `${grp.items_count} item dalam 1 invoice`}
@@ -1150,13 +1273,50 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       {
         accessorKey: "supplier",
         id: "supplier",
-        header: ({ column }) => <DataGridColumnHeader title="Toko / Supplier" column={column} />,
-        cell: ({ row }) => (
-          <span className="truncate block max-w-[130px] text-slate-700 dark:text-slate-300">
-            {row.original.supplier || "-"}
-          </span>
+        header: ({ column }) => (
+          <DataGridColumnHeader title="Toko &amp; Nota" column={column} />
         ),
-        size: 135,
+        cell: ({ row }) => {
+          const grp = row.original;
+          const rawLink = grp.msg_link || grp.items.find((it) => it.msg_link)?.msg_link;
+          const tgLink = parseTelegramLink(rawLink);
+          const firstNote = grp.items.find((it) => it.notes && it.notes !== "-")?.notes;
+          return (
+            <div className="space-y-0.5">
+              <div
+                className="truncate max-w-[155px] xl:max-w-[185px] font-medium text-xs text-[var(--ledger-ink)]"
+                title={grp.supplier || "-"}
+              >
+                {grp.supplier || "-"}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[var(--ledger-muted)]">
+                {grp.invoice_number && grp.invoice_number !== "-" && (
+                  <span className="font-mono-ledger text-[var(--ledger-ink)]">
+                    #{grp.invoice_number}
+                  </span>
+                )}
+                {tgLink?.isUrl && tgLink.url && (
+                  <a
+                    href={tgLink.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-300 hover:underline"
+                  >
+                    <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
+                    <span>Nota</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+              </div>
+              {firstNote && (
+                <span className="truncate block max-w-[155px] text-[10.5px] text-[var(--ledger-muted)] italic">
+                  {firstNote}
+                </span>
+              )}
+            </div>
+          );
+        },
+        size: 175,
       },
       {
         accessorKey: "total_amount",
@@ -1170,20 +1330,21 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         ),
         cell: ({ row }) => {
           const grp = row.original;
-          const extraFees = (grp.shipping_fee || 0) + (grp.tax || 0) + (grp.other_fee || 0);
+          const extraFees =
+            (grp.shipping_fee || 0) + (grp.tax || 0) + (grp.other_fee || 0);
           return (
             <div className="text-right">
-              <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+              <div className="font-bold text-xs sm:text-sm text-[var(--ledger-ink)] tabular-nums">
                 {formatRupiah(grp.total_amount)}
               </div>
-              <div className="text-[10px] text-slate-600 dark:text-slate-400">
+              <div className="text-[10px] text-[var(--ledger-muted)]">
                 {grp.pay_method || "Tunai"}
-                {(extraFees > 0 || grp.discount > 0) && " · incl biaya/diskon"}
+                {(extraFees > 0 || grp.discount > 0) && ", termasuk biaya/diskon"}
               </div>
             </div>
           );
         },
-        size: 135,
+        size: 138,
       },
       {
         id: "reimbursed_at",
@@ -1207,13 +1368,13 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               <div className="space-y-0.5 whitespace-nowrap">
                 <Badge
                   variant="outline"
-                  className="text-[10px] font-semibold text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 gap-1"
+                  className="text-[10px] font-semibold text-emerald-800 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 gap-1"
                 >
                   <CheckCircle2 className="w-3 h-3" />
                   <span>Sudah Diganti</span>
                 </Badge>
                 {latestReimbursedAt && (
-                  <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
+                  <div className="text-[10px] text-[var(--ledger-muted)] tabular-nums">
                     {formatDateId(latestReimbursedAt)}
                   </div>
                 )}
@@ -1230,14 +1391,14 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
               <div className="space-y-1 whitespace-nowrap">
                 <Badge
                   variant="outline"
-                  className="text-[10px] font-semibold text-sky-700 border-sky-300 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 gap-1"
+                  className="text-[10px] font-semibold text-sky-800 border-sky-300 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800 gap-1"
                 >
                   <Clock className="w-3 h-3" />
                   <span>
                     Sebagian Diganti ({doneCount}/{totalCount})
                   </span>
                 </Badge>
-                <div className="text-[10px] text-slate-600 dark:text-slate-400 tabular-nums">
+                <div className="text-[10px] text-[var(--ledger-muted)] tabular-nums">
                   Sisa {formatRupiah(pendingNominal)}
                 </div>
                 {isSettleAllowed && (
@@ -1245,7 +1406,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                     type="button"
                     onClick={() => handleToggleGroupReimbursed(grp)}
                     disabled={settleMutation.isPending}
-                    className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 dark:text-purple-300 underline block"
+                    className="text-[11px] font-semibold text-[var(--signal-talangan)] hover:underline block"
                   >
                     Lunasi Sisa
                   </button>
@@ -1258,7 +1419,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
             <div className="space-y-1 whitespace-nowrap">
               <Badge
                 variant="outline"
-                className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 gap-1"
+                className="text-[10px] font-semibold text-amber-900 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 gap-1"
               >
                 <Clock className="w-3 h-3" />
                 <span>Belum Diganti</span>
@@ -1268,45 +1429,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   type="button"
                   onClick={() => handleToggleGroupReimbursed(grp)}
                   disabled={settleMutation.isPending}
-                  className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 dark:text-purple-300 underline block"
+                  className="text-[11px] font-semibold text-[var(--signal-talangan)] hover:underline block"
                 >
                   Tandai Diganti
                 </button>
-              )}
-            </div>
-          );
-        },
-        size: 165,
-      },
-      {
-        id: "notes",
-        header: () => <span>Ket / Nota</span>,
-        cell: ({ row }) => {
-          const grp = row.original;
-          const rawLink = grp.msg_link || grp.items.find((it) => it.msg_link)?.msg_link;
-          const tgLink = parseTelegramLink(rawLink);
-          const firstNote = grp.items.find((it) => it.notes && it.notes !== "-")?.notes;
-          return (
-            <div className="text-slate-600 dark:text-slate-400">
-              {grp.invoice_number && grp.invoice_number !== "-" && (
-                <div className="font-mono text-[10px] text-slate-700 dark:text-slate-300">
-                  #{grp.invoice_number}
-                </div>
-              )}
-              <span className="truncate block max-w-[125px] text-[11px]">
-                {firstNote || "-"}
-              </span>
-              {tgLink?.isUrl && tgLink.url && (
-                <a
-                  href={tgLink.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[10px] text-blue-700 dark:text-blue-400 hover:underline mt-0.5"
-                >
-                  <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
-                  <span>Telegram</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
               )}
             </div>
           );
@@ -1322,56 +1448,65 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           const isSingle = grp.items.length === 1;
           const isExpanded = row.getIsExpanded();
           return (
-            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-0.5 whitespace-nowrap">
               {onViewExpense && firstItem && (
-                <button
+                <Button
                   type="button"
+                  size="icon"
+                  variant="ghost"
                   onClick={() => onViewExpense(firstItem)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50 dark:text-slate-400 dark:hover:text-blue-300 dark:hover:bg-blue-950/50 transition-colors"
+                  className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
                   aria-label="Lihat detail nota"
                   title="Lihat Detail Nota"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                </button>
+                </Button>
               )}
               {isSingle && firstItem ? (
                 <>
-                  <button
+                  <Button
                     type="button"
+                    size="icon"
+                    variant="ghost"
                     onClick={() => onEditExpense(firstItem)}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-700 hover:bg-amber-50 dark:text-slate-400 dark:hover:text-amber-300 dark:hover:bg-amber-950/50 transition-colors"
-                    aria-label="Edit data"
+                    className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                    aria-label={`Edit ${firstItem.item_name}`}
                     title="Edit Data"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                   {canDelete && (
-                    <button
+                    <Button
                       type="button"
-                      onClick={() => handleDelete(firstItem.id)}
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setConfirmDeleteId(firstItem.id)}
                       disabled={deletingId === firstItem.id}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-300 dark:hover:bg-rose-950/50 transition-colors disabled:opacity-50"
-                      aria-label="Hapus item"
+                      className="h-7 w-7 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)]"
+                      aria-label={`Hapus ${firstItem.item_name}`}
                       title="Hapus"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    </Button>
                   )}
                 </>
               ) : (
-                <button
+                <Button
                   type="button"
+                  size="sm"
+                  variant="outline"
                   onClick={row.getToggleExpandedHandler()}
-                  className="px-2 py-1 rounded-lg text-[11px] font-semibold text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:hover:bg-purple-950/40 transition-colors"
-                  title="Lihat rincian item untuk edit / hapus per item"
+                  aria-expanded={isExpanded}
+                  className="h-7 px-2 text-[11px] font-semibold rounded-md"
+                  title="Lihat rincian item untuk edit atau hapus per item"
                 >
-                  {isExpanded ? "Tutup" : `Item (${grp.items.length})`}
-                </button>
+                  {isExpanded ? "Tutup" : `Items (${grp.items.length})`}
+                </Button>
               )}
             </div>
           );
         },
-        size: 115,
+        size: 118,
       },
     ],
     [
@@ -1413,781 +1548,673 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
     },
   });
 
+  const yearOptions = useMemo(() => {
+    const yrs = new Set([
+      currentYear - 2,
+      currentYear - 1,
+      currentYear,
+      currentYear + 1,
+      selectedYear,
+    ]);
+    return Array.from(yrs)
+      .sort((a, b) => a - b)
+      .map((yr) => ({ value: String(yr), label: String(yr) }));
+  }, [currentYear, selectedYear]);
+
+  const monthOptions = useMemo(
+    () => MONTH_NAMES.map((name, idx) => ({ value: String(idx + 1), label: name })),
+    []
+  );
+
+  const userOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach((u) => {
+      map.set(String(u.id), u.name);
+    });
+    (summaryData?.by_user || []).forEach((u) => {
+      if (u.user_id !== null && u.user_id !== undefined && !map.has(String(u.user_id))) {
+        map.set(String(u.user_id), u.user_name || `User #${u.user_id}`);
+      }
+    });
+    return [
+      { value: "", label: "Semua Karyawan" },
+      ...Array.from(map.entries()).map(([value, label]) => ({
+        value,
+        label,
+      })),
+    ];
+  }, [users, summaryData?.by_user]);
+
+  const statusTabsList = useMemo<LedgerStatusTabOption<TalanganStatusFilter>[]>(
+    () => [
+      {
+        value: "pending",
+        label: "Belum Diganti",
+        count: summaryData?.pending_count || 0,
+      },
+      {
+        value: "reimbursed",
+        label: "Sudah Diganti",
+        count: summaryData?.reimbursed_count || 0,
+      },
+      { value: "all", label: "Semua", count: summaryData?.total_count || 0 },
+    ],
+    [
+      summaryData?.pending_count,
+      summaryData?.reimbursed_count,
+      summaryData?.total_count,
+    ]
+  );
+
+  const pendingBelanja = summaryData?.belanja_pending_total || 0;
+  const pendingOngkir = summaryData?.ongkir_pending_total || 0;
+  const pendingEmployeesCount =
+    summaryData?.by_user?.filter((u) => u.pending_count > 0).length || 0;
+
   return (
-    <div className="space-y-6">
-      {/* 1. Compact Action Bar */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Talangan Tim:
-          </span>
-          {summaryData && summaryData.pending_count > 0 && (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-            >
-              {summaryData.pending_count} Perlu Diganti
-            </Badge>
-          )}
+    <div className="space-y-3.5 pb-6">
+      {/* 1. Editorial Action Header (Flat on Canvas) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="space-y-0.5">
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Buku Talangan &amp; Penggantian Karyawan
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {summaryData && summaryData.pending_count > 0
+              ? `${summaryData.pending_count} nota perlu diganti untuk ${pendingEmployeesCount} karyawan`
+              : "Semua talangan tercatat"}
+          </p>
         </div>
 
         {onAddNewTalangan && (
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              onClick={onAddNewTalangan}
-              size="sm"
-              className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Talangan Baru</span>
-            </Button>
-          </div>
+          <Button
+            type="button"
+            onClick={onAddNewTalangan}
+            size="sm"
+            className="min-h-[40px] sm:min-h-[36px] bg-[#5B3EAE] hover:bg-[#493091] text-white rounded-lg text-xs font-semibold px-3.5 gap-1.5 shrink-0 ledger-press"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Talangan Baru</span>
+          </Button>
         )}
       </div>
 
+      {/* Role Read-Only Notice (Hairline Strip, Zero Card) */}
       {!isSettleAllowed && (
-        <div className="flex items-center gap-2.5 p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl text-amber-900 dark:text-amber-200 text-xs">
-          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <div className="border-l-2 border-amber-600 signal-surface-dp px-3.5 py-2.5 flex items-start gap-2 text-xs text-[var(--ledger-ink)]">
+          <AlertCircle className="w-4 h-4 shrink-0 text-[var(--signal-dp)] mt-0.5" />
           <span>
-            <strong>Mode Lihat Talangan:</strong> Role Admin Input hanya memiliki akses untuk mencatat dan melihat data talangan. Persetujuan dan pelunasan penggantian talangan ("Ganti Semua") hanya dapat dilakukan oleh Owner / Super Admin.
+            <strong className="font-semibold">Mode Lihat Talangan:</strong> Role Admin Input
+            hanya memiliki akses untuk mencatat dan melihat data talangan. Persetujuan
+            penggantian dilakukan oleh Owner.
           </span>
         </div>
       )}
 
-      {/* 2. KPI Cards: Ringkasan Status Talangan */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: Belum Diganti (Pending) */}
-        <Card
-          onClick={() => {
+      {/* 2. Unified Hairline KPI Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isSummaryLoading}
+        primary={{
+          label: "Belum Diganti (Pending)",
+          value: formatRupiah(summaryData?.pending_total || 0),
+          valueClassName: "text-[var(--signal-dp)]",
+          subtext: `${summaryData?.pending_count || 0} nota perlu diganti`,
+          active: statusFilter === "pending",
+          accentTone: "talangan",
+          onClick: () => {
             setStatusFilter("pending");
             setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusFilter === "pending"
-              ? "ring-2 ring-amber-500 border-amber-300 bg-amber-50/40 dark:bg-amber-950/20"
-              : "hover:border-amber-300 dark:hover:border-amber-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Belum Diganti (Pending)
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center">
-                <Clock className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">
-                  {formatRupiah(summaryData?.pending_total || 0)}
-                </div>
-              )}
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex flex-col gap-0.5">
-                <span className="flex items-center gap-1.5">
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {summaryData?.pending_count || 0}
-                  </span>{" "}
-                  nota perlu diganti
-                </span>
-                {(summaryData?.ongkir_pending_count || 0) > 0 && (
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                    Belanja: {formatRupiah(summaryData?.belanja_pending_total || 0)} • Ongkir: {formatRupiah(summaryData?.ongkir_pending_total || 0)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          },
+          segments: [
+            {
+              key: "belanja",
+              label: "Belanja",
+              value: pendingBelanja,
+              displayValue: formatRupiah(pendingBelanja),
+              colorClass: "bg-[#5B3EAE] dark:bg-[#AD9CFF]",
+            },
+            {
+              key: "ongkir",
+              label: "Ongkir Kurir",
+              value: pendingOngkir,
+              displayValue: formatRupiah(pendingOngkir),
+              colorClass: "bg-sky-600 dark:bg-sky-400",
+            },
+          ],
+        }}
+        supporting={[
+          {
+            key: "reimbursed",
+            label: "Sudah Diganti (Lunas)",
+            value: formatRupiah(summaryData?.reimbursed_total || 0),
+            valueClassName: "text-[var(--signal-cleared)]",
+            subtext: `${summaryData?.reimbursed_count || 0} nota diselesaikan`,
+            active: statusFilter === "reimbursed",
+            accentTone: "cleared",
+            onClick: () => {
+              setStatusFilter("reimbursed");
+              setPage(1);
+            },
+          },
+          {
+            key: "all-talangan",
+            label: "Total Seluruh Talangan",
+            value: formatRupiah(summaryData?.total_nominal || 0),
+            subtext: `${summaryData?.total_count || 0} total nota tercatat`,
+            active: statusFilter === "all",
+            accentTone: "talangan",
+            onClick: () => {
+              setStatusFilter("all");
+              setPage(1);
+            },
+          },
+          {
+            key: "employees",
+            label: "Karyawan Menalangi",
+            value: `${summaryData?.by_user?.length || 0} Orang`,
+            subtext: `${pendingEmployeesCount} orang menunggu ganti`,
+          },
+        ]}
+      />
 
-        {/* Card 2: Sudah Diganti (Selesai) */}
-        <Card
-          onClick={() => {
-            setStatusFilter("reimbursed");
-            setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusFilter === "reimbursed"
-              ? "ring-2 ring-emerald-500 border-emerald-300 bg-emerald-50/40 dark:bg-emerald-950/20"
-              : "hover:border-emerald-300 dark:hover:border-emerald-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Sudah Diganti (Lunas)
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center justify-center">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                  {formatRupiah(summaryData?.reimbursed_total || 0)}
-                </div>
-              )}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {summaryData?.reimbursed_count || 0}
-                </span>{" "}
-                nota telah diselesaikan
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Card 3: Total Keseluruhan */}
-        <Card
-          onClick={() => {
-            setStatusFilter("all");
-            setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusFilter === "all"
-              ? "ring-2 ring-purple-500 border-purple-300 bg-purple-50/40 dark:bg-purple-950/20"
-              : "hover:border-purple-300 dark:hover:border-purple-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Total Seluruh Talangan
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 flex items-center justify-center">
-                <Wallet className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {formatRupiah(summaryData?.total_nominal || 0)}
-                </div>
-              )}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  {summaryData?.total_count || 0}
-                </span>{" "}
-                total nota tercatat
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Card 4: Karyawan Terlibat */}
-        <Card className="border rounded-2xl shadow-xs bg-white dark:bg-slate-900">
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Karyawan Menalangi
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 flex items-center justify-center">
-                <Users className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-16 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                  {summaryData?.by_user?.length || 0} Orang
-                </div>
-              )}
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  {summaryData?.by_user?.filter((u) => u.pending_count > 0).length || 0}
-                </span>{" "}
-                orang menunggu ganti
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 3. Rekap Saldo Talangan per Karyawan */}
+      {/* 3. Flat Staff Balance Directory (Collapses 4 Nested Card Levels -> 1 Hairline List) */}
       {summaryData && summaryData.by_user && summaryData.by_user.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                Rekap Saldo Talangan per Karyawan
+        <section aria-label="Rekap saldo talangan per karyawan" className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h3 className="text-sm font-bold text-[var(--ledger-ink)] truncate">
+                Rekap Saldo per Karyawan
               </h3>
-              <Badge variant="outline" className="text-[10px] text-slate-600 border-slate-200">
-                {summaryData.by_user.length} Anggota
-              </Badge>
+              <span className="text-xs text-[var(--ledger-muted)] tabular-nums shrink-0">
+                {summaryData.by_user.length} anggota
+              </span>
             </div>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={() => setIsUsersExpanded((prev) => !prev)}
-              className="h-8 text-xs text-slate-500 hover:text-slate-800 gap-1 px-2"
+              aria-expanded={isUsersExpanded}
+              className="min-h-[38px] text-xs font-medium text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] gap-1 px-2.5"
             >
               <span>{isUsersExpanded ? "Tutup Rekap" : "Buka Rekap"}</span>
-              {isUsersExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {isUsersExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
             </Button>
           </div>
 
           {isUsersExpanded && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden divide-y divide-[color:var(--ledger-hairline)]">
               {summaryData.by_user.map((userGroup) => {
                 const isSelected = selectedUserId === userGroup.user_id;
                 const hasPending = userGroup.pending_count > 0;
+                const isReimbursedView = statusFilter === "reimbursed";
+
+                const belanjaAmt = isReimbursedView
+                  ? userGroup.belanja_reimbursed_total || 0
+                  : userGroup.belanja_pending_total || 0;
+                const ongkirAmt = isReimbursedView
+                  ? userGroup.ongkir_reimbursed_total || 0
+                  : userGroup.ongkir_pending_total || 0;
+                const belanjaCnt = isReimbursedView
+                  ? userGroup.belanja_reimbursed_count || 0
+                  : userGroup.belanja_pending_count || 0;
+                const ongkirCnt = isReimbursedView
+                  ? userGroup.ongkir_reimbursed_count || 0
+                  : userGroup.ongkir_pending_count || 0;
+                const splitTotal = belanjaAmt + ongkirAmt;
+                const mainTotal = isReimbursedView
+                  ? userGroup.reimbursed_total
+                  : userGroup.pending_total;
 
                 return (
                   <div
                     key={userGroup.user_id ?? "unknown"}
-                    className={`rounded-xl border p-3.5 flex flex-col justify-between gap-3 transition-all ${
-                      isSelected
-                        ? "border-purple-400 bg-purple-50/50 dark:bg-purple-950/30 ring-1 ring-purple-400"
-                        : "border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar className="h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white text-xs font-bold text-purple-700">
-                          <AvatarFallback>{getInitials(userGroup.user_name)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-xs text-slate-900 dark:text-slate-100 truncate">
-                            {userGroup.user_name}
-                          </div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {userGroup.telegram_id ? `@ID: ${userGroup.telegram_id}` : "Input Web / Kasir"}
-                          </div>
+                      className={cn(
+                        "px-3.5 py-2 grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center transition-colors",
+                        isSelected
+                          ? "signal-surface-talangan"
+                          : "ledger-hover-recessed"
+                      )}
+                    >
+                      {/* Staff Identity */}
+                      <div className="lg:col-span-3 flex items-center gap-2.5 min-w-0">
+                        <div
+                          aria-hidden="true"
+                          className="w-8 h-8 rounded-lg bg-[var(--ledger-recessed)] text-[var(--signal-talangan)] text-xs font-bold flex items-center justify-center shrink-0"
+                        >
+                        {getInitials(userGroup.user_name)}
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="font-semibold text-sm text-[var(--ledger-ink)] truncate">
+                          {userGroup.user_name}
+                        </div>
+                        <div className="text-xs text-[var(--ledger-muted)] truncate">
+                          {userGroup.telegram_id
+                            ? `Telegram ID ${userGroup.telegram_id}`
+                            : "Input Web / Kasir"}{" "}
+                          ({userGroup.pending_count} pending / {userGroup.total_count} total)
                         </div>
                       </div>
+                    </div>
 
-                      <button
+                    {/* Inline Belanja vs Ongkir Split (No Nested Boxes) */}
+                    <div className="lg:col-span-4 space-y-1.5 min-w-0">
+                      {splitTotal > 0 && (
+                        <div
+                          aria-hidden="true"
+                          className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden flex"
+                        >
+                          <div
+                            className="h-full bg-[#5B3EAE] dark:bg-[#AD9CFF]"
+                            style={{ width: `${(belanjaAmt / splitTotal) * 100}%` }}
+                          />
+                          <div
+                            className="h-full bg-sky-600 dark:bg-sky-400"
+                            style={{ width: `${(ongkirAmt / splitTotal) * 100}%` }}
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums">
+                        <span className="inline-flex items-center gap-1 text-[var(--ledger-muted)]">
+                          <ShoppingBag className="w-3 h-3 text-[var(--signal-talangan)] shrink-0" />
+                          <span>Belanja:</span>
+                          <strong className="font-semibold text-[var(--ledger-ink)]">
+                            {formatRupiah(belanjaAmt)}
+                          </strong>
+                          <span className="text-[11px]">({belanjaCnt})</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[var(--ledger-muted)]">
+                          <Truck className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
+                          <span>Ongkir:</span>
+                          <strong className="font-semibold text-[var(--ledger-ink)]">
+                            {formatRupiah(ongkirAmt)}
+                          </strong>
+                          <span className="text-[11px]">({ongkirCnt})</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Primary Balance Figure */}
+                    <div className="lg:col-span-2 flex items-center justify-between lg:block lg:text-right tabular-nums">
+                      <span className="lg:hidden text-xs text-[var(--ledger-muted)]">
+                        {isReimbursedView ? "Sudah Diganti" : "Belum Diganti"}
+                      </span>
+                      <div>
+                        <div className="hidden lg:block text-[10px] font-medium text-[var(--ledger-muted)]">
+                          {isReimbursedView ? "Sudah Diganti" : "Belum Diganti"}
+                        </div>
+                        <span
+                          className={cn(
+                            "text-sm font-bold",
+                            isReimbursedView
+                              ? "text-[var(--signal-cleared)]"
+                              : hasPending
+                              ? "text-[var(--signal-dp)]"
+                              : "text-[var(--ledger-muted)]"
+                          )}
+                        >
+                          {formatRupiah(mainTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Row Actions */}
+                    <div className="lg:col-span-3 flex flex-wrap items-center justify-end gap-1.5">
+                      <Button
                         type="button"
+                        size="sm"
+                        variant={isSelected ? "default" : "outline"}
+                        aria-pressed={isSelected}
                         onClick={() => {
                           setSelectedUserId(isSelected ? null : userGroup.user_id);
                           setPage(1);
                         }}
-                        className={`text-[10px] font-semibold px-2 py-1 rounded-lg border transition-colors ${
-                          isSelected
-                            ? "bg-purple-600 text-white border-purple-600"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                        }`}
-                        title="Filter data khusus karyawan ini"
+                        className={cn(
+                          "min-h-[44px] sm:min-h-[34px] px-3 text-xs font-semibold rounded-lg ledger-press",
+                          isSelected &&
+                            "bg-[#5B3EAE] hover:bg-[#493091] text-white"
+                        )}
                       >
                         {isSelected ? "Filter Aktif" : "Filter"}
-                      </button>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-950/50 border border-slate-200/60 dark:border-slate-800/80 rounded-xl p-2.5 space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-500 text-[11px] font-medium">
-                          {statusFilter === "reimbursed" ? "Sudah Diganti:" : "Belum Diganti:"}
-                        </span>
-                        <span
-                          className={`font-bold tabular-nums text-sm ${
-                            statusFilter === "reimbursed"
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : hasPending
-                              ? "text-amber-600 dark:text-amber-400"
-                              : "text-slate-400"
-                          }`}
-                        >
-                          {formatRupiah(
-                            statusFilter === "reimbursed"
-                              ? userGroup.reimbursed_total
-                              : userGroup.pending_total
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Rincian Keterangan Terpisah: Belanja vs Ongkir */}
-                      <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80">
-                        {/* Box Belanja */}
-                        <div className="rounded-lg bg-slate-50/80 dark:bg-slate-900/60 p-2 border border-slate-200/60 dark:border-slate-800/80 flex flex-col justify-between">
-                          <div className="flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-400 font-semibold">
-                            <ShoppingBag className="w-3 h-3 text-purple-600 dark:text-purple-400 shrink-0" />
-                            <span className="truncate">Belanja</span>
-                          </div>
-                          <div className="mt-1 font-bold text-xs text-slate-900 dark:text-slate-100 tabular-nums truncate">
-                            {formatRupiah(
-                              statusFilter === "reimbursed"
-                                ? userGroup.belanja_reimbursed_total || 0
-                                : userGroup.belanja_pending_total || 0
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                            {statusFilter === "reimbursed"
-                              ? `${userGroup.belanja_reimbursed_count || 0} nota lunas`
-                              : `${userGroup.belanja_pending_count || 0} nota pending`}
-                          </div>
-                        </div>
-
-                        {/* Box Ongkir */}
-                        <div className="rounded-lg bg-sky-50/60 dark:bg-sky-950/30 p-2 border border-sky-200/60 dark:border-sky-900/50 flex flex-col justify-between">
-                          <div className="flex items-center gap-1 text-[10px] text-sky-800 dark:text-sky-300 font-semibold">
-                            <Truck className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
-                            <span className="truncate">Ongkir Kurir</span>
-                          </div>
-                          <div className="mt-1 font-bold text-xs text-sky-950 dark:text-sky-200 tabular-nums truncate">
-                            {formatRupiah(
-                              statusFilter === "reimbursed"
-                                ? userGroup.ongkir_reimbursed_total || 0
-                                : userGroup.ongkir_pending_total || 0
-                            )}
-                          </div>
-                          <div className="text-[10px] text-sky-700/70 dark:text-sky-400/70 mt-0.5">
-                            {statusFilter === "reimbursed"
-                              ? `${userGroup.ongkir_reimbursed_count || 0} trip lunas`
-                              : `${userGroup.ongkir_pending_count || 0} trip pending`}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-                        <span>Total Riwayat Nota:</span>
-                        <span className="tabular-nums font-medium text-slate-700 dark:text-slate-300">
-                          {userGroup.pending_count} pending / {userGroup.total_count} total
-                        </span>
-                      </div>
-                    </div>
-
-                    {hasPending && isSettleAllowed && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleSettleUserPending(userGroup)}
-                        disabled={settleMutation.isPending}
-                        className="w-full h-8 text-[11px] font-semibold rounded-lg border-amber-300 text-amber-800 bg-amber-50/60 hover:bg-amber-100 hover:text-amber-900 dark:border-amber-800 dark:text-amber-300 dark:bg-amber-950/40 gap-1.5"
-                      >
-                        <CheckCheck className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Ganti Semua ({formatRupiah(userGroup.pending_total)})</span>
                       </Button>
-                    )}
+
+                      {hasPending && isSettleAllowed && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setUserSettleBankId(settleBankAccountId);
+                            setConfirmUserGroup(userGroup);
+                          }}
+                          disabled={settleMutation.isPending}
+                          className="min-h-[44px] sm:min-h-[34px] px-3 text-xs font-semibold rounded-lg border-amber-300 text-amber-900 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40 gap-1.5 ledger-press"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Ganti Semua</span>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* 4. Filter & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
-        {/* Row 1: Status Tabs & Periode */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Status Tab Pills */}
-          <div className="flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter("pending");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusFilter === "pending"
-                  ? "bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-300 shadow-2xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Belum Diganti</span>
-              {summaryData && summaryData.pending_count > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold">
-                  {summaryData.pending_count}
-                </span>
-              )}
-            </button>
+      {/* 4. Status Tabs + Unified Ledger Table Container (Single Surface) */}
+      <section aria-label="Daftar transaksi talangan" className="space-y-2">
+        <LedgerStatusTabs
+          tabs={statusTabsList}
+          value={statusFilter}
+          onChange={(next) => {
+            setStatusFilter(next);
+            setPage(1);
+            setSelectedIds([]);
+          }}
+          layoutId="talangan-status-underline"
+          accentClassName="bg-[var(--signal-talangan)]"
+          ariaLabel="Filter status talangan"
+        />
 
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter("reimbursed");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusFilter === "reimbursed"
-                  ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-2xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Sudah Diganti</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStatusFilter("all");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusFilter === "all"
-                  ? "bg-white dark:bg-slate-900 text-purple-700 dark:text-purple-300 shadow-2xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              <span>Semua</span>
-            </button>
-          </div>
-
-          {/* Periode Controls */}
-          <div className="flex flex-col items-stretch gap-1.5 md:items-end">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <select
-                  value={periodMode}
-                  onChange={(e) => {
-                    setPeriodMode(e.target.value as PeriodMode);
-                    setPage(1);
-                    setSelectedIds([]);
-                  }}
-                  aria-label="Periode talangan"
-                  className="h-9 pl-8 pr-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
-                >
-                  <option value="all">Semua Waktu</option>
-                  <option value="month">Bulan Tertentu</option>
-                  <option value="custom">Rentang Tanggal</option>
-                </select>
-              </div>
-
-              {periodMode === "month" && (
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => {
-                      const m = Number(e.target.value);
-                      setSelectedMonth(m);
-                      setSelectedMonthEnd(m);
-                      setPage(1);
-                    }}
-                    aria-label="Bulan"
-                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
-                  >
-                    {MONTH_NAMES.map((name, idx) => (
-                      <option key={name} value={idx + 1}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      setSelectedYear(Number(e.target.value));
-                      setPage(1);
-                    }}
-                    aria-label="Tahun"
-                    className="h-9 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
-                  >
-                    {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {periodMode === "custom" && (
-                <DateRangePicker
-                  initialDateFrom={customStart}
-                  initialDateTo={customEnd}
-                  onUpdate={({ range }) => {
-                    if (range.from) {
-                      setCustomStart(toIsoDate(range.from));
-                    }
-                    if (range.to) {
-                      setCustomEnd(toIsoDate(range.to));
-                    } else if (range.from) {
-                      setCustomEnd(toIsoDate(range.from));
-                    }
-                    setPage(1);
-                    setSelectedIds([]);
-                  }}
-                />
-              )}
-            </div>
-
-            {isCustomRangeInvalid && (
-              <p role="alert" className="text-[11px] font-medium text-red-600 dark:text-red-400">
-                Tanggal awal tidak boleh setelah tanggal akhir.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Row 2: Search, User Selector & Reset */}
-        <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
-          <div className="relative w-full sm:flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Cari nama barang, toko, catatan, no nota..."
-              className="h-9.5 pl-9 rounded-xl text-xs bg-slate-50/70 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Filter Karyawan */}
-            <select
-              value={selectedUserId !== null ? String(selectedUserId) : ""}
-              onChange={(e) => {
-                setSelectedUserId(e.target.value ? Number(e.target.value) : null);
-                setPage(1);
-              }}
-              className="h-9.5 px-3 rounded-xl text-xs bg-slate-50/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden w-full sm:w-44"
-            >
-              <option value="">Semua Karyawan</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Filter Jenis Talangan */}
-            <div className="inline-flex p-1 bg-slate-100/90 dark:bg-slate-800/80 rounded-xl text-xs font-semibold shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setTalanganType("all");
-                  setPage(1);
-                  setSelectedIds([]);
-                }}
-                className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                  talanganType === "all"
-                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-2xs font-bold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-                title="Tampilkan semua talangan (Belanja dan Ongkir)"
-              >
-                <span>Semua Jenis</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTalanganType("belanja");
-                  setPage(1);
-                  setSelectedIds([]);
-                }}
-                className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                  talanganType === "belanja"
-                    ? "bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-2xs font-bold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-                title="Hanya tampilkan talangan belanja barang / operasional"
-              >
-                <ShoppingBag className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-                <span>Belanja</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTalanganType("ongkir");
-                  setPage(1);
-                  setSelectedIds([]);
-                }}
-                className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
-                  talanganType === "ongkir"
-                    ? "bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-2xs font-bold"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                }`}
-                title="Hanya tampilkan talangan ongkir kurir (GoSend, GrabExpress, dsb)"
-              >
-                <Truck className="w-3 h-3 text-sky-600 dark:text-sky-400" />
-                <span>Ongkir</span>
-              </button>
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setStatusFilter("pending");
-                setPeriodMode("all");
-                setSelectedUserId(null);
-                setTalanganType("all");
-                setSearch("");
-                setPage(1);
-                setExpanded({});
-                setMobileExpandedKeys({});
-                setSelectedIds([]);
-              }}
-              title="Reset Filter"
-              className="h-9.5 px-3 rounded-xl text-xs text-slate-600 hover:text-slate-900 border-slate-200 shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Batch Action Toolbar (muncul jika ada item yang dicentang) */}
-      {selectedIds.length > 0 && (
-        <div className="bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-2xl p-3.5 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2.5 text-xs text-purple-900 dark:text-purple-200">
-            <span className="font-bold bg-purple-200 dark:bg-purple-900/60 px-2 py-0.5 rounded-md tabular-nums">
-              {selectedIds.length}
-            </span>
-            <span>item talangan dipilih</span>
-            <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-              ({formatRupiah(selectedNominal)})
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {!isSettleAllowed ? (
-              <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium px-2.5 py-1 bg-amber-50 dark:bg-amber-950/50 rounded-lg border border-amber-200 dark:border-amber-900">
-                Persetujuan pelunasan hanya oleh Owner
-              </span>
-            ) : (
-              <>
-                {bankAccounts.length > 0 && (
-                  <select
-                    value={settleBankAccountId}
-                    onChange={(e) => setSettleBankAccountId(e.target.value)}
-                    className="h-8.5 rounded-xl border border-slate-200 bg-white text-slate-800 px-2.5 text-xs font-medium"
-                    aria-label="Rekening Pembayar"
-                  >
-                    <option value="">Rekening Pembayar (Opsional)</option>
-                    {bankAccounts.map((acc) => (
-                      <option key={acc.id} value={String(acc.id)}>
-                        {acc.name} ({acc.account_code})
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => handleBatchSettle("mark_reimbursed")}
-                  disabled={settleMutation.isPending}
-                  className="bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 shadow-xs"
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  <span>Tandai Sudah Diganti</span>
-                </Button>
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleBatchSettle("unmark")}
-                  disabled={settleMutation.isPending}
-                  className="rounded-xl text-xs font-semibold h-8.5 px-3.5 gap-1.5 text-slate-700 dark:text-slate-300"
-                >
-                  <Undo2 className="w-3.5 h-3.5" />
-                  <span>Batal Ganti</span>
-                </Button>
-              </>
-            )}
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedIds([])}
-              className="h-8.5 text-xs text-slate-600 hover:text-slate-900 px-2.5"
-            >
-              Batal
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* 6. Data Table / Mobile Invoice Cards */}
-      {activeIsError && !activeIsLoading ? (
-        <Card className="border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 rounded-2xl">
-          <CardContent className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-rose-900 dark:text-rose-200">
-                  Gagal memuat data talangan
-                </p>
-                <p className="text-xs text-rose-700 dark:text-rose-300 mt-0.5">
-                  Periksa koneksi server lalu coba muat ulang daftar talangan.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <InvoiceViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => (isGroupedMode ? refetchGrouped() : refetchExpenses())}
-                className="min-h-[44px] sm:min-h-0 h-9 rounded-xl text-xs font-semibold bg-white dark:bg-slate-900 border-rose-200 text-rose-800 hover:bg-rose-100"
-              >
-                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-                Muat Ulang
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
         <DataTable
           table={(isGroupedMode ? groupedTalanganTable : talanganTable) as any}
           recordCount={totalInvoicesOrItems}
           isLoading={activeIsLoading}
-          scrollAreaClassName="min-h-[260px]"
+          tableLayout={{ dense: true, columnsResizable: true }}
+          containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
+          headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
+          footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
           tableWrapperClassName="hidden md:block"
           header={
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Daftar Talangan Karyawan
-                </span>
-                <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
-                  {isGroupedMode
-                    ? `${totalInvoicesOrItems} invoice (${totalGroupChildItems} item)`
-                    : `${totalInvoicesOrItems} item`}
-                </Badge>
+            <div className="space-y-2">
+              {/* Row A: Title + View Switch */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
+                    Daftar Talangan Karyawan
+                  </h3>
+                  <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)]">
+                    {isGroupedMode
+                      ? `${totalInvoicesOrItems} invoice (${totalGroupChildItems} item)`
+                      : `${totalInvoicesOrItems} item`}
+                  </span>
+                </div>
+                <InvoiceViewModeToggle
+                  mode={viewMode}
+                  onChange={handleViewModeChange}
+                />
               </div>
-              <InvoiceViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
+
+              {/* Row B: Integrated Search, Employee, Type & Period Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 gap-2 items-center">
+                <div className="xl:col-span-3 min-w-0">
+                  <InputGroup className="h-9 bg-[var(--ledger-surface)]">
+                    <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                      <Search className="size-3.5 text-[var(--ledger-muted)]" />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="Cari nama barang, toko, catatan, atau no nota..."
+                      aria-label="Cari talangan"
+                      className="h-9 text-xs"
+                    />
+                    {search.length > 0 && (
+                      <InputGroupAddon align="inline-end" className="pr-1.5">
+                        <InputGroupButton
+                          size="icon-xs"
+                          aria-label="Bersihkan kata kunci"
+                          onClick={() => {
+                            setSearch("");
+                            setPage(1);
+                          }}
+                        >
+                          <X className="size-3" />
+                        </InputGroupButton>
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
+                </div>
+
+                <div className="xl:col-span-2">
+                  <AdaptiveSelect
+                    value={selectedUserId !== null ? String(selectedUserId) : ""}
+                    onValueChange={(val) => {
+                      setSelectedUserId(val ? Number(val) : null);
+                      setPage(1);
+                    }}
+                    options={userOptions}
+                    placeholder="Semua Karyawan"
+                    searchPlaceholder="Cari karyawan..."
+                    aria-label="Filter karyawan"
+                  />
+                </div>
+
+                {/* Type Segmented Control (Concentric Radius) */}
+                <div className="xl:col-span-4 flex items-center min-w-0">
+                  <div
+                    role="group"
+                    aria-label="Jenis talangan"
+                    className="inline-flex w-full sm:w-auto p-0.5 rounded-lg bg-[var(--ledger-recessed)] border border-[color:var(--ledger-hairline)] text-xs font-semibold"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={talanganType === "all"}
+                      onClick={() => {
+                        setTalanganType("all");
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                      className={cn(
+                        "flex-1 sm:flex-initial px-2.5 h-8 rounded-[6px] whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        talanganType === "all"
+                          ? "bg-[var(--ledger-surface)] text-[var(--ledger-ink)] shadow-2xs"
+                          : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      )}
+                    >
+                      Semua Jenis
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={talanganType === "belanja"}
+                      onClick={() => {
+                        setTalanganType("belanja");
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                      className={cn(
+                        "flex-1 sm:flex-initial px-2.5 h-8 rounded-[6px] whitespace-nowrap inline-flex items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        talanganType === "belanja"
+                          ? "bg-[var(--ledger-surface)] text-[var(--signal-talangan)] shadow-2xs"
+                          : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      )}
+                    >
+                      <ShoppingBag className="w-3 h-3" />
+                      <span>Belanja</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={talanganType === "ongkir"}
+                      onClick={() => {
+                        setTalanganType("ongkir");
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                      className={cn(
+                        "flex-1 sm:flex-initial px-2.5 h-8 rounded-[6px] whitespace-nowrap inline-flex items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        talanganType === "ongkir"
+                          ? "bg-[var(--ledger-surface)] text-sky-700 dark:text-sky-300 shadow-2xs"
+                          : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      )}
+                    >
+                      <Truck className="w-3 h-3" />
+                      <span>Ongkir</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="xl:col-span-3 flex flex-wrap items-center gap-1.5">
+                  <div className="flex-1 min-w-[130px]">
+                    <AdaptiveSelect
+                      value={periodMode}
+                      onValueChange={(val) => {
+                        setPeriodMode(val as PeriodMode);
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                      options={[
+                        { value: "all", label: "Semua Waktu" },
+                        { value: "month", label: "Bulan Tertentu" },
+                        { value: "custom", label: "Rentang Tanggal" },
+                      ]}
+                      aria-label="Periode talangan"
+                    />
+                  </div>
+
+                  {periodMode === "month" && (
+                    <>
+                      <div className="w-[116px]">
+                        <AdaptiveSelect
+                          value={String(selectedMonth)}
+                          onValueChange={(val) => {
+                            const m = Number(val);
+                            setSelectedMonth(m);
+                            setSelectedMonthEnd(m);
+                            setPage(1);
+                          }}
+                          options={monthOptions}
+                          searchPlaceholder="Cari bulan..."
+                          aria-label="Pilih bulan"
+                        />
+                      </div>
+                      <div className="w-[86px]">
+                        <AdaptiveSelect
+                          value={String(selectedYear)}
+                          onValueChange={(val) => {
+                            setSelectedYear(Number(val));
+                            setPage(1);
+                          }}
+                          options={yearOptions}
+                          aria-label="Pilih tahun"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {periodMode === "custom" && (
+                    <DateRangePicker
+                      initialDateFrom={customStart}
+                      initialDateTo={customEnd}
+                      onUpdate={({ range }) => {
+                        if (range.from) setCustomStart(toIsoDate(range.from));
+                        if (range.to) setCustomEnd(toIsoDate(range.to));
+                        else if (range.from) setCustomEnd(toIsoDate(range.from));
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                    />
+                  )}
+
+                  {hasActiveFilters && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleResetFilters}
+                      className="h-9 w-9 p-0 shrink-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      aria-label="Reset semua filter"
+                      title="Reset Filter"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {isCustomRangeInvalid && (
+                <p
+                  role="alert"
+                  className="text-xs font-medium text-[var(--signal-unpaid)]"
+                >
+                  Tanggal awal tidak boleh setelah tanggal akhir.
+                </p>
+              )}
             </div>
           }
           emptyState={
-            <div className="py-10 text-center px-4 space-y-5">
-              <div className="flex justify-center">
-                <InvoiceViewModeToggle mode={viewMode} onChange={handleViewModeChange} />
-              </div>
-              <div className="flex flex-col items-center justify-center gap-2.5 max-w-sm mx-auto">
-                <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 flex items-center justify-center">
-                  <FileCheck2 className="w-6 h-6" />
-                </div>
-                <div className="font-bold text-sm text-slate-800 dark:text-slate-200">
-                  Tidak Ada Data Talangan
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 text-center">
-                  {statusFilter === "pending"
-                    ? "Hebat! Semua talangan karyawan pada filter ini sudah diganti lunas."
-                    : "Belum ada catatan pengeluaran talangan yang sesuai dengan filter yang Anda pilih."}
-                </p>
-                {onAddNewTalangan && (
+            activeIsError ? (
+              <LedgerStateBlock
+                variant="error"
+                title="Gagal Memuat Data Talangan"
+                description="Periksa koneksi server lalu muat ulang daftar talangan."
+                actions={
                   <Button
-                    size="sm"
+                    type="button"
                     variant="outline"
-                    onClick={onAddNewTalangan}
-                    className="mt-2 text-xs rounded-xl min-h-[44px] sm:min-h-0 h-9 gap-1.5"
+                    size="sm"
+                    onClick={() =>
+                      isGroupedMode ? refetchGrouped() : refetchExpenses()
+                    }
+                    className="min-h-[40px] sm:min-h-[36px] gap-1.5"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Input Talangan Baru</span>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Muat Ulang</span>
                   </Button>
-                )}
-              </div>
-            </div>
+                }
+              />
+            ) : (
+              <LedgerStateBlock
+                variant="empty"
+                icon={<FileCheck2 className="w-7 h-7" />}
+                title="Tidak Ada Data Talangan"
+                description={
+                  statusFilter === "pending"
+                    ? "Semua talangan karyawan pada filter ini sudah diganti."
+                    : "Belum ada catatan pengeluaran talangan yang sesuai dengan filter yang Anda pilih."
+                }
+                actions={
+                  <>
+                    {hasActiveFilters && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleResetFilters}
+                        className="min-h-[40px] sm:min-h-[36px] gap-1.5"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset Filter</span>
+                      </Button>
+                    )}
+                    {onAddNewTalangan && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={onAddNewTalangan}
+                        className="min-h-[40px] sm:min-h-[36px] gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Input Talangan Baru</span>
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+            )
           }
         >
-          {/* Mobile Reflow Cards (< md) */}
-          <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {/* Mobile Flat Hairline Rows (< md, Zero Nested Cards) */}
+          <div className="md:hidden divide-y divide-[color:var(--ledger-hairline)]">
             {isGroupedMode
               ? invoiceGroups.map((grp) => {
                   const summary = getInvoiceItemSummaryText(grp);
@@ -2210,49 +2237,48 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   const tgLink = parseTelegramLink(rawLink);
 
                   return (
-                    <div key={grp.group_key} className="p-3.5 space-y-3 bg-white dark:bg-slate-950">
-                      <div className="flex items-start gap-2.5">
+                    <div
+                      key={grp.group_key}
+                      className={cn(
+                        "p-3 space-y-2 transition-colors",
+                        allChecked && "signal-surface-talangan"
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
                         <div className="min-h-[44px] min-w-[44px] -ml-2 -mt-2 flex items-center justify-center shrink-0">
                           <Checkbox
-                            checked={allChecked ? true : someChecked ? "indeterminate" : false}
+                            checked={
+                              allChecked
+                                ? true
+                                : someChecked
+                                ? "indeterminate"
+                                : false
+                            }
                             onCheckedChange={() => handleToggleSelectGroup(grp)}
-                            aria-label={`Pilih invoice talangan ${grp.supplier || grp.user_name || grp.group_key}`}
+                            aria-label={`Pilih invoice talangan ${
+                              grp.supplier || grp.user_name || grp.group_key
+                            }`}
                           />
                         </div>
 
-                        <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex-1 min-w-0 space-y-2">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                                {hasOngkir && !hasBelanja ? (
-                                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 text-[10px] px-1.5 py-0 font-semibold gap-1">
-                                    <Truck className="w-2.5 h-2.5" />
-                                    Ongkir
-                                  </Badge>
-                                ) : hasOngkir && hasBelanja ? (
-                                  <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 text-[10px] px-1.5 py-0 font-semibold gap-1">
-                                    <Receipt className="w-2.5 h-2.5" />
-                                    Belanja &amp; Ongkir
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 text-[10px] px-1.5 py-0 font-semibold gap-1">
-                                    <ShoppingBag className="w-2.5 h-2.5" />
-                                    Belanja
-                                  </Badge>
-                                )}
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                                {renderTalanganTypeBadge(hasOngkir, hasBelanja, true)}
+                                <span className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                                   {grp.items_count} item
-                                </Badge>
+                                </span>
                                 {grp.invoice_number && grp.invoice_number !== "-" && (
-                                  <span className="font-mono text-[10px] text-slate-600 dark:text-slate-400">
+                                  <span className="font-mono-ledger text-[10px] text-[var(--ledger-muted)]">
                                     #{grp.invoice_number}
                                   </span>
                                 )}
                               </div>
-                              <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug">
+                              <div className="font-bold text-sm text-[var(--ledger-ink)] leading-snug">
                                 {summary.title}
                                 {summary.extraCount > 0 && (
-                                  <span className="ml-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300">
+                                  <span className="ml-1.5 text-xs font-semibold text-[var(--signal-talangan)]">
                                     +{summary.extraCount} item lainnya
                                   </span>
                                 )}
@@ -2260,31 +2286,31 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             </div>
 
                             <div className="text-right shrink-0">
-                              <div className="font-bold text-sm text-slate-950 dark:text-white tabular-nums">
+                              <div className="font-bold text-sm text-[var(--ledger-ink)] tabular-nums">
                                 {formatRupiah(grp.total_amount)}
                               </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                              <div className="text-[11px] text-[var(--ledger-muted)]">
                                 {grp.pay_method || "Tunai"}
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-400">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--ledger-muted)]">
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                              <span className="font-semibold text-[var(--ledger-ink)]">
                                 {grp.user_name || "Web / Kasir"}
                               </span>
-                              <span>·</span>
                               <span>{grp.supplier || "-"}</span>
-                              <span>·</span>
-                              <span className="tabular-nums">{formatDateId(grp.expense_date)}</span>
+                              <span className="tabular-nums">
+                                {formatDateId(grp.expense_date)}
+                              </span>
                             </div>
                             {tgLink?.isUrl && tgLink.url && (
                               <a
                                 href={tgLink.url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 dark:text-blue-400 underline"
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 dark:text-blue-300 underline"
                               >
                                 <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
                                 <span>Telegram</span>
@@ -2296,7 +2322,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             {isAllDone ? (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] font-semibold text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 gap-1"
+                                className="text-[11px] font-semibold text-emerald-800 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 gap-1"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>Sudah Diganti</span>
@@ -2304,7 +2330,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             ) : isPartial ? (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] font-semibold text-sky-700 border-sky-300 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 gap-1"
+                                className="text-[11px] font-semibold text-sky-800 border-sky-300 bg-sky-50 dark:bg-sky-950/40 dark:text-sky-200 dark:border-sky-800 gap-1"
                               >
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>
@@ -2314,7 +2340,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             ) : (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 gap-1"
+                                className="text-[11px] font-semibold text-amber-900 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 gap-1"
                               >
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>Belum Diganti</span>
@@ -2328,7 +2354,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                                   size="sm"
                                   onClick={() => handleToggleGroupReimbursed(grp)}
                                   disabled={settleMutation.isPending}
-                                  className="min-h-[44px] px-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold"
+                                  className="min-h-[44px] px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold ledger-press"
                                 >
                                   {isPartial ? "Lunasi Sisa" : "Tandai Diganti"}
                                 </Button>
@@ -2336,10 +2362,10 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                               {onViewExpense && firstItem && grp.items.length === 1 && (
                                 <Button
                                   type="button"
-                                  size="sm"
+                                  size="icon"
                                   variant="outline"
                                   onClick={() => onViewExpense(firstItem)}
-                                  className="min-h-[44px] min-w-[44px] px-2.5 rounded-xl text-slate-700 dark:text-slate-300"
+                                  className="min-h-[44px] min-w-[44px] rounded-lg"
                                   aria-label="Lihat detail talangan"
                                 >
                                   <Eye className="w-4 h-4" />
@@ -2356,9 +2382,13 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                                   }))
                                 }
                                 aria-expanded={isMobileExpanded}
-                                className="min-h-[44px] px-3 rounded-xl text-xs font-semibold gap-1"
+                                className="min-h-[44px] px-3 rounded-lg text-xs font-semibold gap-1"
                               >
-                                <span>{isMobileExpanded ? "Tutup" : `Rincian (${grp.items.length})`}</span>
+                                <span>
+                                  {isMobileExpanded
+                                    ? "Tutup"
+                                    : `Rincian (${grp.items.length})`}
+                                </span>
                                 {isMobileExpanded ? (
                                   <ChevronUp className="w-4 h-4" />
                                 ) : (
@@ -2368,92 +2398,98 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             </div>
                           </div>
 
+                          {/* Indented Mobile Sub-list (Zero Inner Cards) */}
                           {isMobileExpanded && (
-                            <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/60 p-3 space-y-2.5">
-                              <div className="space-y-2">
-                                {grp.items.map((item) => {
-                                  const isDone = !!item.reimbursed_at;
-                                  return (
-                                    <div
-                                      key={item.id}
-                                      className="rounded-lg bg-white dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 p-2.5 space-y-2"
-                                    >
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                          <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                                            {item.item_name}
-                                          </div>
-                                          <div className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums mt-0.5">
-                                            {item.category ? `${item.category} · ` : ""}
-                                            {item.qty} {item.unit || "Pcs"}
-                                          </div>
+                            <div className="mt-1.5 pl-2.5 border-l-2 border-[color:var(--ledger-hairline)] divide-y divide-[color:var(--ledger-hairline)]">
+                              {grp.items.map((item) => {
+                                const isDone = !!item.reimbursed_at;
+                                return (
+                                  <div key={item.id} className="py-2 space-y-1.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="font-semibold text-xs text-[var(--ledger-ink)]">
+                                          {item.item_name}
                                         </div>
-                                        <div className="text-right shrink-0">
-                                          <div className="font-bold text-xs text-slate-900 dark:text-slate-100 tabular-nums">
-                                            {formatRupiah(item.total_price)}
-                                          </div>
-                                          <div className="text-[10px] font-semibold mt-0.5">
-                                            {isDone ? (
-                                              <span className="text-emerald-700 dark:text-emerald-400">
-                                                Sudah Diganti
-                                              </span>
-                                            ) : (
-                                              <span className="text-amber-700 dark:text-amber-400">
-                                                Belum Diganti
-                                              </span>
-                                            )}
-                                          </div>
+                                        <div className="text-[11px] text-[var(--ledger-muted)] tabular-nums mt-0.5">
+                                          {item.category ? `${item.category}, ` : ""}
+                                          {item.qty} {item.unit || "Pcs"}
                                         </div>
                                       </div>
-
-                                      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800 flex-wrap">
-                                        {isSettleAllowed && (
-                                          <button
-                                            type="button"
-                                            onClick={() => handleToggleReimbursed(item)}
-                                            disabled={settleMutation.isPending}
-                                            className="min-h-[44px] px-2.5 text-xs font-semibold text-purple-700 dark:text-purple-300 underline"
-                                          >
-                                            {isDone ? "Batal Ganti" : "Tandai Diganti"}
-                                          </button>
-                                        )}
-                                        <div className="flex items-center gap-1 ml-auto">
-                                          {onViewExpense && (
-                                            <button
-                                              type="button"
-                                              onClick={() => onViewExpense(item)}
-                                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-slate-600 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300"
-                                              aria-label={`Detail ${item.item_name}`}
-                                            >
-                                              <Eye className="w-4 h-4" />
-                                            </button>
-                                          )}
-                                          <button
-                                            type="button"
-                                            onClick={() => onEditExpense(item)}
-                                            className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:text-slate-300"
-                                            aria-label={`Edit ${item.item_name}`}
-                                          >
-                                            <Edit2 className="w-4 h-4" />
-                                          </button>
-                                          {canDelete && (
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDelete(item.id)}
-                                              disabled={deletingId === item.id}
-                                              className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-slate-600 hover:bg-rose-50 hover:text-rose-700 dark:text-slate-300 disabled:opacity-50"
-                                              aria-label={`Hapus ${item.item_name}`}
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                            </button>
+                                      <div className="text-right shrink-0">
+                                        <div className="font-bold text-xs text-[var(--ledger-ink)] tabular-nums">
+                                          {formatRupiah(item.total_price)}
+                                        </div>
+                                        <div className="text-[10px] font-semibold mt-0.5">
+                                          {isDone ? (
+                                            <span className="text-[var(--signal-cleared)]">
+                                              Sudah Diganti
+                                            </span>
+                                          ) : (
+                                            <span className="text-[var(--signal-dp)]">
+                                              Belum Diganti
+                                            </span>
                                           )}
                                         </div>
                                       </div>
                                     </div>
-                                  );
-                                })}
+
+                                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                      {isSettleAllowed && (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleToggleReimbursed(item)}
+                                          disabled={settleMutation.isPending}
+                                          className="min-h-[44px] px-3 rounded-lg text-xs font-semibold text-[var(--signal-talangan)]"
+                                        >
+                                          {isDone ? "Batal Ganti" : "Tandai Diganti"}
+                                        </Button>
+                                      )}
+                                      <div className="flex items-center gap-1.5 ml-auto">
+                                        {onViewExpense && (
+                                          <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="outline"
+                                            onClick={() => onViewExpense(item)}
+                                            className="min-h-[44px] min-w-[44px] rounded-lg"
+                                            aria-label={`Detail ${item.item_name}`}
+                                          >
+                                            <Eye className="w-4 h-4" />
+                                          </Button>
+                                        )}
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          onClick={() => onEditExpense(item)}
+                                          className="min-h-[44px] min-w-[44px] rounded-lg"
+                                          aria-label={`Edit ${item.item_name}`}
+                                        >
+                                          <Edit2 className="w-4 h-4" />
+                                        </Button>
+                                        {canDelete && (
+                                          <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="outline"
+                                            onClick={() => setConfirmDeleteId(item.id)}
+                                            disabled={deletingId === item.id}
+                                            className="min-h-[44px] min-w-[44px] rounded-lg text-[var(--signal-unpaid)]"
+                                            aria-label={`Hapus ${item.item_name}`}
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div className="pt-2">
+                                <InvoiceFeeFooter group={grp} compact />
                               </div>
-                              <InvoiceFeeFooter group={grp} compact />
                             </div>
                           )}
                         </div>
@@ -2466,8 +2502,14 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                   const isReimbursed = !!e.reimbursed_at;
                   const isOngkir = isTalanganOngkirItem(e);
                   return (
-                    <div key={e.id} className="p-3.5 space-y-2.5 bg-white dark:bg-slate-950">
-                      <div className="flex items-start gap-2.5">
+                    <div
+                      key={e.id}
+                      className={cn(
+                        "p-3 space-y-2 transition-colors",
+                        isChecked && "signal-surface-talangan"
+                      )}
+                    >
+                      <div className="flex items-start gap-2">
                         <div className="min-h-[44px] min-w-[44px] -ml-2 -mt-2 flex items-center justify-center shrink-0">
                           <Checkbox
                             checked={isChecked}
@@ -2475,38 +2517,38 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             aria-label={`Pilih talangan ${e.item_name}`}
                           />
                         </div>
-                        <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex-1 min-w-0 space-y-2">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                                {isOngkir ? (
-                                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 text-[10px] px-1.5 py-0 font-semibold">
-                                    Ongkir Kurir
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 text-[10px] px-1.5 py-0 font-semibold">
-                                    Belanja
-                                  </Badge>
-                                )}
+                                {renderTalanganTypeBadge(isOngkir, !isOngkir, true)}
                                 {e.category && (
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0"
+                                  >
                                     {e.category}
                                   </Badge>
                                 )}
                               </div>
-                              <div className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                              <div className="font-bold text-sm text-[var(--ledger-ink)]">
                                 {e.item_name}
                               </div>
-                              <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                {e.user_name || "Web / Kasir"} · {e.supplier || "-"} ·{" "}
-                                {formatDateId(e.expense_date)}
+                              <div className="text-xs text-[var(--ledger-muted)] mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                                <span className="font-semibold text-[var(--ledger-ink)]">
+                                  {e.user_name || "Web / Kasir"}
+                                </span>
+                                <span>{e.supplier || "-"}</span>
+                                <span className="tabular-nums">
+                                  {formatDateId(e.expense_date)}
+                                </span>
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <div className="font-bold text-sm text-slate-950 dark:text-white tabular-nums">
+                              <div className="font-bold text-sm text-[var(--ledger-ink)] tabular-nums">
                                 {formatRupiah(e.total_price)}
                               </div>
-                              <div className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
+                              <div className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                                 {e.qty} {e.unit || "Pcs"}
                               </div>
                             </div>
@@ -2516,7 +2558,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             {isReimbursed ? (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] font-semibold text-emerald-700 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 gap-1"
+                                className="text-[11px] font-semibold text-emerald-800 border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 gap-1"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
                                 <span>Sudah Diganti</span>
@@ -2524,14 +2566,14 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                             ) : (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 gap-1"
+                                className="text-[11px] font-semibold text-amber-900 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 gap-1"
                               >
                                 <Clock className="w-3.5 h-3.5" />
                                 <span>Belum Diganti</span>
                               </Badge>
                             )}
 
-                            <div className="flex items-center gap-1 ml-auto">
+                            <div className="flex items-center gap-1.5 ml-auto">
                               {isSettleAllowed && (
                                 <Button
                                   type="button"
@@ -2541,41 +2583,47 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                                   disabled={settleMutation.isPending}
                                   className={
                                     isReimbursed
-                                      ? "min-h-[44px] px-3 rounded-xl text-xs"
-                                      : "min-h-[44px] px-3 rounded-xl text-xs bg-emerald-700 hover:bg-emerald-800 text-white"
+                                      ? "min-h-[44px] px-3 rounded-lg text-xs"
+                                      : "min-h-[44px] px-3 rounded-lg text-xs bg-emerald-700 hover:bg-emerald-800 text-white ledger-press"
                                   }
                                 >
                                   {isReimbursed ? "Batal Ganti" : "Tandai Diganti"}
                                 </Button>
                               )}
                               {onViewExpense && (
-                                <button
+                                <Button
                                   type="button"
+                                  size="icon"
+                                  variant="outline"
                                   onClick={() => onViewExpense(e)}
-                                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 hover:bg-blue-50 hover:text-blue-700 dark:text-slate-300"
+                                  className="min-h-[44px] min-w-[44px] rounded-lg"
                                   aria-label={`Detail ${e.item_name}`}
                                 >
                                   <Eye className="w-4 h-4" />
-                                </button>
+                                </Button>
                               )}
-                              <button
+                              <Button
                                 type="button"
+                                size="icon"
+                                variant="outline"
                                 onClick={() => onEditExpense(e)}
-                                className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:text-slate-300"
+                                className="min-h-[44px] min-w-[44px] rounded-lg"
                                 aria-label={`Edit ${e.item_name}`}
                               >
                                 <Edit2 className="w-4 h-4" />
-                              </button>
+                              </Button>
                               {canDelete && (
-                                <button
+                                <Button
                                   type="button"
-                                  onClick={() => handleDelete(e.id)}
+                                  size="icon"
+                                  variant="outline"
+                                  onClick={() => setConfirmDeleteId(e.id)}
                                   disabled={deletingId === e.id}
-                                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-600 hover:bg-rose-50 hover:text-rose-700 dark:text-slate-300 disabled:opacity-50"
+                                  className="min-h-[44px] min-w-[44px] rounded-lg text-[var(--signal-unpaid)]"
                                   aria-label={`Hapus ${e.item_name}`}
                                 >
                                   <Trash2 className="w-4 h-4" />
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -2586,7 +2634,72 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                 })}
           </div>
         </DataTable>
-      )}
+      </section>
+
+      {/* 5. Floating Batch Settlement Dock */}
+      <LedgerBatchDock
+        selectedCount={selectedIds.length}
+        itemLabel="talangan"
+        totalAmount={selectedNominal}
+        totalLabel="Total Penggantian:"
+        bankAccounts={bankAccounts}
+        bankAccountId={settleBankAccountId}
+        onBankAccountChange={setSettleBankAccountId}
+        blockedMessage={
+          !isSettleAllowed
+            ? "Persetujuan pelunasan hanya oleh Owner"
+            : undefined
+        }
+        primaryAction={{
+          label: `Tandai Sudah Diganti (${selectedIds.length})`,
+          onClick: () => handleBatchSettle("mark_reimbursed"),
+          disabled: settleMutation.isPending,
+          className: "bg-emerald-700 hover:bg-emerald-800 text-white",
+          icon: <CheckCheck className="w-4 h-4" />,
+        }}
+        secondaryAction={{
+          label: "Batal Ganti",
+          onClick: () => handleBatchSettle("unmark"),
+          disabled: settleMutation.isPending,
+          icon: <Undo2 className="w-4 h-4" />,
+        }}
+        onClear={() => setSelectedIds([])}
+      />
+
+      {/* 6. Accessible Confirmation Dialogs */}
+      <LedgerConfirmDialog
+        open={Boolean(confirmUserGroup)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmUserGroup(null);
+        }}
+        title="Ganti Seluruh Talangan Karyawan?"
+        description={
+          confirmUserGroup
+            ? `Ganti semua ${confirmUserGroup.pending_count} talangan milik ${
+                confirmUserGroup.user_name
+              } senilai ${formatRupiah(confirmUserGroup.pending_total)}?`
+            : ""
+        }
+        confirmLabel="Ya, Tandai Diganti"
+        confirmVariant="cleared"
+        isPending={settleMutation.isPending}
+        bankAccounts={bankAccounts}
+        bankAccountId={userSettleBankId}
+        onBankAccountChange={setUserSettleBankId}
+        onConfirm={executeSettleUserPending}
+      />
+
+      <LedgerConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
+        title="Hapus Catatan Talangan?"
+        description="Tindakan ini menghapus catatan talangan terpilih dari daftar pengeluaran."
+        confirmLabel="Hapus Talangan"
+        confirmVariant="destructive"
+        onConfirm={executeDeleteExpense}
+      />
     </div>
   );
 };

@@ -379,7 +379,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             <button
               type="button"
               onClick={row.getToggleExpandedHandler()}
-              className="p-1 rounded hover:bg-slate-200/60 text-slate-500"
+              className="mx-auto inline-flex h-6 w-6 items-center justify-center rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400"
               aria-label="Lihat rincian item"
             >
               {row.getIsExpanded() ? (
@@ -389,34 +389,34 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
               )}
             </button>
           ) : null,
-        size: 38,
+        size: 30,
         enableSorting: false,
         meta: {
           expandedContent: (tx: IncomingTxRow) => (
-            <div className="bg-slate-50/80 px-6 py-2.5">
-              <div className="text-[11px] font-medium text-slate-600 mb-1.5">
+            <div className="bg-slate-50/80 dark:bg-slate-900/70 px-4 py-2.5 border-t border-slate-200/70 dark:border-slate-800">
+              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1.5">
                 Rincian Produk ({tx.items.length} item)
               </div>
               <div className="space-y-1">
                 {tx.items.map((it) => (
                   <div
                     key={it.id}
-                    className="flex items-center justify-between text-[11px] text-slate-700 border-b border-slate-200/60 pb-1 last:border-0"
+                    className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200 border-b border-slate-200/60 dark:border-slate-800 pb-1 last:border-0"
                   >
                     <div>
                       <span className="font-medium">{it.product_name}</span>
                       {it.sku && (
-                        <span className="text-slate-400 ml-1.5 font-mono">[{it.sku}]</span>
+                        <span className="text-slate-400 dark:text-slate-500 ml-1.5 font-mono">[{it.sku}]</span>
                       )}
                       {it.modifier && (
-                        <span className="text-slate-500 block">+ {it.modifier}</span>
+                        <span className="text-slate-500 dark:text-slate-400 block">+ {it.modifier}</span>
                       )}
                     </div>
                     <div className="tabular-nums text-right shrink-0 ml-4">
                       {it.qty} × {formatRupiah(it.unit_price + it.extra_price)} ={" "}
                       <span className="font-medium">{formatRupiah(it.gross_amount)}</span>
                       {it.discount_amount > 0 && (
-                        <span className="text-rose-600 ml-1.5">
+                        <span className="text-rose-600 dark:text-rose-400 ml-1.5">
                           (-{formatRupiah(it.discount_amount)})
                         </span>
                       )}
@@ -438,21 +438,23 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           const tx = row.original;
           return (
             <div>
-              <div className="font-medium text-slate-900 whitespace-nowrap">
+              <div className="font-medium text-slate-900 dark:text-slate-100 whitespace-nowrap">
                 {tx.transaction_date}{" "}
-                <span className="text-slate-400 font-normal">{tx.transaction_time || ""}</span>
+                <span className="text-slate-400 dark:text-slate-500 font-normal">{tx.transaction_time || ""}</span>
               </div>
-              <div className="font-mono text-[11px] text-slate-500">
+              <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
                 {tx.receipt_no || "-"}
                 {tx.order_no ? ` • ${tx.order_no}` : ""}
               </div>
               {tx.customer_name && (
-                <div className="text-[11px] text-slate-500">{tx.customer_name}</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
+                  {tx.customer_name}
+                </div>
               )}
             </div>
           );
         },
-        size: 185,
+        size: 148,
       },
       {
         accessorKey: "order_type",
@@ -467,13 +469,13 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
               <Badge variant="outline" className="text-[10px] font-medium">
                 {tx.order_type}
               </Badge>
-              <div className="text-[11px] text-slate-500 mt-0.5">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[125px]">
                 {tx.payment_method} • {tx.items.length} item
               </div>
             </div>
           );
         },
-        size: 155,
+        size: 135,
       },
       {
         id: "bank_account",
@@ -484,7 +486,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             <div className="flex items-center gap-1">
               <Landmark className="w-3 h-3 text-slate-400 shrink-0" />
               <select
-                className="h-7 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-700 max-w-[150px]"
+                className="h-7 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 text-[11px] text-slate-700 dark:text-slate-100 max-w-[125px]"
                 value={tx.bank_account_id ? String(tx.bank_account_id) : ""}
                 onChange={(e) =>
                   reassignMutation.mutate({
@@ -503,7 +505,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </div>
           );
         },
-        size: 175,
+        size: 152,
       },
       {
         accessorKey: "gross_sales",
@@ -516,11 +518,11 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           />
         ),
         cell: ({ row }) => (
-          <div className="text-right tabular-nums text-slate-700 whitespace-nowrap">
+          <div className="text-right tabular-nums text-slate-700 dark:text-slate-200 whitespace-nowrap">
             {formatRupiah(row.original.gross_sales)}
           </div>
         ),
-        size: 110,
+        size: 94,
       },
       {
         id: "discount_fee",
@@ -529,12 +531,12 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           const tx = row.original;
           const totalDed = tx.discount_amount + tx.platform_fee;
           return (
-            <div className="text-right tabular-nums text-rose-600 whitespace-nowrap">
+            <div className="text-right tabular-nums text-rose-600 dark:text-rose-400 whitespace-nowrap">
               {totalDed > 0 ? `-${formatRupiah(totalDed)}` : "-"}
             </div>
           );
         },
-        size: 110,
+        size: 94,
       },
       {
         accessorKey: "net_received",
@@ -549,12 +551,12 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         cell: ({ row }) => {
           const tx = row.original;
           return (
-            <div className="text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+            <div className="text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
               {tx.status === "paid" ? formatRupiah(tx.net_received) : formatRupiah(0)}
             </div>
           );
         },
-        size: 125,
+        size: 112,
       },
       {
         accessorKey: "status",
@@ -565,23 +567,23 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           return (
             <div className="text-center">
               {tx.status === "paid" ? (
-                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 text-[10px]">
                   Dibayar
                 </Badge>
               ) : (
-                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]">
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 text-[10px]">
                   Void
                 </Badge>
               )}
               {tx.reconciled_at && (
-                <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-blue-700">
+                <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] text-blue-700 dark:text-blue-400">
                   <CheckCircle2 className="w-3 h-3" /> Cocok
                 </div>
               )}
             </div>
           );
         },
-        size: 95,
+        size: 80,
       },
       {
         id: "actions",
@@ -589,11 +591,11 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         cell: ({ row }) => {
           const tx = row.original;
           return (
-            <div className="flex items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-0.5">
               <button
                 type="button"
                 onClick={() => handleEditTx(tx)}
-                className="p-1 text-slate-400 hover:text-blue-600 transition-colors rounded hover:bg-slate-100"
+                className="p-1 text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                 aria-label={`Edit transaksi ${tx.receipt_no || tx.id}`}
                 title="Edit Transaksi"
               >
@@ -607,7 +609,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                       deleteMutation.mutate(tx.id);
                     }
                   }}
-                  className="p-1 text-slate-400 hover:text-rose-600 transition-colors rounded hover:bg-slate-100"
+                  className="p-1 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors rounded hover:bg-slate-100 dark:hover:bg-slate-800"
                   aria-label="Hapus transaksi"
                   title="Hapus Transaksi"
                 >
@@ -617,16 +619,16 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </div>
           );
         },
-        size: 80,
+        size: 68,
       },
     ],
     [accounts, isAdmin, reassignMutation, deleteMutation]
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Compact Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
             {summary?.paid_count || 0} Transaksi Masuk
@@ -728,74 +730,74 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         </div>
       </div>
 
-      <Tabs value={subTab} onValueChange={setSubTab} className="w-full space-y-4">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full h-auto p-1 gap-1 bg-slate-100 rounded-xl border border-slate-200/70">
-          <TabsTrigger value="list" className="gap-1.5 py-2 text-xs font-medium rounded-lg">
+      <Tabs value={subTab} onValueChange={setSubTab} className="w-full space-y-3">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full h-auto p-1 gap-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800">
+          <TabsTrigger value="list" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
             <Receipt className="w-3.5 h-3.5 text-blue-600" />
             <span>Daftar Transaksi</span>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-1.5 py-2 text-xs font-medium rounded-lg">
+          <TabsTrigger value="analytics" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
             <span>Radar Menu &amp; Jam Sibuk</span>
           </TabsTrigger>
-          <TabsTrigger value="transfers" className="gap-1.5 py-2 text-xs font-medium rounded-lg">
+          <TabsTrigger value="transfers" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
             <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
             <span>Transfer Rekening</span>
           </TabsTrigger>
-          <TabsTrigger value="reconcile" className="gap-1.5 py-2 text-xs font-medium rounded-lg">
+          <TabsTrigger value="reconcile" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
             <GitCompareArrows className="w-3.5 h-3.5 text-indigo-600" />
             <span>Rekonsiliasi</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="list" className="space-y-4 mt-0">
+        <TabsContent value="list" className="space-y-3 mt-0">
 
       {/* KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-slate-200 shadow-xs">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] text-slate-500">Penjualan Kotor (Dibayar)</div>
-            <div className="text-lg font-semibold text-slate-900 tabular-nums mt-0.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+          <CardContent className="px-3.5 py-2.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Penjualan Kotor (Dibayar)</div>
+            <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
               {formatRupiah(summary?.gross_sales || 0)}
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
               {summary?.paid_count || 0} transaksi berhasil
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-xs">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] text-slate-500">Diskon &amp; Fee Platform</div>
-            <div className="text-lg font-semibold text-rose-700 tabular-nums mt-0.5">
+        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+          <CardContent className="px-3.5 py-2.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Diskon &amp; Fee Platform</div>
+            <div className="text-lg font-semibold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
               -{formatRupiah((summary?.discount_amount || 0) + (summary?.platform_fee || 0))}
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
               Diskon {formatRupiah(summary?.discount_amount || 0)} • Fee{" "}
               {formatRupiah(summary?.platform_fee || 0)}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-xs">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] text-slate-500">Bersih Diterima</div>
-            <div className="text-lg font-semibold text-emerald-700 tabular-nums mt-0.5">
+        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+          <CardContent className="px-3.5 py-2.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Bersih Diterima</div>
+            <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums mt-0.5">
               {formatRupiah(summary?.net_received || 0)}
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
               Net Sales: {formatRupiah(summary?.net_sales || 0)}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-xs">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] text-slate-500">Void / Dibatalkan</div>
-            <div className="text-lg font-semibold text-amber-700 tabular-nums mt-0.5">
+        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+          <CardContent className="px-3.5 py-2.5">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Void / Dibatalkan</div>
+            <div className="text-lg font-semibold text-amber-700 dark:text-amber-400 tabular-nums mt-0.5">
               {summary?.void_count || 0} struk
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
               Nilai batal: {formatRupiah(summary?.cancellation_total || 0)}
             </div>
           </CardContent>
@@ -803,10 +805,10 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
       </div>
 
       {/* Filters */}
-      <Card className="border-slate-200 shadow-xs">
-        <CardContent className="p-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
-            <div className="relative lg:col-span-2">
+      <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
+        <CardContent className="p-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 items-center">
+            <div className="relative lg:col-span-3 min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <Input
                 placeholder="Cari No Receipt, Order ID, Pelanggan..."
@@ -817,7 +819,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </div>
 
             <select
-              className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs"
+              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
               value={orderType}
               onChange={(e) => setOrderType(e.target.value)}
             >
@@ -830,7 +832,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </select>
 
             <select
-              className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs"
+              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
               value={bankAccountId}
               onChange={(e) => setBankAccountId(e.target.value)}
             >
@@ -844,7 +846,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </select>
 
             <select
-              className="h-9 rounded-md border border-slate-200 bg-white px-2.5 text-xs"
+              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -853,16 +855,18 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
               <option value="void">Void / Batal</option>
             </select>
 
-            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
-              <DateRangePicker
-                initialDateFrom={startDate}
-                initialDateTo={endDate}
-                onUpdate={({ range }) => {
-                  if (range.from) setStartDate(toIsoDate(range.from));
-                  if (range.to) setEndDate(toIsoDate(range.to));
-                  else if (range.from) setEndDate(toIsoDate(range.from));
-                }}
-              />
+            <div className="lg:col-span-3 min-w-0 flex items-center gap-1.5">
+              <div className="min-w-0 flex-1 [&_button]:w-full [&_button]:max-w-full [&_button]:justify-start [&_button]:overflow-hidden [&_span]:truncate">
+                <DateRangePicker
+                  initialDateFrom={startDate}
+                  initialDateTo={endDate}
+                  onUpdate={({ range }) => {
+                    if (range.from) setStartDate(toIsoDate(range.from));
+                    if (range.to) setEndDate(toIsoDate(range.to));
+                    else if (range.from) setEndDate(toIsoDate(range.from));
+                  }}
+                />
+              </div>
               {headerStartDate && headerEndDate && (startDate !== headerStartDate || endDate !== headerEndDate) && (
                 <Button
                   type="button"
@@ -872,10 +876,10 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                     setStartDate(headerStartDate);
                     setEndDate(headerEndDate);
                   }}
-                  className="h-9 text-[10px] px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-semibold shrink-0"
+                  className="h-9 text-[10px] px-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-semibold shrink-0"
                   title="Kembalikan tanggal ke filter periode header"
                 >
-                  Reset Header
+                  Reset
                 </Button>
               )}
             </div>
@@ -885,9 +889,9 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
 
       {/* Unmapped Account Action Bar */}
       {unmappedCount > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs text-amber-900">
-            <Landmark className="w-4 h-4 text-amber-800 shrink-0" aria-hidden="true" />
+        <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 px-3.5 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-200">
+            <Landmark className="w-4 h-4 text-amber-800 dark:text-amber-400 shrink-0" aria-hidden="true" />
             <span>
               <strong className="font-semibold tabular-nums">{unmappedCount} transaksi</strong> pada filter aktif belum memiliki rekening tujuan.
             </span>
@@ -905,14 +909,14 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
       )}
 
       {/* Table */}
-      <Card className="border-slate-200 shadow-xs overflow-hidden">
+      <Card className="border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         {isLoading ? (
-          <div className="py-12 flex items-center justify-center gap-2 text-sm text-slate-500">
+          <div className="py-8 flex items-center justify-center gap-2 text-sm text-slate-500">
             <Loader2 className="w-4 h-4 animate-spin" />
             Memuat transaksi masuk...
           </div>
         ) : isError ? (
-          <div className="py-10 flex flex-col items-center justify-center gap-2 text-center">
+          <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
             <AlertCircle className="w-6 h-6 text-rose-500" />
             <p className="text-sm text-slate-600">Gagal memuat daftar transaksi masuk.</p>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
@@ -920,7 +924,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             </Button>
           </div>
         ) : transactions.length === 0 ? (
-          <div className="py-12 text-center px-4">
+          <div className="py-8 text-center px-4">
             <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
             <p className="text-sm font-medium text-slate-700">Belum ada transaksi masuk</p>
             <p className="text-xs text-slate-500 mt-1">

@@ -215,9 +215,9 @@ export const ReconciliationPanel: React.FC<ReconciliationPanelProps> = ({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <Card className="border-slate-200 shadow-xs">
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-2.5">
           <CardTitle className="text-sm font-semibold text-slate-900 flex items-center gap-2">
             <GitCompareArrows className="w-4 h-4 text-blue-600" />
             Rekonsiliasi Mutasi Bank &amp; Settlement Platform (Masuk + Pengeluaran)

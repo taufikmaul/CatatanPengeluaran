@@ -294,9 +294,9 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-3.5 max-w-5xl mx-auto">
       {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-0.5">
         <div className="flex items-center gap-2">
           <Badge
             variant="outline"
@@ -320,39 +320,39 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
         </Button>
       </div>
 
-      <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full space-y-5">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto p-1.5 gap-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/70">
+      <Tabs value={activeSection} onValueChange={setActiveSection} className="w-full space-y-3.5">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full h-auto p-1 gap-1 bg-slate-100/90 rounded-2xl border border-slate-200/70">
           <TabsTrigger
             value="master-data"
-            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+            className="gap-1.5 py-2 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <Layers className="w-4 h-4 text-blue-600" />
             <span>Master Data</span>
           </TabsTrigger>
           <TabsTrigger
             value="rekening"
-            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+            className="gap-1.5 py-2 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <Landmark className="w-4 h-4 text-sky-600" />
             <span>Rekening Setup</span>
           </TabsTrigger>
           <TabsTrigger
             value="anggaran"
-            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+            className="gap-1.5 py-2 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <Target className="w-4 h-4 text-emerald-600" />
             <span>Target Anggaran</span>
           </TabsTrigger>
           <TabsTrigger
             value="integrasi"
-            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+            className="gap-1.5 py-2 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <Bot className="w-4 h-4 text-indigo-600" />
             <span>Bot & Integrasi</span>
           </TabsTrigger>
           <TabsTrigger
             value="ai-test"
-            className="gap-2 py-2.5 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
+            className="gap-1.5 py-2 text-xs font-semibold rounded-xl data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-sm"
           >
             <FlaskConical className="w-4 h-4 text-purple-600" />
             <span>Uji Coba AI</span>
@@ -471,7 +471,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
           <form onSubmit={handleSaveConfig} className="space-y-6">
             {/* 1. Telegram Bot Settings */}
             <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
+          <CardHeader className="p-3.5 sm:p-4 pb-2.5">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
                 <Bot className="w-5 h-5 text-blue-500" />
@@ -487,7 +487,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               </button>
             </div>
           </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+          <CardContent className="p-3.5 sm:p-4 pt-0 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
@@ -636,7 +636,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
         {/* 2. Kredensial & Password Akses Role (Divisi) */}
         <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
+          <CardHeader className="p-3.5 sm:p-4 pb-2.5">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
                 <Shield className="w-5 h-5 text-indigo-600" />
@@ -650,7 +650,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               Atur password login untuk masing-masing peran karyawan di web dan bot Telegram.
             </p>
           </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+          <CardContent className="p-3.5 sm:p-4 pt-0 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-800 block mb-1 flex items-center justify-between">
@@ -802,13 +802,13 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
         {/* 2. Sumopod AI Settings */}
         <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
+          <CardHeader className="p-3.5 sm:p-4 pb-2.5">
             <CardTitle className="text-sm md:text-base font-semibold text-slate-900 flex items-center gap-2">
               <Cpu className="w-5 h-5 text-blue-600" />
               Hermes AI & Sumopod Configuration
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+          <CardContent className="p-3.5 sm:p-4 pt-0 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
@@ -870,7 +870,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
         {/* 3. OpenRouter Settings */}
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
+          <CardHeader className="p-3.5 sm:p-4 pb-2.5">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Cpu className="w-5 h-5 text-emerald-600" />
@@ -891,7 +891,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               Digunakan untuk Analisis Keuangan Bulanan, Pemetaan Rekening Masuk AI, dan sebagai provider pilihan pada AI Chatbot.
             </p>
           </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+          <CardContent className="p-3.5 sm:p-4 pt-0 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
@@ -961,7 +961,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
 
         {/* 4. AI Chatbot Keuangan Multi-Provider Settings */}
         <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-          <CardHeader className="p-4 md:p-5 pb-3">
+          <CardHeader className="p-3.5 sm:p-4 pb-2.5">
             <CardTitle className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-sky-600" />
               Pengaturan AI Chatbot Keuangan (Khusus Owner)
@@ -970,7 +970,7 @@ export const ConfigTab: React.FC<ConfigTabProps> = ({ config, onRefreshConfig })
               Tentukan provider bawaan dan daftar model yang dapat dipilih Owner langsung saat chat berlangsung.
             </p>
           </CardHeader>
-          <CardContent className="p-4 md:p-5 pt-0 space-y-4">
+          <CardContent className="p-3.5 sm:p-4 pt-0 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">

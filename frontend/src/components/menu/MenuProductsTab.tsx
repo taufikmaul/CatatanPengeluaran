@@ -1478,9 +1478,9 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pb-0.5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-0.5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
@@ -2203,7 +2203,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                   (menu.labor_cost && menu.labor_cost > 0);
 
                 return (
-                  <div key={menu.id} className="p-3.5 space-y-2.5">
+                  <div key={menu.id} className="p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 space-y-1">
                         <div className="font-semibold text-sm text-slate-900 dark:text-slate-100 break-words">

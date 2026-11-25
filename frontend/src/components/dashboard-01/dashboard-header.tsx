@@ -10,11 +10,19 @@ import {
   AlertTriangle,
   Receipt,
   CheckCircle2,
+  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +96,8 @@ export function DashboardHeader({
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [isPeriodOpen, setIsPeriodOpen] = useState(false);
   const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
+  const { state: sidebarState, isMobile } = useSidebar();
+  const isSidebarExpanded = sidebarState === "expanded";
 
   const effectiveMonthEnd = monthEnd || month;
   const now = new Date();
@@ -178,22 +188,53 @@ export function DashboardHeader({
   const isOwnerRole = !userRole || userRole === "admin";
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md px-4 md:px-6 transition-all">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-[var(--ledger-hairline)] bg-white/90 px-3 sm:px-5 backdrop-blur-md transition-colors duration-150 dark:bg-slate-900/90 md:px-6">
       {/* Left: Sidebar Trigger & Breadcrumb */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-        <SidebarTrigger className="h-9 w-9 shrink-0 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" />
-        <Separator orientation="vertical" className="h-5 bg-slate-200 dark:bg-slate-800 hidden sm:block shrink-0" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SidebarTrigger
+              aria-label={
+                isMobile
+                  ? "Buka menu navigasi"
+                  : isSidebarExpanded
+                  ? "Lipat sidebar"
+                  : "Buka sidebar"
+              }
+              className="h-9 w-9 shrink-0 rounded-xl border border-[var(--ledger-hairline)] bg-[var(--ledger-surface)] text-slate-700 hover:bg-[var(--ledger-recessed)] hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+            >
+              {isMobile ? (
+                <PanelLeft className="h-4 w-4" />
+              ) : isSidebarExpanded ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </SidebarTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start" sideOffset={8} hidden={isMobile}>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="font-medium">
+                {isSidebarExpanded ? "Lipat sidebar" : "Buka sidebar"}
+              </span>
+              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                ⌘B
+              </kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Separator orientation="vertical" className="hidden h-5 shrink-0 bg-[var(--ledger-hairline)] sm:block" />
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 hidden sm:inline shrink-0">
+          <span className="text-xs font-semibold text-[var(--ledger-muted)] hidden lg:inline shrink-0">
             {currentBreadcrumb.hub}
           </span>
-          <span className="text-slate-300 dark:text-slate-700 hidden sm:inline text-xs font-bold">/</span>
+          <span className="text-slate-300 dark:text-slate-700 hidden lg:inline text-xs font-bold">/</span>
           <h1 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 leading-tight truncate">
             {currentBreadcrumb.sub}
           </h1>
           <Badge
             variant="outline"
-            className={`text-[10px] font-semibold hidden md:inline-flex shrink-0 ${currentRoleBadge.color}`}
+            className={`text-[10px] font-semibold hidden xl:inline-flex shrink-0 ${currentRoleBadge.color}`}
           >
             {currentRoleBadge.label}
           </Badge>

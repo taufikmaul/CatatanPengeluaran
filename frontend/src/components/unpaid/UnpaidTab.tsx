@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  getBankAccounts,
   getGroupedExpenses,
   getUnpaidSummary,
   settleUnpaidExpenses,
-  getBankAccounts,
 } from "@/lib/api";
 import {
   Expense,
@@ -14,7 +14,7 @@ import {
   UnpaidSummaryResponse,
   UnpaidSupplierSummary,
 } from "@/types";
-import { formatRupiah, formatDateId, getCategoryColor, toIsoDate } from "@/lib/formatters";
+import { formatDateId, formatRupiah, getCategoryColor, toIsoDate } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
   getDueUrgencyInfo,
@@ -22,6 +22,7 @@ import {
   isDpStatus,
   isPaidStatus,
 } from "@/lib/paymentStatus";
+import { cn } from "@/lib/utils";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { DpPaymentModal } from "./DpPaymentModal";
 import {
@@ -30,14 +31,26 @@ import {
   InvoiceViewModeToggle,
   getInvoiceItemSummaryText,
 } from "@/components/common/InvoiceGroupShared";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  LedgerBatchDock,
+  LedgerConfirmDialog,
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+  type LedgerStatusTabOption,
+} from "@/components/common/LedgerPrimitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
 import {
   dataGridFeatures,
@@ -48,29 +61,27 @@ import { ColumnDef, ExpandedState, PaginationState, useTable } from "@tanstack/r
 import { toast } from "sonner";
 import confetti from "canvas-confetti";
 import {
-  Clock,
-  AlertTriangle,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  Building2,
+  CheckCheck,
   CheckCircle2,
-  Calendar,
-  Store,
-  Receipt,
-  Search,
-  Plus,
-  Trash2,
-  Edit2,
-  Eye,
-  ExternalLink,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CheckCheck,
-  AlertCircle,
-  Building2,
-  CalendarClock,
-  ArrowUpDown,
-  Wallet,
+  Clock,
+  Edit2,
+  ExternalLink,
+  Eye,
   History,
   Percent,
+  Plus,
+  Receipt,
+  RotateCcw,
+  Search,
+  Trash2,
+  Wallet,
+  X,
 } from "lucide-react";
 
 interface UnpaidTabProps {
@@ -85,12 +96,138 @@ interface UnpaidTabProps {
   canDelete?: boolean;
 }
 
+type UnpaidStatusTab = "unpaid" | "dp" | "overdue" | "soon" | "paid" | "all";
+type PeriodMode = "all" | "month" | "custom";
+
 const MONTH_NAMES = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
 ];
 
-type PeriodMode = "all" | "month" | "custom";
+function getInitials(name: string): string {
+  return (name || "HC")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+function renderInvoiceStatusBadge(group: ExpenseInvoiceGroup, compact = false) {
+  const pad = compact ? "text-[10px] px-2 py-0.5" : "text-[11px] px-2 py-0.5";
+  if (group.is_paid) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          pad,
+          "font-semibold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 shrink-0"
+        )}
+      >
+        <CheckCircle2 className="w-3 h-3 mr-1" />
+        Lunas
+      </Badge>
+    );
+  }
+  if (group.is_dp) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          pad,
+          "font-semibold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 shrink-0"
+        )}
+      >
+        <Wallet className="w-3 h-3 mr-1" />
+        DP {Math.round(group.payment_progress_pct)}%
+      </Badge>
+    );
+  }
+  if (group.is_mixed_pay_status) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          pad,
+          "font-semibold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 shrink-0"
+        )}
+      >
+        <Clock className="w-3 h-3 mr-1" />
+        Sebagian Lunas
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        pad,
+        "font-semibold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800 shrink-0"
+      )}
+    >
+      <Clock className="w-3 h-3 mr-1" />
+      Belum Lunas
+    </Badge>
+  );
+}
+
+function renderExpenseStatusBadge(
+  bd: ReturnType<typeof getExpensePaymentBreakdown>,
+  compact = false
+) {
+  const pad = compact ? "text-[10px] px-2 py-0.5" : "text-[11px] px-2 py-0.5";
+  if (bd.isPaid) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          pad,
+          "font-semibold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800 shrink-0"
+        )}
+      >
+        <CheckCircle2 className="w-3 h-3 mr-1" />
+        Lunas
+      </Badge>
+    );
+  }
+  if (bd.isDp) {
+    return (
+      <Badge
+        variant="outline"
+        className={cn(
+          pad,
+          "font-semibold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800 shrink-0"
+        )}
+      >
+        <Wallet className="w-3 h-3 mr-1" />
+        DP {Math.round(bd.progressPct)}%
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        pad,
+        "font-semibold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800 shrink-0"
+      )}
+    >
+      <Clock className="w-3 h-3 mr-1" />
+      Belum Lunas
+    </Badge>
+  );
+}
 
 export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   currentMonth,
@@ -105,14 +242,17 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
 }) => {
   const queryClient = useQueryClient();
 
-  // Filters
-  const [statusTab, setStatusTab] = useState<"unpaid" | "dp" | "overdue" | "soon" | "paid" | "all">("unpaid");
+  // Filters & view state
+  const [statusTab, setStatusTab] = useState<UnpaidStatusTab>("unpaid");
   const [periodMode, setPeriodMode] = useState<PeriodMode>("all");
-  const isAllPeriods = periodMode === "all";
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
-  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
+  const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(
+    currentMonthEnd || currentMonth
+  );
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const [customStart, setCustomStart] = useState<string>(() => toIsoDate(new Date(currentYear, currentMonth - 1, 1)));
+  const [customStart, setCustomStart] = useState<string>(() =>
+    toIsoDate(new Date(currentYear, currentMonth - 1, 1))
+  );
   const [customEnd, setCustomEnd] = useState<string>(() => toIsoDate(new Date()));
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [search, setSearch] = useState<string>("");
@@ -132,16 +272,23 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   const [mobileExpandedKeys, setMobileExpandedKeys] = useState<Record<string, boolean>>({});
   const isGroupedMode = viewMode === "grouped";
 
-  // Batch selection & modal states
+  // Batch selection & confirmation states
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [settleBankAccountId, setSettleBankAccountId] = useState<string>("");
   const [isSuppliersExpanded, setIsSuppliersExpanded] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmSupplierGroup, setConfirmSupplierGroup] =
+    useState<UnpaidSupplierSummary | null>(null);
+  const [supplierSettleBankId, setSupplierSettleBankId] = useState<string>("");
 
   // DP & Pelunasan Modal state
   const [paymentModalExpense, setPaymentModalExpense] = useState<Expense | null>(null);
-  const [paymentModalInvoiceGroup, setPaymentModalInvoiceGroup] = useState<ExpenseInvoiceGroup | null>(null);
-  const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">("percent");
+  const [paymentModalInvoiceGroup, setPaymentModalInvoiceGroup] =
+    useState<ExpenseInvoiceGroup | null>(null);
+  const [paymentModalMode, setPaymentModalMode] = useState<"full" | "percent" | "amount">(
+    "percent"
+  );
 
   const toggleMobileExpand = (key: string) => {
     setMobileExpandedKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -152,16 +299,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     queryFn: () => getBankAccounts(true),
   });
 
-  // Parameter periode efektif
+  // Effective period params
   const isCustomRangeInvalid =
     periodMode === "custom" && !!customStart && !!customEnd && customStart > customEnd;
-  const rangeStart = periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
-  const rangeEnd = periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
+  const rangeStart =
+    periodMode === "custom" && !isCustomRangeInvalid ? customStart || null : null;
+  const rangeEnd =
+    periodMode === "custom" && !isCustomRangeInvalid ? customEnd || null : null;
   const monthParam = periodMode === "month" ? selectedMonth : null;
   const monthEndParam = periodMode === "month" ? selectedMonthEnd : null;
   const yearParam = periodMode === "month" ? selectedYear : null;
 
-  // 1. Fetch Ringkasan Belum Lunas, DP & Tempo Terdekat
+  // 1. Summary KPI + supplier breakdown
   const {
     data: summaryData,
     isLoading: isSummaryLoading,
@@ -187,7 +336,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       }),
   });
 
-  // 2. Fetch Daftar Transaksi Belum Lunas & DP Terpaginasi (Per Item Mode)
+  // 2a. Flat item list
   const {
     data: expensesData,
     isLoading: isFlatExpensesLoading,
@@ -251,7 +400,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     },
   });
 
-  // 2b. Fetch Daftar Transaksi Belum Lunas & DP Terkelompok per Invoice (Default Mode)
+  // 2b. Grouped per invoice list
   const {
     data: groupedData,
     isLoading: isGroupedExpensesLoading,
@@ -309,7 +458,9 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     },
   });
 
-  const isExpensesLoading = isGroupedMode ? isGroupedExpensesLoading : isFlatExpensesLoading;
+  const isExpensesLoading = isGroupedMode
+    ? isGroupedExpensesLoading
+    : isFlatExpensesLoading;
   const isExpensesError = isGroupedMode ? isGroupedExpensesError : isFlatExpensesError;
   const refetchExpenses = isGroupedMode ? refetchGroupedExpenses : refetchFlatExpenses;
 
@@ -319,11 +470,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     ? groupedData?.total || 0
     : expensesData?.total || 0;
   const totalGroupChildItems: number = groupedData?.total_items || 0;
-  const totalPages: number = isGroupedMode
-    ? groupedData?.total_pages || 1
-    : expensesData?.total_pages || 1;
 
-  // Filter client-side untuk tab overdue / soon pada mode Per Item agar presisi dengan tanggal lokal
   const expenses = useMemo(() => {
     if (statusTab === "overdue") {
       return rawExpenses.filter((e) => getDueUrgencyInfo(e.due_date).urgency === "overdue");
@@ -337,7 +484,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     return rawExpenses;
   }, [rawExpenses, statusTab]);
 
-  // 3. Settle Mutation (Lunasi Sisa / Batalkan Lunas)
+  // 3. Settle mutation
   const settleMutation = useMutation({
     mutationFn: settleUnpaidExpenses,
     onSuccess: (data) => {
@@ -354,14 +501,15 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       if (data.action === "mark_paid") {
         toast.success(`Berhasil melunasi ${data.updated_count} transaksi.`);
         confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.7 },
+          particleCount: 45,
+          spread: 55,
+          origin: { y: 0.75 },
         });
       } else {
         toast.info(`Status pelunasan ${data.updated_count} transaksi dikembalikan.`);
       }
       setSelectedIds([]);
+      setConfirmSupplierGroup(null);
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || "Gagal memproses pelunasan transaksi.");
@@ -375,7 +523,9 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       expense_ids: [expense.id],
       action,
       bank_account_id:
-        action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+        action === "mark_paid" && settleBankAccountId
+          ? Number(settleBankAccountId)
+          : undefined,
     });
   };
 
@@ -397,14 +547,16 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       expense_ids: targetIds,
       action,
       bank_account_id:
-        action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+        action === "mark_paid" && settleBankAccountId
+          ? Number(settleBankAccountId)
+          : undefined,
     });
   };
 
-  const handleSettleSupplierAll = (supplierGroup: UnpaidSupplierSummary) => {
-    if (supplierGroup.unpaid_count === 0) return;
-    const confirmMsg = `Lunasi sisa ${supplierGroup.unpaid_count} tagihan ke ${supplierGroup.supplier_name} senilai ${formatRupiah(supplierGroup.unpaid_total)}?`;
-    if (!window.confirm(confirmMsg)) return;
+  const executeSettleSupplierAll = () => {
+    if (!confirmSupplierGroup || confirmSupplierGroup.unpaid_count === 0) return;
+    const supplierGroup = confirmSupplierGroup;
+    const chosenBankId = supplierSettleBankId || settleBankAccountId;
 
     api
       .get(
@@ -416,12 +568,13 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
         const ids = (res.data?.data || []).map((e: Expense) => e.id);
         if (ids.length === 0) {
           toast.error("Tidak ada transaksi belum lunas yang dapat diproses.");
+          setConfirmSupplierGroup(null);
           return;
         }
         settleMutation.mutate({
           expense_ids: ids,
           action: "mark_paid",
-          bank_account_id: settleBankAccountId ? Number(settleBankAccountId) : undefined,
+          bank_account_id: chosenBankId ? Number(chosenBankId) : undefined,
         });
       })
       .catch(() => {
@@ -439,11 +592,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   }, [isGroupedMode, invoiceGroups, expenses, statusTab]);
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(allVisibleSelectableIds);
-    } else {
-      setSelectedIds([]);
-    }
+    setSelectedIds(checked ? allVisibleSelectableIds : []);
   };
 
   const handleToggleSelect = (id: number) => {
@@ -470,7 +619,9 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       expense_ids: selectedIds,
       action,
       bank_account_id:
-        action === "mark_paid" && settleBankAccountId ? Number(settleBankAccountId) : undefined,
+        action === "mark_paid" && settleBankAccountId
+          ? Number(settleBankAccountId)
+          : undefined,
     });
   };
 
@@ -490,12 +641,13 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       }, 0);
   }, [isGroupedMode, invoiceGroups, expenses, selectedIds]);
 
-  const handleDelete = (id: number) => {
-    if (window.confirm("Apakah Anda yakin ingin menghapus catatan tagihan ini?")) {
-      setDeletingId(id);
-      onDeleteExpense(id);
-      setTimeout(() => setDeletingId(null), 1000);
-    }
+  const executeDeleteExpense = () => {
+    if (confirmDeleteId === null) return;
+    const id = confirmDeleteId;
+    setDeletingId(id);
+    setConfirmDeleteId(null);
+    onDeleteExpense(id);
+    window.setTimeout(() => setDeletingId(null), 1000);
   };
 
   const openPaymentModal = (expense: Expense, mode: "full" | "percent" | "amount") => {
@@ -522,24 +674,90 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     setPaymentModalInvoiceGroup(group);
   };
 
-  const getInitials = (name: string) => {
-    return (name || "HC")
-      .split(" ")
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
+  const handleResetFilters = () => {
+    setStatusTab("unpaid");
+    setPeriodMode("all");
+    setSelectedSupplierId(null);
+    setSearch("");
+    setSortBy("due_date");
+    setSortOrder("asc");
+    setPage(1);
+    setExpanded({});
+    setMobileExpandedKeys({});
+    setSelectedIds([]);
   };
 
+  const hasActiveFilters =
+    statusTab !== "unpaid" ||
+    periodMode !== "all" ||
+    selectedSupplierId !== null ||
+    search.trim() !== "" ||
+    sortBy !== "due_date" ||
+    sortOrder !== "asc";
+
   const nearestDue = summaryData?.nearest_due;
-  const activeUnpaidCount = summaryData?.total_unpaid_count ?? summaryData?.unpaid_count ?? 0;
-  const activeUnpaidTotal = summaryData?.total_unpaid_nominal ?? summaryData?.unpaid_total ?? 0;
-  const activeOverdueTotal = summaryData?.overdue_nominal ?? summaryData?.overdue_total ?? 0;
+  const activeUnpaidCount =
+    summaryData?.total_unpaid_count ?? summaryData?.unpaid_count ?? 0;
+  const activeUnpaidTotal =
+    summaryData?.total_unpaid_nominal ?? summaryData?.unpaid_total ?? 0;
+  const activeOverdueTotal =
+    summaryData?.overdue_nominal ?? summaryData?.overdue_total ?? 0;
   const dpCount = summaryData?.dp_count ?? 0;
   const dpPaidNominal = summaryData?.dp_paid_nominal ?? 0;
   const dpRemainingNominal = summaryData?.dp_remaining_nominal ?? 0;
   const activeSuppliersCount =
     summaryData?.by_supplier?.filter((s) => s.unpaid_count > 0).length || 0;
+
+  const yearOptions = useMemo(() => {
+    const yrs = new Set([
+      currentYear - 2,
+      currentYear - 1,
+      currentYear,
+      currentYear + 1,
+      selectedYear,
+    ]);
+    return Array.from(yrs)
+      .sort((a, b) => a - b)
+      .map((yr) => ({ value: String(yr), label: String(yr) }));
+  }, [currentYear, selectedYear]);
+
+  const monthOptions = useMemo(
+    () => MONTH_NAMES.map((name, idx) => ({ value: String(idx + 1), label: name })),
+    []
+  );
+
+  const supplierOptions = useMemo(() => {
+    const list = summaryData?.by_supplier || [];
+    return [
+      { value: "", label: "Semua Toko / Supplier" },
+      ...list
+        .filter((s) => s.supplier_id !== null)
+        .map((s) => ({
+          value: String(s.supplier_id),
+          label: s.supplier_name,
+          sublabel:
+            s.unpaid_count > 0
+              ? `${s.unpaid_count} nota · Sisa ${formatRupiah(s.unpaid_total)}`
+              : "Lunas",
+        })),
+    ];
+  }, [summaryData?.by_supplier]);
+
+  const statusTabsList = useMemo<LedgerStatusTabOption<UnpaidStatusTab>[]>(
+    () => [
+      { value: "unpaid", label: "Belum Lunas & DP", count: activeUnpaidCount },
+      { value: "dp", label: "DP / Sebagian", count: dpCount },
+      {
+        value: "overdue",
+        label: "Lewat Tempo",
+        count: summaryData?.overdue_count || 0,
+      },
+      { value: "soon", label: "≤ 7 Hari", count: summaryData?.due_soon_count || 0 },
+      { value: "paid", label: "Sudah Lunas" },
+      { value: "all", label: "Semua" },
+    ],
+    [activeUnpaidCount, dpCount, summaryData?.overdue_count, summaryData?.due_soon_count]
+  );
 
   const groupedUnpaidColumns = useMemo<ColumnDef<DataGridFeatures, ExpenseInvoiceGroup>[]>(
     () => [
@@ -560,7 +778,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                   ? "Tutup rincian item tagihan"
                   : `Lihat ${row.original.items_count} item tagihan`
               }
-              className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              className="mx-auto inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-[var(--ledger-recessed)] text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {row.getIsExpanded() ? (
                 <ChevronDown className="w-4 h-4" />
@@ -569,47 +787,53 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
               )}
             </button>
           ) : null,
-        size: 38,
+        size: 36,
         enableSorting: false,
         meta: {
           expandedContent: (group: ExpenseInvoiceGroup) => (
-            <div className="bg-slate-50/90 dark:bg-slate-900/70 px-4 sm:px-6 py-3 border-t border-slate-200/70 dark:border-slate-800 space-y-2.5">
+            <div className="ledger-recessed-band px-3.5 py-2.5 border-t border-[color:var(--ledger-hairline)] space-y-1.5">
               <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  <Receipt className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                <div className="flex items-center gap-2 text-xs font-semibold text-[var(--ledger-ink)]">
+                  <Receipt className="w-3.5 h-3.5 text-[var(--signal-unpaid)]" />
                   <span>Rincian Item Tagihan ({group.items.length} item)</span>
                   {group.invoice_number && group.invoice_number !== "-" && (
-                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <span className="font-mono-ledger text-[11px] text-[var(--ledger-muted)]">
                       #{group.invoice_number}
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-950/60 overflow-x-auto">
+              <div className="overflow-x-auto border-y border-[color:var(--ledger-hairline)]">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
+                  <thead className="border-b border-[color:var(--ledger-hairline)] text-[11px] text-[var(--ledger-muted)]">
                     <tr>
-                      <th className="py-2 px-3 text-left font-semibold w-8">#</th>
-                      <th className="py-2 px-3 text-left font-semibold">Barang &amp; Kategori</th>
-                      <th className="py-2 px-3 text-right font-semibold">Qty</th>
-                      <th className="py-2 px-3 text-right font-semibold">Harga Satuan</th>
-                      <th className="py-2 px-3 text-right font-semibold">Tagihan / Sisa</th>
-                      <th className="py-2 px-3 text-center font-semibold">Status</th>
-                      <th className="py-2 px-3 text-center font-semibold">Aksi Item</th>
+                      <th className="py-1.5 px-2 text-left font-semibold w-8">#</th>
+                      <th className="py-1.5 px-2 text-left font-semibold">
+                        Barang &amp; Kategori
+                      </th>
+                      <th className="py-1.5 px-2 text-right font-semibold">Qty</th>
+                      <th className="py-1.5 px-2 text-right font-semibold">
+                        Harga Satuan
+                      </th>
+                      <th className="py-1.5 px-2 text-right font-semibold">
+                        Tagihan / Sisa
+                      </th>
+                      <th className="py-1.5 px-2 text-center font-semibold">Status</th>
+                      <th className="py-1.5 px-2 text-center font-semibold">Aksi Item</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-[color:var(--ledger-hairline)]">
                     {group.items.map((it, idx) => {
                       const bd = getExpensePaymentBreakdown(it);
                       const catColor = getCategoryColor(it.category);
                       return (
-                        <tr key={it.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-900/50">
-                          <td className="py-2 px-3 font-mono text-slate-500 tabular-nums">
+                        <tr key={it.id} className="ledger-hover-surface">
+                          <td className="py-1.5 px-2 font-mono-ledger text-[var(--ledger-muted)]">
                             {idx + 1}
                           </td>
-                          <td className="py-2 px-3 min-w-[200px]">
-                            <div className="font-semibold text-slate-900 dark:text-slate-100">
+                          <td className="py-1.5 px-2 min-w-[200px]">
+                            <div className="font-semibold text-[var(--ledger-ink)]">
                               {it.item_name}
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -620,63 +844,42 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                 {it.category || "Umum"}
                               </Badge>
                               {it.notes && it.notes !== "-" && (
-                                <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                                <span className="text-[11px] text-[var(--ledger-muted)]">
                                   {it.notes}
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
+                          <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap text-[var(--ledger-muted)]">
                             {it.qty} {it.unit || "Pcs"}
                           </td>
-                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300">
+                          <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap text-[var(--ledger-muted)]">
                             {formatRupiah(it.unit_price)}
                           </td>
-                          <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap">
+                          <td className="py-1.5 px-2 text-right tabular-nums whitespace-nowrap">
                             {bd.isPaid ? (
-                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                              <span className="font-bold text-[var(--ledger-ink)]">
                                 {formatRupiah(bd.total)}
                               </span>
                             ) : bd.paid > 0 ? (
                               <div>
-                                <div className="font-bold text-rose-700 dark:text-rose-400">
+                                <div className="font-bold text-[var(--signal-unpaid)]">
                                   Sisa {formatRupiah(bd.remaining)}
                                 </div>
-                                <div className="text-[10px] text-slate-600 dark:text-slate-400">
+                                <div className="text-[10px] text-[var(--ledger-muted)]">
                                   DP {formatRupiah(bd.paid)} / {formatRupiah(bd.total)}
                                 </div>
                               </div>
                             ) : (
-                              <span className="font-bold text-slate-900 dark:text-slate-100">
+                              <span className="font-bold text-[var(--ledger-ink)]">
                                 {formatRupiah(bd.total)}
                               </span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-center whitespace-nowrap">
-                            {bd.isPaid ? (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200"
-                              >
-                                Lunas
-                              </Badge>
-                            ) : bd.isDp ? (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200"
-                              >
-                                DP {Math.round(bd.progressPct)}%
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200"
-                              >
-                                Belum Lunas
-                              </Badge>
-                            )}
+                          <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                            {renderExpenseStatusBadge(bd, true)}
                           </td>
-                          <td className="py-2 px-3 text-center whitespace-nowrap">
+                          <td className="py-1.5 px-2 text-center whitespace-nowrap">
                             <div className="inline-flex items-center gap-1">
                               {!bd.isPaid ? (
                                 <>
@@ -687,7 +890,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                     onClick={() =>
                                       openPaymentModal(it, bd.isDp ? "full" : "percent")
                                     }
-                                    className="h-7 px-2 text-[10px] font-semibold border-amber-300 text-amber-900 hover:bg-amber-50"
+                                    className="h-7 px-2 text-[10px] font-semibold border-amber-300 text-amber-900 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40"
                                   >
                                     {bd.isDp ? "Bayar" : "DP"}
                                   </Button>
@@ -697,7 +900,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                     variant="outline"
                                     onClick={() => handleTogglePaid(it)}
                                     disabled={settleMutation.isPending}
-                                    className="h-7 px-2 text-[10px] font-semibold border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                                    className="h-7 px-2 text-[10px] font-semibold border-emerald-300 text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-200 dark:hover:bg-emerald-950/40"
                                   >
                                     Lunas
                                   </Button>
@@ -720,7 +923,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                   size="icon"
                                   variant="ghost"
                                   onClick={() => onViewExpense(it)}
-                                  className="h-7 w-7 text-slate-600"
+                                  className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                                  aria-label={`Lihat detail ${it.item_name}`}
                                   title="Lihat Detail"
                                 >
                                   <Eye className="w-3.5 h-3.5" />
@@ -731,7 +935,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => onEditExpense(it)}
-                                className="h-7 w-7 text-slate-600"
+                                className="h-7 w-7 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                                aria-label={`Edit ${it.item_name}`}
                                 title="Edit Item"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -741,9 +946,10 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                                   type="button"
                                   size="icon"
                                   variant="ghost"
-                                  onClick={() => handleDelete(it.id)}
+                                  onClick={() => setConfirmDeleteId(it.id)}
                                   disabled={deletingId === it.id}
-                                  className="h-7 w-7 text-rose-600 hover:text-rose-800"
+                                  className="h-7 w-7 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)]"
+                                  aria-label={`Hapus ${it.item_name}`}
                                   title="Hapus Item"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -793,12 +999,14 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
               <Checkbox
                 checked={allSelected ? true : someSelected ? "indeterminate" : false}
                 onCheckedChange={() => handleToggleSelectGroup(g)}
-                aria-label={`Pilih invoice ${g.invoice_number !== "-" ? g.invoice_number : g.supplier}`}
+                aria-label={`Pilih invoice ${
+                  g.invoice_number !== "-" ? g.invoice_number : g.supplier
+                }`}
               />
             </div>
           );
         },
-        size: 44,
+        size: 36,
         enableSorting: false,
       },
       {
@@ -809,74 +1017,88 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           const g = row.original;
           return (
             <div className="whitespace-nowrap">
-              <div className="font-semibold text-slate-900 dark:text-slate-100">
+              <div className="font-semibold text-[var(--ledger-ink)] tabular-nums text-xs">
                 {formatDateId(g.expense_date)}
               </div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300">
-                {g.items_count > 1 ? `${g.items_count} item` : `ID: #${g.items[0]?.id ?? "-"}`}
+              <div className="text-[11px] text-[var(--ledger-muted)] font-mono-ledger">
+                {g.items_count > 1
+                  ? `${g.items_count} item`
+                  : `#${g.items[0]?.id ?? "-"}`}
               </div>
             </div>
           );
         },
-        size: 105,
+        size: 84,
       },
       {
         accessorKey: "due_date",
         id: "due_date",
-        header: () => <span>Tempo Pelunasan</span>,
+        header: () => <span>Tempo</span>,
         cell: ({ row }) => {
           const g = row.original;
           const dueInfo = getDueUrgencyInfo(g.due_date);
           return g.is_paid ? (
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
+            <span className="text-xs font-medium text-[var(--ledger-muted)] whitespace-nowrap tabular-nums">
               {g.due_date && g.due_date !== "-" ? formatDateId(g.due_date) : "Selesai"}
             </span>
           ) : (
             <div className="space-y-1 whitespace-nowrap">
-              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <div className="font-bold text-[var(--ledger-ink)] text-xs tabular-nums">
                 {formatDateId(g.due_date)}
               </div>
               <Badge
                 variant="outline"
-                className={`text-[10px] px-2 py-0.5 rounded-md ${dueInfo.badgeClass}`}
+                className={`text-[10px] px-1.5 py-0.5 rounded-md ${dueInfo.badgeClass}`}
               >
                 {dueInfo.label}
               </Badge>
             </div>
           );
         },
-        size: 140,
+        size: 146,
       },
       {
         accessorKey: "supplier",
         id: "supplier",
-        header: () => <span>Toko / Supplier</span>,
+        header: () => <span>Toko &amp; Nota</span>,
         cell: ({ row }) => {
           const g = row.original;
+          const tgLink = parseTelegramLink(g.msg_link);
           return (
             <div>
-              <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="truncate max-w-[155px] lg:max-w-[200px]" title={g.supplier}>
+              <div className="font-semibold text-[var(--ledger-ink)] flex items-center gap-1.5 text-xs">
+                <Building2 className="w-3.5 h-3.5 text-[var(--ledger-muted)] shrink-0" />
+                <span className="truncate max-w-[122px] xl:max-w-[165px]" title={g.supplier}>
                   {g.supplier || "Tanpa Supplier"}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap text-[11px] text-[var(--ledger-muted)]">
                 {g.invoice_number && g.invoice_number !== "-" && (
-                  <span className="text-[11px] text-slate-700 dark:text-slate-300 font-mono">
-                    No: {g.invoice_number}
-                  </span>
+                  <span className="font-mono-ledger">#{g.invoice_number}</span>
                 )}
                 {g.items_count > 1 && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                  <span className="font-medium text-[var(--ledger-ink)]">
                     {g.items_count} item
                   </span>
+                )}
+                {tgLink?.isUrl && tgLink.url && (
+                  <a
+                    href={tgLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline rounded-sm"
+                    title="Buka pesan nota di Telegram"
+                  >
+                    <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
+                    <span>Nota</span>
+                    <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                  </a>
                 )}
               </div>
             </div>
           );
         },
-        size: 185,
+        size: 148,
       },
       {
         id: "item_summary",
@@ -891,7 +1113,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
               <button
                 type="button"
                 onClick={row.getToggleExpandedHandler()}
-                className="font-medium text-slate-900 dark:text-slate-100 max-w-[210px] truncate text-left hover:text-blue-700 block"
+                className="font-medium text-xs text-[var(--ledger-ink)] max-w-[138px] xl:max-w-[190px] truncate text-left hover:underline block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
                 title={summary.title}
               >
                 {summary.title}
@@ -905,7 +1127,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                   {g.primary_category || "Umum"}
                 </Badge>
                 {extraCats > 0 && (
-                  <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                  <span className="text-[10px] font-semibold text-[var(--ledger-muted)]">
                     +{extraCats} kategori
                   </span>
                 )}
@@ -913,7 +1135,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             </div>
           );
         },
-        size: 215,
+        size: 150,
       },
       {
         accessorKey: "total_amount",
@@ -929,37 +1151,37 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             <div className="text-right whitespace-nowrap">
               {g.is_paid ? (
                 <div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                  <div className="font-bold text-[var(--ledger-ink)] tabular-nums text-xs sm:text-sm">
                     {formatRupiah(g.total_amount)}
                   </div>
                   {totalPaymentsCount > 0 && (
-                    <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                    <div className="text-[11px] text-[var(--signal-cleared)]">
                       {totalPaymentsCount}x pembayaran
                     </div>
                   )}
                 </div>
               ) : g.is_dp || g.paid_amount > 0 ? (
-                <div className="space-y-1 min-w-[145px]">
-                  <div className="font-bold text-rose-700 dark:text-rose-400 tabular-nums text-sm">
+                <div className="space-y-1">
+                  <div className="font-bold text-[var(--signal-unpaid)] tabular-nums text-xs sm:text-sm">
                     Sisa {formatRupiah(g.remaining_amount)}
                   </div>
-                  <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                  <div className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-amber-500"
+                      className="h-full rounded-full bg-amber-600"
                       style={{ width: `${Math.min(100, g.payment_progress_pct)}%` }}
                     />
                   </div>
-                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                  <div className="text-[10px] text-[var(--ledger-muted)] tabular-nums">
                     DP {formatRupiah(g.paid_amount)} / {formatRupiah(g.total_amount)}
                   </div>
                 </div>
               ) : (
                 <div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                  <div className="font-bold text-[var(--ledger-ink)] tabular-nums text-xs sm:text-sm">
                     {formatRupiah(g.total_amount)}
                   </div>
                   {g.items_count > 1 && (
-                    <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                    <div className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                       {g.items_count} item gabungan
                     </div>
                   )}
@@ -968,80 +1190,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             </div>
           );
         },
-        size: 165,
+        size: 164,
       },
       {
         accessorKey: "pay_status",
         id: "pay_status",
         header: () => <div className="text-center w-full">Status</div>,
-        cell: ({ row }) => {
-          const g = row.original;
-          return (
-            <div className="text-center whitespace-nowrap">
-              {g.is_paid ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
-                >
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Lunas
-                </Badge>
-              ) : g.is_dp ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-                >
-                  <Wallet className="w-3 h-3 mr-1" />
-                  DP {Math.round(g.payment_progress_pct)}%
-                </Badge>
-              ) : g.is_mixed_pay_status ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-                >
-                  <Clock className="w-3 h-3 mr-1" />
-                  Sebagian Lunas
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
-                >
-                  <Clock className="w-3 h-3 mr-1" />
-                  Belum Lunas
-                </Badge>
-              )}
-            </div>
-          );
-        },
-        size: 125,
-      },
-      {
-        id: "nota",
-        header: () => <div className="text-center w-full">Nota</div>,
-        cell: ({ row }) => {
-          const tgLink = parseTelegramLink(row.original.msg_link);
-          return (
-            <div className="text-center whitespace-nowrap">
-              {tgLink?.isUrl && tgLink.url ? (
-                <a
-                  href={tgLink.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
-                  title="Buka pesan nota di Telegram"
-                >
-                  <TelegramIcon className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Nota</span>
-                  <ExternalLink className="w-2.5 h-2.5 opacity-80" />
-                </a>
-              ) : (
-                <span className="text-slate-500 dark:text-slate-400">-</span>
-              )}
-            </div>
-          );
-        },
-        size: 90,
+        cell: ({ row }) => (
+          <div className="text-center whitespace-nowrap">
+            {renderInvoiceStatusBadge(row.original, true)}
+          </div>
+        ),
+        size: 114,
       },
       {
         id: "actions",
@@ -1051,14 +1211,14 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           const single = g.items_count === 1 ? g.items[0] : null;
           const hasAnyPayments = g.items.some((it) => (it.payments_count || 0) > 0);
           return (
-            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
               {!g.is_paid ? (
                 <>
                   <Button
                     type="button"
                     size="sm"
                     onClick={() => openGroupPaymentModal(g, g.is_dp ? "full" : "percent")}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white shadow-2xs"
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md bg-amber-700 hover:bg-amber-800 text-white ledger-press"
                     title={
                       g.is_dp
                         ? "Catat cicilan atau pelunasan sisa DP invoice"
@@ -1066,14 +1226,14 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                     }
                   >
                     <Wallet className="w-3 h-3 mr-1" />
-                    {g.is_dp ? "Bayar / Lunasi" : "DP"}
+                    {g.is_dp ? "Bayar" : "DP"}
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     onClick={() => handleToggleGroupPaid(g)}
                     disabled={settleMutation.isPending}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs"
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md bg-emerald-700 hover:bg-emerald-800 text-white ledger-press"
                     title="Langsung lunasi seluruh item dalam invoice ini"
                   >
                     <CheckCircle2 className="w-3 h-3 mr-1" />
@@ -1088,7 +1248,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                       size="sm"
                       variant="outline"
                       onClick={() => openGroupPaymentModal(g, "full")}
-                      className="h-8 px-2.5 text-[11px] font-semibold rounded-lg border-slate-300 text-slate-700 dark:text-slate-200"
+                      className="h-7 px-2 text-[11px] font-semibold rounded-md"
                       title="Lihat riwayat DP dan pelunasan"
                     >
                       <History className="w-3 h-3 mr-1" />
@@ -1101,7 +1261,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                     variant="outline"
                     onClick={() => handleToggleGroupPaid(g)}
                     disabled={settleMutation.isPending}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200"
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md"
                     title="Batalkan status Lunas"
                   >
                     Batal
@@ -1117,7 +1277,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                       size="sm"
                       variant="ghost"
                       onClick={() => onViewExpense(single)}
-                      className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                      className="h-7 w-7 p-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] rounded-md"
+                      aria-label={`Lihat detail ${single.item_name}`}
                       title="Lihat Detail"
                     >
                       <Eye className="w-3.5 h-3.5" />
@@ -1128,7 +1289,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                     size="sm"
                     variant="ghost"
                     onClick={() => onEditExpense(single)}
-                    className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                    className="h-7 w-7 p-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] rounded-md"
+                    aria-label={`Edit ${single.item_name}`}
                     title="Edit Transaksi"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
@@ -1138,9 +1300,10 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleDelete(single.id)}
+                      onClick={() => setConfirmDeleteId(single.id)}
                       disabled={deletingId === single.id}
-                      className="h-8 w-8 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg"
+                      className="h-7 w-7 p-0 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)] rounded-md"
+                      aria-label={`Hapus ${single.item_name}`}
                       title="Hapus Transaksi"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1154,8 +1317,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                   variant="outline"
                   onClick={row.getToggleExpandedHandler()}
                   aria-expanded={row.getIsExpanded()}
-                  className="h-8 px-2 text-[11px] font-semibold rounded-lg border-slate-300 dark:border-slate-700"
-                  title="Buka / tutup rincian item"
+                  className="h-7 px-2 text-[11px] font-semibold rounded-md"
+                  title="Buka atau tutup rincian item"
                 >
                   {row.getIsExpanded() ? "Tutup" : `Items (${g.items_count})`}
                 </Button>
@@ -1163,7 +1326,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             </div>
           );
         },
-        size: 265,
+        size: 258,
       },
     ],
     [
@@ -1195,18 +1358,17 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
         ),
         cell: ({ row }) => {
           const expense = row.original;
-          const isSelected = selectedIds.includes(expense.id);
           return (
             <div className="flex justify-center">
               <Checkbox
-                checked={isSelected}
+                checked={selectedIds.includes(expense.id)}
                 onCheckedChange={() => handleToggleSelect(expense.id)}
                 aria-label={`Pilih transaksi #${expense.id}`}
               />
             </div>
           );
         },
-        size: 44,
+        size: 36,
         enableSorting: false,
       },
       {
@@ -1217,77 +1379,91 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           const expense = row.original;
           return (
             <div className="whitespace-nowrap">
-              <div className="font-semibold text-slate-900 dark:text-slate-100">
+              <div className="font-semibold text-[var(--ledger-ink)] tabular-nums text-xs">
                 {formatDateId(expense.expense_date)}
               </div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-300">
-                ID: #{expense.id}
+              <div className="text-[11px] text-[var(--ledger-muted)] font-mono-ledger">
+                #{expense.id}
               </div>
             </div>
           );
         },
-        size: 110,
+        size: 88,
       },
       {
         accessorKey: "due_date",
         id: "due_date",
         header: ({ column }) => (
-          <DataGridColumnHeader title="Tempo Pelunasan" column={column} />
+          <DataGridColumnHeader title="Tempo" column={column} />
         ),
         cell: ({ row }) => {
           const expense = row.original;
           const bd = getExpensePaymentBreakdown(expense);
           const dueInfo = getDueUrgencyInfo(expense.due_date);
           return bd.isPaid ? (
-            <span className="text-xs font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">
+            <span className="text-xs font-medium text-[var(--ledger-muted)] whitespace-nowrap tabular-nums">
               {expense.due_date && expense.due_date !== "-"
                 ? formatDateId(expense.due_date)
                 : "Selesai"}
             </span>
           ) : (
             <div className="space-y-1 whitespace-nowrap">
-              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+              <div className="font-bold text-[var(--ledger-ink)] text-xs tabular-nums">
                 {formatDateId(expense.due_date)}
               </div>
               <Badge
                 variant="outline"
-                className={`text-[10px] px-2 py-0.5 rounded-md ${dueInfo.badgeClass}`}
+                className={`text-[10px] px-1.5 py-0.5 rounded-md ${dueInfo.badgeClass}`}
               >
                 {dueInfo.label}
               </Badge>
             </div>
           );
         },
-        size: 140,
+        size: 146,
       },
       {
         accessorKey: "supplier",
         id: "supplier",
         header: ({ column }) => (
-          <DataGridColumnHeader title="Toko / Supplier" column={column} />
+          <DataGridColumnHeader title="Toko &amp; Nota" column={column} />
         ),
         cell: ({ row }) => {
           const expense = row.original;
+          const tgLink = parseTelegramLink(expense.msg_link);
           return (
             <div>
-              <div className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <div className="font-semibold text-[var(--ledger-ink)] flex items-center gap-1.5 text-xs">
+                <Building2 className="w-3.5 h-3.5 text-[var(--ledger-muted)] shrink-0" />
                 <span
-                  className="truncate max-w-[150px] lg:max-w-[190px]"
+                  className="truncate max-w-[128px] xl:max-w-[175px]"
                   title={expense.supplier}
                 >
                   {expense.supplier || "Tanpa Supplier"}
                 </span>
               </div>
-              {expense.invoice_number && expense.invoice_number !== "-" && (
-                <div className="text-[11px] text-slate-600 dark:text-slate-300 font-mono mt-0.5">
-                  No: {expense.invoice_number}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap text-[11px] text-[var(--ledger-muted)]">
+                {expense.invoice_number && expense.invoice_number !== "-" && (
+                  <span className="font-mono-ledger">#{expense.invoice_number}</span>
+                )}
+                {tgLink?.isUrl && tgLink.url && (
+                  <a
+                    href={tgLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline rounded-sm"
+                    title="Buka pesan nota di Telegram"
+                  >
+                    <TelegramIcon className="w-3 h-3 text-[#229ED9]" />
+                    <span>Nota</span>
+                    <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                  </a>
+                )}
+              </div>
             </div>
           );
         },
-        size: 175,
+        size: 160,
       },
       {
         accessorKey: "item_name",
@@ -1301,7 +1477,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           return (
             <div>
               <div
-                className="font-medium text-slate-900 dark:text-slate-100 max-w-[190px] truncate"
+                className="font-medium text-xs text-[var(--ledger-ink)] max-w-[155px] xl:max-w-[190px] truncate"
                 title={expense.item_name}
               >
                 {expense.item_name}
@@ -1313,19 +1489,19 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                 >
                   {expense.category || "Umum"}
                 </Badge>
-                <span className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                <span className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                   {expense.qty} {expense.unit || "pcs"}
                 </span>
               </div>
               {expense.notes && expense.notes !== "-" && (
-                <div className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-0.5 truncate max-w-[190px]">
+                <div className="text-[11px] text-[var(--ledger-muted)] italic mt-0.5 truncate max-w-[155px]">
                   {expense.notes}
                 </div>
               )}
             </div>
           );
         },
-        size: 205,
+        size: 170,
       },
       {
         accessorKey: "total_price",
@@ -1344,36 +1520,36 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             <div className="text-right whitespace-nowrap">
               {bd.isPaid ? (
                 <div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                  <div className="font-bold text-[var(--ledger-ink)] tabular-nums text-xs sm:text-sm">
                     {formatRupiah(bd.total)}
                   </div>
                   {(expense.payments_count || 0) > 0 && (
-                    <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
+                    <div className="text-[11px] text-[var(--signal-cleared)]">
                       {expense.payments_count}x pembayaran
                     </div>
                   )}
                 </div>
               ) : bd.isDp || bd.paid > 0 ? (
-                <div className="space-y-1 min-w-[145px]">
-                  <div className="font-bold text-rose-700 dark:text-rose-400 tabular-nums text-sm">
+                <div className="space-y-1">
+                  <div className="font-bold text-[var(--signal-unpaid)] tabular-nums text-xs sm:text-sm">
                     Sisa {formatRupiah(bd.remaining)}
                   </div>
-                  <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                  <div className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-amber-500"
+                      className="h-full rounded-full bg-amber-600"
                       style={{ width: `${Math.min(100, bd.progressPct)}%` }}
                     />
                   </div>
-                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                  <div className="text-[10px] text-[var(--ledger-muted)] tabular-nums">
                     DP {formatRupiah(bd.paid)} / {formatRupiah(bd.total)}
                   </div>
                 </div>
               ) : (
                 <div>
-                  <div className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                  <div className="font-bold text-[var(--ledger-ink)] tabular-nums text-xs sm:text-sm">
                     {formatRupiah(bd.total)}
                   </div>
-                  <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
+                  <div className="text-[11px] text-[var(--ledger-muted)] tabular-nums">
                     @{formatRupiah(expense.unit_price)}
                   </div>
                 </div>
@@ -1381,72 +1557,18 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             </div>
           );
         },
-        size: 165,
+        size: 164,
       },
       {
         accessorKey: "pay_status",
         id: "pay_status",
         header: () => <div className="text-center w-full">Status</div>,
-        cell: ({ row }) => {
-          const bd = getExpensePaymentBreakdown(row.original);
-          return (
-            <div className="text-center whitespace-nowrap">
-              {bd.isPaid ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800"
-                >
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  Lunas
-                </Badge>
-              ) : bd.isDp ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-                >
-                  <Wallet className="w-3 h-3 mr-1" />
-                  DP {Math.round(bd.progressPct)}%
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
-                >
-                  <Clock className="w-3 h-3 mr-1" />
-                  Belum Lunas
-                </Badge>
-              )}
-            </div>
-          );
-        },
-        size: 120,
-      },
-      {
-        id: "nota",
-        header: () => <div className="text-center w-full">Nota</div>,
-        cell: ({ row }) => {
-          const tgLink = parseTelegramLink(row.original.msg_link);
-          return (
-            <div className="text-center whitespace-nowrap">
-              {tgLink?.isUrl && tgLink.url ? (
-                <a
-                  href={tgLink.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-800 dark:text-blue-300 hover:underline px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800"
-                  title="Buka pesan nota di Telegram"
-                >
-                  <TelegramIcon className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Nota</span>
-                  <ExternalLink className="w-2.5 h-2.5 opacity-80" />
-                </a>
-              ) : (
-                <span className="text-slate-500 dark:text-slate-400">-</span>
-              )}
-            </div>
-          );
-        },
-        size: 95,
+        cell: ({ row }) => (
+          <div className="text-center whitespace-nowrap">
+            {renderExpenseStatusBadge(getExpensePaymentBreakdown(row.original), true)}
+          </div>
+        ),
+        size: 114,
       },
       {
         id: "actions",
@@ -1455,28 +1577,24 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           const expense = row.original;
           const bd = getExpensePaymentBreakdown(expense);
           return (
-            <div className="flex items-center justify-center gap-1.5 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
               {!bd.isPaid ? (
                 <>
                   <Button
+                    type="button"
                     size="sm"
                     onClick={() => openPaymentModal(expense, bd.isDp ? "full" : "percent")}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-amber-700 hover:bg-amber-800 text-white shadow-2xs"
-                    title={
-                      bd.isDp
-                        ? "Catat cicilan atau pelunasan sisa DP"
-                        : "Catat pembayaran DP atau cicilan"
-                    }
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md bg-amber-700 hover:bg-amber-800 text-white ledger-press"
                   >
                     <Wallet className="w-3 h-3 mr-1" />
-                    {bd.isDp ? "Bayar / Lunasi" : "DP"}
+                    {bd.isDp ? "Bayar" : "DP"}
                   </Button>
                   <Button
+                    type="button"
                     size="sm"
                     onClick={() => handleTogglePaid(expense)}
                     disabled={settleMutation.isPending}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs"
-                    title="Langsung lunasi seluruh sisa tagihan"
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md bg-emerald-700 hover:bg-emerald-800 text-white ledger-press"
                   >
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     Lunas
@@ -1486,23 +1604,23 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                 <>
                   {(expense.payments_count || 0) > 0 && (
                     <Button
+                      type="button"
                       size="sm"
                       variant="outline"
                       onClick={() => openPaymentModal(expense, "full")}
-                      className="h-8 px-2.5 text-[11px] font-semibold rounded-lg border-slate-300 text-slate-700 dark:text-slate-200"
-                      title="Lihat riwayat DP dan pelunasan"
+                      className="h-7 px-2 text-[11px] font-semibold rounded-md"
                     >
                       <History className="w-3 h-3 mr-1" />
                       Riwayat
                     </Button>
                   )}
                   <Button
+                    type="button"
                     size="sm"
                     variant="outline"
                     onClick={() => handleTogglePaid(expense)}
                     disabled={settleMutation.isPending}
-                    className="h-8 px-2.5 text-[11px] font-bold rounded-lg border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200"
-                    title="Batalkan status Lunas"
+                    className="h-7 px-2 text-[11px] font-semibold rounded-md"
                   >
                     Batal
                   </Button>
@@ -1510,31 +1628,37 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
               )}
               {onViewExpense && (
                 <Button
+                  type="button"
                   size="sm"
                   variant="ghost"
                   onClick={() => onViewExpense(expense)}
-                  className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                  className="h-7 w-7 p-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] rounded-md"
+                  aria-label={`Lihat detail ${expense.item_name}`}
                   title="Lihat Detail"
                 >
                   <Eye className="w-3.5 h-3.5" />
                 </Button>
               )}
               <Button
+                type="button"
                 size="sm"
                 variant="ghost"
                 onClick={() => onEditExpense(expense)}
-                className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 dark:text-slate-300 rounded-lg"
+                className="h-7 w-7 p-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] rounded-md"
+                aria-label={`Edit ${expense.item_name}`}
                 title="Edit Transaksi"
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </Button>
               {canDelete && (
                 <Button
+                  type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() => handleDelete(expense.id)}
+                  onClick={() => setConfirmDeleteId(expense.id)}
                   disabled={deletingId === expense.id}
-                  className="h-8 w-8 p-0 text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg"
+                  className="h-7 w-7 p-0 text-[var(--signal-unpaid)] hover:bg-[var(--signal-unpaid-soft)] rounded-md"
+                  aria-label={`Hapus ${expense.item_name}`}
                   title="Hapus Transaksi"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -1543,7 +1667,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
             </div>
           );
         },
-        size: 250,
+        size: 258,
       },
     ],
     [
@@ -1572,9 +1696,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     manualPagination: true,
     rowCount: totalItems,
     getRowId: (row: Expense) => String(row.id),
-    state: {
-      pagination: unpaidPagination,
-    },
+    state: { pagination: unpaidPagination },
     onPaginationChange: (updater) => {
       const next = typeof updater === "function" ? updater(unpaidPagination) : updater;
       if (next.pageSize !== perPage) {
@@ -1611,272 +1733,207 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
     },
   });
 
-  return (
-    <div className="space-y-5">
-      {/* 1. Compact Action Bar */}
-      {(onAddNewDp || onAddNewUnpaid) && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Monitoring Tagihan:
-            </span>
-            {activeUnpaidCount > 0 && (
-              <Badge
-                variant="outline"
-                className="text-[10px] font-semibold text-rose-800 border-rose-300 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-200 dark:border-rose-800"
-              >
-                {activeUnpaidCount} Tagihan Aktif
-              </Badge>
-            )}
-            {dpCount > 0 && (
-              <Badge
-                variant="outline"
-                className="text-[10px] font-semibold text-amber-800 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800"
-              >
-                {dpCount} Berstatus DP
-              </Badge>
-            )}
-          </div>
+  const overdueShare = Math.min(activeOverdueTotal, activeUnpaidTotal);
+  const currentUnpaidShare = Math.max(0, activeUnpaidTotal - overdueShare);
 
-          <div className="flex items-center gap-2 shrink-0">
+  const ledgerEmptyDescription = search.trim()
+    ? `Tidak ada transaksi yang cocok dengan kata kunci "${search}".`
+    : statusTab === "dp"
+    ? "Belum ada invoice dengan skema DP atau cicilan sebagian pada filter ini."
+    : statusTab === "unpaid"
+    ? "Semua tagihan operasional dan tempo toko telah lunas."
+    : statusTab === "overdue"
+    ? "Tidak ada tagihan yang melewati batas jatuh tempo."
+    : "Belum ada catatan tagihan pada filter periode ini.";
+
+  return (
+    <div className="space-y-3.5 pb-6">
+      {/* 1. Editorial Action Header (Flat on Canvas) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="space-y-0.5">
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Buku Tagihan &amp; Tempo Supplier
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {activeUnpaidCount > 0
+              ? `${activeUnpaidCount} tagihan aktif di ${activeSuppliersCount} toko${
+                  dpCount > 0 ? `, ${dpCount} berstatus DP` : ""
+                }`
+              : "Tidak ada tagihan aktif yang menunggu pelunasan"}
+          </p>
+        </div>
+
+        {(onAddNewDp || onAddNewUnpaid) && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {onAddNewDp && (
               <Button
+                type="button"
                 onClick={onAddNewDp}
                 size="sm"
-                className="bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs"
+                className="min-h-[40px] sm:min-h-[36px] bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-semibold px-3.5 gap-1.5 ledger-press"
               >
                 <Percent className="w-3.5 h-3.5" />
-                <span>+ Invoice DP</span>
+                <span>Invoice DP</span>
               </Button>
             )}
             {onAddNewUnpaid && (
               <Button
+                type="button"
                 onClick={onAddNewUnpaid}
                 size="sm"
-                className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold h-9 px-3.5 gap-1.5 shadow-xs"
+                className="min-h-[40px] sm:min-h-[36px] bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-semibold px-3.5 gap-1.5 ledger-press"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ Tagihan Baru</span>
+                <span>Tagihan Baru</span>
               </Button>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Summary Error Banner */}
+      {/* Summary Error Strip (Non-Card Alert) */}
       {isSummaryError && (
         <div
           role="alert"
-          className="p-4 rounded-2xl border border-rose-300 bg-rose-50 dark:bg-rose-950/40 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex flex-wrap items-center justify-between gap-3"
+          className="border-l-2 border-[var(--signal-unpaid)] signal-surface-unpaid px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-[var(--ledger-ink)]"
         >
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Gagal memuat ringkasan tagihan belum lunas dan DP.</span>
-          </div>
-          <Button type="button" size="sm" variant="outline" onClick={() => refetchSummary()}>
+          <span>Gagal memuat ringkasan tagihan belum lunas dan DP dari server.</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => refetchSummary()}
+            className="min-h-[36px]"
+          >
             Muat Ulang Ringkasan
           </Button>
         </div>
       )}
 
-      {/* 2. KPI Cards: 4 Ringkasan Utama */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {/* Card 1: Total Sisa Tagihan */}
-        <Card
-          onClick={() => {
+      {/* 2. Unified Hairline KPI Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isSummaryLoading}
+        primary={{
+          label: "Total Sisa Tagihan",
+          value: formatRupiah(activeUnpaidTotal),
+          valueClassName: "text-[var(--signal-unpaid)]",
+          subtext: `${activeUnpaidCount} tagihan aktif di ${activeSuppliersCount} toko`,
+          active: statusTab === "unpaid",
+          accentTone: "unpaid",
+          onClick: () => {
             setStatusTab("unpaid");
             setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusTab === "unpaid"
-              ? "ring-2 ring-rose-500 border-rose-300 bg-rose-50/40 dark:bg-rose-950/20"
-              : "hover:border-rose-300 dark:hover:border-rose-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Total Sisa Tagihan
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 flex items-center justify-center">
-                <Receipt className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-rose-700 dark:text-rose-400 tabular-nums">
-                  {formatRupiah(activeUnpaidTotal)}
-                </div>
-              )}
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
-                <span className="font-bold text-slate-900 dark:text-slate-100">
-                  {activeUnpaidCount}
-                </span>{" "}
-                tagihan aktif di {activeSuppliersCount} toko
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Card 2: Tagihan DP Berjalan */}
-        <Card
-          onClick={() => {
-            setStatusTab("dp");
-            setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusTab === "dp"
-              ? "ring-2 ring-amber-500 border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
-              : "hover:border-amber-300 dark:hover:border-amber-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Tagihan DP Berjalan
-              </span>
-              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center">
-                <Wallet className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-amber-700 dark:text-amber-400 tabular-nums">
-                  {formatRupiah(dpRemainingNominal)}
-                </div>
-              )}
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
-                <span className="font-bold text-slate-900 dark:text-slate-100">{dpCount}</span>{" "}
-                invoice DP (sudah dibayar {formatRupiah(dpPaidNominal)})
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Card 3: Tempo Paling Dekat */}
-        <Card className="border border-amber-200/90 dark:border-amber-900/60 bg-amber-50/40 dark:bg-amber-950/20 rounded-2xl shadow-xs">
-          <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between gap-1">
-              <span className="text-xs font-bold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
-                <CalendarClock className="w-4 h-4 text-amber-700 dark:text-amber-400" />
-                Tempo Paling Dekat
-              </span>
-              {nearestDue && (
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] px-1.5 py-0 font-bold ${
+          },
+          segments: [
+            {
+              key: "overdue",
+              label: "Lewat Tempo",
+              value: overdueShare,
+              displayValue: formatRupiah(overdueShare),
+              colorClass: "bg-rose-700 dark:bg-rose-500",
+            },
+            {
+              key: "current",
+              label: "Belum Tempo",
+              value: currentUnpaidShare,
+              displayValue: formatRupiah(currentUnpaidShare),
+              colorClass: "bg-amber-600 dark:bg-amber-400",
+            },
+          ],
+        }}
+        supporting={[
+          {
+            key: "dp",
+            label: "Tagihan DP Berjalan",
+            value: formatRupiah(dpRemainingNominal),
+            valueClassName: "text-[var(--signal-dp)]",
+            subtext: `${dpCount} invoice (sudah DP ${formatRupiah(dpPaidNominal)})`,
+            active: statusTab === "dp",
+            accentTone: "dp",
+            onClick: () => {
+              setStatusTab("dp");
+              setPage(1);
+            },
+          },
+          {
+            key: "nearest-due",
+            label: "Tempo Paling Dekat",
+            value: nearestDue
+              ? formatDateId(nearestDue.parsed_due_date || nearestDue.due_date)
+              : "Tidak Ada",
+            valueClassName: nearestDue
+              ? "text-[var(--ledger-ink)]"
+              : "text-[var(--signal-cleared)]",
+            badge: nearestDue
+              ? {
+                  text:
                     nearestDue.is_overdue || nearestDue.urgency === "overdue"
-                      ? "bg-rose-100 text-rose-800 border-rose-300"
+                      ? `Lewat ${Math.abs(nearestDue.days_left ?? 0)}h`
                       : nearestDue.is_today || nearestDue.urgency === "today"
-                      ? "bg-amber-700 text-white border-amber-800"
-                      : "bg-amber-100 text-amber-900 border-amber-300"
-                  }`}
-                >
-                  {nearestDue.is_overdue || nearestDue.urgency === "overdue"
-                    ? `Lewat ${Math.abs(nearestDue.days_left ?? 0)} Hari`
-                    : nearestDue.is_today || nearestDue.urgency === "today"
-                    ? "Hari Ini"
-                    : `${nearestDue.days_left ?? 0} Hari Lagi`}
-                </Badge>
-              )}
-            </div>
-
-            <div className="mt-2 min-w-0">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : nearestDue ? (
-                <div>
-                  <div className="text-base sm:text-xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                    {formatDateId(nearestDue.parsed_due_date || nearestDue.due_date)}
-                  </div>
-                  <div className="text-[11px] text-slate-700 dark:text-slate-200 font-medium truncate mt-0.5">
-                    <span className="font-bold text-amber-800 dark:text-amber-300">
-                      {nearestDue.supplier}
-                    </span>{" "}
-                    ({formatRupiah(nearestDue.remaining_amount ?? nearestDue.total_price)})
-                  </div>
-                  <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate">
-                    {nearestDue.item_name}
-                    {isDpStatus(nearestDue.pay_status) ? " (DP)" : ""}
-                  </div>
-                </div>
-              ) : (
-                <div className="py-1">
-                  <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Semua Aman
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
-                    Tidak ada tempo pelunasan aktif
-                  </p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Card 4: Lewat Jatuh Tempo */}
-        <Card
-          onClick={() => {
-            setStatusTab("overdue");
-            setPage(1);
-          }}
-          className={`cursor-pointer transition-all border rounded-2xl shadow-xs ${
-            statusTab === "overdue"
-              ? "ring-2 ring-red-500 border-red-300 bg-red-50/40 dark:bg-red-950/20"
-              : "hover:border-red-300 dark:hover:border-red-800 bg-white dark:bg-slate-900"
-          }`}
-        >
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Lewat Jatuh Tempo
+                      ? "Hari Ini"
+                      : `${nearestDue.days_left ?? 0}h lagi`,
+                  className:
+                    nearestDue.is_overdue || nearestDue.urgency === "overdue"
+                      ? "bg-[var(--signal-unpaid-soft)] text-[var(--signal-unpaid)]"
+                      : "bg-[var(--signal-dp-soft)] text-[var(--signal-dp)]",
+                }
+              : undefined,
+            subtext: nearestDue ? (
+              <span className="block truncate">
+                <strong className="font-semibold text-[var(--ledger-ink)]">
+                  {nearestDue.supplier}
+                </strong>{" "}
+                ({formatRupiah(nearestDue.remaining_amount ?? nearestDue.total_price)})
               </span>
-              <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2">
-              {isSummaryLoading ? (
-                <Skeleton className="h-7 w-28 rounded-lg" />
-              ) : (
-                <div className="text-lg sm:text-2xl font-bold text-red-700 dark:text-red-400 tabular-nums">
-                  {formatRupiah(activeOverdueTotal)}
-                </div>
-              )}
-              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
-                <span className="font-bold text-red-700 dark:text-red-400">
-                  {summaryData?.overdue_count || 0}
-                </span>{" "}
-                tagihan melewati tempo
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            ) : (
+              "Tidak ada tempo pelunasan aktif"
+            ),
+            active: statusTab === "soon",
+            accentTone: "dp",
+            onClick: nearestDue
+              ? () => {
+                  const isOver =
+                    nearestDue.is_overdue || nearestDue.urgency === "overdue";
+                  setStatusTab(isOver ? "overdue" : "soon");
+                  setPage(1);
+                }
+              : undefined,
+          },
+          {
+            key: "overdue",
+            label: "Lewat Jatuh Tempo",
+            value: formatRupiah(activeOverdueTotal),
+            valueClassName: "text-[var(--signal-unpaid)]",
+            subtext: `${summaryData?.overdue_count || 0} tagihan melewati tempo`,
+            active: statusTab === "overdue",
+            accentTone: "unpaid",
+            onClick: () => {
+              setStatusTab("overdue");
+              setPage(1);
+            },
+          },
+        ]}
+      />
 
-      {/* 3. Rekap Saldo Tagihan per Toko / Supplier */}
+      {/* 3. Flat Supplier Liability Directory (Zero Nested Cards) */}
       {summaryData && summaryData.by_supplier && summaryData.by_supplier.length > 0 && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+        <section aria-label="Rekap sisa tagihan per toko" className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Store className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-              <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                Rekap Sisa Tagihan per Toko / Supplier
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h3 className="text-sm font-bold text-[var(--ledger-ink)] truncate">
+                Rekap Sisa Tagihan per Toko
               </h3>
-              <Badge variant="outline" className="text-[10px] text-slate-700 dark:text-slate-300 border-slate-300">
-                {summaryData.by_supplier.length} Toko
-              </Badge>
+              <span className="text-xs text-[var(--ledger-muted)] tabular-nums shrink-0">
+                {summaryData.by_supplier.length} toko
+              </span>
             </div>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={() => setIsSuppliersExpanded((prev) => !prev)}
-              className="min-h-[38px] text-xs text-slate-600 dark:text-slate-300 hover:text-slate-900 gap-1 px-2.5"
+              aria-expanded={isSuppliersExpanded}
+              className="min-h-[38px] text-xs font-medium text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] gap-1 px-2.5"
             >
               <span>{isSuppliersExpanded ? "Tutup Rekap" : "Buka Rekap"}</span>
               {isSuppliersExpanded ? (
@@ -1888,7 +1945,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           </div>
 
           {isSuppliersExpanded && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+            <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden divide-y divide-[color:var(--ledger-hairline)]">
               {summaryData.by_supplier.map((supplierGroup) => {
                 const isSelected =
                   supplierGroup.supplier_id !== null &&
@@ -1899,537 +1956,173 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                 return (
                   <div
                     key={supplierGroup.supplier_id ?? supplierGroup.supplier_name}
-                    className={`rounded-xl border p-3.5 flex flex-col justify-between gap-3 transition-all ${
-                      isSelected
-                        ? "border-rose-400 bg-rose-50/50 dark:bg-rose-950/30 ring-1 ring-rose-400"
-                        : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar className="h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-700 bg-white text-xs font-bold text-rose-700">
-                          <AvatarFallback>{getInitials(supplierGroup.supplier_name)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-semibold text-xs text-slate-900 dark:text-slate-100 truncate">
-                              {supplierGroup.supplier_name}
+                      className={cn(
+                        "px-3.5 py-2 grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center transition-colors",
+                        isSelected
+                          ? "signal-surface-unpaid"
+                          : "ledger-hover-recessed"
+                      )}
+                    >
+                      {/* Supplier Identity */}
+                      <div className="lg:col-span-5 flex items-center gap-2.5 min-w-0">
+                        <div
+                          aria-hidden="true"
+                          className="w-8 h-8 rounded-lg bg-[var(--ledger-recessed)] text-[var(--signal-unpaid)] text-xs font-bold flex items-center justify-center shrink-0"
+                        >
+                        {getInitials(supplierGroup.supplier_name)}
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-[var(--ledger-ink)] truncate">
+                            {supplierGroup.supplier_name}
+                          </span>
+                          {supplierGroup.has_overdue && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--signal-unpaid-soft)] text-[var(--signal-unpaid)] shrink-0">
+                              Lewat Tempo
                             </span>
-                            {supplierGroup.has_overdue && (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0 font-bold border-red-300 text-red-800 bg-red-50"
-                              >
-                                Lewat Tempo
-                              </Badge>
-                            )}
-                          </div>
+                          )}
+                        </div>
+                        <div className="text-xs text-[var(--ledger-muted)] tabular-nums truncate">
                           {supplierGroup.nearest_due_date ? (
-                            <div className="text-[11px] text-amber-800 dark:text-amber-300 font-medium truncate">
-                              Tempo: {formatDateId(supplierGroup.nearest_due_date)}
+                            <>
+                              Tempo terdekat {formatDateId(supplierGroup.nearest_due_date)}
                               {supplierGroup.nearest_days_left !== null && (
-                                <span className="ml-1 text-slate-600 dark:text-slate-300">
+                                <span className="ml-1">
                                   (
                                   {supplierGroup.nearest_days_left < 0
-                                    ? `Lewat ${Math.abs(supplierGroup.nearest_days_left)}h`
+                                    ? `lewat ${Math.abs(supplierGroup.nearest_days_left)} hari`
                                     : supplierGroup.nearest_days_left === 0
-                                    ? "Hari Ini"
-                                    : `${supplierGroup.nearest_days_left}h lagi`}
+                                    ? "hari ini"
+                                    : `${supplierGroup.nearest_days_left} hari lagi`}
                                   )
                                 </span>
                               )}
-                            </div>
+                            </>
                           ) : (
-                            <div className="text-[11px] text-slate-600 dark:text-slate-300 truncate">
-                              Belum ada tanggal tempo
-                            </div>
+                            "Belum ada tanggal tempo"
                           )}
                         </div>
                       </div>
+                    </div>
 
+                    {/* Invoice & DP Count */}
+                    <div className="lg:col-span-2 flex items-center justify-between lg:block text-xs tabular-nums">
+                      <span className="lg:hidden text-[var(--ledger-muted)]">
+                        Tagihan Aktif
+                      </span>
+                      <div>
+                        <span className="font-semibold text-[var(--ledger-ink)]">
+                          {supplierGroup.unpaid_count} nota
+                        </span>
+                        {supDpCount > 0 && (
+                          <span className="text-[11px] text-[var(--signal-dp)] ml-1.5 font-medium">
+                            ({supDpCount} DP)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Remaining Amount */}
+                    <div className="lg:col-span-2 flex items-center justify-between lg:block lg:text-right tabular-nums">
+                      <span className="lg:hidden text-xs text-[var(--ledger-muted)]">
+                        Sisa Kewajiban
+                      </span>
+                      <span
+                        className={cn(
+                          "text-sm font-bold",
+                          hasUnpaid
+                            ? "text-[var(--signal-unpaid)]"
+                            : "text-[var(--ledger-muted)]"
+                        )}
+                      >
+                        {formatRupiah(supplierGroup.unpaid_total)}
+                      </span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="lg:col-span-3 flex flex-wrap items-center justify-end gap-2">
                       {supplierGroup.supplier_id !== null && (
-                        <button
+                        <Button
                           type="button"
+                          size="sm"
+                          variant={isSelected ? "default" : "outline"}
+                          aria-pressed={isSelected}
                           onClick={() => {
-                            setSelectedSupplierId(isSelected ? null : supplierGroup.supplier_id);
+                            setSelectedSupplierId(
+                              isSelected ? null : supplierGroup.supplier_id
+                            );
                             setPage(1);
                           }}
-                          className={`min-h-[34px] text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors shrink-0 ${
-                            isSelected
-                              ? "bg-rose-700 text-white border-rose-700"
-                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
-                          }`}
-                          title="Filter data khusus toko ini"
+                          className={cn(
+                            "min-h-[44px] sm:min-h-[34px] px-3 text-xs font-semibold rounded-lg ledger-press",
+                            isSelected && "bg-rose-700 hover:bg-rose-800 text-white"
+                          )}
                         >
                           {isSelected ? "Filter Aktif" : "Filter"}
-                        </button>
+                        </Button>
+                      )}
+                      {hasUnpaid && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSupplierSettleBankId(settleBankAccountId);
+                            setConfirmSupplierGroup(supplierGroup);
+                          }}
+                          disabled={settleMutation.isPending}
+                          className="min-h-[44px] sm:min-h-[34px] px-3 text-xs font-semibold rounded-lg border-rose-300 text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-950/40 gap-1.5 ledger-press"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Lunasi Semua</span>
+                        </Button>
                       )}
                     </div>
-
-                    <div className="bg-white dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800 rounded-lg p-2.5 space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300 text-[11px]">
-                          Sisa Kewajiban:
-                        </span>
-                        <span
-                          className={`font-bold tabular-nums ${
-                            hasUnpaid
-                              ? "text-rose-700 dark:text-rose-400"
-                              : "text-slate-500"
-                          }`}
-                        >
-                          {formatRupiah(supplierGroup.unpaid_total)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
-                        <span>Tagihan Aktif:</span>
-                        <span className="tabular-nums font-medium text-slate-800 dark:text-slate-200">
-                          {supplierGroup.unpaid_count} nota
-                          {supDpCount > 0 ? ` (${supDpCount} DP)` : ""}
-                        </span>
-                      </div>
-                    </div>
-
-                    {hasUnpaid && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleSettleSupplierAll(supplierGroup)}
-                        disabled={settleMutation.isPending}
-                        className="w-full min-h-[40px] sm:min-h-[34px] text-[11px] font-semibold rounded-lg border-rose-300 text-rose-800 bg-rose-50/70 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:bg-rose-950/40 gap-1.5"
-                      >
-                        <CheckCheck className="w-3.5 h-3.5 text-rose-700 dark:text-rose-300" />
-                        <span>Lunasi Sisa ({formatRupiah(supplierGroup.unpaid_total)})</span>
-                      </Button>
-                    )}
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       )}
 
-      {/* 4. Filter & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Status Tab Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/90 dark:bg-slate-800/80 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("unpaid");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "unpaid"
-                  ? "bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Belum Lunas & DP</span>
-              {activeUnpaidCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-200 font-bold">
-                  {activeUnpaidCount}
-                </span>
-              )}
-            </button>
+      {/* 4. Status Tabs + Unified Ledger Table Container (Single Surface) */}
+      <section aria-label="Daftar tagihan belum lunas" className="space-y-2">
+        <LedgerStatusTabs
+          tabs={statusTabsList}
+          value={statusTab}
+          onChange={(next) => {
+            setStatusTab(next);
+            setPage(1);
+            setSelectedIds([]);
+          }}
+          layoutId="unpaid-status-underline"
+          accentClassName="bg-[var(--signal-unpaid)]"
+          ariaLabel="Filter status tagihan"
+        />
 
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("dp");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "dp"
-                  ? "bg-white dark:bg-slate-900 text-amber-800 dark:text-amber-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <Wallet className="w-3.5 h-3.5 text-amber-600" />
-              <span>DP / Sebagian</span>
-              {dpCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 font-bold">
-                  {dpCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("overdue");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "overdue"
-                  ? "bg-white dark:bg-slate-900 text-red-700 dark:text-red-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-              <span>Lewat Tempo</span>
-              {summaryData && summaryData.overdue_count > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-200 font-bold">
-                  {summaryData.overdue_count}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("soon");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "soon"
-                  ? "bg-white dark:bg-slate-900 text-amber-800 dark:text-amber-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <CalendarClock className="w-3.5 h-3.5 text-amber-600" />
-              <span>≤ 7 Hari</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("paid");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "paid"
-                  ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Sudah Lunas</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStatusTab("all");
-                setPage(1);
-              }}
-              className={`min-h-[38px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                statusTab === "all"
-                  ? "bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-300 shadow-2xs"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-950"
-              }`}
-            >
-              <span>Semua</span>
-            </button>
-          </div>
-
-          {/* Periode Controls */}
-          <div className="flex flex-col items-stretch gap-1.5 md:items-end">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Calendar className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <select
-                  value={periodMode}
-                  onChange={(e) => {
-                    setPeriodMode(e.target.value as PeriodMode);
-                    setPage(1);
-                    setSelectedIds([]);
-                  }}
-                  aria-label="Periode tagihan"
-                  className="h-10 pl-8 pr-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium focus:outline-hidden focus-visible:ring-2 focus-visible:ring-purple-500"
-                >
-                  <option value="all">Semua Waktu</option>
-                  <option value="month">Bulan Tertentu</option>
-                  <option value="custom">Rentang Tanggal</option>
-                </select>
-              </div>
-
-              {periodMode === "month" && (
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => {
-                      const m = Number(e.target.value);
-                      setSelectedMonth(m);
-                      setSelectedMonthEnd(m);
-                      setPage(1);
-                    }}
-                    aria-label="Pilih bulan"
-                    className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
-                  >
-                    {MONTH_NAMES.map((name, idx) => (
-                      <option key={name} value={idx + 1}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => {
-                      setSelectedYear(Number(e.target.value));
-                      setPage(1);
-                    }}
-                    aria-label="Pilih tahun"
-                    className="h-10 px-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
-                  >
-                    {[selectedYear - 1, selectedYear, selectedYear + 1].map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {periodMode === "custom" && (
-                <DateRangePicker
-                  initialDateFrom={customStart}
-                  initialDateTo={customEnd}
-                  onUpdate={({ range }) => {
-                    if (range.from) {
-                      setCustomStart(toIsoDate(range.from));
-                    }
-                    if (range.to) {
-                      setCustomEnd(toIsoDate(range.to));
-                    } else if (range.from) {
-                      setCustomEnd(toIsoDate(range.from));
-                    }
-                    setPage(1);
-                    setSelectedIds([]);
-                  }}
-                />
-              )}
-            </div>
-
-            {isCustomRangeInvalid && (
-              <p role="alert" className="text-[11px] font-medium text-red-600 dark:text-red-400">
-                Tanggal awal tidak boleh setelah tanggal akhir.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Row 2: Search, Supplier Filter & Sort */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Cari barang, supplier/toko, nota, atau catatan..."
-              className="pl-9 h-10 text-xs rounded-xl bg-slate-50/70 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700"
-            />
-          </div>
-
-          <div className="sm:w-56 shrink-0">
-            <select
-              value={selectedSupplierId ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedSupplierId(val ? Number(val) : null);
-                setPage(1);
-              }}
-              aria-label="Filter toko atau supplier"
-              className="w-full h-10 px-3 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
-            >
-              <option value="">Semua Toko / Supplier</option>
-              {summaryData?.by_supplier?.map((s) => (
-                <option key={s.supplier_id ?? s.supplier_name} value={s.supplier_id ?? ""}>
-                  {s.supplier_name} {s.unpaid_count > 0 ? `(${s.unpaid_count} aktif)` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="sm:w-52 shrink-0 flex items-center gap-1.5">
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                setSortBy(e.target.value);
-                setPage(1);
-              }}
-              aria-label="Urutkan daftar"
-              className="w-full h-10 px-3 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium"
-            >
-              <option value="due_date">Urutkan: Jatuh Tempo</option>
-              <option value="expense_date">Urutkan: Tanggal Transaksi</option>
-              <option value="total_price">Urutkan: Nominal</option>
-              <option value="supplier">Urutkan: Nama Toko</option>
-            </select>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
-              className="h-10 w-10 p-0 rounded-xl border-slate-300 dark:border-slate-700 shrink-0"
-              title={`Urutan: ${sortOrder === "asc" ? "Menaik" : "Menurun"}`}
-              aria-label="Ubah arah urutan"
-            >
-              <ArrowUpDown className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. Batch Action Toolbar */}
-      {selectedIds.length > 0 && (
-        <div className="bg-rose-700 text-white rounded-2xl p-4 shadow-md flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-              <CheckCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="font-bold text-sm">{selectedIds.length} Tagihan Terpilih</div>
-              <div className="text-xs text-rose-100 tabular-nums">
-                Total Sisa Pelunasan: <span className="font-bold">{formatRupiah(selectedNominal)}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {bankAccounts.length > 0 && (
-              <select
-                value={settleBankAccountId}
-                onChange={(e) => setSettleBankAccountId(e.target.value)}
-                className="h-10 rounded-xl bg-white text-slate-900 px-2.5 text-xs font-medium"
-                aria-label="Rekening Pembayar"
-              >
-                <option value="">Rekening Pembayar (Opsional)</option>
-                {bankAccounts.map((acc) => (
-                  <option key={acc.id} value={String(acc.id)}>
-                    {acc.name} ({acc.account_code})
-                  </option>
-                ))}
-              </select>
-            )}
-            <Button
-              size="sm"
-              onClick={() => handleBatchSettle("mark_paid")}
-              disabled={settleMutation.isPending}
-              className="bg-white text-rose-800 hover:bg-rose-50 rounded-xl font-bold text-xs min-h-[40px] px-3.5 gap-1.5 shadow-xs"
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
-              <span>Lunasi Sisa ({selectedIds.length})</span>
-            </Button>
-
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setSelectedIds([])}
-              className="text-white hover:bg-white/15 rounded-xl text-xs min-h-[40px] px-3"
-            >
-              Batal
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* 6. Data View (Loading / Error / Empty / Mobile Cards + Desktop Table) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden">
-        {isExpensesLoading ? (
-          <div className="p-6 space-y-3" aria-label="Memuat daftar tagihan">
-            <div className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              Memuat daftar tagihan belum lunas dan DP...
-            </div>
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-xl" />
-            ))}
-          </div>
-        ) : isExpensesError ? (
-          <div role="alert" className="p-10 text-center space-y-3">
-            <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Gagal Memuat Daftar Tagihan
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
-                Terjadi gangguan saat mengambil data tagihan dari server.
-              </p>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetchExpenses()}>
-              Coba Lagi
-            </Button>
-          </div>
-        ) : (isGroupedMode ? invoiceGroups.length === 0 : expenses.length === 0) ? (
-          <div className="p-10 text-center space-y-3">
-            <div className="flex justify-end">
-              <InvoiceViewModeToggle
-                mode={viewMode}
-                onChange={(m) => {
-                  setViewMode(m);
-                  setPage(1);
-                  setSelectedIds([]);
-                }}
-              />
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 mx-auto flex items-center justify-center">
-              <Receipt className="w-7 h-7" />
-            </div>
-            <div>
-              <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Tidak ada data tagihan
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-sm mx-auto">
-                {search.trim()
-                  ? `Tidak ada transaksi yang cocok dengan kata kunci "${search}".`
-                  : statusTab === "dp"
-                  ? "Belum ada invoice dengan skema DP / cicilan sebagian."
-                  : statusTab === "unpaid"
-                  ? "Semua tagihan operasional dan tempo toko telah lunas."
-                  : statusTab === "overdue"
-                  ? "Tidak ada tagihan yang melewati batas jatuh tempo."
-                  : "Belum ada catatan tagihan pada filter periode ini."}
-              </p>
-            </div>
-            {(onAddNewDp || onAddNewUnpaid) && !search.trim() && (
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                {onAddNewDp && (
-                  <Button
-                    size="sm"
-                    onClick={onAddNewDp}
-                    className="bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs min-h-[40px]"
-                  >
-                    <Percent className="w-3.5 h-3.5 mr-1.5" />
-                    Catat Invoice DP
-                  </Button>
-                )}
-                {onAddNewUnpaid && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={onAddNewUnpaid}
-                    className="rounded-xl text-xs min-h-[40px]"
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                    Catat Tagihan Baru
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <DataTable
-            table={(isGroupedMode ? groupedUnpaidTable : unpaidTable) as any}
-            recordCount={totalItems}
-            isLoading={isExpensesLoading}
-            header={
-              <div className="flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
-                    Daftar Tagihan Belum Lunas &amp; DP
-                  </span>
-                  <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
+        <DataTable
+          table={(isGroupedMode ? groupedUnpaidTable : unpaidTable) as any}
+          recordCount={totalItems}
+          isLoading={isExpensesLoading}
+          tableLayout={{ dense: true, columnsResizable: true }}
+          containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
+          headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
+          footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+          tableWrapperClassName="hidden md:block"
+          header={
+            <div className="space-y-2">
+              {/* Row A: Ledger Title & View Mode Switch */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
+                    Daftar Tagihan
+                  </h3>
+                  <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)]">
                     {isGroupedMode
                       ? `${totalItems} invoice (${totalGroupChildItems} item)`
                       : `${totalItems} item`}
-                  </Badge>
+                  </span>
                 </div>
                 <InvoiceViewModeToggle
                   mode={viewMode}
@@ -2440,527 +2133,816 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                   }}
                 />
               </div>
-            }
-            containerClassName="border-0 rounded-none shadow-none"
-            tableWrapperClassName="hidden md:block"
-          >
-            {/* Mobile Card Layout (< md) */}
-            <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-              {isGroupedMode
-                ? invoiceGroups.map((g) => {
-                    const groupIds = getGroupActionableIds(g);
-                    const isSelected =
-                      groupIds.length > 0 &&
-                      groupIds.every((id) => selectedIds.includes(id));
-                    const dueInfo = getDueUrgencyInfo(g.due_date);
-                    const catColor = getCategoryColor(g.primary_category);
-                    const tgLink = parseTelegramLink(g.msg_link);
-                    const summary = getInvoiceItemSummaryText(g);
-                    const isExpanded = Boolean(mobileExpandedKeys[g.group_key]);
 
-                    return (
-                      <div
-                        key={g.group_key}
-                        className={`p-4 space-y-3 ${
-                          isSelected
-                            ? "bg-rose-50/50 dark:bg-rose-950/20"
-                            : dueInfo.urgency === "overdue" && !g.is_paid
-                            ? "bg-red-50/30 dark:bg-red-950/10"
-                            : ""
-                        }`}
+              {/* Row B: Integrated Search & Adaptive Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 gap-2 items-center">
+                <div className="xl:col-span-3 min-w-0">
+                  <InputGroup className="h-9 bg-[var(--ledger-surface)]">
+                    <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                      <Search className="size-3.5 text-[var(--ledger-muted)]" />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="Cari barang, toko, no nota, atau catatan..."
+                      aria-label="Cari tagihan"
+                      className="h-9 text-xs"
+                    />
+                    {search.length > 0 && (
+                      <InputGroupAddon align="inline-end" className="pr-1.5">
+                        <InputGroupButton
+                          size="icon-xs"
+                          aria-label="Bersihkan kata kunci"
+                          onClick={() => {
+                            setSearch("");
+                            setPage(1);
+                          }}
+                        >
+                          <X className="size-3" />
+                        </InputGroupButton>
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
+                </div>
+
+                <div className="xl:col-span-3">
+                  <AdaptiveSelect
+                    value={selectedSupplierId !== null ? String(selectedSupplierId) : ""}
+                    onValueChange={(val) => {
+                      setSelectedSupplierId(val ? Number(val) : null);
+                      setPage(1);
+                    }}
+                    options={supplierOptions}
+                    placeholder="Semua Toko / Supplier"
+                    searchPlaceholder="Cari nama toko..."
+                    aria-label="Filter toko atau supplier"
+                  />
+                </div>
+
+                <div className="xl:col-span-3 flex flex-wrap items-center gap-1.5">
+                  <div className="flex-1 min-w-[135px]">
+                    <AdaptiveSelect
+                      value={periodMode}
+                      onValueChange={(val) => {
+                        setPeriodMode(val as PeriodMode);
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                      options={[
+                        { value: "all", label: "Semua Waktu" },
+                        { value: "month", label: "Bulan Tertentu" },
+                        { value: "custom", label: "Rentang Tanggal" },
+                      ]}
+                      aria-label="Periode tagihan"
+                    />
+                  </div>
+
+                  {periodMode === "month" && (
+                    <>
+                      <div className="w-[120px]">
+                        <AdaptiveSelect
+                          value={String(selectedMonth)}
+                          onValueChange={(val) => {
+                            const m = Number(val);
+                            setSelectedMonth(m);
+                            setSelectedMonthEnd(m);
+                            setPage(1);
+                          }}
+                          options={monthOptions}
+                          searchPlaceholder="Cari bulan..."
+                          aria-label="Pilih bulan"
+                        />
+                      </div>
+                      <div className="w-[88px]">
+                        <AdaptiveSelect
+                          value={String(selectedYear)}
+                          onValueChange={(val) => {
+                            setSelectedYear(Number(val));
+                            setPage(1);
+                          }}
+                          options={yearOptions}
+                          aria-label="Pilih tahun"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {periodMode === "custom" && (
+                    <DateRangePicker
+                      initialDateFrom={customStart}
+                      initialDateTo={customEnd}
+                      onUpdate={({ range }) => {
+                        if (range.from) setCustomStart(toIsoDate(range.from));
+                        if (range.to) setCustomEnd(toIsoDate(range.to));
+                        else if (range.from) setCustomEnd(toIsoDate(range.from));
+                        setPage(1);
+                        setSelectedIds([]);
+                      }}
+                    />
+                  )}
+                </div>
+
+                <div className="xl:col-span-3 flex items-center gap-1.5 min-w-0">
+                  <div className="flex-1 min-w-0">
+                    <AdaptiveSelect
+                      value={sortBy}
+                      onValueChange={(val) => {
+                        setSortBy(val);
+                        setPage(1);
+                      }}
+                      options={[
+                        { value: "due_date", label: "Urut: Jatuh Tempo" },
+                        { value: "expense_date", label: "Urut: Tgl Nota" },
+                        { value: "total_price", label: "Urut: Nominal" },
+                        { value: "supplier", label: "Urut: Nama Toko" },
+                      ]}
+                      aria-label="Urutkan daftar"
+                    />
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                    }
+                    className="h-9 w-9 p-0 shrink-0 rounded-md"
+                    aria-label={`Ubah arah urutan (saat ini ${
+                      sortOrder === "asc" ? "menaik" : "menurun"
+                    })`}
+                    title={`Urutan: ${sortOrder === "asc" ? "Menaik" : "Menurun"}`}
+                  >
+                    {sortOrder === "asc" ? (
+                      <ArrowUpNarrowWide className="w-4 h-4" />
+                    ) : (
+                      <ArrowDownWideNarrow className="w-4 h-4" />
+                    )}
+                  </Button>
+
+                  {hasActiveFilters && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleResetFilters}
+                      className="h-9 w-9 p-0 shrink-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      aria-label="Reset semua filter"
+                      title="Reset Filter"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {isCustomRangeInvalid && (
+                <p
+                  role="alert"
+                  className="text-xs font-medium text-[var(--signal-unpaid)]"
+                >
+                  Tanggal awal tidak boleh setelah tanggal akhir.
+                </p>
+              )}
+            </div>
+          }
+          emptyState={
+            isExpensesError ? (
+              <LedgerStateBlock
+                variant="error"
+                title="Gagal Memuat Daftar Tagihan"
+                description="Terjadi gangguan saat mengambil data tagihan dari server. Periksa koneksi lalu coba muat ulang."
+                actions={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchExpenses()}
+                    className="min-h-[40px] sm:min-h-[36px] gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Muat Ulang</span>
+                  </Button>
+                }
+              />
+            ) : (
+              <LedgerStateBlock
+                variant="empty"
+                icon={<Receipt className="w-7 h-7" />}
+                title="Tidak Ada Data Tagihan"
+                description={ledgerEmptyDescription}
+                actions={
+                  <>
+                    {hasActiveFilters && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleResetFilters}
+                        className="min-h-[40px] sm:min-h-[36px] gap-1.5"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2.5 min-w-0">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset Filter</span>
+                      </Button>
+                    )}
+                    {onAddNewDp && !search.trim() && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={onAddNewDp}
+                        className="min-h-[40px] sm:min-h-[36px] bg-amber-700 hover:bg-amber-800 text-white gap-1.5"
+                      >
+                        <Percent className="w-3.5 h-3.5" />
+                        <span>Catat Invoice DP</span>
+                      </Button>
+                    )}
+                    {onAddNewUnpaid && !search.trim() && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={onAddNewUnpaid}
+                        className="min-h-[40px] sm:min-h-[36px] gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Catat Tagihan Baru</span>
+                      </Button>
+                    )}
+                  </>
+                }
+              />
+            )
+          }
+        >
+          {/* Mobile Flat Hairline Rows (< md, Zero Nested Cards) */}
+          <div className="md:hidden divide-y divide-[color:var(--ledger-hairline)]">
+            {isGroupedMode
+              ? invoiceGroups.map((g) => {
+                  const groupIds = getGroupActionableIds(g);
+                  const isSelected =
+                    groupIds.length > 0 &&
+                    groupIds.every((id) => selectedIds.includes(id));
+                  const dueInfo = getDueUrgencyInfo(g.due_date);
+                  const catColor = getCategoryColor(g.primary_category);
+                  const tgLink = parseTelegramLink(g.msg_link);
+                  const summary = getInvoiceItemSummaryText(g);
+                  const isExpanded = Boolean(mobileExpandedKeys[g.group_key]);
+
+                  return (
+                    <div
+                      key={g.group_key}
+                      className={cn(
+                        "p-3 space-y-2 transition-colors",
+                        isSelected
+                          ? "signal-surface-unpaid"
+                          : dueInfo.urgency === "overdue" && !g.is_paid
+                          ? "signal-surface-unpaid-subtle"
+                          : ""
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <div className="min-h-[44px] min-w-[44px] -ml-2 -mt-2 flex items-center justify-center shrink-0">
                             <Checkbox
                               checked={isSelected}
                               onCheckedChange={() => handleToggleSelectGroup(g)}
                               aria-label={`Pilih invoice ${g.supplier}`}
-                              className="mt-0.5"
                             />
-                            <div className="min-w-0">
-                              <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug">
-                                {summary.title}
-                                {summary.extraCount > 0 && (
-                                  <span className="text-blue-700 dark:text-blue-300 ml-1">
-                                    +{summary.extraCount} lainnya
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                <span className="font-medium">{g.supplier || "Tanpa Supplier"}</span>
-                                <span>{formatDateId(g.expense_date)}</span>
-                                {g.invoice_number && g.invoice_number !== "-" && (
-                                  <span className="font-mono text-[10px]">
-                                    #{g.invoice_number}
-                                  </span>
-                                )}
-                              </div>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-[var(--ledger-ink)] leading-snug">
+                              {summary.title}
+                              {summary.extraCount > 0 && (
+                                <span className="text-[var(--signal-unpaid)] ml-1 text-xs font-semibold">
+                                  +{summary.extraCount} lainnya
+                                </span>
+                              )}
                             </div>
-                          </div>
-
-                          {g.is_paid ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 shrink-0"
-                            >
-                              Lunas
-                            </Badge>
-                          ) : g.is_dp ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 shrink-0"
-                            >
-                              DP {Math.round(g.payment_progress_pct)}%
-                            </Badge>
-                          ) : g.is_mixed_pay_status ? (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 shrink-0"
-                            >
-                              Sebagian Lunas
-                            </Badge>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 shrink-0"
-                            >
-                              Belum Lunas
-                            </Badge>
-                          )}
-                        </div>
-
-                        {/* Nominal & DP Progress */}
-                        <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-2">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                              {g.is_paid ? "Total Invoice" : "Sisa Pelunasan"}
-                            </span>
-                            <span
-                              className={`text-base font-extrabold tabular-nums ${
-                                g.is_paid
-                                  ? "text-emerald-700 dark:text-emerald-400"
-                                  : "text-rose-700 dark:text-rose-400"
-                              }`}
-                            >
-                              {formatRupiah(g.is_paid ? g.total_amount : g.remaining_amount)}
-                            </span>
-                          </div>
-
-                          {(g.is_dp || g.paid_amount > 0) && !g.is_paid && (
-                            <>
-                              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-amber-500"
-                                  style={{ width: `${Math.min(100, g.payment_progress_pct)}%` }}
-                                />
-                              </div>
-                              <div className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200 tabular-nums">
-                                <span>Terbayar: {formatRupiah(g.paid_amount)}</span>
-                                <span>Total: {formatRupiah(g.total_amount)}</span>
-                              </div>
-                            </>
-                          )}
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px]">
-                            <div className="flex items-center gap-1.5">
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
-                              >
-                                {g.primary_category || "Umum"}
-                              </Badge>
-                              <span className="text-slate-700 dark:text-slate-200 font-medium">
-                                {g.items_count} item
+                            <div className="text-xs text-[var(--ledger-muted)] mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="font-medium text-[var(--ledger-ink)]">
+                                {g.supplier || "Tanpa Supplier"}
                               </span>
+                              <span className="tabular-nums">
+                                {formatDateId(g.expense_date)}
+                              </span>
+                              {g.invoice_number && g.invoice_number !== "-" && (
+                                <span className="font-mono-ledger text-[10px]">
+                                  #{g.invoice_number}
+                                </span>
+                              )}
                             </div>
-                            {!g.is_paid && (
-                              <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${dueInfo.badgeClass}`}>
-                                {g.due_date && g.due_date !== "-"
-                                  ? `${formatDateId(g.due_date)} (${dueInfo.label})`
-                                  : dueInfo.label}
-                              </Badge>
-                            )}
                           </div>
                         </div>
 
-                        {/* Mobile Actions (>= 44px tap targets) */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {!g.is_paid ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() =>
-                                  openGroupPaymentModal(g, g.is_dp ? "full" : "percent")
-                                }
-                                className="flex-1 min-h-[44px] text-xs font-bold rounded-xl bg-amber-700 hover:bg-amber-800 text-white"
-                              >
-                                <Wallet className="w-3.5 h-3.5 mr-1.5" />
-                                <span>{g.is_dp ? "Bayar / Lunasi" : "Bayar DP"}</span>
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => handleToggleGroupPaid(g)}
-                                disabled={settleMutation.isPending}
-                                className="min-h-[44px] px-3.5 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                <span>Lunasi</span>
-                              </Button>
-                            </>
-                          ) : (
+                        {renderInvoiceStatusBadge(g, true)}
+                      </div>
+
+                      {/* Flat Nominal & DP Strip (No Box Wrapper) */}
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs text-[var(--ledger-muted)]">
+                            {g.is_paid ? "Total Invoice" : "Sisa Pelunasan"}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-base font-bold tabular-nums",
+                              g.is_paid
+                                ? "text-[var(--signal-cleared)]"
+                                : "text-[var(--signal-unpaid)]"
+                            )}
+                          >
+                            {formatRupiah(
+                              g.is_paid ? g.total_amount : g.remaining_amount
+                            )}
+                          </span>
+                        </div>
+
+                        {(g.is_dp || g.paid_amount > 0) && !g.is_paid && (
+                          <div className="space-y-1">
+                            <div className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-amber-600"
+                                style={{
+                                  width: `${Math.min(100, g.payment_progress_pct)}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-[var(--ledger-muted)] tabular-nums">
+                              <span>Terbayar: {formatRupiah(g.paid_amount)}</span>
+                              <span>Total: {formatRupiah(g.total_amount)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                            >
+                              {g.primary_category || "Umum"}
+                            </Badge>
+                            <span className="text-[var(--ledger-muted)]">
+                              {g.items_count} item
+                            </span>
+                          </div>
+                          {!g.is_paid && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-2 py-0.5 ${dueInfo.badgeClass}`}
+                            >
+                              {g.due_date && g.due_date !== "-"
+                                ? `${formatDateId(g.due_date)} (${dueInfo.label})`
+                                : dueInfo.label}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mobile Actions (>= 44px tap targets) */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {!g.is_paid ? (
+                          <>
                             <Button
                               type="button"
                               size="sm"
-                              variant="outline"
+                              onClick={() =>
+                                openGroupPaymentModal(g, g.is_dp ? "full" : "percent")
+                              }
+                              className="flex-1 min-h-[44px] text-xs font-semibold rounded-lg bg-amber-700 hover:bg-amber-800 text-white ledger-press"
+                            >
+                              <Wallet className="w-3.5 h-3.5 mr-1.5" />
+                              <span>{g.is_dp ? "Bayar / Lunasi" : "Bayar DP"}</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
                               onClick={() => handleToggleGroupPaid(g)}
                               disabled={settleMutation.isPending}
-                              className="flex-1 min-h-[44px] px-3.5 text-xs font-semibold rounded-xl"
+                              className="min-h-[44px] px-3.5 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white ledger-press"
                             >
-                              Batal Lunas
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              <span>Lunasi</span>
                             </Button>
-                          )}
-
-                          {tgLink?.isUrl && tgLink.url && (
-                            <a
-                              href={tgLink.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl border border-blue-200 bg-blue-50 text-blue-700"
-                              title="Buka pesan nota di Telegram"
-                            >
-                              <TelegramIcon className="w-4 h-4" />
-                            </a>
-                          )}
-
+                          </>
+                        ) : (
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => toggleMobileExpand(g.group_key)}
-                            aria-expanded={isExpanded}
-                            className="min-h-[44px] px-3 text-xs font-semibold rounded-xl gap-1"
-                          >
-                            {isExpanded ? (
-                              <>
-                                <ChevronUp className="w-4 h-4" />
-                                <span>Tutup</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-4 h-4" />
-                                <span>Items ({g.items_count})</span>
-                              </>
-                            )}
-                          </Button>
-                        </div>
-
-                        {isExpanded && (
-                          <div className="rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700 p-3 space-y-2.5">
-                            <div className="divide-y divide-slate-200/80 dark:divide-slate-700/80">
-                              {g.items.map((it) => {
-                                const bd = getExpensePaymentBreakdown(it);
-                                return (
-                                  <div key={it.id} className="py-2.5 first:pt-0 last:pb-0 space-y-2">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="min-w-0">
-                                        <div className="font-semibold text-xs text-slate-900 dark:text-slate-100">
-                                          {it.item_name}
-                                        </div>
-                                        <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
-                                          {it.qty} {it.unit || "Pcs"} × {formatRupiah(it.unit_price)} •{" "}
-                                          {it.category}
-                                        </div>
-                                      </div>
-                                      <div className="text-right shrink-0">
-                                        <div className="font-bold text-xs text-slate-900 dark:text-slate-100 tabular-nums">
-                                          {formatRupiah(bd.isPaid ? bd.total : bd.remaining)}
-                                        </div>
-                                        <div className="text-[10px] text-slate-600 dark:text-slate-400">
-                                          {bd.isPaid ? "Lunas" : bd.isDp ? `DP ${Math.round(bd.progressPct)}%` : "Belum Lunas"}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex items-center justify-end gap-1.5">
-                                      {!bd.isPaid && (
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => openPaymentModal(it, bd.isDp ? "full" : "percent")}
-                                          className="min-h-[44px] px-3 rounded-xl text-xs font-semibold text-amber-900 border-amber-300"
-                                        >
-                                          {bd.isDp ? "Bayar Item" : "DP Item"}
-                                        </Button>
-                                      )}
-                                      {onViewExpense && (
-                                        <Button
-                                          type="button"
-                                          size="icon"
-                                          variant="outline"
-                                          onClick={() => onViewExpense(it)}
-                                          className="min-h-[44px] min-w-[44px] rounded-xl"
-                                          aria-label={`Detail ${it.item_name}`}
-                                        >
-                                          <Eye className="w-4 h-4" />
-                                        </Button>
-                                      )}
-                                      <Button
-                                        type="button"
-                                        size="icon"
-                                        variant="outline"
-                                        onClick={() => onEditExpense(it)}
-                                        className="min-h-[44px] min-w-[44px] rounded-xl"
-                                        aria-label={`Edit ${it.item_name}`}
-                                      >
-                                        <Edit2 className="w-4 h-4" />
-                                      </Button>
-                                      {canDelete && (
-                                        <Button
-                                          type="button"
-                                          size="icon"
-                                          variant="outline"
-                                          onClick={() => handleDelete(it.id)}
-                                          disabled={deletingId === it.id}
-                                          className="min-h-[44px] min-w-[44px] rounded-xl text-rose-700 border-rose-200"
-                                          aria-label={`Hapus ${it.item_name}`}
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            <InvoiceFeeFooter group={g} showPaymentSummary={!g.is_paid} compact />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                : expenses.map((expense) => {
-                const isSelected = selectedIds.includes(expense.id);
-                const bd = getExpensePaymentBreakdown(expense);
-                const dueInfo = getDueUrgencyInfo(expense.due_date);
-                const catColor = getCategoryColor(expense.category);
-                const tgLink = parseTelegramLink(expense.msg_link);
-
-                return (
-                  <div
-                    key={expense.id}
-                    className={`p-4 space-y-3 ${
-                      isSelected
-                        ? "bg-rose-50/50 dark:bg-rose-950/20"
-                        : dueInfo.urgency === "overdue" && !bd.isPaid
-                        ? "bg-red-50/30 dark:bg-red-950/10"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <Checkbox
-                          checked={isSelected}
-                          onCheckedChange={() => handleToggleSelect(expense.id)}
-                          aria-label={`Pilih transaksi #${expense.id}`}
-                          className="mt-0.5"
-                        />
-                        <div className="min-w-0">
-                          <div className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-snug">
-                            {expense.item_name}
-                          </div>
-                          <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <span className="font-medium">{expense.supplier || "Tanpa Supplier"}</span>
-                            <span>{formatDateId(expense.expense_date)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {bd.isPaid ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 font-bold border-emerald-300 text-emerald-800 bg-emerald-50 shrink-0"
-                        >
-                          Lunas
-                        </Badge>
-                      ) : bd.isDp ? (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 font-bold border-amber-300 text-amber-900 bg-amber-50 shrink-0"
-                        >
-                          DP {Math.round(bd.progressPct)}%
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] px-2 py-0.5 font-bold border-rose-300 text-rose-800 bg-rose-50 shrink-0"
-                        >
-                          Belum Lunas
-                        </Badge>
-                      )}
-                    </div>
-
-                    {/* Nominal & DP Progress */}
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-2">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                          {bd.isPaid ? "Total Invoice" : "Sisa Pelunasan"}
-                        </span>
-                        <span
-                          className={`text-base font-extrabold tabular-nums ${
-                            bd.isPaid
-                              ? "text-emerald-700 dark:text-emerald-400"
-                              : "text-rose-700 dark:text-rose-400"
-                          }`}
-                        >
-                          {formatRupiah(bd.isPaid ? bd.total : bd.remaining)}
-                        </span>
-                      </div>
-
-                      {(bd.isDp || bd.paid > 0) && !bd.isPaid && (
-                        <>
-                          <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-amber-500"
-                              style={{ width: `${Math.min(100, bd.progressPct)}%` }}
-                            />
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] text-slate-700 dark:text-slate-200 tabular-nums">
-                            <span>Sudah DP: {formatRupiah(bd.paid)}</span>
-                            <span>Total: {formatRupiah(bd.total)}</span>
-                          </div>
-                        </>
-                      )}
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px]">
-                        <div className="flex items-center gap-1.5">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
-                          >
-                            {expense.category || "Umum"}
-                          </Badge>
-                          <span className="text-slate-600 dark:text-slate-300">
-                            {expense.qty} {expense.unit || "pcs"}
-                          </span>
-                        </div>
-                        {!bd.isPaid && (
-                          <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${dueInfo.badgeClass}`}>
-                            {expense.due_date && expense.due_date !== "-"
-                              ? `${formatDateId(expense.due_date)} (${dueInfo.label})`
-                              : dueInfo.label}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Mobile Actions (>= 44px tap targets) */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {!bd.isPaid ? (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              openPaymentModal(expense, bd.isDp ? "full" : "percent")
-                            }
-                            className="flex-1 min-h-[44px] text-xs font-bold rounded-xl bg-amber-700 hover:bg-amber-800 text-white"
-                          >
-                            <Wallet className="w-3.5 h-3.5 mr-1.5" />
-                            <span>{bd.isDp ? "Bayar / Lunasi" : "Bayar DP"}</span>
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => handleTogglePaid(expense)}
+                            onClick={() => handleToggleGroupPaid(g)}
                             disabled={settleMutation.isPending}
-                            className="min-h-[44px] px-3.5 text-xs font-bold rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                            <span>Lunasi</span>
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          {(expense.payments_count || 0) > 0 && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openPaymentModal(expense, "full")}
-                              className="flex-1 min-h-[44px] text-xs font-semibold rounded-xl"
-                            >
-                              <History className="w-3.5 h-3.5 mr-1.5" />
-                              <span>Riwayat ({expense.payments_count})</span>
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleTogglePaid(expense)}
-                            disabled={settleMutation.isPending}
-                            className="min-h-[44px] px-3.5 text-xs font-semibold rounded-xl"
+                            className="flex-1 min-h-[44px] px-3.5 text-xs font-semibold rounded-lg"
                           >
                             Batal Lunas
                           </Button>
-                        </>
-                      )}
+                        )}
 
-                      <div className="flex items-center gap-1 ml-auto">
                         {tgLink?.isUrl && tgLink.url && (
                           <a
                             href={tgLink.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl border border-blue-200 bg-blue-50 text-blue-700"
+                            className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg border border-[color:var(--ledger-hairline)] text-blue-700 dark:text-blue-300"
+                            aria-label="Buka pesan nota di Telegram"
                             title="Buka pesan nota di Telegram"
                           >
                             <TelegramIcon className="w-4 h-4" />
                           </a>
                         )}
-                        {onViewExpense && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => onViewExpense(expense)}
-                            className="min-h-[44px] min-w-[44px] p-0 rounded-xl"
-                            aria-label="Lihat detail"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        )}
+
                         <Button
+                          type="button"
                           size="sm"
                           variant="outline"
-                          onClick={() => onEditExpense(expense)}
-                          className="min-h-[44px] min-w-[44px] p-0 rounded-xl"
-                          aria-label="Edit transaksi"
+                          onClick={() => toggleMobileExpand(g.group_key)}
+                          aria-expanded={isExpanded}
+                          className="min-h-[44px] px-3 text-xs font-semibold rounded-lg gap-1"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          {isExpanded ? (
+                            <>
+                              <ChevronUp className="w-4 h-4" />
+                              <span>Tutup</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="w-4 h-4" />
+                              <span>Items ({g.items_count})</span>
+                            </>
+                          )}
                         </Button>
-                        {canDelete && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDelete(expense.id)}
-                            disabled={deletingId === expense.id}
-                            className="min-h-[44px] min-w-[44px] p-0 rounded-xl text-rose-700 border-rose-200"
-                            aria-label="Hapus transaksi"
+                      </div>
+
+                      {/* Mobile Expanded Indented Ledger Sub-list (Zero Inner Cards) */}
+                      {isExpanded && (
+                        <div className="mt-1.5 pl-2.5 border-l-2 border-[color:var(--ledger-hairline)] divide-y divide-[color:var(--ledger-hairline)]">
+                          {g.items.map((it) => {
+                            const bd = getExpensePaymentBreakdown(it);
+                            return (
+                              <div key={it.id} className="py-2 space-y-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-semibold text-xs text-[var(--ledger-ink)]">
+                                      {it.item_name}
+                                    </div>
+                                    <div className="text-[11px] text-[var(--ledger-muted)] tabular-nums mt-0.5">
+                                      {it.qty} {it.unit || "Pcs"} ×{" "}
+                                      {formatRupiah(it.unit_price)} ({it.category})
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <div className="font-bold text-xs text-[var(--ledger-ink)] tabular-nums">
+                                      {formatRupiah(bd.isPaid ? bd.total : bd.remaining)}
+                                    </div>
+                                    <div className="text-[10px] text-[var(--ledger-muted)]">
+                                      {bd.isPaid
+                                        ? "Lunas"
+                                        : bd.isDp
+                                        ? `DP ${Math.round(bd.progressPct)}%`
+                                        : "Belum Lunas"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {!bd.isPaid && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        openPaymentModal(
+                                          it,
+                                          bd.isDp ? "full" : "percent"
+                                        )
+                                      }
+                                      className="min-h-[44px] px-3 rounded-lg text-xs font-semibold text-amber-900 border-amber-300 dark:text-amber-200 dark:border-amber-800"
+                                    >
+                                      {bd.isDp ? "Bayar Item" : "DP Item"}
+                                    </Button>
+                                  )}
+                                  {onViewExpense && (
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => onViewExpense(it)}
+                                      className="min-h-[44px] min-w-[44px] rounded-lg"
+                                      aria-label={`Detail ${it.item_name}`}
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="outline"
+                                    onClick={() => onEditExpense(it)}
+                                    className="min-h-[44px] min-w-[44px] rounded-lg"
+                                    aria-label={`Edit ${it.item_name}`}
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </Button>
+                                  {canDelete && (
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      onClick={() => setConfirmDeleteId(it.id)}
+                                      disabled={deletingId === it.id}
+                                      className="min-h-[44px] min-w-[44px] rounded-lg text-[var(--signal-unpaid)]"
+                                      aria-label={`Hapus ${it.item_name}`}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <div className="pt-2">
+                            <InvoiceFeeFooter
+                              group={g}
+                              showPaymentSummary={!g.is_paid}
+                              compact
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              : expenses.map((expense) => {
+                  const isSelected = selectedIds.includes(expense.id);
+                  const bd = getExpensePaymentBreakdown(expense);
+                  const dueInfo = getDueUrgencyInfo(expense.due_date);
+                  const catColor = getCategoryColor(expense.category);
+                  const tgLink = parseTelegramLink(expense.msg_link);
+
+                  return (
+                    <div
+                      key={expense.id}
+                      className={cn(
+                        "p-3 space-y-2 transition-colors",
+                        isSelected
+                          ? "signal-surface-unpaid"
+                          : dueInfo.urgency === "overdue" && !bd.isPaid
+                          ? "signal-surface-unpaid-subtle"
+                          : ""
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <div className="min-h-[44px] min-w-[44px] -ml-2 -mt-2 flex items-center justify-center shrink-0">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => handleToggleSelect(expense.id)}
+                              aria-label={`Pilih transaksi #${expense.id}`}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-[var(--ledger-ink)] leading-snug">
+                              {expense.item_name}
+                            </div>
+                            <div className="text-xs text-[var(--ledger-muted)] mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span className="font-medium text-[var(--ledger-ink)]">
+                                {expense.supplier || "Tanpa Supplier"}
+                              </span>
+                              <span className="tabular-nums">
+                                {formatDateId(expense.expense_date)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {renderExpenseStatusBadge(bd, true)}
+                      </div>
+
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-xs text-[var(--ledger-muted)]">
+                            {bd.isPaid ? "Total Invoice" : "Sisa Pelunasan"}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-base font-bold tabular-nums",
+                              bd.isPaid
+                                ? "text-[var(--signal-cleared)]"
+                                : "text-[var(--signal-unpaid)]"
+                            )}
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                            {formatRupiah(bd.isPaid ? bd.total : bd.remaining)}
+                          </span>
+                        </div>
+
+                        {(bd.isDp || bd.paid > 0) && !bd.isPaid && (
+                          <div className="space-y-1">
+                            <div className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-amber-600"
+                                style={{ width: `${Math.min(100, bd.progressPct)}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-[var(--ledger-muted)] tabular-nums">
+                              <span>Sudah DP: {formatRupiah(bd.paid)}</span>
+                              <span>Total: {formatRupiah(bd.total)}</span>
+                            </div>
+                          </div>
                         )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 border ${catColor.border} ${catColor.bg}`}
+                            >
+                              {expense.category || "Umum"}
+                            </Badge>
+                            <span className="text-[var(--ledger-muted)] tabular-nums">
+                              {expense.qty} {expense.unit || "pcs"}
+                            </span>
+                          </div>
+                          {!bd.isPaid && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-2 py-0.5 ${dueInfo.badgeClass}`}
+                            >
+                              {expense.due_date && expense.due_date !== "-"
+                                ? `${formatDateId(expense.due_date)} (${dueInfo.label})`
+                                : dueInfo.label}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {!bd.isPaid ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() =>
+                                openPaymentModal(expense, bd.isDp ? "full" : "percent")
+                              }
+                              className="flex-1 min-h-[44px] text-xs font-semibold rounded-lg bg-amber-700 hover:bg-amber-800 text-white ledger-press"
+                            >
+                              <Wallet className="w-3.5 h-3.5 mr-1.5" />
+                              <span>{bd.isDp ? "Bayar / Lunasi" : "Bayar DP"}</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => handleTogglePaid(expense)}
+                              disabled={settleMutation.isPending}
+                              className="min-h-[44px] px-3.5 text-xs font-semibold rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white ledger-press"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                              <span>Lunasi</span>
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            {(expense.payments_count || 0) > 0 && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openPaymentModal(expense, "full")}
+                                className="flex-1 min-h-[44px] text-xs font-semibold rounded-lg"
+                              >
+                                <History className="w-3.5 h-3.5 mr-1.5" />
+                                <span>Riwayat ({expense.payments_count})</span>
+                              </Button>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleTogglePaid(expense)}
+                              disabled={settleMutation.isPending}
+                              className="min-h-[44px] px-3.5 text-xs font-semibold rounded-lg"
+                            >
+                              Batal Lunas
+                            </Button>
+                          </>
+                        )}
+
+                        <div className="flex items-center gap-1.5 ml-auto">
+                          {tgLink?.isUrl && tgLink.url && (
+                            <a
+                              href={tgLink.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg border border-[color:var(--ledger-hairline)] text-blue-700 dark:text-blue-300"
+                              aria-label="Buka pesan nota di Telegram"
+                              title="Buka pesan nota di Telegram"
+                            >
+                              <TelegramIcon className="w-4 h-4" />
+                            </a>
+                          )}
+                          {onViewExpense && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              onClick={() => onViewExpense(expense)}
+                              className="min-h-[44px] min-w-[44px] rounded-lg"
+                              aria-label="Lihat detail"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            onClick={() => onEditExpense(expense)}
+                            className="min-h-[44px] min-w-[44px] rounded-lg"
+                            aria-label="Edit transaksi"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          {canDelete && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="outline"
+                              onClick={() => setConfirmDeleteId(expense.id)}
+                              disabled={deletingId === expense.id}
+                              className="min-h-[44px] min-w-[44px] rounded-lg text-[var(--signal-unpaid)]"
+                              aria-label="Hapus transaksi"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </DataTable>
-        )}
-      </div>
+                  );
+                })}
+          </div>
+        </DataTable>
+      </section>
 
-      {/* 8. DP & Pelunasan Modal */}
+      {/* 5. Floating Batch Settlement Dock */}
+      <LedgerBatchDock
+        selectedCount={selectedIds.length}
+        itemLabel="tagihan"
+        totalAmount={selectedNominal}
+        totalLabel="Total Sisa Pelunasan:"
+        bankAccounts={bankAccounts}
+        bankAccountId={settleBankAccountId}
+        onBankAccountChange={setSettleBankAccountId}
+        primaryAction={{
+          label: `Lunasi Sisa (${selectedIds.length})`,
+          onClick: () => handleBatchSettle("mark_paid"),
+          disabled: settleMutation.isPending,
+          className: "bg-emerald-700 hover:bg-emerald-800 text-white",
+          icon: <CheckCircle2 className="w-4 h-4" />,
+        }}
+        onClear={() => setSelectedIds([])}
+      />
+
+      {/* 6. Accessible Confirmation Dialogs (Replacing window.confirm) */}
+      <LedgerConfirmDialog
+        open={Boolean(confirmSupplierGroup)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmSupplierGroup(null);
+        }}
+        title="Lunasi Seluruh Tagihan Toko?"
+        description={
+          confirmSupplierGroup
+            ? `Lunasi sisa ${confirmSupplierGroup.unpaid_count} tagihan ke ${
+                confirmSupplierGroup.supplier_name
+              } senilai ${formatRupiah(confirmSupplierGroup.unpaid_total)}?`
+            : ""
+        }
+        confirmLabel="Ya, Lunasi Semua"
+        confirmVariant="cleared"
+        isPending={settleMutation.isPending}
+        bankAccounts={bankAccounts}
+        bankAccountId={supplierSettleBankId}
+        onBankAccountChange={setSupplierSettleBankId}
+        onConfirm={executeSettleSupplierAll}
+      />
+
+      <LedgerConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
+        title="Hapus Catatan Tagihan?"
+        description="Tindakan ini menghapus catatan tagihan terpilih dari daftar pengeluaran."
+        confirmLabel="Hapus Tagihan"
+        confirmVariant="destructive"
+        onConfirm={executeDeleteExpense}
+      />
+
+      {/* 7. DP & Pelunasan Modal */}
       <DpPaymentModal
         isOpen={Boolean(paymentModalExpense || paymentModalInvoiceGroup)}
         onClose={() => {

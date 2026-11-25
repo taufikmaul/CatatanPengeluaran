@@ -533,9 +533,9 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
   };
 
   return (
-    <div className="space-y-5 pb-10">
+    <div className="space-y-3.5 pb-6">
       {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-0.5">
         <Badge
           variant="outline"
           className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs w-fit"

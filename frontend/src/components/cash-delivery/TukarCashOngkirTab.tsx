@@ -426,12 +426,12 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 4 Kartu KPI Ringkasan */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         {/* KPI 1: Tukar Cash */}
         <Card className="border-indigo-200/80 dark:border-indigo-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 sm:p-4 space-y-1">
+          <CardContent className="p-3 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Total Tukar Cash</span>
               <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
@@ -452,7 +452,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
 
         {/* KPI 2: Total Biaya Ongkir */}
         <Card className="border-sky-200/80 dark:border-sky-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 sm:p-4 space-y-1">
+          <CardContent className="p-3 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Total Biaya Ongkir</span>
               <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400">

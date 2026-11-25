@@ -994,7 +994,7 @@ function MainDashboardApp() {
           />
 
           {/* Main Content Area */}
-          <main className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6 space-y-6">
+          <main className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 md:px-6 py-3.5 space-y-3.5">
             {/* Hub 1: Kas & Pengeluaran */}
             {isCashflowActive && (
               <React.Suspense fallback={<TabLoadingFallback />}>
@@ -1125,7 +1125,7 @@ function MainDashboardApp() {
                   ) : (
                     /* 2. Tampilan Desktop (md: ke atas) Tetap Lengkap & Kaya Data */
                     <React.Suspense fallback={<TabLoadingFallback />}>
-                    <div className="space-y-6">
+                    <div className="space-y-3.5">
                       {/* Stat Cards Lengkap untuk Owner */}
                       <StatCards
                         totalLunas={reportData?.total_lunas || 0}
@@ -1181,7 +1181,7 @@ function MainDashboardApp() {
                       />
 
                       {/* Charts & Analytics Row 1: Category & Payment Methods */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
                         <div className="lg:col-span-6">
                           <CategoryDonutChart
                             categoryData={reportData?.per_kategori || {}}
@@ -1199,7 +1199,7 @@ function MainDashboardApp() {
                       </div>
 
                       {/* Charts & Analytics Row 2: Daily Trend & Unpaid Orders */}
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
                         <div className="lg:col-span-7">
                           <DailyTrendChart data={reportData?.daily_chart || []} />
                         </div>
@@ -1496,7 +1496,7 @@ function MainDashboardApp() {
                   ) : (
                     /* 2. Tampilan Desktop Halaman Daftar Transaksi */
                     <React.Suspense fallback={<TabLoadingFallback />}>
-                    <div className="space-y-6">
+                    <div className="space-y-3.5">
                       {/* Leaderboard & Top Stats Section (Top Sering Dibeli, Top Item Termahal, Top Naik Drastis, Top Toko & Mitra, Rata-rata / Hari, Rata-rata / Transaksi, Ragam Item Unik, Transaksi Terbesar) */}
                       <LeaderboardCards
                         topFrequentItems={reportData?.top_frequent_items || []}
@@ -1613,7 +1613,7 @@ function MainDashboardApp() {
                   /* Admin Input View pada Halaman Transaksi */
                   <div className="space-y-4">
                     {/* Banner Status Admin Input */}
-                    <div className="bg-amber-500/10 border border-amber-200/90 dark:border-amber-800/80 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
+                    <div className="bg-amber-500/10 border border-amber-200/90 dark:border-amber-800/80 rounded-2xl p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
                       <div className="flex items-center gap-3.5">
                         <div className="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xl shrink-0">
                           ✍️

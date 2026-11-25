@@ -353,9 +353,9 @@ export const IncomingAnalyticsPanel: React.FC<IncomingAnalyticsPanelProps> = ({
   const isEmpty = summary.total_paid_tx === 0 && topByQty.length === 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Filter Bar per Tipe Order (Channel) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-white border border-slate-200 rounded-xl p-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white border border-slate-200 rounded-xl p-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-700">Filter Tipe Order:</span>
           <select

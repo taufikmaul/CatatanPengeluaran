@@ -65,6 +65,25 @@
     --invert: var(--color-zinc-900);
 
     --invert-foreground: var(--color-zinc-50);
+
+    /* Editorial Ledger OKLCH Tokens (WCAG AA verified) */
+    --ledger-canvas: oklch(0.985 0.004 85);
+    --ledger-surface: oklch(0.996 0.002 85);
+    --ledger-recessed: oklch(0.962 0.006 85);
+    --ledger-ink: oklch(0.19 0.014 255);
+    --ledger-muted: oklch(0.46 0.015 255);
+    --ledger-hairline: oklch(0.89 0.008 85);
+
+    --signal-unpaid: oklch(0.49 0.19 18);
+    --signal-unpaid-soft: oklch(0.965 0.018 18);
+    --signal-talangan: oklch(0.46 0.17 290);
+    --signal-talangan-soft: oklch(0.965 0.018 290);
+    --signal-dp: oklch(0.49 0.14 62);
+    --signal-dp-soft: oklch(0.968 0.025 72);
+    --signal-cleared: oklch(0.47 0.13 155);
+    --signal-cleared-soft: oklch(0.962 0.022 155);
+
+    --ease-ledger: cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   .dark {
@@ -111,6 +130,23 @@
     --warning-foreground: var(--color-yellow-600);
     --invert: var(--color-zinc-700);
     --invert-foreground: var(--color-zinc-50);
+
+    /* Editorial Ledger OKLCH Tokens — Dark Mode (WCAG AA verified) */
+    --ledger-canvas: oklch(0.145 0.013 255);
+    --ledger-surface: oklch(0.185 0.015 255);
+    --ledger-recessed: oklch(0.22 0.016 255);
+    --ledger-ink: oklch(0.955 0.006 85);
+    --ledger-muted: oklch(0.73 0.014 255);
+    --ledger-hairline: oklch(0.29 0.015 255);
+
+    --signal-unpaid: oklch(0.76 0.16 18);
+    --signal-unpaid-soft: oklch(0.24 0.045 18);
+    --signal-talangan: oklch(0.78 0.14 290);
+    --signal-talangan-soft: oklch(0.24 0.045 290);
+    --signal-dp: oklch(0.80 0.13 72);
+    --signal-dp-soft: oklch(0.25 0.045 72);
+    --signal-cleared: oklch(0.77 0.13 155);
+    --signal-cleared-soft: oklch(0.23 0.04 155);
   }
 }
 
@@ -129,6 +165,69 @@
 /* Tabular figures for numbers, currency, and counters */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+.font-mono-ledger {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Editorial Ledger Surface Utilities (Tailwind v3-safe OKLCH tint mixes) */
+.ledger-surface-dock {
+  background-color: var(--ledger-surface);
+  background-color: color-mix(in oklch, var(--ledger-surface) 94%, transparent);
+}
+.ledger-recessed-band {
+  background-color: var(--ledger-recessed);
+  background-color: color-mix(in oklch, var(--ledger-recessed) 78%, transparent);
+}
+.ledger-recessed-subtle {
+  background-color: var(--ledger-recessed);
+  background-color: color-mix(in oklch, var(--ledger-recessed) 48%, transparent);
+}
+.ledger-hover-recessed:hover {
+  background-color: color-mix(in oklch, var(--ledger-recessed) 58%, transparent);
+}
+.ledger-hover-surface:hover {
+  background-color: color-mix(in oklch, var(--ledger-surface) 75%, transparent);
+}
+.signal-surface-unpaid {
+  background-color: var(--signal-unpaid-soft);
+  background-color: color-mix(in oklch, var(--signal-unpaid-soft) 65%, transparent);
+}
+.signal-surface-unpaid-subtle {
+  background-color: var(--signal-unpaid-soft);
+  background-color: color-mix(in oklch, var(--signal-unpaid-soft) 35%, transparent);
+}
+.signal-surface-talangan {
+  background-color: var(--signal-talangan-soft);
+  background-color: color-mix(in oklch, var(--signal-talangan-soft) 65%, transparent);
+}
+.signal-surface-dp {
+  background-color: var(--signal-dp-soft);
+  background-color: color-mix(in oklch, var(--signal-dp-soft) 70%, transparent);
+}
+.signal-surface-cleared {
+  background-color: var(--signal-cleared-soft);
+  background-color: color-mix(in oklch, var(--signal-cleared-soft) 65%, transparent);
+}
+
+/* Tactile press micro-interaction (Emil Restraint lens, explicit properties only) */
+.ledger-press {
+  transition-property: transform, background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-ledger);
+}
+.ledger-press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ledger-press,
+  .ledger-press:active:not(:disabled) {
+    transition-duration: 1ms;
+    transform: none;
+  }
 }
 
 /* Tailwind v4 transform-3d utility compatibility for Velora Card3D */

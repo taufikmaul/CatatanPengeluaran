@@ -839,7 +839,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
   );
 
   return (
-    <div className="space-y-6 pb-12 print:p-0">
+    <div className="space-y-4 pb-6 print:p-0">
       {/* ─────────────────────────────────────────────────────────────
           1. HEADER & CONTROLS
       ───────────────────────────────────────────────────────────── */}
@@ -924,7 +924,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
       ───────────────────────────────────────────────────────────── */}
       {isLoading && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             {[1, 2, 3, 4, 5].map((i) => (
               <Skeleton key={i} className="h-24 w-full rounded-xl" />
             ))}
@@ -960,10 +960,10 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
           {/* ─────────────────────────────────────────────────────────────
               2. TOP KPI CARDS (FINANCIAL SUMMARY)
           ───────────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
             {/* 1. Total Beban Usaha (Laba Rugi) */}
             <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span>Total Beban Usaha</span>
                   <Badge variant="outline" className="text-[10px] font-mono py-0 bg-slate-50 dark:bg-slate-800">
@@ -1000,7 +1000,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
             {/* 2. Harga Pokok Penjualan (HPP) */}
             <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span className="text-amber-700 dark:text-amber-400 font-medium">Beban Pokok (HPP)</span>
                   <Badge variant="outline" className="text-[10px] font-mono py-0 bg-amber-50 text-amber-700 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800">
@@ -1024,7 +1024,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
             {/* 3. Beban Operasional (OPEX) */}
             <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span className="text-blue-700 dark:text-blue-400 font-medium">Operasional (OPEX)</span>
                   <Badge variant="outline" className="text-[10px] font-mono py-0 bg-blue-50 text-blue-700 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800">
@@ -1048,7 +1048,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
             {/* 4. Belanja Modal / Aset Tetap */}
             <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span className="text-purple-700 dark:text-purple-400 font-medium">Aset Tetap (Capex)</span>
                   <Badge variant="outline" className="text-[10px] font-mono py-0 bg-purple-50 text-purple-700 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800">
@@ -1066,7 +1066,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
             {/* 5. Hutang Belanja (Kewajiban) */}
             <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-4">
+              <CardContent className="p-3.5">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <span className="text-rose-700 dark:text-rose-400 font-medium">Hutang Belanja</span>
                   <Badge variant="outline" className="text-[10px] font-mono py-0 bg-rose-50 text-rose-700 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800">
@@ -1157,7 +1157,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               TAB 1: LAPORAN LABA RUGI (INCOME STATEMENT)
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "laba_rugi" && (
-            <div className="space-y-6">
+            <div className="space-y-3.5">
               {/* 0. SECTION PENDAPATAN & LABA BERSIH (Akun Kepala 4 - dari Transaksi Masuk) */}
               <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
                 <div className="bg-emerald-50/70 dark:bg-emerald-950/30 px-5 py-3.5 border-b border-emerald-200/70 dark:border-emerald-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1420,7 +1420,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               TAB 2: LAPORAN POSISI KEUANGAN / NERACA
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "neraca" && (
-            <div className="space-y-6">
+            <div className="space-y-3.5">
               {/* Posisi Kas & Bank per Rekening Setup (Terhubung ke COA 1-11xx) */}
               {accountingData.neraca.rekening_positions && accountingData.neraca.rekening_positions.length > 0 && (
                 <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
@@ -1446,9 +1446,9 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </Card>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
                 {/* SISI KIRI: ASET (AKTIVA) */}
-                <div className="space-y-6">
+                <div className="space-y-3.5">
                   {/* Aset Lancar */}
                   <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
                     <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
@@ -1538,7 +1538,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </div>
 
                 {/* SISI KANAN: KEWAJIBAN (PASSIVA) */}
-                <div className="space-y-6">
+                <div className="space-y-3.5">
                   <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
                     <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -1671,11 +1671,11 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               TAB 3: LAPORAN ARUS KAS (CASH FLOW STATEMENT)
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "arus_kas" && (
-            <div className="space-y-6">
+            <div className="space-y-3.5">
               {/* Ringkasan Arus Kas Masuk vs Keluar */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                 <Card className="border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-xs">
-                  <CardContent className="p-4">
+                  <CardContent className="p-3.5">
                     <div className="text-xs text-emerald-700 dark:text-emerald-400">Total Kas Masuk (Penjualan Bersih)</div>
                     <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-1">
                       +{formatRupiah(accountingData.arus_kas.total_kas_masuk || 0)}
@@ -1683,7 +1683,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </CardContent>
                 </Card>
                 <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <CardContent className="p-4">
+                  <CardContent className="p-3.5">
                     <div className="text-xs text-slate-500">Total Kas Keluar Riil</div>
                     <div className="text-lg font-bold text-rose-600 tabular-nums mt-1">
                       -{formatRupiah(accountingData.arus_kas.total_kas_keluar_riil)}
@@ -1691,7 +1691,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </CardContent>
                 </Card>
                 <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <CardContent className="p-4">
+                  <CardContent className="p-3.5">
                     <div className="text-xs text-slate-500">Arus Kas Bersih (Net Cash Flow)</div>
                     <div className={`text-lg font-bold tabular-nums mt-1 ${
                       (accountingData.arus_kas.net_cash_flow || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
@@ -1783,7 +1783,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               </div>
 
               {/* Total Arus Kas Riil & Distribusi Pembayaran */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
@@ -1982,7 +1982,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               TAB 4: ANALISIS & RASIO FINANSIAL (HEALTH & RATIOS)
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "analisis" && (
-            <div className="space-y-6">
+            <div className="space-y-3.5">
               {/* Evaluasi Kesehatan Finansial (4 Cards) */}
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
@@ -2011,7 +2011,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
                     return (
                       <Card key={evalItem.key} className={`border ${statusColor} shadow-xs`}>
-                        <CardContent className="p-4">
+                        <CardContent className="p-3.5">
                           <div className="flex items-start justify-between gap-2">
                             <span className="text-xs font-bold leading-tight">{evalItem.title}</span>
                             <Badge className={`text-[10px] uppercase font-bold ${badgeColor} border-0`}>
@@ -2036,7 +2036,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
               {/* Analisis Variansi HPP Teoritis (Resep) vs HPP Aktual (Belanja) */}
               {accountingData.analisis.hpp_variance && (
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                     <div>
                       <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
@@ -2101,7 +2101,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               )}
 
               {/* Struktur Biaya Operasional (Cost Breakdown) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                   <div>
                     <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-0.5">
@@ -2181,7 +2181,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               </Card>
 
               {/* Analisis Variansi MoM (Lonjakan vs Efisiensi) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {/* Kenaikan Biaya Terbesar */}
                 <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
                   <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20 flex items-center gap-2">
@@ -2253,9 +2253,9 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               TAB 5: BUKU BESAR & RINCIAN AKUN (GENERAL LEDGER DRILL-DOWN)
           ───────────────────────────────────────────────────────────── */}
           {activeSubTab === "buku_besar" && (
-            <div className="space-y-6">
+            <div className="space-y-3.5">
               {/* Ringkasan Akun Kas (1-11xx) & Pendapatan (4-xxxx) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
                 <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-3">
                   Ringkasan Akun Kas/Bank (1-11xx) &amp; Pendapatan (4-xxxx)
                 </h3>
@@ -2295,7 +2295,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </div>
               </Card>
 
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-5">
+              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">

@@ -1339,7 +1339,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   if (activeLength === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-10 text-center shadow-sm space-y-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-8 text-center shadow-sm space-y-2.5">
         {onViewModeChange && (
           <div className="flex justify-end">
             <InvoiceViewModeToggle mode={viewMode} onChange={onViewModeChange} />
@@ -1449,7 +1449,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                   key={g.group_key}
                   id={single ? `expense-row-${single.id}` : undefined}
                   className={cn(
-                    "p-4 space-y-3 transition-all",
+                    "p-3 space-y-2 transition-all",
                     hasHighlighted
                       ? "bg-blue-50/80 dark:bg-blue-950/60 ring-2 ring-blue-500 rounded-xl"
                       : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
@@ -1706,7 +1706,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                 key={e.id}
                 id={`expense-row-${e.id}`}
                 className={cn(
-                  "p-4 space-y-3 transition-all",
+                  "p-3 space-y-2 transition-all",
                   highlightedExpenseId === e.id
                     ? "bg-blue-50/80 dark:bg-blue-950/60 ring-2 ring-blue-500 rounded-xl"
                     : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40"

@@ -212,11 +212,11 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
   const maxSupplierTotal = topSuppliers[0]?.total_spent || 1;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* ── Executive KPI Summary Strip ── */}
       {summaryMetrics && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-200/80 rounded-2xl p-3.5 flex items-center justify-between">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-200/80 rounded-2xl p-3 flex items-center justify-between">
             <div className="space-y-0.5 min-w-0">
               <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block">
                 Rata-rata / Hari

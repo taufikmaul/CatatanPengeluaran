@@ -41,10 +41,10 @@ export const UnifiedProcurementHub: React.FC<UnifiedProcurementHubProps> = ({
   const isAdminInput = userRole === "admin_input";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Stepper Pipeline Navigation & Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
           {/* Step 1: Pengajuan Staf */}
         <Button
           variant={activeStage === "requests" ? "secondary" : "ghost"}

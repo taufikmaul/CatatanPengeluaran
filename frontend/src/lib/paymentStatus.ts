@@ -22,12 +22,16 @@ export function isReimbursementExpense(expense?: { is_reimbursement?: boolean } 
 
 export function hasInstallmentHistory(expense?: { payments?: ExpensePayment[]; payments_count?: number } | null): boolean {
   if (!expense) return false;
-  return Boolean(expense.payments?.some((p) => p.payment_type === "installment"));
+  return Array.isArray(expense.payments) && expense.payments.some((p) => p.payment_type === "installment");
 }
 
 export function hasReimbursementHistory(expense?: { payments?: ExpensePayment[]; reimbursed_at?: string | null; is_reimbursement?: boolean } | null): boolean {
   if (!expense || !expense.is_reimbursement) return false;
-  return Boolean(expense.reimbursed_at || expense.payments?.some((p) => p.payment_type === "reimbursement"));
+  return Boolean(
+    expense.reimbursed_at ||
+      (Array.isArray(expense.payments) &&
+        expense.payments.some((p) => p.payment_type === "reimbursement"))
+  );
 }
 
 export function isUnpaidOrDpStatus(status?: string | null): boolean {

@@ -1,20 +1,14 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   ReceiptText,
   CalendarClock,
   HandCoins,
   ArrowLeftRight,
   ArrowDownToLine,
-  Plus,
-  Wallet,
-  TrendingDown,
-  Clock,
-  Sparkles,
   Download,
 } from "lucide-react";
-import { formatRupiah } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import { CashflowExportDialog } from "./CashflowExportDialog";
 
 export type CashflowSubTab = "transactions" | "unpaid" | "talangan" | "cash-delivery" | "incoming";
@@ -55,115 +49,123 @@ export const CashflowHubView: React.FC<CashflowHubViewProps> = ({
   const [isExportDialogOpen, setIsExportDialogOpen] = useState<boolean>(false);
 
   return (
-    <div className="space-y-4">
-      {/* Top Bar: Sub-Pills Navigation & Quick Action Export */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+    <div className="space-y-3.5">
+      {/* Top Bar: Editorial Hairline Sub-Navigation & Quick Action Export */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[color:var(--ledger-hairline)]">
+        <nav
+          aria-label="Sub-navigasi kas dan pengeluaran"
+          className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-px"
+        >
           {/* Tab 1: Semua Transaksi */}
           {!isStaff && (
-            <Button
-              variant={activeSubTab === "transactions" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("transactions")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "transactions" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "transactions"
-                  ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-blue-600 text-slate-900 dark:border-blue-400 dark:text-slate-100"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              )}
             >
               <ReceiptText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>Semua Transaksi</span>
-            </Button>
+            </button>
           )}
 
           {/* Tab 2: Belum Lunas (Tempo / DP) */}
           {!isStaff && !isWarehouse && (
-            <Button
-              variant={activeSubTab === "unpaid" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("unpaid")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "unpaid" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "unpaid"
-                  ? "bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-400 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-rose-600 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-[var(--signal-unpaid)] text-[var(--signal-unpaid)]"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              )}
             >
-              <CalendarClock className="w-3.5 h-3.5 text-rose-500" />
+              <CalendarClock className="w-3.5 h-3.5 text-[var(--signal-unpaid)]" />
               <span>Belum Lunas</span>
               {unpaidCount > 0 && (
-                <Badge className="ml-1 text-[10px] px-1.5 py-0 bg-rose-500 text-white font-bold rounded-full">
+                <span className="ml-0.5 text-[10px] font-mono-ledger tabular-nums px-1.5 py-0.5 rounded-full bg-[var(--signal-unpaid-soft)] text-[var(--signal-unpaid)] font-bold">
                   {unpaidCount}
-                </Badge>
+                </span>
               )}
-            </Button>
+            </button>
           )}
 
           {/* Tab 3: Talangan Karyawan */}
-          <Button
-            variant={activeSubTab === "talangan" ? "secondary" : "ghost"}
-            size="sm"
+          <button
+            type="button"
             onClick={() => onSubTabChange("talangan")}
-            className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+            aria-current={activeSubTab === "talangan" ? "page" : undefined}
+            className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
               activeSubTab === "talangan"
-                ? "bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-400 shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-purple-600 hover:bg-white/60 dark:hover:bg-slate-800/50"
-            }`}
+                ? "border-[var(--signal-talangan)] text-[var(--signal-talangan)]"
+                : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+            )}
           >
-            <HandCoins className="w-3.5 h-3.5 text-purple-500" />
+            <HandCoins className="w-3.5 h-3.5 text-[var(--signal-talangan)]" />
             <span>Talangan Staff</span>
             {reimburseCount > 0 && (
-              <Badge className="ml-1 text-[10px] px-1.5 py-0 bg-purple-500 text-white font-bold rounded-full">
+              <span className="ml-0.5 text-[10px] font-mono-ledger tabular-nums px-1.5 py-0.5 rounded-full bg-[var(--signal-talangan-soft)] text-[var(--signal-talangan)] font-bold">
                 {reimburseCount}
-              </Badge>
+              </span>
             )}
-          </Button>
+          </button>
 
           {/* Tab 4: Tukar Cash & Ongkir Kurir */}
           {!isStaff && (
-            <Button
-              variant={activeSubTab === "cash-delivery" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("cash-delivery")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "cash-delivery" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "cash-delivery"
-                  ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-blue-600 text-slate-900 dark:border-blue-400 dark:text-slate-100"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              )}
             >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-blue-500" />
+              <ArrowLeftRight className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>Kurir &amp; Kasir</span>
-            </Button>
+            </button>
           )}
 
           {/* Tab 5: Transaksi Masuk (POS / Bank) */}
           {!isStaff && !isWarehouse && (
-            <Button
-              variant={activeSubTab === "incoming" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("incoming")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "incoming" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "incoming"
-                  ? "bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-emerald-600 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-[var(--signal-cleared)] text-[var(--signal-cleared)]"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+              )}
             >
-              <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <ArrowDownToLine className="w-3.5 h-3.5 text-[var(--signal-cleared)]" />
               <span>Uang Masuk</span>
-            </Button>
+            </button>
           )}
-        </div>
+        </nav>
 
         {/* Quick Action: Export Cashflow CSV */}
         {!isStaff && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 pb-1.5 sm:pb-1">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setIsExportDialogOpen(true)}
-              className="h-9 px-3 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-300 dark:hover:border-emerald-700 shadow-xs"
+              className="min-h-[34px] px-2.5 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] hover:border-[var(--signal-cleared)] hover:text-[var(--signal-cleared)] ledger-press"
               title="Export Arus Kas Harian (Cash In, Cash Out, Saldo Harian)"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <Download className="w-3.5 h-3.5 text-[var(--signal-cleared)]" />
               <span>Export Cashflow</span>
             </Button>
           </div>

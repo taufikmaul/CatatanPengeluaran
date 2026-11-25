@@ -131,10 +131,10 @@ export const ApprovalBelanjaPage: React.FC<ApprovalBelanjaPageProps> = ({
   };
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto pb-16">
+    <div className="space-y-3 max-w-6xl mx-auto pb-8">
       {/* Ringkasan Keputusan */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/15">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <Card className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/15">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
               Antrean Approval
