@@ -40,7 +40,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { BackgroundQueuePopover } from "@/components/common/BackgroundQueuePopover";
 
 export interface DashboardHeaderProps {
-  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat";
+  activeTab: "overview" | "transactions" | "incoming" | "accounting" | "laporan-umum" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat";
   month: number;
   monthEnd?: number;
   year: number;
@@ -130,6 +130,7 @@ export function DashboardHeader({
     transactions: "Daftar Transaksi & Peringkat Belanja",
     incoming: "Daftar Transaksi Masuk (POS & Platform)",
     accounting: "Laporan & Analisis Akuntansi",
+    "laporan-umum": "Laporan Umum Operasional",
     master: "Katalog Master Item",
     menus: "Database Menu / Produk & HPP",
     suppliers: "Master Supplier / Toko & Kurir",
@@ -163,6 +164,7 @@ export function DashboardHeader({
     "supplier-detail": { hub: "Katalog & Margin", sub: "Detail Toko" },
     inventaris: { hub: "Katalog & Margin", sub: "Inventaris Aset" },
     accounting: { hub: "Laporan & Kontrol", sub: "Laporan Akuntansi" },
+    "laporan-umum": { hub: "Laporan & Kontrol", sub: "Laporan Umum" },
     config: { hub: "Laporan & Kontrol", sub: "Pengaturan Sistem" },
     "ai-chat": { hub: "Asisten AI", sub: "Tanya Data Keuangan" },
   };

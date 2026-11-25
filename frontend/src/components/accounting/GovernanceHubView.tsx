@@ -3,13 +3,14 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Scale,
+  BarChart3,
   Sparkles,
   ShieldAlert,
   Settings,
   Upload,
 } from "lucide-react";
 
-export type GovernanceSubTab = "accounting" | "config";
+export type GovernanceSubTab = "accounting" | "laporan-umum" | "config";
 
 export interface GovernanceHubViewProps {
   activeSubTab: GovernanceSubTab;
@@ -60,7 +61,25 @@ export const GovernanceHubView: React.FC<GovernanceHubViewProps> = ({
             </button>
           )}
 
-          {/* Tab 2: Pengaturan Sistem */}
+          {/* Tab 2: Laporan Umum */}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => onSubTabChange("laporan-umum")}
+              aria-current={activeSubTab === "laporan-umum" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
+                activeSubTab === "laporan-umum"
+                  ? "border-emerald-600 text-[var(--ledger-ink)] dark:border-emerald-400"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Laporan Umum</span>
+            </button>
+          )}
+
+          {/* Tab 3: Pengaturan Sistem */}
           {canManageConfig && (
             <button
               type="button"

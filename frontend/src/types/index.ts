@@ -2242,6 +2242,171 @@ export interface AiChatSessionDetail {
   messages: AiChatMessage[];
 }
 
+// ── Laporan Umum (General Reports) Types ─────────────────────────────────────
+
+export type GeneralReportSubTab =
+  | "bahan"
+  | "ongkir"
+  | "omset"
+  | "hpp"
+  | "anggaran"
+  | "gudang";
+
+export interface GeneralReportPeriod {
+  start_date: string;
+  end_date: string;
+  label: string;
+}
+
+export interface MaterialItemRow {
+  item_name: string;
+  category: string;
+  supplier: string | null;
+  total_qty: number;
+  unit: string;
+  tx_count: number;
+  total_bruto: number;
+  total_spend: number;
+  wap: number;
+  prev_wap: number | null;
+  recipe_unit: string | null;
+  recipe_unit_cost: number | null;
+  price_drift_pct: number | null;
+  is_drifting: boolean;
+}
+
+export interface MaterialSupplierRow {
+  supplier: string;
+  total_spend: number;
+  tx_count: number;
+  share_pct: number;
+}
+
+export interface MaterialsReportResponse {
+  period: GeneralReportPeriod;
+  total_bruto: number;
+  total_spend: number;
+  material_to_sales_pct: number | null;
+  unique_suppliers: number;
+  drifting_items: number;
+  discrepancy_count: number;
+  items: MaterialItemRow[];
+  supplier_breakdown: MaterialSupplierRow[];
+}
+
+export interface ShippingCourierRow {
+  courier: string;
+  courier_category: string | null;
+  is_subscribed: boolean;
+  trip_count: number;
+  total_cost: number;
+  avg_cost_per_trip: number;
+  talangan_cost: number;
+  kas_cost: number;
+  share_pct: number;
+}
+
+export interface ShippingReportResponse {
+  period: GeneralReportPeriod;
+  total_shipping_cost: number;
+  ongkir_mandiri_total: number;
+  ongkir_trip_count: number;
+  avg_cost_per_trip: number;
+  freight_in_total: number;
+  freight_in_count: number;
+  talangan_total: number;
+  talangan_pending_total: number;
+  kas_toko_total: number;
+  shipping_to_sales_pct: number | null;
+  freight_in_to_material_pct: number | null;
+  mom_change_pct: number | null;
+  couriers: ShippingCourierRow[];
+}
+
+export interface SalesChannelRow {
+  channel: string;
+  order_count: number;
+  gross_sales: number;
+  discount_amount: number;
+  net_sales: number;
+  net_received: number;
+  platform_fee: number;
+  aov: number;
+  discount_rate: number | null;
+  platform_fee_rate: number | null;
+  void_count: number;
+  void_nominal: number;
+  void_rate_pct: number | null;
+}
+
+export interface DailySalesRow {
+  date: string;
+  gross_sales: number;
+  net_sales: number;
+  net_received: number;
+  order_count: number;
+}
+
+export interface SalesReportResponse {
+  period: GeneralReportPeriod;
+  total_orders: number;
+  total_gross_sales: number;
+  total_discount_amount: number;
+  total_net_sales: number;
+  total_platform_fee: number;
+  total_net_received: number;
+  total_aov: number;
+  daily_avg_net_sales: number;
+  void_count: number;
+  void_nominal: number;
+  void_rate_pct: number | null;
+  mom_growth_pct: number | null;
+  channels: SalesChannelRow[];
+  daily: DailySalesRow[];
+}
+
+export interface MenuChannelMarginRow {
+  key: string;
+  name: string;
+  net_profit: number;
+  net_margin_pct: number | null;
+}
+
+export interface MenuEngineeringRow {
+  menu_id: number;
+  menu_name: string;
+  category: string;
+  selling_price: number;
+  core_unit_hpp: number;
+  recipe_hpp: number;
+  effective_hpp: number;
+  food_cost_pct: number | null;
+  pure_food_cost_pct: number | null;
+  packaging_cost_pct: number | null;
+  gross_margin_pct: number | null;
+  contribution_margin: number;
+  qty_sold: number;
+  gross_revenue: number;
+  theoretical_hpp: number;
+  classification: "Star" | "Plowhorse" | "Puzzle" | "Dog";
+  has_price_drift: boolean;
+  channel_margins: MenuChannelMarginRow[];
+}
+
+export interface HppReportResponse {
+  period: GeneralReportPeriod;
+  hpp_basis_note: string;
+  theoretical_hpp_total: number;
+  actual_purchase_hpp: number;
+  hpp_variance_amount: number;
+  theoretical_food_cost_pct: number | null;
+  actual_purchase_ratio_pct: number | null;
+  popularity_threshold: number;
+  cm_threshold: number;
+  unmatched_items: string[];
+  menus: MenuEngineeringRow[];
+}
+
 
 
 

@@ -55,6 +55,7 @@ export type DashboardTab =
   | "transactions"
   | "incoming"
   | "accounting"
+  | "laporan-umum"
   | "master"
   | "menus"
   | "suppliers"
@@ -329,7 +330,7 @@ export function DashboardSidebar({
     "inventaris",
   ].includes(activeTab);
 
-  const isGovernanceActive = ["accounting", "config"].includes(activeTab);
+  const isGovernanceActive = ["accounting", "laporan-umum", "config"].includes(activeTab);
 
   const totalCashflowBadge = (unpaidCount || 0) + (reimbursePendingCount || 0);
   const totalProcurementBadge =
@@ -394,7 +395,7 @@ export function DashboardSidebar({
       businessItems.push({
         id: "governance",
         label: "Laporan & Kontrol",
-        subtitle: "Akuntansi SAK EMKM, Insight, Pengaturan",
+        subtitle: "Akuntansi SAK EMKM, Laporan Umum, Pengaturan",
         icon: Scale,
         isActive: isGovernanceActive,
         onClick: () =>

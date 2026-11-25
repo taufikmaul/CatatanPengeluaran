@@ -12,8 +12,22 @@ from app.api.schemas import (
     AiAnalysisResponse,
     AccountingReportResponse,
     DailyCashflowResponse,
+    MaterialsReportResponse,
+    ShippingReportResponse,
+    SalesReportResponse,
+    HppReportResponse,
 )
 from app.services.cashflow_service import get_daily_cashflow, export_cashflow_to_csv
+from app.services.general_reports_service import (
+    get_materials_report,
+    export_materials_csv,
+    get_shipping_report,
+    export_shipping_csv,
+    get_sales_report,
+    export_sales_csv,
+    get_hpp_report,
+    export_hpp_csv,
+)
 from app.services.expense_service import (
     get_monthly_report,
     get_monthly_chart_data,
@@ -388,6 +402,169 @@ async def export_daily_cashflow_csv_endpoint(
         now = datetime.now()
         filename = f"cashflow_harian_{now.year}_{now.month:02d}.csv"
 
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_general_export_filename(
+    prefix: str,
+    year: int | None,
+    month: int | None,
+    start_date: date | None,
+    end_date: date | None,
+) -> str:
+    if start_date and end_date:
+        return f"{prefix}_{start_date.isoformat()}_{end_date.isoformat()}.csv"
+    if year and month:
+        return f"{prefix}_{year}_{month:02d}.csv"
+    now = datetime.now()
+    return f"{prefix}_{now.year}_{now.month:02d}.csv"
+
+
+@router.get("/general/materials", response_model=MaterialsReportResponse)
+async def get_general_materials_report(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Laporan Umum: Bahan Baku, Kemasan & Pergerakan Harga."""
+    data = await get_materials_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    return MaterialsReportResponse(**data)
+
+
+@router.get("/general/materials/export")
+async def export_general_materials_csv(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_materials_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    csv_text = export_materials_csv(data)
+    filename = _build_general_export_filename("laporan_bahan", year, month, start_date, end_date)
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/general/shipping", response_model=ShippingReportResponse)
+async def get_general_shipping_report(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Laporan Umum: Ongkir Mandiri & Freight-In Pembelian."""
+    data = await get_shipping_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    return ShippingReportResponse(**data)
+
+
+@router.get("/general/shipping/export")
+async def export_general_shipping_csv(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_shipping_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    csv_text = export_shipping_csv(data)
+    filename = _build_general_export_filename("laporan_ongkir", year, month, start_date, end_date)
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/general/sales", response_model=SalesReportResponse, dependencies=[Depends(require_admin_role)])
+async def get_general_sales_report(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Laporan Umum: Omset 3 Lapis & Performa Channel Penjualan."""
+    data = await get_sales_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    return SalesReportResponse(**data)
+
+
+@router.get("/general/sales/export", dependencies=[Depends(require_admin_role)])
+async def export_general_sales_csv(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_sales_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    csv_text = export_sales_csv(data)
+    filename = _build_general_export_filename("laporan_omset", year, month, start_date, end_date)
+    return Response(
+        content=csv_text.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/general/hpp", response_model=HppReportResponse, dependencies=[Depends(require_admin_role)])
+async def get_general_hpp_report(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Laporan Umum: HPP Pembelian vs Teoritis & Matriks Menu Engineering."""
+    data = await get_hpp_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    return HppReportResponse(**data)
+
+
+@router.get("/general/hpp/export", dependencies=[Depends(require_admin_role)])
+async def export_general_hpp_csv(
+    month: int | None = Query(None, ge=1, le=12),
+    month_end: int | None = Query(None, ge=1, le=12),
+    year: int | None = Query(None, ge=2000, le=2100),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await get_hpp_report(
+        db, year=year, month=month, month_end=month_end, start_date=start_date, end_date=end_date
+    )
+    csv_text = export_hpp_csv(data)
+    filename = _build_general_export_filename("laporan_hpp", year, month, start_date, end_date)
     return Response(
         content=csv_text.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

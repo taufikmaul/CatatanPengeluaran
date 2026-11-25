@@ -50,6 +50,7 @@ const MasterItemsTab = React.lazy(() => import("@/components/master/MasterItemsT
 const MenuProductsTab = React.lazy(() => import("@/components/menu/MenuProductsTab").then(m => ({ default: m.MenuProductsTab })));
 const SharedMenuReadOnlyPage = React.lazy(() => import("@/components/menu/SharedMenuReadOnlyPage").then(m => ({ default: m.SharedMenuReadOnlyPage })));
 const AccountingTab = React.lazy(() => import("@/components/accounting/AccountingTab").then(m => ({ default: m.AccountingTab })));
+const GeneralReportsTab = React.lazy(() => import("@/components/reports/GeneralReportsTab").then(m => ({ default: m.GeneralReportsTab })));
 const TukarCashOngkirTab = React.lazy(() => import("@/components/cash-delivery/TukarCashOngkirTab").then(m => ({ default: m.TukarCashOngkirTab })));
 const TalanganTab = React.lazy(() => import("@/components/talangan/TalanganTab").then(m => ({ default: m.TalanganTab })));
 const UnpaidTab = React.lazy(() => import("@/components/unpaid/UnpaidTab").then(m => ({ default: m.UnpaidTab })));
@@ -158,7 +159,7 @@ function MainDashboardApp() {
   const supplierMatch = pathname.match(/^\/suppliers\/(\d+)$/);
   const selectedSupplierId = supplierMatch ? parseInt(supplierMatch[1], 10) : null;
 
-  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat" = "overview";
+  let activeTab: "overview" | "transactions" | "incoming" | "accounting" | "laporan-umum" | "master" | "menus" | "suppliers" | "supplier-detail" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat" = "overview";
   if (selectedSupplierId) {
     activeTab = "supplier-detail";
   } else if (pathname === "/suppliers") {
@@ -169,6 +170,8 @@ function MainDashboardApp() {
     activeTab = "menus";
   } else if (pathname === "/accounting" || pathname === "/akuntansi" || pathname === "/laporan-akuntansi") {
     activeTab = "accounting";
+  } else if (pathname === "/laporan-umum") {
+    activeTab = "laporan-umum";
   } else if (pathname === "/incoming" || pathname === "/transaksi-masuk") {
     activeTab = "incoming";
   } else if (pathname === "/master") {
@@ -197,7 +200,7 @@ function MainDashboardApp() {
     activeTab = "overview";
   }
 
-  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat") => {
+  const handleTabChange = (tab: "overview" | "transactions" | "incoming" | "accounting" | "laporan-umum" | "master" | "menus" | "suppliers" | "inventaris" | "tukar-cash-ongkir" | "talangan" | "unpaid" | "requests" | "approval" | "purchasing" | "gudang" | "config" | "ai-chat") => {
     if (tab === "overview") {
       navigate("/");
     } else {
@@ -231,6 +234,7 @@ function MainDashboardApp() {
 
   const isGovernanceActive = [
     "accounting",
+    "laporan-umum",
     "config",
   ].includes(activeTab);
 
@@ -445,6 +449,7 @@ function MainDashboardApp() {
       isAdminInput &&
       (activeTab === "config" ||
         activeTab === "accounting" ||
+        activeTab === "laporan-umum" ||
         activeTab === "approval" ||
         activeTab === "purchasing" ||
         activeTab === "gudang" ||
@@ -2047,7 +2052,13 @@ function MainDashboardApp() {
             {isGovernanceActive && (
               <React.Suspense fallback={<TabLoadingFallback />}>
                 <GovernanceHubView
-                  activeSubTab={activeTab === "config" ? "config" : "accounting"}
+                  activeSubTab={
+                    activeTab === "config"
+                      ? "config"
+                      : activeTab === "laporan-umum"
+                      ? "laporan-umum"
+                      : "accounting"
+                  }
                   onSubTabChange={(sub) => navigate("/" + sub)}
                   onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
                   onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
@@ -2066,6 +2077,19 @@ function MainDashboardApp() {
                       }}
                       onYearChange={setYear}
                       onViewExpense={(item) => setViewingExpense(item)}
+                    />
+                  )}
+
+                  {activeTab === "laporan-umum" && (
+                    <GeneralReportsTab
+                      currentMonth={monthStart}
+                      currentMonthEnd={monthEnd}
+                      currentYear={year}
+                      onMonthChange={(m) => {
+                        setMonthStart(m);
+                        setMonthEnd(m);
+                      }}
+                      onYearChange={setYear}
                     />
                   )}
 

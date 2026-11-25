@@ -1243,6 +1243,164 @@ class FixedAssetBulkCreateRequest(BaseModel):
     items: list[FixedAssetCreate]
 
 
+# ── Laporan Umum (General Reports) Schemas ───────────────────────────────────
+
+
+class GeneralReportPeriod(BaseModel):
+    start_date: date
+    end_date: date
+    label: str
+
+
+class MaterialItemRow(BaseModel):
+    item_name: str
+    category: str
+    supplier: str | None = None
+    total_qty: float
+    unit: str
+    tx_count: int
+    total_bruto: float
+    total_spend: float
+    wap: float
+    prev_wap: float | None = None
+    recipe_unit: str | None = None
+    recipe_unit_cost: float | None = None
+    price_drift_pct: float | None = None
+    is_drifting: bool = False
+
+
+class MaterialSupplierRow(BaseModel):
+    supplier: str
+    total_spend: float
+    tx_count: int
+    share_pct: float
+
+
+class MaterialsReportResponse(BaseModel):
+    period: GeneralReportPeriod
+    total_bruto: float
+    total_spend: float
+    material_to_sales_pct: float | None = None
+    unique_suppliers: int
+    drifting_items: int
+    discrepancy_count: int
+    items: list[MaterialItemRow]
+    supplier_breakdown: list[MaterialSupplierRow]
+
+
+class ShippingCourierRow(BaseModel):
+    courier: str
+    courier_category: str | None = None
+    is_subscribed: bool = False
+    trip_count: int
+    total_cost: float
+    avg_cost_per_trip: float
+    talangan_cost: float
+    kas_cost: float
+    share_pct: float
+
+
+class ShippingReportResponse(BaseModel):
+    period: GeneralReportPeriod
+    total_shipping_cost: float
+    ongkir_mandiri_total: float
+    ongkir_trip_count: int
+    avg_cost_per_trip: float
+    freight_in_total: float
+    freight_in_count: int
+    talangan_total: float
+    talangan_pending_total: float
+    kas_toko_total: float
+    shipping_to_sales_pct: float | None = None
+    freight_in_to_material_pct: float | None = None
+    mom_change_pct: float | None = None
+    couriers: list[ShippingCourierRow]
+
+
+class SalesChannelRow(BaseModel):
+    channel: str
+    order_count: int
+    gross_sales: float
+    discount_amount: float
+    net_sales: float
+    net_received: float
+    platform_fee: float
+    aov: float
+    discount_rate: float | None = None
+    platform_fee_rate: float | None = None
+    void_count: int = 0
+    void_nominal: float = 0.0
+    void_rate_pct: float | None = None
+
+
+class DailySalesRow(BaseModel):
+    date: date
+    gross_sales: float
+    net_sales: float
+    net_received: float
+    order_count: int
+
+
+class SalesReportResponse(BaseModel):
+    period: GeneralReportPeriod
+    total_orders: int
+    total_gross_sales: float
+    total_discount_amount: float
+    total_net_sales: float
+    total_platform_fee: float
+    total_net_received: float
+    total_aov: float
+    daily_avg_net_sales: float
+    void_count: int
+    void_nominal: float
+    void_rate_pct: float | None = None
+    mom_growth_pct: float | None = None
+    channels: list[SalesChannelRow]
+    daily: list[DailySalesRow]
+
+
+class MenuChannelMarginRow(BaseModel):
+    key: str
+    name: str
+    net_profit: float
+    net_margin_pct: float | None = None
+
+
+class MenuEngineeringRow(BaseModel):
+    menu_id: int
+    menu_name: str
+    category: str
+    selling_price: float
+    core_unit_hpp: float
+    recipe_hpp: float
+    effective_hpp: float
+    food_cost_pct: float | None = None
+    pure_food_cost_pct: float | None = None
+    packaging_cost_pct: float | None = None
+    gross_margin_pct: float | None = None
+    contribution_margin: float
+    qty_sold: int
+    gross_revenue: float
+    theoretical_hpp: float
+    classification: str  # Star | Plowhorse | Puzzle | Dog
+    has_price_drift: bool = False
+    channel_margins: list[MenuChannelMarginRow] = []
+
+
+class HppReportResponse(BaseModel):
+    period: GeneralReportPeriod
+    hpp_basis_note: str
+    theoretical_hpp_total: float
+    actual_purchase_hpp: float
+    hpp_variance_amount: float
+    theoretical_food_cost_pct: float | None = None
+    actual_purchase_ratio_pct: float | None = None
+    popularity_threshold: float
+    cm_threshold: float
+    unmatched_items: list[str]
+    menus: list[MenuEngineeringRow]
+
+
 
 
 

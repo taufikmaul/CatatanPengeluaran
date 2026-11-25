@@ -22,6 +22,10 @@ import {
   DailyCashflowResponse,
   SalesImportAuditSummary,
   MonthlyBudgetDetailResponse,
+  MaterialsReportResponse,
+  ShippingReportResponse,
+  SalesReportResponse,
+  HppReportResponse,
 } from "@/types";
 
 export const api = axios.create({
@@ -1690,6 +1694,92 @@ export async function exportDailyCashflowCsv(params?: {
     ? `cashflow_harian_${params.year}_${String(params.month).padStart(2, "0")}.csv`
     : `cashflow_harian_${new Date().toISOString().slice(0, 10)}.csv`;
   return triggerCsvDownload(endpoint, filename);
+}
+
+// ── Laporan Umum (General Reports) API ───────────────────────────────────────
+
+export interface GeneralReportQueryParams {
+  month?: number;
+  monthEnd?: number;
+  year?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+function buildGeneralReportQuery(params?: GeneralReportQueryParams): string {
+  const q = new URLSearchParams();
+  if (params?.month) q.append("month", String(params.month));
+  if (params?.monthEnd) q.append("month_end", String(params.monthEnd));
+  if (params?.year) q.append("year", String(params.year));
+  if (params?.startDate) q.append("start_date", params.startDate);
+  if (params?.endDate) q.append("end_date", params.endDate);
+  return q.toString();
+}
+
+function buildGeneralCsvFilename(prefix: string, params?: GeneralReportQueryParams): string {
+  if (params?.startDate && params?.endDate) {
+    return `${prefix}_${params.startDate}_${params.endDate}.csv`;
+  }
+  if (params?.month && params?.year) {
+    return `${prefix}_${params.year}_${String(params.month).padStart(2, "0")}.csv`;
+  }
+  return `${prefix}_${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
+export async function getMaterialsReport(params?: GeneralReportQueryParams): Promise<MaterialsReportResponse> {
+  const qs = buildGeneralReportQuery(params);
+  const res = await api.get(`/reports/general/materials${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+export async function exportMaterialsCsv(params?: GeneralReportQueryParams): Promise<void> {
+  const qs = buildGeneralReportQuery(params);
+  return triggerCsvDownload(
+    `/reports/general/materials/export${qs ? `?${qs}` : ""}`,
+    buildGeneralCsvFilename("laporan_bahan", params)
+  );
+}
+
+export async function getShippingReport(params?: GeneralReportQueryParams): Promise<ShippingReportResponse> {
+  const qs = buildGeneralReportQuery(params);
+  const res = await api.get(`/reports/general/shipping${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+export async function exportShippingCsv(params?: GeneralReportQueryParams): Promise<void> {
+  const qs = buildGeneralReportQuery(params);
+  return triggerCsvDownload(
+    `/reports/general/shipping/export${qs ? `?${qs}` : ""}`,
+    buildGeneralCsvFilename("laporan_ongkir", params)
+  );
+}
+
+export async function getSalesReport(params?: GeneralReportQueryParams): Promise<SalesReportResponse> {
+  const qs = buildGeneralReportQuery(params);
+  const res = await api.get(`/reports/general/sales${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+export async function exportSalesCsv(params?: GeneralReportQueryParams): Promise<void> {
+  const qs = buildGeneralReportQuery(params);
+  return triggerCsvDownload(
+    `/reports/general/sales/export${qs ? `?${qs}` : ""}`,
+    buildGeneralCsvFilename("laporan_omset", params)
+  );
+}
+
+export async function getHppReport(params?: GeneralReportQueryParams): Promise<HppReportResponse> {
+  const qs = buildGeneralReportQuery(params);
+  const res = await api.get(`/reports/general/hpp${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+export async function exportHppCsv(params?: GeneralReportQueryParams): Promise<void> {
+  const qs = buildGeneralReportQuery(params);
+  return triggerCsvDownload(
+    `/reports/general/hpp/export${qs ? `?${qs}` : ""}`,
+    buildGeneralCsvFilename("laporan_hpp", params)
+  );
 }
 
 
