@@ -33,6 +33,11 @@ import {
 } from "@/components/ui/card";
 import { DataTable } from "@/components/common/DataTable";
 import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+} from "@/components/common/LedgerPrimitives";
+import {
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
@@ -735,24 +740,27 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   });
 
   return (
-    <div className="space-y-3.5">
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-0.5">
-        <Badge
-          variant="outline"
-          className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs w-fit"
-        >
-          {total} Toko Terdaftar
-        </Badge>
+    <div className="space-y-3">
+      {/* 1. Editorial Header Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Direktori Supplier &amp; Mitra Toko
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {summary.total_suppliers} toko &amp; kurir terdaftar •{" "}
+            {summary.unpaid_suppliers_count} mitra memiliki sisa tagihan aktif
+          </p>
+        </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
           {/* Dropdown: Alat & Sync */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-xl text-xs gap-1.5"
+                className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${
@@ -765,9 +773,9 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+              className="w-56 rounded-xl p-1.5 shadow-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             >
-              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
                 Pemeliharaan &amp; Audit
               </DropdownMenuLabel>
               <DropdownMenuItem
@@ -784,7 +792,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                   <div className="font-medium">
                     {syncMutation.isPending ? "Sinkronisasi..." : "Sync Data Lama"}
                   </div>
-                  <div className="text-[10px] text-slate-400">
+                  <div className="text-[10px] text-[var(--ledger-muted)]">
                     Hubungkan transaksi belanja lama ke supplier
                   </div>
                 </div>
@@ -796,12 +804,12 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                 <GitMerge className="w-3.5 h-3.5 text-amber-500" />
                 <div>
                   <div className="font-medium">Audit Toko Ganda</div>
-                  <div className="text-[10px] text-slate-400">
+                  <div className="text-[10px] text-[var(--ledger-muted)]">
                     Deteksi &amp; gabungkan toko kembar
                   </div>
                 </div>
               </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
+              <DropdownMenuSeparator className="my-1 border-[color:var(--ledger-hairline)]" />
               <DropdownMenuItem
                 disabled={migrateOngkirMutation.isPending}
                 onClick={() => migrateOngkirMutation.mutate()}
@@ -816,7 +824,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                   <div className="font-medium">
                     {migrateOngkirMutation.isPending ? "Memigrasi..." : "Migrasi Ongkir"}
                   </div>
-                  <div className="text-[10px] text-slate-400">
+                  <div className="text-[10px] text-[var(--ledger-muted)]">
                     Alihkan data ongkir ke Master Kurir
                   </div>
                 </div>
@@ -831,18 +839,18 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-xl text-xs font-medium gap-1.5 border-slate-200 dark:border-slate-800"
+                className="h-8 rounded-lg text-xs font-medium gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <Table2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                <Table2 className="w-3.5 h-3.5 text-[var(--ledger-muted)]" />
                 <span>Import / Masal</span>
                 <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+              className="w-52 rounded-xl p-1.5 shadow-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             >
-              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
                 Pilihan Input Massal
               </DropdownMenuLabel>
               <DropdownMenuItem
@@ -852,7 +860,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                 <Table2 className="w-3.5 h-3.5 text-blue-500" />
                 <div>
                   <div className="font-medium">Tambah Masal</div>
-                  <div className="text-[10px] text-slate-400">
+                  <div className="text-[10px] text-[var(--ledger-muted)]">
                     Spreadsheet input multi-supplier
                   </div>
                 </div>
@@ -864,7 +872,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
                 <div>
                   <div className="font-medium">Import CSV</div>
-                  <div className="text-[10px] text-slate-400">Upload template file CSV</div>
+                  <div className="text-[10px] text-[var(--ledger-muted)]">Upload template file CSV</div>
                 </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -874,242 +882,198 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           <Button
             size="sm"
             onClick={openAddModal}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+            className="h-8 rounded-lg text-xs font-semibold gap-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 ledger-press"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>{supplierTypeFilter === "kurir" ? "Tambah Kurir" : "Tambah Toko"}</span>
           </Button>
         </div>
       </div>
 
-      {/* Ringkasan Statistik Supplier & Tagihan */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 shrink-0">
-            <Store className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
-              Total Supplier / Toko
-            </span>
-            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-              {summary.total_suppliers}{" "}
-              <span className="text-xs font-normal text-slate-500">toko</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300 shrink-0">
-            <FileCheck className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
-              Total Belanja (Lifetime)
-            </span>
-            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-              {formatRupiah(summary.total_spent)}
-            </p>
-          </div>
-        </div>
-
-        <div
-          onClick={() => {
-            setUnpaidFilter((prev) => (prev === "unpaid" ? "all" : "unpaid"));
-            setPage(1);
-          }}
-          className={`p-4 rounded-2xl border shadow-xs flex items-center gap-3 cursor-pointer transition-colors ${
+      {/* 2. Unified Asymmetric Metric Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isLoading && summary.total_suppliers === 0}
+        primary={{
+          label: "Total Tagihan Belum Lunas",
+          value: formatRupiah(summary.total_unpaid_amount),
+          valueClassName:
             summary.total_unpaid_amount > 0
-              ? "bg-rose-50/40 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50 hover:bg-rose-50/70"
-              : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
-          }`}
-          title="Klik untuk filter toko yang memiliki tagihan belum lunas"
-        >
-          <div
-            className={`p-2.5 rounded-xl shrink-0 ${
-              summary.total_unpaid_amount > 0
-                ? "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400"
-                : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-            }`}
-          >
-            <CreditCard className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
-                Total Tagihan Belum Lunas
-              </span>
-              {unpaidFilter === "unpaid" && (
-                <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">
-                  Filter Aktif
-                </Badge>
-              )}
-            </div>
-            <p
-              className={`text-lg font-bold tabular-nums ${
-                summary.total_unpaid_amount > 0
-                  ? "text-rose-600 dark:text-rose-400"
-                  : "text-slate-900 dark:text-slate-100"
-              }`}
-            >
-              {formatRupiah(summary.total_unpaid_amount)}
-            </p>
-          </div>
-        </div>
-
-        <div
-          onClick={() => {
+              ? "text-[var(--signal-unpaid)]"
+              : "text-[var(--signal-cleared)]",
+          subtext:
+            summary.unpaid_suppliers_count > 0
+              ? `${summary.unpaid_suppliers_count} toko memiliki sisa tagihan`
+              : "Seluruh tagihan supplier lunas",
+          active: unpaidFilter === "unpaid",
+          accentTone: "unpaid",
+          onClick: () => {
             setUnpaidFilter((prev) => (prev === "unpaid" ? "all" : "unpaid"));
             setPage(1);
-          }}
-          className={`p-4 rounded-2xl border shadow-xs flex items-center gap-3 cursor-pointer transition-colors ${
-            summary.unpaid_suppliers_count > 0
-              ? "bg-amber-50/40 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 hover:bg-amber-50/70"
-              : "bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
-          }`}
-          title="Klik untuk filter toko yang memiliki tagihan belum lunas"
-        >
-          <div
-            className={`p-2.5 rounded-xl shrink-0 ${
+          },
+        }}
+        supporting={[
+          {
+            key: "lifetime-spent",
+            label: "Total Belanja (Lifetime)",
+            value: formatRupiah(summary.total_spent),
+            subtext: "Akumulasi belanja seluruh mitra",
+            active: unpaidFilter === "all",
+            onClick: () => {
+              setUnpaidFilter("all");
+              setPage(1);
+            },
+          },
+          {
+            key: "total-suppliers",
+            label: "Total Supplier / Toko",
+            value: `${summary.total_suppliers} Toko`,
+            subtext: `${total} ditampilkan pada filter`,
+          },
+          {
+            key: "unpaid-stores",
+            label: "Toko Memiliki Tagihan",
+            value: `${summary.unpaid_suppliers_count} Toko`,
+            valueClassName:
               summary.unpaid_suppliers_count > 0
-                ? "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
-                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-            }`}
-          >
-            <AlertCircle className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
-              Toko Memiliki Tagihan
-            </span>
-            <p className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-              {summary.unpaid_suppliers_count}{" "}
-              <span className="text-xs font-normal text-slate-500">toko</span>
-            </p>
-          </div>
-        </div>
-      </div>
+                ? "text-[var(--signal-dp)]"
+                : "text-[var(--ledger-ink)]",
+            subtext: "Klik untuk filter mitra belum lunas",
+            active: unpaidFilter === "unpaid",
+            accentTone: "dp",
+            onClick: () => {
+              setUnpaidFilter((prev) => (prev === "unpaid" ? "all" : "unpaid"));
+              setPage(1);
+            },
+          },
+        ]}
+      />
 
-      {/* Filter and DataTable */}
-      <DataTable
-        table={supplierTable}
-        recordCount={total}
-        isLoading={isLoading}
-        scrollAreaClassName="min-h-[300px]"
-        headerClassName="p-0"
-        header={
-          <div className="p-3.5 flex flex-col md:flex-row items-center justify-between gap-3">
-            {/* Search */}
-            <div className="relative w-full md:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Cari nama toko, alias, telp, alamat..."
-                className="pl-9 h-9 text-xs rounded-xl bg-slate-50/70 dark:bg-slate-800/70"
-              />
-            </div>
+      {/* 3. Type Tabs + Unified Ledger Table */}
+      <section aria-label="Daftar supplier dan toko" className="space-y-2">
+        <LedgerStatusTabs
+          tabs={[
+            { value: "all", label: "Semua Mitra", count: total },
+            { value: "toko", label: "Toko & Vendor" },
+            { value: "kurir", label: "Kurir Ongkir" },
+          ]}
+          value={supplierTypeFilter}
+          onChange={(next) => {
+            setSupplierTypeFilter(next);
+            setPage(1);
+          }}
+          layoutId="supplier-type-underline"
+          ariaLabel="Filter jenis mitra supplier"
+        />
 
-            {/* Filter & Sort Controls */}
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
-              <div className="inline-flex rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-0.5">
-                {[
-                  { id: "all", label: "Semua" },
-                  { id: "toko", label: "Toko & Vendor" },
-                  { id: "kurir", label: "Kurir Ongkir" },
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => {
-                      setSupplierTypeFilter(tab.id as "all" | "toko" | "kurir");
-                      setPage(1);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                      supplierTypeFilter === tab.id
-                        ? "bg-white dark:bg-slate-800 text-blue-600 shadow-xs"
-                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+        <DataTable
+          table={supplierTable}
+          recordCount={total}
+          isLoading={isLoading}
+          containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
+          scrollAreaClassName="min-h-[300px]"
+          headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5"
+          footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+          emptyMessage={
+            <LedgerStateBlock
+              variant="empty"
+              icon={<Store className="w-7 h-7" />}
+              title="Belum ada toko atau supplier yang cocok"
+              description="Sesuaikan kata kunci pencarian / filter tagihan, atau daftarkan mitra baru."
+            />
+          }
+          header={
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+              {/* Search */}
+              <div className="relative w-full lg:w-80 min-w-0">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                <Input
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Cari nama toko, alias, telp, alamat..."
+                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                />
               </div>
 
-              <Filters
-                variant="advanced"
-                advancedMode="popover"
-                advancedAlign="end"
-                reorderable
-                fields={supplierFilterFields}
-                query={supplierFilterQuery}
-                onQueryChange={handleSupplierQueryChange}
-                className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
-              />
+              {/* Filter & Sort Controls */}
+              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto lg:justify-end">
+                <Filters
+                  variant="advanced"
+                  advancedMode="popover"
+                  advancedAlign="end"
+                  reorderable
+                  fields={supplierFilterFields}
+                  query={supplierFilterQuery}
+                  onQueryChange={handleSupplierQueryChange}
+                  className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+                />
 
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-slate-700 dark:text-slate-300 font-medium"
-              >
-                <option value="all">Semua Status</option>
-                <option value="active">Aktif</option>
-                <option value="inactive">Nonaktif</option>
-              </select>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Filter status aktif supplier"
+                  className="h-9 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-[var(--ledger-ink)] font-medium"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="active">Aktif</option>
+                  <option value="inactive">Nonaktif</option>
+                </select>
 
-              <select
-                value={unpaidFilter}
-                onChange={(e) => {
-                  setUnpaidFilter(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-slate-700 dark:text-slate-300 font-medium"
-              >
-                <option value="all">Semua Tagihan</option>
-                <option value="unpaid">Ada Tagihan Belum Lunas</option>
-                <option value="paid">Lunas / Bebas Tagihan</option>
-              </select>
+                <select
+                  value={unpaidFilter}
+                  onChange={(e) => {
+                    setUnpaidFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Filter status tagihan supplier"
+                  className="h-9 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-[var(--ledger-ink)] font-medium"
+                >
+                  <option value="all">Semua Tagihan</option>
+                  <option value="unpaid">Ada Tagihan Belum Lunas</option>
+                  <option value="paid">Lunas / Bebas Tagihan</option>
+                </select>
 
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-slate-700 dark:text-slate-300 font-medium"
-              >
-                <option value="total_spent">Urutkan: Total Belanja</option>
-                <option value="unpaid_bills_total">Urutkan: Tagihan Terbanyak</option>
-                <option value="unpaid_bills_count">Urutkan: Jumlah Tagihan</option>
-                <option value="transaction_count">Urutkan: Jumlah Transaksi</option>
-                <option value="name">Urutkan: Nama Toko</option>
-                <option value="last_expense_date">Urutkan: Terakhir Belanja</option>
-                <option value="created_at">Urutkan: Waktu Dibuat</option>
-              </select>
+                <select
+                  value={sortBy}
+                  onChange={(e) => {
+                    setSortBy(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Urutkan daftar supplier"
+                  className="h-9 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-[var(--ledger-ink)] font-medium"
+                >
+                  <option value="total_spent">Urutkan: Total Belanja</option>
+                  <option value="unpaid_bills_total">Urutkan: Tagihan Terbanyak</option>
+                  <option value="unpaid_bills_count">Urutkan: Jumlah Tagihan</option>
+                  <option value="transaction_count">Urutkan: Jumlah Transaksi</option>
+                  <option value="name">Urutkan: Nama Toko</option>
+                  <option value="last_expense_date">Urutkan: Terakhir Belanja</option>
+                  <option value="created_at">Urutkan: Waktu Dibuat</option>
+                </select>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
-                  setPage(1);
-                }}
-                className="h-9 px-2.5 rounded-xl text-xs gap-1 text-slate-600 dark:text-slate-300"
-                title="Ubah arah pengurutan"
-              >
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                {sortOrder === "desc" ? "Z-A" : "A-Z"}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
+                    setPage(1);
+                  }}
+                  className="h-9 px-2.5 rounded-lg text-xs gap-1 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
+                  title="Ubah arah pengurutan"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  {sortOrder === "desc" ? "Z-A" : "A-Z"}
+                </Button>
+              </div>
             </div>
-          </div>
-        }
-      />
+          }
+        />
+      </section>
 
       {/* Modal Tambah Supplier */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>

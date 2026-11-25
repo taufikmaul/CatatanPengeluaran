@@ -330,7 +330,7 @@ export const MenuCategoriesDialog: React.FC<MenuCategoriesDialogProps> = ({
 
                     return (
                       <motion.div
-                        key={cat.id}
+                        key={cat.id ?? `${cat.name}-${idx}`}
                         layout="position"
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}

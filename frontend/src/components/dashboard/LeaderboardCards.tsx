@@ -9,17 +9,12 @@ import {
 } from "@/types";
 import { formatRupiah } from "@/lib/formatters";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import {
-  Trophy,
   ShoppingBag,
   TrendingUp,
   Flame,
   Store,
-  Calendar,
-  Receipt,
-  Layers,
   CheckCircle2,
 } from "lucide-react";
 
@@ -28,50 +23,35 @@ type ThemeColor = "blue" | "emerald" | "rose" | "purple";
 const THEME_STYLES: Record<
   ThemeColor,
   {
-    headerBg: string;
-    iconBg: string;
     badge: string;
     hoverText: string;
     valueText: string;
     barColor: string;
-    pillBg: string;
   }
 > = {
   blue: {
-    headerBg: "from-blue-50/70 to-transparent",
-    iconBg: "bg-blue-100 text-blue-700",
-    badge: "text-blue-700 border-blue-200 bg-blue-50/70",
-    hoverText: "group-hover:text-blue-600",
-    valueText: "text-blue-600",
-    barColor: "bg-blue-500",
-    pillBg: "bg-blue-50 text-blue-700",
+    badge: "text-blue-700 border-blue-200 bg-blue-50/70 dark:text-blue-300 dark:border-blue-800 dark:bg-blue-950/40",
+    hoverText: "group-hover:text-blue-600 dark:group-hover:text-blue-400",
+    valueText: "text-blue-700 dark:text-blue-400",
+    barColor: "bg-blue-600 dark:bg-blue-400",
   },
   emerald: {
-    headerBg: "from-emerald-50/70 to-transparent",
-    iconBg: "bg-emerald-100 text-emerald-700",
-    badge: "text-emerald-700 border-emerald-200 bg-emerald-50/70",
-    hoverText: "group-hover:text-emerald-700",
-    valueText: "text-emerald-700",
-    barColor: "bg-emerald-500",
-    pillBg: "bg-emerald-50 text-emerald-700",
+    badge: "text-emerald-700 border-emerald-200 bg-emerald-50/70 dark:text-emerald-300 dark:border-emerald-800 dark:bg-emerald-950/40",
+    hoverText: "group-hover:text-emerald-700 dark:group-hover:text-emerald-400",
+    valueText: "text-[var(--signal-cleared)]",
+    barColor: "bg-emerald-600 dark:bg-emerald-400",
   },
   rose: {
-    headerBg: "from-rose-50/70 to-transparent",
-    iconBg: "bg-rose-100 text-rose-700",
-    badge: "text-rose-700 border-rose-200 bg-rose-50/70",
-    hoverText: "group-hover:text-rose-600",
-    valueText: "text-rose-600",
-    barColor: "bg-rose-500",
-    pillBg: "bg-rose-50 text-rose-700",
+    badge: "text-rose-700 border-rose-200 bg-rose-50/70 dark:text-rose-300 dark:border-rose-800 dark:bg-rose-950/40",
+    hoverText: "group-hover:text-rose-600 dark:group-hover:text-rose-400",
+    valueText: "text-[var(--signal-unpaid)]",
+    barColor: "bg-rose-600 dark:bg-rose-400",
   },
   purple: {
-    headerBg: "from-purple-50/70 to-transparent",
-    iconBg: "bg-purple-100 text-purple-700",
-    badge: "text-purple-700 border-purple-200 bg-purple-50/70",
-    hoverText: "group-hover:text-purple-700",
-    valueText: "text-purple-700",
-    barColor: "bg-purple-500",
-    pillBg: "bg-purple-50 text-purple-700",
+    badge: "text-purple-700 border-purple-200 bg-purple-50/70 dark:text-purple-300 dark:border-purple-800 dark:bg-purple-950/40",
+    hoverText: "group-hover:text-purple-700 dark:group-hover:text-purple-400",
+    valueText: "text-[var(--signal-talangan)]",
+    barColor: "bg-[#5B3EAE] dark:bg-[#AD9CFF]",
   },
 };
 
@@ -79,27 +59,27 @@ const THEME_STYLES: Record<
 const RankBadge: React.FC<{ rank: number }> = ({ rank }) => {
   if (rank === 1) {
     return (
-      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-amber-400 text-amber-950 shadow-xs ring-1 ring-amber-200">
+      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-amber-400 text-amber-950">
         1
       </span>
     );
   }
   if (rank === 2) {
     return (
-      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-slate-300 text-slate-800 shadow-xs ring-1 ring-slate-200">
+      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-slate-300 dark:bg-slate-600 text-slate-900 dark:text-slate-100">
         2
       </span>
     );
   }
   if (rank === 3) {
     return (
-      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-amber-700/80 text-amber-100 shadow-xs ring-1 ring-amber-600/30">
+      <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-bold text-[10px] bg-amber-700/85 text-amber-100">
         3
       </span>
     );
   }
   return (
-    <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-semibold text-[10px] bg-slate-100 text-slate-600">
+    <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full font-semibold text-[10px] bg-[var(--ledger-recessed)] text-[var(--ledger-muted)]">
       {rank}
     </span>
   );
@@ -133,19 +113,18 @@ const LeaderboardRow: React.FC<LeaderboardRowProps> = ({
   return (
     <div className="group space-y-1.5">
       <div className="flex items-start justify-between gap-2 text-xs">
-        {/* Left: Rank + Title + (Category/Entity Badge & Meta) */}
         <div className="flex items-start gap-2 min-w-0 flex-1">
           <RankBadge rank={rank} />
           <div className="min-w-0 flex-1 space-y-0.5">
             <p
-              className={`font-semibold text-slate-800 truncate leading-tight ${theme.hoverText} transition-colors`}
+              className={`font-semibold text-[var(--ledger-ink)] truncate leading-tight ${theme.hoverText} transition-colors`}
               title={title}
             >
               {title}
             </p>
-            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+            <div className="flex items-center gap-1.5 text-[10px] text-[var(--ledger-muted)]">
               {badgeText && (
-                <span className="bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium truncate max-w-[110px]">
+                <span className="bg-[var(--ledger-recessed)] text-[var(--ledger-ink)] px-1.5 py-0.2 rounded font-medium truncate max-w-[110px]">
                   {badgeText}
                 </span>
               )}
@@ -155,21 +134,19 @@ const LeaderboardRow: React.FC<LeaderboardRowProps> = ({
           </div>
         </div>
 
-        {/* Right: Primary Metric + Secondary Sub-metric */}
         <div className="text-right shrink-0">
           <span className={`font-bold block tabular-nums leading-tight ${theme.valueText}`}>
             {primaryValue}
           </span>
           {secondaryValue && (
-            <span className="text-[10px] text-slate-500 tabular-nums block mt-0.5">
+            <span className="text-[10px] text-[var(--ledger-muted)] tabular-nums block mt-0.5">
               {secondaryValue}
             </span>
           )}
         </div>
       </div>
 
-      {/* Unified Progress Bar */}
-      <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+      <div className="w-full bg-[var(--ledger-recessed)] rounded-full h-1 overflow-hidden">
         <div
           className={`${theme.barColor} h-full rounded-full transition-all duration-500`}
           style={{ width: `${safePercent}%` }}
@@ -213,124 +190,99 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* ── Executive KPI Summary Strip ── */}
+      {/* ── Executive KPI Summary Strip (Unified Single Hairline Strip) ── */}
       {summaryMetrics && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-          <div className="bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent border border-blue-200/80 rounded-2xl p-3 flex items-center justify-between">
-            <div className="space-y-0.5 min-w-0">
-              <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider block">
-                Rata-rata / Hari
-              </span>
-              <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
-                {formatRupiah(summaryMetrics.daily_average)}
-              </p>
-              <p className="text-[10px] text-slate-500">
-                {summaryMetrics.active_days_count} hari belanja aktif
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-blue-100/70 text-blue-600 shrink-0">
-              <Calendar className="w-4 h-4" />
-            </div>
+        <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden grid grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 lg:divide-x divide-[color:var(--ledger-hairline)]">
+          <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-0.5 min-w-0">
+            <span className="text-xs font-semibold text-[var(--ledger-muted)] block truncate">
+              Rata-rata / Hari
+            </span>
+            <p className="text-base md:text-lg font-bold text-[var(--ledger-ink)] tabular-nums truncate">
+              {formatRupiah(summaryMetrics.daily_average)}
+            </p>
+            <p className="text-[11px] text-[var(--ledger-muted)] truncate">
+              {summaryMetrics.active_days_count} hari belanja aktif
+            </p>
           </div>
 
-          <div className="bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent border border-emerald-200/80 rounded-2xl p-3.5 flex items-center justify-between">
-            <div className="space-y-0.5 min-w-0">
-              <span className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider block">
-                Rata-rata / Transaksi
-              </span>
-              <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
-                {formatRupiah(summaryMetrics.average_per_transaction)}
-              </p>
-              <p className="text-[10px] text-slate-500">Rerata nota belanja</p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-emerald-100/70 text-emerald-600 shrink-0">
-              <Receipt className="w-4 h-4" />
-            </div>
+          <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-0.5 min-w-0">
+            <span className="text-xs font-semibold text-[var(--ledger-muted)] block truncate">
+              Rata-rata / Transaksi
+            </span>
+            <p className="text-base md:text-lg font-bold text-[var(--signal-cleared)] tabular-nums truncate">
+              {formatRupiah(summaryMetrics.average_per_transaction)}
+            </p>
+            <p className="text-[11px] text-[var(--ledger-muted)] truncate">
+              Rerata nota belanja
+            </p>
           </div>
 
-          <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200/80 rounded-2xl p-3.5 flex items-center justify-between">
-            <div className="space-y-0.5 min-w-0">
-              <span className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider block">
-                Ragam Item Unik
-              </span>
-              <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
-                {summaryMetrics.unique_items_count}{" "}
-                <span className="text-xs font-medium text-slate-500">macam</span>
-              </p>
-              <p className="text-[10px] text-slate-500">
-                Dari {summaryMetrics.unique_suppliers_count} supplier
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-amber-100/70 text-amber-600 shrink-0">
-              <Layers className="w-4 h-4" />
-            </div>
+          <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-0.5 min-w-0">
+            <span className="text-xs font-semibold text-[var(--ledger-muted)] block truncate">
+              Ragam Item Unik
+            </span>
+            <p className="text-base md:text-lg font-bold text-[var(--ledger-ink)] tabular-nums truncate">
+              {summaryMetrics.unique_items_count}{" "}
+              <span className="text-xs font-medium text-[var(--ledger-muted)]">macam</span>
+            </p>
+            <p className="text-[11px] text-[var(--ledger-muted)] truncate">
+              Dari {summaryMetrics.unique_suppliers_count} supplier
+            </p>
           </div>
 
-          <div className="bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent border border-purple-200/80 rounded-2xl p-3.5 flex items-center justify-between">
-            <div className="space-y-0.5 min-w-0">
-              <span className="text-[11px] font-semibold text-purple-600 uppercase tracking-wider block">
-                Transaksi Terbesar
-              </span>
-              <p className="text-base md:text-lg font-bold text-slate-900 tabular-nums truncate">
-                {summaryMetrics.max_single_transaction
-                  ? formatRupiah(summaryMetrics.max_single_transaction.amount)
-                  : "-"}
-              </p>
-              <p
-                className="text-[10px] text-slate-500 truncate"
-                title={summaryMetrics.max_single_transaction?.item_name}
-              >
-                {summaryMetrics.max_single_transaction
-                  ? summaryMetrics.max_single_transaction.item_name
-                  : "Belum ada transaksi"}
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-purple-100/70 text-purple-600 shrink-0">
-              <Trophy className="w-4 h-4" />
-            </div>
+          <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-0.5 min-w-0">
+            <span className="text-xs font-semibold text-[var(--ledger-muted)] block truncate">
+              Transaksi Terbesar
+            </span>
+            <p className="text-base md:text-lg font-bold text-[var(--signal-talangan)] tabular-nums truncate">
+              {summaryMetrics.max_single_transaction
+                ? formatRupiah(summaryMetrics.max_single_transaction.amount)
+                : "-"}
+            </p>
+            <p
+              className="text-[11px] text-[var(--ledger-muted)] truncate"
+              title={summaryMetrics.max_single_transaction?.item_name}
+            >
+              {summaryMetrics.max_single_transaction
+                ? summaryMetrics.max_single_transaction.item_name
+                : "Belum ada transaksi"}
+            </p>
           </div>
         </div>
       )}
 
       {/* Leaderboard Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Top Sering Dibeli */}
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
+          transition={{ duration: 0.25 }}
         >
-          <Card className="h-full flex flex-col justify-between border-slate-200/80 shadow-xs hover:border-slate-300 transition-all bg-white overflow-hidden">
+          <Card className="h-full flex flex-col justify-between border-[color:var(--ledger-hairline)] shadow-none bg-[var(--ledger-surface)] overflow-hidden">
             <div>
-              <CardHeader className="p-4 pb-3 border-b border-slate-100 bg-gradient-to-r from-blue-50/70 to-transparent min-h-[68px] flex justify-center">
+              <CardHeader className="px-3.5 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col justify-center gap-1">
                 <div className="flex items-center justify-between gap-2 w-full">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-xl shrink-0 bg-blue-100 text-blue-700">
-                      <ShoppingBag className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
-                        Top Sering Dibeli
-                      </CardTitle>
-                      <p className="text-[10px] text-slate-500 font-medium truncate">
-                        Frekuensi belanja terbanyak
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] font-semibold px-2 py-0.5 shrink-0 text-blue-700 border-blue-200 bg-blue-50/70"
-                  >
-                    Frekuensi
-                  </Badge>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                    <ShoppingBag className="w-3 h-3 shrink-0" />
+                    <span>Frekuensi</span>
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-xs font-bold text-[var(--ledger-ink)] leading-snug">
+                    Top Sering Dibeli
+                  </CardTitle>
+                  <p className="text-[10px] text-[var(--ledger-muted)] font-medium truncate mt-0.5">
+                    Frekuensi belanja terbanyak
+                  </p>
                 </div>
               </CardHeader>
 
-              <CardContent className="p-4 space-y-3.5">
+              <CardContent className="p-3.5 space-y-3">
                 {topFrequentItems.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 space-y-1">
-                    <ShoppingBag className="w-8 h-8 mx-auto mb-1 text-slate-300" />
-                    <p className="text-xs font-medium">Belum ada data barang</p>
+                  <div className="text-center py-6 text-[var(--ledger-muted)] space-y-1">
+                    <ShoppingBag className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                    <p className="text-xs font-medium text-[var(--ledger-ink)]">Belum ada data barang</p>
                     <p className="text-[10px]">Transaksi akan muncul di sini</p>
                   </div>
                 ) : (
@@ -355,47 +307,38 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
         {/* Card 2: Top Item Termahal */}
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.05 }}
+          transition={{ duration: 0.25, delay: 0.04 }}
         >
-          <Card className="h-full flex flex-col justify-between border-slate-200/80 shadow-xs hover:border-slate-300 transition-all bg-white overflow-hidden">
+          <Card className="h-full flex flex-col justify-between border-[color:var(--ledger-hairline)] shadow-none bg-[var(--ledger-surface)] overflow-hidden">
             <div>
-              <CardHeader className="p-4 pb-3 border-b border-slate-100 bg-gradient-to-r from-emerald-50/70 to-transparent min-h-[68px] flex justify-center">
+              <CardHeader className="px-3.5 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col justify-center gap-1">
                 <div className="flex items-center justify-between gap-2 w-full">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-xl shrink-0 bg-emerald-100 text-emerald-700">
-                      <TrendingUp className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
-                        Top Item Termahal
-                      </CardTitle>
-                      <p className="text-[10px] text-slate-500 font-medium truncate">
-                        Pengeluaran paling besar
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Mode switcher toggle with same 24px height as Badge */}
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[10px] font-semibold shrink-0 h-6">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-cleared)]">
+                    <TrendingUp className="w-3 h-3 shrink-0" />
+                    <span>Belanja</span>
+                  </span>
+                  <div className="flex items-center bg-[var(--ledger-recessed)] border border-[color:var(--ledger-hairline)] p-0.5 rounded-md text-[10px] font-semibold shrink-0 h-5">
                     <button
+                      type="button"
                       onClick={() => setExpensiveMode("total")}
-                      className={`px-2 py-0.5 rounded-md transition-all h-5 flex items-center ${
+                      className={`px-1.5 rounded-[4px] transition-all h-4 flex items-center ${
                         expensiveMode === "total"
-                          ? "bg-white text-emerald-700 shadow-xs font-bold"
-                          : "text-slate-500 hover:text-slate-800"
+                          ? "bg-[var(--ledger-surface)] text-[var(--signal-cleared)] shadow-2xs font-bold"
+                          : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
                       }`}
                       title="Urut berdasarkan total pengeluaran"
                     >
                       Total
                     </button>
                     <button
+                      type="button"
                       onClick={() => setExpensiveMode("unit")}
-                      className={`px-2 py-0.5 rounded-md transition-all h-5 flex items-center ${
+                      className={`px-1.5 rounded-[4px] transition-all h-4 flex items-center ${
                         expensiveMode === "unit"
-                          ? "bg-white text-emerald-700 shadow-xs font-bold"
-                          : "text-slate-500 hover:text-slate-800"
+                          ? "bg-[var(--ledger-surface)] text-[var(--signal-cleared)] shadow-2xs font-bold"
+                          : "text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
                       }`}
                       title="Urut berdasarkan harga satuan"
                     >
@@ -403,14 +346,22 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                     </button>
                   </div>
                 </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-xs font-bold text-[var(--ledger-ink)] leading-snug">
+                    Top Item Termahal
+                  </CardTitle>
+                  <p className="text-[10px] text-[var(--ledger-muted)] font-medium truncate mt-0.5">
+                    Pengeluaran paling besar
+                  </p>
+                </div>
               </CardHeader>
 
-              <CardContent className="p-4 space-y-3.5">
+              <CardContent className="p-3.5 space-y-3">
                 {expensiveMode === "total" ? (
                   topExpensiveItems.length === 0 ? (
-                    <div className="text-center py-8 text-slate-500 space-y-1">
-                      <TrendingUp className="w-8 h-8 mx-auto mb-1 text-slate-300" />
-                      <p className="text-xs font-medium">Belum ada pengeluaran</p>
+                    <div className="text-center py-6 text-[var(--ledger-muted)] space-y-1">
+                      <TrendingUp className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                      <p className="text-xs font-medium text-[var(--ledger-ink)]">Belum ada pengeluaran</p>
                       <p className="text-[10px]">Data belanja akan muncul di sini</p>
                     </div>
                   ) : (
@@ -429,9 +380,9 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
                     ))
                   )
                 ) : topUnitPriceItems.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 space-y-1">
-                    <TrendingUp className="w-8 h-8 mx-auto mb-1 text-slate-300" />
-                    <p className="text-xs font-medium">Belum ada data harga satuan</p>
+                  <div className="text-center py-6 text-[var(--ledger-muted)] space-y-1">
+                    <TrendingUp className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                    <p className="text-xs font-medium text-[var(--ledger-ink)]">Belum ada data harga satuan</p>
                     <p className="text-[10px]">Data harga satuan akan muncul di sini</p>
                   </div>
                 ) : (
@@ -456,44 +407,35 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
         {/* Card 3: Top Kenaikan Harga */}
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
+          transition={{ duration: 0.25, delay: 0.08 }}
         >
-          <Card className="h-full flex flex-col justify-between border-slate-200/80 shadow-xs hover:border-slate-300 transition-all bg-white overflow-hidden">
+          <Card className="h-full flex flex-col justify-between border-[color:var(--ledger-hairline)] shadow-none bg-[var(--ledger-surface)] overflow-hidden">
             <div>
-              <CardHeader className="p-4 pb-3 border-b border-slate-100 bg-gradient-to-r from-rose-50/70 to-transparent min-h-[68px] flex justify-center">
+              <CardHeader className="px-3.5 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col justify-center gap-1">
                 <div className="flex items-center justify-between gap-2 w-full">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-xl shrink-0 bg-rose-100 text-rose-700">
-                      <Flame className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
-                        Top Naik Drastis
-                      </CardTitle>
-                      <p className="text-[10px] text-slate-500 font-medium truncate">
-                        Lonjakan harga beli bahan
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] font-semibold px-2 py-0.5 shrink-0 text-rose-700 border-rose-200 bg-rose-50/70"
-                  >
-                    Spike Alert
-                  </Badge>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-unpaid)]">
+                    <Flame className="w-3 h-3 shrink-0" />
+                    <span>Spike Alert</span>
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-xs font-bold text-[var(--ledger-ink)] leading-snug">
+                    Top Naik Drastis
+                  </CardTitle>
+                  <p className="text-[10px] text-[var(--ledger-muted)] font-medium truncate mt-0.5">
+                    Lonjakan harga beli bahan
+                  </p>
                 </div>
               </CardHeader>
 
-              <CardContent className="p-4 space-y-3.5">
+              <CardContent className="p-3.5 space-y-3">
                 {topPriceSpikes.length === 0 ? (
-                  <div className="text-center py-7 text-slate-500 space-y-1.5">
-                    <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-1">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <p className="text-xs font-semibold text-emerald-700">Harga Bahan Stabil</p>
-                    <p className="text-[10px] text-slate-500 max-w-[190px] mx-auto leading-relaxed">
+                  <div className="text-center py-6 text-[var(--ledger-muted)] space-y-1">
+                    <CheckCircle2 className="w-6 h-6 mx-auto mb-1 text-[var(--signal-cleared)]" />
+                    <p className="text-xs font-semibold text-[var(--signal-cleared)]">Harga Bahan Stabil</p>
+                    <p className="text-[10px] text-[var(--ledger-muted)] max-w-[190px] mx-auto leading-relaxed">
                       Tidak terdeteksi lonjakan harga bahan di periode {monthName} {year}
                     </p>
                   </div>
@@ -519,41 +461,34 @@ export const LeaderboardCards: React.FC<LeaderboardCardsProps> = ({
 
         {/* Card 4: Top Toko & Supplier */}
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15 }}
+          transition={{ duration: 0.25, delay: 0.12 }}
         >
-          <Card className="h-full flex flex-col justify-between border-slate-200/80 shadow-xs hover:border-slate-300 transition-all bg-white overflow-hidden">
+          <Card className="h-full flex flex-col justify-between border-[color:var(--ledger-hairline)] shadow-none bg-[var(--ledger-surface)] overflow-hidden">
             <div>
-              <CardHeader className="p-4 pb-3 border-b border-slate-100 bg-gradient-to-r from-purple-50/70 to-transparent min-h-[68px] flex justify-center">
+              <CardHeader className="px-3.5 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col justify-center gap-1">
                 <div className="flex items-center justify-between gap-2 w-full">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="p-2 rounded-xl shrink-0 bg-purple-100 text-purple-700">
-                      <Store className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-bold text-slate-800 leading-tight truncate">
-                        Top Toko & Mitra
-                      </CardTitle>
-                      <p className="text-[10px] text-slate-500 font-medium truncate">
-                        Alokasi belanja per mitra
-                      </p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] font-semibold px-2 py-0.5 shrink-0 text-purple-700 border-purple-200 bg-purple-50/70"
-                  >
-                    Mitra Toko
-                  </Badge>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-talangan)]">
+                    <Store className="w-3 h-3 shrink-0" />
+                    <span>Mitra Toko</span>
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-xs font-bold text-[var(--ledger-ink)] leading-snug">
+                    Top Toko &amp; Mitra
+                  </CardTitle>
+                  <p className="text-[10px] text-[var(--ledger-muted)] font-medium truncate mt-0.5">
+                    Alokasi belanja per mitra
+                  </p>
                 </div>
               </CardHeader>
 
-              <CardContent className="p-4 space-y-3.5">
+              <CardContent className="p-3.5 space-y-3">
                 {topSuppliers.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 space-y-1">
-                    <Store className="w-8 h-8 mx-auto mb-1 text-slate-300" />
-                    <p className="text-xs font-medium">Belum ada data supplier</p>
+                  <div className="text-center py-6 text-[var(--ledger-muted)] space-y-1">
+                    <Store className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                    <p className="text-xs font-medium text-[var(--ledger-ink)]">Belum ada data supplier</p>
                     <p className="text-[10px]">Data mitra belanja akan muncul di sini</p>
                   </div>
                 ) : (

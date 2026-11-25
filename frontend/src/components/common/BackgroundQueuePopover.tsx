@@ -24,18 +24,19 @@ import { toast } from "sonner";
 export function BackgroundQueuePopover() {
   const queryClient = useQueryClient();
 
-  const { data: jobs = [] } = useQuery<BackgroundJob[]>({
+  const { data: rawJobs = [] } = useQuery<BackgroundJob[]>({
     queryKey: ["background-jobs"],
     queryFn: () => getBackgroundJobs({ limit: 15 }),
     refetchInterval: (query) => {
       const data = query.state.data;
-      const hasActive = data?.some(
-        (j) => j.status === "running" || j.status === "queued"
-      );
+      const hasActive =
+        Array.isArray(data) &&
+        data.some((j) => j.status === "running" || j.status === "queued");
       return hasActive ? 2000 : 10000;
     },
   });
 
+  const jobs = Array.isArray(rawJobs) ? rawJobs : [];
   const activeJobs = jobs.filter(
     (j) => j.status === "running" || j.status === "queued"
   );

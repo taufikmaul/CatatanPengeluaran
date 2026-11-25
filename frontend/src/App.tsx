@@ -994,7 +994,7 @@ function MainDashboardApp() {
           />
 
           {/* Main Content Area */}
-          <main className="w-full max-w-[1920px] mx-auto px-3 sm:px-5 md:px-6 py-3.5 space-y-3.5">
+          <main className="w-full min-w-0 max-w-[1920px] mx-auto px-3 sm:px-5 md:px-6 py-3.5 space-y-3.5">
             {/* Hub 1: Kas & Pengeluaran */}
             {isCashflowActive && (
               <React.Suspense fallback={<TabLoadingFallback />}>
@@ -1611,26 +1611,21 @@ function MainDashboardApp() {
                   )
                 ) : (
                   /* Admin Input View pada Halaman Transaksi */
-                  <div className="space-y-4">
-                    {/* Banner Status Admin Input */}
-                    <div className="bg-amber-500/10 border border-amber-200/90 dark:border-amber-800/80 rounded-2xl p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xl shrink-0">
-                          ✍️
+                  <div className="space-y-3">
+                    {/* Editorial Admin Input Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+                            Daftar Transaksi Operasional
+                          </h2>
+                          <Badge variant="outline" className="text-[10px] font-semibold text-amber-800 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800">
+                            Input &amp; Koreksi
+                          </Badge>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="text-sm md:text-base font-bold text-slate-900 dark:text-slate-100">
-                              Daftar Transaksi (Admin Input)
-                            </h2>
-                            <Badge variant="outline" className="text-[10px] font-semibold text-amber-700 border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
-                              Input & Koreksi
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                            Pencatatan pengeluaran harian dan koreksi transaksi operasional.
-                          </p>
-                        </div>
+                        <p className="text-xs text-[var(--ledger-muted)]">
+                          Pencatatan pengeluaran harian dan koreksi transaksi operasional.
+                        </p>
                       </div>
                       <Button
                         onClick={() => {
@@ -1639,35 +1634,35 @@ function MainDashboardApp() {
                           setIsFormOpen(true);
                         }}
                         size="sm"
-                        className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs gap-1.5 text-xs font-semibold h-10 px-4 shrink-0 w-full md:w-auto"
+                        className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 rounded-lg gap-1.5 text-xs font-semibold h-9 px-3.5 shrink-0 w-full sm:w-auto ledger-press"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-3.5 h-3.5" />
                         <span>Catat Pengeluaran Baru</span>
                       </Button>
                     </div>
 
-                    {/* Ringkasan Angka Utama */}
-                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
-                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">
+                    {/* Unified Hairline Summary Strip */}
+                    <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden grid grid-cols-3 divide-x divide-[color:var(--ledger-hairline)]">
+                      <div className="px-3 py-2.5 sm:px-4 sm:py-3">
+                        <div className="text-[10px] sm:text-xs font-semibold text-[var(--ledger-muted)] truncate">
                           Total Transaksi
                         </div>
-                        <div className="text-sm sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums">
+                        <div className="text-sm sm:text-xl font-bold text-[var(--ledger-ink)] mt-0.5 tabular-nums">
                           {reportData?.expense_count || 0}
-                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">item</span>
+                          <span className="hidden sm:inline text-xs font-normal text-[var(--ledger-muted)] ml-1.5">item</span>
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
-                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Total Belanja</div>
-                        <div className="text-xs sm:text-2xl font-bold text-slate-900 dark:text-slate-100 mt-1 tabular-nums truncate">
+                      <div className="px-3 py-2.5 sm:px-4 sm:py-3">
+                        <div className="text-[10px] sm:text-xs font-semibold text-[var(--ledger-muted)] truncate">Total Belanja</div>
+                        <div className="text-xs sm:text-xl font-bold text-[var(--ledger-ink)] mt-0.5 tabular-nums truncate">
                           {formatRupiah(reportData?.total_pengeluaran || 0)}
                         </div>
                       </div>
-                      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-4 shadow-xs">
-                        <div className="text-[10px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Belum Lunas</div>
-                        <div className="text-xs sm:text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1 tabular-nums truncate">
+                      <div className="px-3 py-2.5 sm:px-4 sm:py-3">
+                        <div className="text-[10px] sm:text-xs font-semibold text-[var(--ledger-muted)] truncate">Belum Lunas</div>
+                        <div className="text-xs sm:text-xl font-bold text-[var(--signal-unpaid)] mt-0.5 tabular-nums truncate">
                           {reportData?.list_hutang?.length || 0}
-                          <span className="hidden sm:inline text-xs font-normal text-slate-500 ml-1.5">
+                          <span className="hidden sm:inline text-xs font-normal text-[var(--ledger-muted)] ml-1.5">
                             ({formatRupiah(totalUnpaidNominal)})
                           </span>
                         </div>

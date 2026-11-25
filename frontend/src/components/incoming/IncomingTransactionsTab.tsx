@@ -11,11 +11,20 @@ import {
   importIncomingTransactionsCsv,
 } from "@/lib/api";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Badge } from "@/components/ui/badge";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+} from "@/components/common/LedgerPrimitives";
 import { SalesImportModal } from "./SalesImportModal";
 import { IncomingAnalyticsPanel } from "./IncomingAnalyticsPanel";
 import { BankTransferPanel } from "./BankTransferPanel";
@@ -32,7 +41,6 @@ import { DataTable } from "@/components/common/DataTable";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { ColumnDef } from "@tanstack/react-table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   Upload,
@@ -45,9 +53,6 @@ import {
   Receipt,
   Landmark,
   CheckCircle2,
-  TrendingUp,
-  ArrowRightLeft,
-  GitCompareArrows,
   Plus,
   Table2,
   FileSpreadsheet,
@@ -55,6 +60,7 @@ import {
   Pencil,
   Route,
   ShieldAlert,
+  X,
 } from "lucide-react";
 import type { IncomingTransaction, BulkIncomingTxRow } from "@/types";
 
@@ -625,36 +631,40 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     [accounts, isAdmin, reassignMutation, deleteMutation]
   );
 
+  const totalGross = summary?.gross_sales || 0;
+  const totalDeductions = (summary?.discount_amount || 0) + (summary?.platform_fee || 0);
+  const netReceived = summary?.net_received || 0;
+
   return (
     <div className="space-y-3">
-      {/* Compact Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="outline" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {summary?.paid_count || 0} Transaksi Masuk
-          </Badge>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            Total Bersih: <strong className="text-emerald-700 dark:text-emerald-400 font-bold">{formatRupiah(summary?.net_received || 0)}</strong>
-          </span>
-          {startDate && endDate && (
-            <Badge variant="secondary" className="text-[11px] font-mono text-blue-700 bg-blue-50 dark:bg-blue-950/40 border-blue-200">
-              📅 {startDate} s/d {endDate}
-            </Badge>
-          )}
+      {/* 1. Editorial Header Strip (No Hero Card) */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Buku Uang Masuk &amp; Penjualan
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {summary?.paid_count || 0} transaksi berhasil • Net diterima{" "}
+            <strong className="font-semibold text-[var(--signal-cleared)]">
+              {formatRupiah(netReceived)}
+            </strong>
+            {startDate && endDate ? ` • Periode ${startDate} s/d ${endDate}` : ""}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+
+        <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-auto">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setAiMapOpen(true)}
-            className={`gap-1.5 h-8 text-xs shadow-2xs font-medium ${
+            className={`gap-1.5 h-8 rounded-lg text-xs font-medium ${
               unmappedCount > 0
-                ? "bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100"
-                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                ? "border-blue-300 bg-blue-50/70 text-blue-800 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
+                : "border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             }`}
             title="Cocokkan dan isi rekening tujuan secara otomatis dengan AI berdasarkan tipe order dan metode bayar"
           >
-            <Route className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />
+            <Route className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
             <span>Set Rekening AI</span>
             {unmappedCount > 0 && (
               <span className="ml-0.5 rounded bg-blue-700 px-1.5 py-0.2 text-[10px] font-semibold text-white tabular-nums">
@@ -667,11 +677,11 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             variant="outline"
             size="sm"
             onClick={() => setDuplicateAuditOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            className="gap-1.5 h-8 rounded-lg text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Pindai dan bersihkan transaksi masuk yang tercatat ganda atau duplikat"
           >
-            <ShieldAlert className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
-            Analisa Duplikat
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+            <span>Analisa Duplikat</span>
           </Button>
 
           <Button
@@ -679,284 +689,338 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
             size="sm"
             onClick={handleExportCsv}
             disabled={isExporting}
-            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            className="gap-1.5 h-8 rounded-lg text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Download CSV transaksi sesuai filter yang aktif"
           >
-            <Download className="w-3.5 h-3.5 text-slate-500" />
-            {isExporting ? "Mengekspor..." : "Export CSV"}
+            <Download className="w-3.5 h-3.5 text-[var(--ledger-muted)]" />
+            <span>{isExporting ? "Mengekspor..." : "Export CSV"}</span>
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             onClick={() => setCsvTemplateOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            className="gap-1.5 h-8 rounded-lg text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Import file CSV dengan opsi perbarui data yang sudah ada"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            Import CSV
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Import CSV</span>
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             onClick={() => setImportOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            className="gap-1.5 h-8 rounded-lg text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Import laporan riwayat penjualan POS Moka / Olsera multi-baris"
           >
-            <Upload className="w-3.5 h-3.5 text-blue-600" />
-            Import POS
+            <Upload className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span>Import POS</span>
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             onClick={() => setBulkDialogOpen(true)}
-            className="gap-1.5 h-8 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
+            className="gap-1.5 h-8 rounded-lg text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Input banyak transaksi sekaligus atau paste dari Excel/Sheets"
           >
-            <Table2 className="w-3.5 h-3.5 text-indigo-600" />
-            Input Masal
+            <Table2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>Input Masal</span>
           </Button>
 
           <Button
             onClick={handleAddSingleTx}
             size="sm"
-            className="gap-1.5 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-2xs font-semibold"
+            className="gap-1.5 h-8 rounded-lg text-xs bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 font-semibold ledger-press"
           >
             <Plus className="w-3.5 h-3.5" />
-            Tambah Satuan
+            <span>Tambah Satuan</span>
           </Button>
         </div>
       </div>
 
-      <Tabs value={subTab} onValueChange={setSubTab} className="w-full space-y-3">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full h-auto p-1 gap-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800">
-          <TabsTrigger value="list" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
-            <Receipt className="w-3.5 h-3.5 text-blue-600" />
-            <span>Daftar Transaksi</span>
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Radar Menu &amp; Jam Sibuk</span>
-          </TabsTrigger>
-          <TabsTrigger value="transfers" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
-            <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
-            <span>Transfer Rekening</span>
-          </TabsTrigger>
-          <TabsTrigger value="reconcile" className="gap-1.5 py-1.5 text-xs font-medium rounded-lg">
-            <GitCompareArrows className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Rekonsiliasi</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* 2. Sub-Mode Underline Tabs + Active Content */}
+      <div className="space-y-3">
+        <LedgerStatusTabs
+          tabs={[
+            { value: "list", label: "Daftar Transaksi", count: transactions.length },
+            { value: "analytics", label: "Radar Menu & Jam Sibuk" },
+            { value: "transfers", label: "Transfer Rekening" },
+            { value: "reconcile", label: "Rekonsiliasi" },
+          ]}
+          value={subTab as "list" | "analytics" | "transfers" | "reconcile"}
+          onChange={(next) => setSubTab(next)}
+          layoutId="incoming-subtab-underline"
+          ariaLabel="Navigasi modul uang masuk"
+        />
 
-        <TabsContent value="list" className="space-y-3 mt-0">
+        {subTab === "list" && (
+          <div className="space-y-3">
+            {/* Single Hairline Metric Strip (Zero Nested Cards) */}
+            <LedgerMetricStrip
+              isLoading={isLoading && !summary}
+              primary={{
+                label: "Bersih Diterima",
+                value: formatRupiah(netReceived),
+                valueClassName: "text-[var(--signal-cleared)]",
+                subtext: `${summary?.paid_count || 0} transaksi berhasil • Net Sales ${formatRupiah(summary?.net_sales || 0)}`,
+                active: statusFilter === "paid",
+                onClick: () =>
+                  setStatusFilter((prev) => (prev === "paid" ? "all" : "paid")),
+                segments:
+                  totalGross > 0
+                    ? [
+                        {
+                          key: "net",
+                          label: "Bersih",
+                          value: netReceived,
+                          displayValue: formatRupiah(netReceived),
+                          colorClass: "bg-emerald-600 dark:bg-emerald-400",
+                        },
+                        {
+                          key: "deduction",
+                          label: "Diskon & Fee",
+                          value: totalDeductions,
+                          displayValue: formatRupiah(totalDeductions),
+                          colorClass: "bg-rose-500 dark:bg-rose-400",
+                        },
+                      ]
+                    : undefined,
+              }}
+              supporting={[
+                {
+                  key: "gross",
+                  label: "Penjualan Kotor",
+                  value: formatRupiah(totalGross),
+                  subtext: "Total omset sebelum diskon & fee",
+                  active: statusFilter === "all",
+                  accentTone: "neutral",
+                  onClick: () => setStatusFilter("all"),
+                },
+                {
+                  key: "deductions",
+                  label: "Diskon & Fee Platform",
+                  value: `-${formatRupiah(totalDeductions)}`,
+                  valueClassName: "text-[var(--signal-unpaid)]",
+                  subtext: `Diskon ${formatRupiah(summary?.discount_amount || 0)} • Fee ${formatRupiah(summary?.platform_fee || 0)}`,
+                },
+                {
+                  key: "void",
+                  label: "Void / Dibatalkan",
+                  value: `${summary?.void_count || 0} struk`,
+                  valueClassName:
+                    (summary?.void_count || 0) > 0
+                      ? "text-[var(--signal-dp)]"
+                      : "text-[var(--ledger-ink)]",
+                  subtext: `Nilai batal: ${formatRupiah(summary?.cancellation_total || 0)}`,
+                  active: statusFilter === "void",
+                  accentTone: "dp",
+                  onClick: () =>
+                    setStatusFilter((prev) => (prev === "void" ? "all" : "void")),
+                },
+              ]}
+            />
 
-      {/* KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-          <CardContent className="px-3.5 py-2.5">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">Penjualan Kotor (Dibayar)</div>
-            <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-              {formatRupiah(summary?.gross_sales || 0)}
-            </div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-              {summary?.paid_count || 0} transaksi berhasil
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-          <CardContent className="px-3.5 py-2.5">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">Diskon &amp; Fee Platform</div>
-            <div className="text-lg font-semibold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
-              -{formatRupiah((summary?.discount_amount || 0) + (summary?.platform_fee || 0))}
-            </div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-              Diskon {formatRupiah(summary?.discount_amount || 0)} • Fee{" "}
-              {formatRupiah(summary?.platform_fee || 0)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-          <CardContent className="px-3.5 py-2.5">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">Bersih Diterima</div>
-            <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums mt-0.5">
-              {formatRupiah(summary?.net_received || 0)}
-            </div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-              Net Sales: {formatRupiah(summary?.net_sales || 0)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-          <CardContent className="px-3.5 py-2.5">
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">Void / Dibatalkan</div>
-            <div className="text-lg font-semibold text-amber-700 dark:text-amber-400 tabular-nums mt-0.5">
-              {summary?.void_count || 0} struk
-            </div>
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-              Nilai batal: {formatRupiah(summary?.cancellation_total || 0)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card className="border-slate-200 dark:border-slate-800 shadow-xs">
-        <CardContent className="p-2.5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 items-center">
-            <div className="relative lg:col-span-3 min-w-0">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                placeholder="Cari No Receipt, Order ID, Pelanggan..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 h-9 text-xs"
-              />
-            </div>
-
-            <select
-              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
-              value={orderType}
-              onChange={(e) => setOrderType(e.target.value)}
-            >
-              <option value="all">Semua Tipe Order</option>
-              {orderTypes.map((ot) => (
-                <option key={ot} value={ot}>
-                  {ot}
-                </option>
-              ))}
-            </select>
-
-            <select
-              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
-              value={bankAccountId}
-              onChange={(e) => setBankAccountId(e.target.value)}
-            >
-              <option value="all">Semua Rekening</option>
-              <option value="0">Belum Terpetakan</option>
-              {accounts.map((acc) => (
-                <option key={acc.id} value={String(acc.id)}>
-                  {acc.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              className="lg:col-span-2 min-w-0 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2.5 text-xs"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="all">Semua Status</option>
-              <option value="paid">Dibayar</option>
-              <option value="void">Void / Batal</option>
-            </select>
-
-            <div className="lg:col-span-3 min-w-0 flex items-center gap-1.5">
-              <div className="min-w-0 flex-1 [&_button]:w-full [&_button]:max-w-full [&_button]:justify-start [&_button]:overflow-hidden [&_span]:truncate">
-                <DateRangePicker
-                  initialDateFrom={startDate}
-                  initialDateTo={endDate}
-                  onUpdate={({ range }) => {
-                    if (range.from) setStartDate(toIsoDate(range.from));
-                    if (range.to) setEndDate(toIsoDate(range.to));
-                    else if (range.from) setEndDate(toIsoDate(range.from));
-                  }}
-                />
-              </div>
-              {headerStartDate && headerEndDate && (startDate !== headerStartDate || endDate !== headerEndDate) && (
+            {/* Unmapped Account Action Strip */}
+            {unmappedCount > 0 && (
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] signal-surface-dp px-3.5 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-[var(--ledger-ink)]">
+                  <Landmark className="w-4 h-4 text-[var(--signal-dp)] shrink-0" aria-hidden="true" />
+                  <span>
+                    <strong className="font-semibold tabular-nums">{unmappedCount} transaksi</strong> pada filter aktif belum memiliki rekening tujuan.
+                  </span>
+                </div>
                 <Button
                   type="button"
-                  variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    setStartDate(headerStartDate);
-                    setEndDate(headerEndDate);
-                  }}
-                  className="h-9 text-[10px] px-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-semibold shrink-0"
-                  title="Kembalikan tanggal ke filter periode header"
+                  onClick={() => setAiMapOpen(true)}
+                  className="h-8 px-3 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 gap-1.5 self-start sm:self-auto ledger-press"
                 >
-                  Reset
+                  <Route className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Set Rekening AI Sekarang</span>
                 </Button>
+              </div>
+            )}
+
+            {/* Unified Ledger Filter + DataTable Container (Zero Nested Cards) */}
+            <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+              <div className="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
+                      Daftar Transaksi Masuk
+                    </h3>
+                    <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)]">
+                      {transactions.length} struk tampil
+                    </span>
+                  </div>
+                  {(search || orderType !== "all" || bankAccountId !== "all" || statusFilter !== "all") && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSearch("");
+                        setOrderType("all");
+                        setBankAccountId("all");
+                        setStatusFilter("all");
+                      }}
+                      className="h-7 px-2 text-xs text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                    >
+                      Reset Filter
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 items-center">
+                  <div className="lg:col-span-3 min-w-0">
+                    <InputGroup className="h-9 bg-[var(--ledger-surface)]">
+                      <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                        <Search className="size-3.5 text-[var(--ledger-muted)]" />
+                      </InputGroupAddon>
+                      <InputGroupInput
+                        placeholder="Cari No Receipt, Order ID, Pelanggan..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        aria-label="Cari transaksi masuk"
+                        className="h-9 text-xs"
+                      />
+                      {search.length > 0 && (
+                        <InputGroupAddon align="inline-end" className="pr-1.5">
+                          <InputGroupButton
+                            size="icon-xs"
+                            aria-label="Bersihkan kata kunci"
+                            onClick={() => setSearch("")}
+                          >
+                            <X className="size-3" />
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      )}
+                    </InputGroup>
+                  </div>
+
+                  <select
+                    aria-label="Filter tipe order"
+                    className="lg:col-span-2 min-w-0 h-9 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] px-2.5 text-xs"
+                    value={orderType}
+                    onChange={(e) => setOrderType(e.target.value)}
+                  >
+                    <option value="all">Semua Tipe Order</option>
+                    {orderTypes.map((ot) => (
+                      <option key={ot} value={ot}>
+                        {ot}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    aria-label="Filter rekening tujuan"
+                    className="lg:col-span-2 min-w-0 h-9 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] px-2.5 text-xs"
+                    value={bankAccountId}
+                    onChange={(e) => setBankAccountId(e.target.value)}
+                  >
+                    <option value="all">Semua Rekening</option>
+                    <option value="0">Belum Terpetakan</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={String(acc.id)}>
+                        {acc.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    aria-label="Filter status uang masuk"
+                    className="lg:col-span-2 min-w-0 h-9 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] px-2.5 text-xs"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="all">Semua Status</option>
+                    <option value="paid">Dibayar</option>
+                    <option value="void">Void / Batal</option>
+                  </select>
+
+                  <div className="lg:col-span-3 min-w-0 flex items-center gap-1.5">
+                    <div className="min-w-0 flex-1 [&_button]:w-full [&_button]:max-w-full [&_button]:justify-start [&_button]:overflow-hidden [&_span]:truncate">
+                      <DateRangePicker
+                        initialDateFrom={startDate}
+                        initialDateTo={endDate}
+                        onUpdate={({ range }) => {
+                          if (range.from) setStartDate(toIsoDate(range.from));
+                          if (range.to) setEndDate(toIsoDate(range.to));
+                          else if (range.from) setEndDate(toIsoDate(range.from));
+                        }}
+                      />
+                    </div>
+                    {headerStartDate && headerEndDate && (startDate !== headerStartDate || endDate !== headerEndDate) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setStartDate(headerStartDate);
+                          setEndDate(headerEndDate);
+                        }}
+                        className="h-9 text-[10px] px-2 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-semibold shrink-0"
+                        title="Kembalikan tanggal ke filter periode header"
+                      >
+                        Reset
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {isLoading ? (
+                <div className="py-10 flex items-center justify-center gap-2 text-xs text-[var(--ledger-muted)]">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Memuat transaksi masuk...</span>
+                </div>
+              ) : isError ? (
+                <LedgerStateBlock
+                  variant="error"
+                  title="Gagal memuat daftar transaksi masuk"
+                  description="Periksa koneksi server lalu coba muat ulang data penjualan."
+                  actions={
+                    <Button variant="outline" size="sm" onClick={() => refetch()}>
+                      Coba Lagi
+                    </Button>
+                  }
+                />
+              ) : transactions.length === 0 ? (
+                <LedgerStateBlock
+                  variant="empty"
+                  icon={<Receipt className="w-7 h-7" />}
+                  title="Belum ada transaksi masuk"
+                  description="Klik Import POS untuk mengunggah laporan penjualan, atau gunakan Tambah Satuan / Input Masal."
+                />
+              ) : (
+                <DataTable
+                  columns={incomingColumns}
+                  data={transactions}
+                  getRowId={(tx) => String(tx.id)}
+                  getRowCanExpand={(row) => row.original.items.length > 0}
+                  defaultPageSize={20}
+                  containerClassName="border-0 rounded-none shadow-none"
+                  footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+                />
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Unmapped Account Action Bar */}
-      {unmappedCount > 0 && (
-        <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 px-3.5 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-200">
-            <Landmark className="w-4 h-4 text-amber-800 dark:text-amber-400 shrink-0" aria-hidden="true" />
-            <span>
-              <strong className="font-semibold tabular-nums">{unmappedCount} transaksi</strong> pada filter aktif belum memiliki rekening tujuan.
-            </span>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setAiMapOpen(true)}
-            className="h-8 px-3 text-xs font-semibold bg-blue-700 hover:bg-blue-800 text-white gap-1.5 self-start sm:self-auto"
-          >
-            <Route className="w-3.5 h-3.5" aria-hidden="true" />
-            Set Rekening AI Sekarang
-          </Button>
-        </div>
-      )}
-
-      {/* Table */}
-      <Card className="border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
-        {isLoading ? (
-          <div className="py-8 flex items-center justify-center gap-2 text-sm text-slate-500">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Memuat transaksi masuk...
-          </div>
-        ) : isError ? (
-          <div className="py-8 flex flex-col items-center justify-center gap-2 text-center">
-            <AlertCircle className="w-6 h-6 text-rose-500" />
-            <p className="text-sm text-slate-600">Gagal memuat daftar transaksi masuk.</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              Coba Lagi
-            </Button>
-          </div>
-        ) : transactions.length === 0 ? (
-          <div className="py-8 text-center px-4">
-            <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-700">Belum ada transaksi masuk</p>
-            <p className="text-xs text-slate-500 mt-1">
-              Klik tombol <strong>Import Laporan POS / Platform</strong> untuk mengunggah file CSV
-              dari POS.
-            </p>
-          </div>
-        ) : (
-          <DataTable
-            columns={incomingColumns}
-            data={transactions}
-            getRowId={(tx) => String(tx.id)}
-            getRowCanExpand={(row) => row.original.items.length > 0}
-            defaultPageSize={20}
-            containerClassName="border-0 rounded-none shadow-none"
-          />
         )}
-      </Card>
-        </TabsContent>
 
-        <TabsContent value="analytics" className="mt-0">
+        {subTab === "analytics" && (
           <IncomingAnalyticsPanel startDate={startDate} endDate={endDate} />
-        </TabsContent>
+        )}
 
-        <TabsContent value="transfers" className="mt-0">
+        {subTab === "transfers" && (
           <BankTransferPanel accounts={accounts} isAdmin={isAdmin} />
-        </TabsContent>
+        )}
 
-        <TabsContent value="reconcile" className="mt-0">
+        {subTab === "reconcile" && (
           <ReconciliationPanel accounts={accounts} />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
 
       <AiBankAccountMappingModal
         isOpen={aiMapOpen}

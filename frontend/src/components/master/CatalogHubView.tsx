@@ -1,6 +1,5 @@
 import React from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   PackageCheck,
   BookOpen,
@@ -31,76 +30,85 @@ export const CatalogHubView: React.FC<CatalogHubViewProps> = ({
   const isSupplierActive = activeSubTab === "suppliers" || activeSubTab === "supplier-detail";
 
   return (
-    <div className="space-y-3">
-      {/* Sub-Pills Navigation */}
-      <div className="flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
-        {/* Tab 1: Master Item Bahan */}
-        {(isOwner || isPurchasing || isWarehouse) && (
-          <Button
-            variant={activeSubTab === "master" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onSubTabChange("master")}
-            className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
-              activeSubTab === "master"
-                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-            }`}
-          >
-            <PackageCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-            <span>Item &amp; Satuan</span>
-          </Button>
-        )}
+    <div className="space-y-3.5">
+      {/* Editorial Hairline Sub-Navigation */}
+      <div className="border-b border-[color:var(--ledger-hairline)]">
+        <nav
+          aria-label="Sub-navigasi katalog dan margin"
+          className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-px"
+        >
+          {/* Tab 1: Master Item Bahan */}
+          {(isOwner || isPurchasing || isWarehouse) && (
+            <button
+              type="button"
+              onClick={() => onSubTabChange("master")}
+              aria-current={activeSubTab === "master" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
+                activeSubTab === "master"
+                  ? "border-blue-600 text-[var(--ledger-ink)] dark:border-blue-400"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
+            >
+              <PackageCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>Item &amp; Satuan</span>
+            </button>
+          )}
 
-        {/* Tab 2: Menu & Resep HPP */}
-        {(isOwner || isPurchasing || isAdminInput) && (
-          <Button
-            variant={activeSubTab === "menus" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onSubTabChange("menus")}
-            className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
-              activeSubTab === "menus"
-                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Menu &amp; Resep HPP</span>
-          </Button>
-        )}
+          {/* Tab 2: Menu & Resep HPP */}
+          {(isOwner || isPurchasing || isAdminInput) && (
+            <button
+              type="button"
+              onClick={() => onSubTabChange("menus")}
+              aria-current={activeSubTab === "menus" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
+                activeSubTab === "menus"
+                  ? "border-[var(--signal-cleared)] text-[var(--ledger-ink)]"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[var(--signal-cleared)]" />
+              <span>Menu &amp; Resep HPP</span>
+            </button>
+          )}
 
-        {/* Tab 3: Master Supplier */}
-        {(isOwner || isPurchasing) && (
-          <Button
-            variant={isSupplierActive ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onSubTabChange("suppliers")}
-            className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
-              isSupplierActive
-                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-            }`}
-          >
-            <Store className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-            <span>Supplier &amp; Toko</span>
-          </Button>
-        )}
+          {/* Tab 3: Master Supplier */}
+          {(isOwner || isPurchasing) && (
+            <button
+              type="button"
+              onClick={() => onSubTabChange("suppliers")}
+              aria-current={isSupplierActive ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
+                isSupplierActive
+                  ? "border-[var(--signal-dp)] text-[var(--ledger-ink)]"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
+            >
+              <Store className="w-3.5 h-3.5 text-[var(--signal-dp)]" />
+              <span>Supplier &amp; Toko</span>
+            </button>
+          )}
 
-        {/* Tab 4: Inventaris Aset */}
-        {(isOwner || isWarehouse || isAdminInput) && (
-          <Button
-            variant={activeSubTab === "inventaris" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onSubTabChange("inventaris")}
-            className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
-              activeSubTab === "inventaris"
-                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-            }`}
-          >
-            <Boxes className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-            <span>Inventaris Aset</span>
-          </Button>
-        )}
+          {/* Tab 4: Inventaris Aset */}
+          {(isOwner || isWarehouse || isAdminInput) && (
+            <button
+              type="button"
+              onClick={() => onSubTabChange("inventaris")}
+              aria-current={activeSubTab === "inventaris" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
+                activeSubTab === "inventaris"
+                  ? "border-[var(--signal-talangan)] text-[var(--ledger-ink)]"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
+            >
+              <Boxes className="w-3.5 h-3.5 text-[var(--signal-talangan)]" />
+              <span>Inventaris Aset</span>
+            </button>
+          )}
+        </nav>
       </div>
 
       {/* Main Content Area */}

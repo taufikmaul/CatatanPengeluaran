@@ -191,28 +191,29 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-3 sm:p-3.5 shadow-sm space-y-2.5">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+    <div className="bg-[var(--ledger-surface)] border border-[color:var(--ledger-hairline)] rounded-xl p-3 sm:px-3.5 sm:py-3 space-y-2.5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
         {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
           <Input
             placeholder="Cari nama barang, supplier, invoice, penginput..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-9 pr-4 h-10 rounded-xl bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 text-sm"
+            className="pl-8 pr-4 h-9 rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)] text-xs text-[var(--ledger-ink)]"
           />
           {search && (
             <button
+              type="button"
               onClick={() => onSearchChange("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
             >
               Clear
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
           {/* ReUI Advanced Filters Popover */}
           <Filters
             variant="advanced"
@@ -229,11 +230,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={onOpenDataHygiene}
-              className="rounded-xl shadow-xs gap-1.5 h-10 font-medium px-3 text-xs border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0"
+              className="rounded-lg gap-1.5 h-9 font-medium px-3 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] shrink-0"
               title="Cek kesehatan & rapikan data transaksi secara otomatis"
             >
-              <Sparkles className="w-4 h-4 text-blue-600" />
+              <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>Rapikan Data</span>
             </Button>
           )}
@@ -242,10 +244,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={onOpenAuditDuplicates}
-              className="rounded-xl shadow-xs gap-1.5 h-10 font-medium px-3 text-xs border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0"
+              className="rounded-lg gap-1.5 h-9 font-medium px-3 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] shrink-0"
             >
-              <ShieldAlert className="w-4 h-4 text-amber-600" />
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
               <span>Audit Duplikat</span>
             </Button>
           )}
@@ -253,17 +256,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           {/* Add Expense Action Button */}
           <Button
             onClick={onOpenAddExpense}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm gap-2 h-10 font-semibold px-4 shrink-0"
+            size="sm"
+            className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 rounded-lg gap-1.5 h-9 font-semibold px-3.5 text-xs shrink-0 ledger-press"
           >
-            <Plus className="w-4 h-4" />
-            Tambah Catatan
+            <Plus className="w-3.5 h-3.5" />
+            <span>Tambah Catatan</span>
           </Button>
         </div>
       </div>
 
       {/* Quick Filter Selectors Row */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 mr-1">
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[color:var(--ledger-hairline)]">
+        <div className="flex items-center gap-1.5 text-xs text-[var(--ledger-muted)] mr-1">
           <Filter className="w-3.5 h-3.5" />
           <span>Filter Cepat:</span>
         </div>
@@ -272,7 +276,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <select
           value={month}
           onChange={(e) => onMonthChange(Number(e.target.value))}
-          className="h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          className="h-8 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-ink)] focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
         >
           {MONTH_NAMES.map((name, i) => (
             <option key={name} value={i + 1}>
@@ -285,7 +289,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <select
           value={year}
           onChange={(e) => onYearChange(Number(e.target.value))}
-          className="h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          className="h-8 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-ink)] focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer"
         >
           {[2024, 2025, 2026, 2027].map((y) => (
             <option key={y} value={y}>
@@ -298,7 +302,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         <select
           value={selectedCategory}
           onChange={(e) => onCategoryChange(e.target.value)}
-          className="h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer max-w-[140px] truncate"
+          className="h-8 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-ink)] focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer max-w-[140px] truncate"
         >
           <option value="">Semua Kategori</option>
           {categories.map((cat) => (

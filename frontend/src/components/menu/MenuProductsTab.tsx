@@ -43,6 +43,11 @@ import {
 } from "@/components/common/BulkRowImportDialog";
 import { DataTable } from "@/components/common/DataTable";
 import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+} from "@/components/common/LedgerPrimitives";
+import {
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
@@ -1190,7 +1195,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </div>
           );
         },
-        size: 260,
+        size: 215,
       },
       {
         accessorKey: "category",
@@ -1201,7 +1206,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             {row.original.category}
           </Badge>
         ),
-        size: 130,
+        size: 110,
       },
       {
         accessorKey: "selling_price",
@@ -1240,7 +1245,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </div>
           );
         },
-        size: 135,
+        size: 115,
       },
       {
         accessorKey: "effective_hpp",
@@ -1301,7 +1306,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </div>
           );
         },
-        size: 195,
+        size: 165,
       },
       {
         accessorKey: "food_cost_pct",
@@ -1329,7 +1334,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </div>
           );
         },
-        size: 120,
+        size: 100,
       },
       {
         accessorKey: "gross_margin",
@@ -1366,7 +1371,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             </div>
           );
         },
-        size: 125,
+        size: 108,
       },
       {
         id: "actions",
@@ -1479,32 +1484,27 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-0.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant="outline"
-            className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs"
-          >
-            {displayedTotal} Item Terdaftar
-          </Badge>
-          {(summary?.prepared_count ?? 0) > 0 && (
-            <Badge
-              variant="outline"
-              className="text-xs font-medium px-2.5 py-1 rounded-lg border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-            >
-              {summary?.prepared_count} Prepared
-            </Badge>
-          )}
-          {effectiveAnonymized && (
-            <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-xs font-semibold gap-1 px-2.5 py-1 rounded-lg">
-              {isLockedReadOnly && <Lock className="w-3 h-3" />}
-              {isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim"}
-            </Badge>
-          )}
+      {/* 1. Editorial Header Strip */}
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+              Katalog Menu &amp; Margin HPP
+            </h2>
+            {effectiveAnonymized && (
+              <Badge className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-semibold gap-1 px-2 py-0.5 rounded-md">
+                {isLockedReadOnly && <Lock className="w-3 h-3" />}
+                {isLockedReadOnly ? "Anonim Terkunci" : "Mode Anonim"}
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {displayedTotal} produk terdaftar • {summary?.finished_count ?? 0} Menu Jual,{" "}
+            {summary?.prepared_count ?? 0} Prepared, {summary?.bundle_count ?? 0} Bundling
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+        <div className="flex flex-wrap items-center gap-1.5 self-start lg:self-center">
           {/* Master Kategori Menu */}
           {isAdmin && !effectiveAnonymized && (
             <Button
@@ -1512,7 +1512,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
               variant="outline"
               size="sm"
               onClick={() => setCategoryManagerOpen(true)}
-              className="h-9 rounded-xl text-xs gap-1.5"
+              className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             >
               <Tags className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
               <span>Kategori Menu</span>
@@ -1526,9 +1526,9 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
               size="sm"
               onClick={() => setSimulatorOpen(true)}
               disabled={items.length === 0 && itemTypeFilter === "all"}
-              className="h-9 rounded-xl text-xs gap-1.5"
+              className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>Simulasi Harga</span>
             </Button>
           )}
@@ -1539,10 +1539,10 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 type="button"
                 variant={effectiveAnonymized ? "default" : "outline"}
                 size="sm"
-                className={`h-9 rounded-xl text-xs gap-1.5 ${
+                className={`h-8 rounded-lg text-xs gap-1.5 ${
                   effectiveAnonymized
                     ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
-                    : ""
+                    : "border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
                 }`}
                 aria-pressed={effectiveAnonymized}
               >
@@ -1560,8 +1560,8 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
                 <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
-              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+            <DropdownMenuContent align="end" className="w-56 rounded-xl p-1.5 shadow-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
                 Privasi &amp; Proteksi Menu
               </DropdownMenuLabel>
               <DropdownMenuItem
@@ -1895,302 +1895,256 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         </div>
       )}
 
-      {/* Real-Data KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <Card className="border-slate-200 dark:border-slate-800 shadow-none">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-              Total Item Terdaftar
-            </div>
-            <div className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-              {summary?.total_menus ?? 0}
-            </div>
-            <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-              {summary?.finished_count ?? 0} Menu, {summary?.prepared_count ?? 0} Prepared,{" "}
-              {summary?.bundle_count ?? 0} Bundling
-            </div>
-          </CardContent>
-        </Card>
+      {/* 2. Unified Asymmetric Metric Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isLoading && !summary}
+        primary={{
+          label: "Rata-rata Food Cost & Margin",
+          value:
+            summary && summary.avg_food_cost_pct > 0
+              ? `${summary.avg_food_cost_pct}% Food Cost`
+              : `${summary?.total_menus ?? 0} Menu`,
+          valueClassName: "text-[var(--ledger-ink)]",
+          subtext:
+            summary && summary.avg_margin_pct > 0
+              ? `Rata-rata margin kotor ${summary.avg_margin_pct}% dari ${summary.total_menus} produk`
+              : `${summary?.finished_count ?? 0} Menu, ${summary?.prepared_count ?? 0} Prepared, ${summary?.bundle_count ?? 0} Bundling`,
+          active: hppStatusFilter === "all",
+          onClick: () => setHppStatusFilter("all"),
+          segments:
+            summary &&
+            (summary.ideal_count || 0) + (summary.moderate_count || 0) + (summary.high_count || 0) > 0
+              ? [
+                  {
+                    key: "ideal",
+                    label: "Ideal",
+                    value: summary.ideal_count || 0,
+                    displayValue: `${summary.ideal_count || 0}`,
+                    colorClass: "bg-emerald-600 dark:bg-emerald-400",
+                  },
+                  {
+                    key: "moderate",
+                    label: "Sedang",
+                    value: summary.moderate_count || 0,
+                    displayValue: `${summary.moderate_count || 0}`,
+                    colorClass: "bg-amber-500 dark:bg-amber-400",
+                  },
+                  {
+                    key: "high",
+                    label: "Tinggi",
+                    value: summary.high_count || 0,
+                    displayValue: `${summary.high_count || 0}`,
+                    colorClass: "bg-rose-600 dark:bg-rose-400",
+                  },
+                ]
+              : undefined,
+        }}
+        supporting={[
+          {
+            key: "missing-hpp",
+            label: "Belum Memiliki HPP",
+            value: `${summary?.missing_hpp_count ?? 0} Item`,
+            valueClassName:
+              (summary?.missing_hpp_count ?? 0) > 0
+                ? "text-[var(--signal-dp)]"
+                : "text-[var(--ledger-ink)]",
+            subtext: "Klik untuk filter item tanpa HPP",
+            active: hppStatusFilter === "missing_hpp",
+            accentTone: "dp",
+            onClick: () =>
+              setHppStatusFilter((prev) =>
+                prev === "missing_hpp" ? "all" : "missing_hpp"
+              ),
+          },
+          {
+            key: "high-fc",
+            label: "Food Cost Tinggi (>45%)",
+            value: `${summary?.high_count ?? 0} Item`,
+            valueClassName:
+              (summary?.high_count ?? 0) > 0
+                ? "text-[var(--signal-unpaid)]"
+                : "text-[var(--signal-cleared)]",
+            subtext: `Ideal: ${summary?.ideal_count ?? 0} • Sedang: ${summary?.moderate_count ?? 0}`,
+            active: hppStatusFilter === "high",
+            accentTone: "unpaid",
+            onClick: () =>
+              setHppStatusFilter((prev) => (prev === "high" ? "all" : "high")),
+          },
+          {
+            key: "price-drift",
+            label: "Harga Bahan Naik (≥5%)",
+            value: `${summary?.price_drift_menus_count ?? 0} Item`,
+            valueClassName:
+              (summary?.price_drift_menus_count ?? 0) > 0
+                ? "text-[var(--signal-unpaid)]"
+                : "text-[var(--ledger-ink)]",
+            subtext: "Termasuk rambatan sub-resep",
+            active: hppStatusFilter === "price_drift",
+            accentTone: "unpaid",
+            onClick: () =>
+              setHppStatusFilter((prev) =>
+                prev === "price_drift" ? "all" : "price_drift"
+              ),
+          },
+        ]}
+      />
 
-        <Card className="border-slate-200 dark:border-slate-800 shadow-none">
-          <CardContent className="p-3.5">
-            <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-              Rata-rata Food Cost (Jual)
-            </div>
-            <div className="text-lg font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-              {summary && summary.avg_food_cost_pct > 0 ? `${summary.avg_food_cost_pct}%` : "-"}
-            </div>
-            <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-              Rata-rata margin: {summary && summary.avg_margin_pct > 0 ? `${summary.avg_margin_pct}%` : "-"}
-            </div>
-          </CardContent>
-        </Card>
+      {/* 3. Type Tabs + Unified Ledger Surface */}
+      <section aria-label="Daftar menu dan resep HPP" className="space-y-2">
+        <LedgerStatusTabs
+          tabs={[
+            { value: "all", label: "Semua Item", count: summary?.total_menus },
+            { value: "finished", label: "Menu Jual", count: summary?.finished_count },
+            { value: "prepared", label: "Prepared / Setengah Jadi", count: summary?.prepared_count },
+            { value: "bundle", label: "Paket / Bundling", count: summary?.bundle_count },
+          ]}
+          value={itemTypeFilter}
+          onChange={(next) => setItemTypeFilter(next)}
+          layoutId="menu-type-underline"
+          ariaLabel="Filter tipe menu dan resep"
+        />
 
-        <button
-          type="button"
-          onClick={() =>
-            setHppStatusFilter((prev) => (prev === "missing_hpp" ? "all" : "missing_hpp"))
-          }
-          className="text-left rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600"
-        >
-          <Card
-            className={`border-slate-200 dark:border-slate-800 shadow-none transition-colors ${
-              hppStatusFilter === "missing_hpp" ? "ring-2 ring-blue-600" : "hover:bg-slate-50 dark:hover:bg-slate-900"
-            }`}
-          >
-            <CardContent className="p-3.5">
-              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                Belum Memiliki HPP
+        <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+          <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <div className="relative lg:col-span-2 min-w-0">
+                <Search className="w-3.5 h-3.5 text-[var(--ledger-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={
+                    effectiveAnonymized
+                      ? "Cari kode anonim atau kategori..."
+                      : "Cari nama menu, prepared, kode anonim, SKU..."
+                  }
+                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                  aria-label="Cari menu"
+                />
               </div>
-              <div className="text-lg font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">
-                {summary?.missing_hpp_count ?? 0}
-              </div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                Klik untuk filter item tanpa HPP
-              </div>
-            </CardContent>
-          </Card>
-        </button>
 
-        <button
-          type="button"
-          onClick={() => setHppStatusFilter((prev) => (prev === "high" ? "all" : "high"))}
-          className="text-left rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600"
-        >
-          <Card
-            className={`border-slate-200 dark:border-slate-800 shadow-none transition-colors ${
-              hppStatusFilter === "high" ? "ring-2 ring-rose-600" : "hover:bg-slate-50 dark:hover:bg-slate-900"
-            }`}
-          >
-            <CardContent className="p-3.5">
-              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                Food Cost Tinggi (&gt;45%)
-              </div>
-              <div className="text-lg font-bold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
-                {summary?.high_count ?? 0}
-              </div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                Ideal: {summary?.ideal_count ?? 0}, Sedang: {summary?.moderate_count ?? 0}
-              </div>
-            </CardContent>
-          </Card>
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            setHppStatusFilter((prev) => (prev === "price_drift" ? "all" : "price_drift"))
-          }
-          className="text-left rounded-xl focus-visible:outline-2 focus-visible:outline-blue-600 col-span-2 lg:col-span-1"
-        >
-          <Card
-            className={`border-slate-200 dark:border-slate-800 shadow-none transition-colors ${
-              hppStatusFilter === "price_drift" ? "ring-2 ring-amber-600" : "hover:bg-slate-50 dark:hover:bg-slate-900"
-            }`}
-          >
-            <CardContent className="p-3.5">
-              <div className="text-[11px] font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5 text-rose-600" />
-                <span>Harga Bahan Naik (&ge;5%)</span>
-              </div>
-              <div className="text-lg font-bold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
-                {summary?.price_drift_menus_count ?? 0}
-              </div>
-              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                Termasuk rambatan sub-resep
-              </div>
-            </CardContent>
-          </Card>
-        </button>
-      </div>
-
-      {/* Segmented Type Filter Tabs */}
-      <div
-        role="tablist"
-        aria-label="Filter tipe menu dan resep"
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        {(
-          [
-            { key: "all", label: "Semua Item" },
-            { key: "finished", label: "Menu Jual" },
-            { key: "prepared", label: "Prepared / Setengah Jadi" },
-            { key: "bundle", label: "Paket / Bundling" },
-          ] as const
-        ).map((tab) => {
-          const active = itemTypeFilter === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setItemTypeFilter(tab.key)}
-              className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
-                active
-                  ? "bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100"
-                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800"
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <Card className="border-slate-200 dark:border-slate-800 shadow-none">
-        <CardContent className="p-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div className="relative lg:col-span-2">
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={
-                  effectiveAnonymized
-                    ? "Cari kode anonim atau kategori..."
-                    : "Cari nama menu, prepared, kode anonim, SKU..."
-                }
-                className="pl-8 h-10 sm:h-9 text-xs"
-                aria-label="Cari menu"
-              />
-            </div>
-
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Filter kategori menu"
-              className="h-10 sm:h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 text-xs text-slate-900 dark:text-slate-100"
-            >
-              <option value="all">Semua Kategori</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-
-            <div className="flex gap-2">
               <select
-                value={hppStatusFilter}
-                onChange={(e) => setHppStatusFilter(e.target.value)}
-                aria-label="Filter status food cost"
-                className="h-10 sm:h-9 flex-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-2.5 text-xs text-slate-900 dark:text-slate-100"
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                aria-label="Filter kategori menu"
+                className="h-9 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-ink)]"
               >
-                <option value="all">Semua Status Food Cost</option>
-                <option value="ideal">Ideal (&le;35%)</option>
-                <option value="moderate">Sedang (35% - 45%)</option>
-                <option value="high">Tinggi (&gt;45%)</option>
-                <option value="not_sellable">Pemakaian Internal (Prepared)</option>
-                <option value="price_drift">Harga Bahan Naik (&ge;5%)</option>
-                <option value="missing_hpp">Belum Ada HPP</option>
-                <option value="no_price">Belum Ada Harga Jual</option>
+                <option value="all">Semua Kategori</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
               </select>
 
-              {hasFilters && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={resetFilters}
-                  className="h-10 sm:h-9 px-2.5 text-xs shrink-0"
+              <div className="flex gap-2">
+                <select
+                  value={hppStatusFilter}
+                  onChange={(e) => setHppStatusFilter(e.target.value)}
+                  aria-label="Filter status food cost"
+                  className="h-9 flex-1 min-w-0 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs text-[var(--ledger-ink)]"
                 >
-                  Reset
-                </Button>
-              )}
+                  <option value="all">Semua Status Food Cost</option>
+                  <option value="ideal">Ideal (&le;35%)</option>
+                  <option value="moderate">Sedang (35% - 45%)</option>
+                  <option value="high">Tinggi (&gt;45%)</option>
+                  <option value="not_sellable">Pemakaian Internal (Prepared)</option>
+                  <option value="price_drift">Harga Bahan Naik (&ge;5%)</option>
+                  <option value="missing_hpp">Belum Ada HPP</option>
+                  <option value="no_price">Belum Ada Harga Jual</option>
+                </select>
+
+                {hasFilters && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetFilters}
+                    className="h-9 px-2.5 text-xs shrink-0 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Main Data Surface: Loading / Error / Empty / Data */}
-      <Card className="border-slate-200 dark:border-slate-800 shadow-none overflow-hidden">
-        {isLoading ? (
-          <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Memuat database menu dan perhitungan HPP...</span>
-          </div>
-        ) : isError ? (
-          <div className="py-10 px-4 flex flex-col items-center justify-center gap-2 text-center">
-            <AlertCircle className="w-6 h-6 text-rose-600" />
-            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-              Gagal memuat database menu dan HPP.
-            </p>
-            <p className="text-xs text-slate-600 dark:text-slate-400">
-              Periksa koneksi server lalu coba muat ulang data.
-            </p>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-              Coba Lagi
-            </Button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-12 px-4 text-center space-y-3">
-            <BookOpen className="w-8 h-8 text-slate-500 mx-auto" />
-            {hasFilters ? (
-              <>
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Tidak ada item yang sesuai filter
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Ubah kata kunci pencarian atau reset filter untuk melihat semua menu dan prepared.
-                </p>
-                <Button type="button" variant="outline" size="sm" onClick={resetFilters}>
-                  Reset Filter
+          {isLoading ? (
+            <div className="py-10 flex items-center justify-center gap-2 text-xs text-[var(--ledger-muted)]">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Memuat database menu dan perhitungan HPP...</span>
+            </div>
+          ) : isError ? (
+            <LedgerStateBlock
+              variant="error"
+              title="Gagal memuat database menu dan HPP"
+              description="Periksa koneksi server lalu coba muat ulang data."
+              actions={
+                <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                  Coba Lagi
                 </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  Database Menu / Produk masih kosong
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md mx-auto">
-                  Tambahkan menu atau resep prepared secara manual, tarik daftar produk dari histori Transaksi Masuk (POS), atau import file CSV.
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => openCreateModal("finished")}
-                    disabled={effectiveAnonymized}
-                    className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tambah Menu Pertama
+              }
+            />
+          ) : items.length === 0 ? (
+            <LedgerStateBlock
+              variant="empty"
+              icon={<BookOpen className="w-7 h-7" />}
+              title={hasFilters ? "Tidak ada item yang sesuai filter" : "Database Menu / Produk masih kosong"}
+              description={
+                hasFilters
+                  ? "Ubah kata kunci pencarian atau reset filter untuk melihat semua menu dan prepared."
+                  : "Tambahkan menu atau resep prepared secara manual, tarik daftar produk dari histori Transaksi Masuk (POS), atau import file CSV."
+              }
+              actions={
+                hasFilters ? (
+                  <Button type="button" variant="outline" size="sm" onClick={resetFilters}>
+                    Reset Filter
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => posImportMutation.mutate()}
-                    disabled={posImportMutation.isPending || isLockedReadOnly}
-                    className="gap-1.5"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Tarik dari POS
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isLockedReadOnly}
-                    onClick={() => setImportCsvOpen(true)}
-                    className="gap-1.5"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    Import CSV
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <DataTable
-            table={menuTable}
-            recordCount={items.length}
-            containerClassName="border-0 rounded-none shadow-none"
-            tableWrapperClassName="hidden md:block"
-          >
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => openCreateModal("finished")}
+                      disabled={effectiveAnonymized}
+                      className="gap-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 rounded-lg text-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Tambah Menu Pertama
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => posImportMutation.mutate()}
+                      disabled={posImportMutation.isPending || isLockedReadOnly}
+                      className="gap-1.5 rounded-lg text-xs"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Tarik dari POS
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isLockedReadOnly}
+                      onClick={() => setImportCsvOpen(true)}
+                      className="gap-1.5 rounded-lg text-xs"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Import CSV
+                    </Button>
+                  </>
+                )
+              }
+            />
+          ) : (
+            <DataTable
+              table={menuTable}
+              recordCount={items.length}
+              containerClassName="border-0 rounded-none shadow-none"
+              footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+              tableWrapperClassName="hidden md:block"
+            >
             {/* Mobile Reflow Cards */}
             <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
               {pagedItems.map((menu) => {
@@ -2403,8 +2357,9 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
               })}
             </div>
           </DataTable>
-        )}
-      </Card>
+          )}
+        </div>
+      </section>
 
       {/* Form Modal */}
       <MenuFormDialog

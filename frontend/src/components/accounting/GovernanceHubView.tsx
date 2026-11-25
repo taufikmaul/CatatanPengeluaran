@@ -1,6 +1,6 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Scale,
   Sparkles,
@@ -35,56 +35,61 @@ export const GovernanceHubView: React.FC<GovernanceHubViewProps> = ({
   const isOwner = !userRole || userRole === "admin";
 
   return (
-    <div className="space-y-3">
-      {/* Sub-Pills Navigation & Owner Utilities */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-1 p-1 bg-slate-100/90 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-x-auto no-scrollbar">
+    <div className="space-y-3.5">
+      {/* Editorial Hairline Sub-Navigation & Owner Utilities */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[color:var(--ledger-hairline)]">
+        <nav
+          aria-label="Sub-navigasi laporan dan pengaturan"
+          className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-px"
+        >
           {/* Tab 1: Laporan Akuntansi */}
           {isOwner && (
-            <Button
-              variant={activeSubTab === "accounting" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("accounting")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "accounting" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "accounting"
-                  ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-blue-600 text-[var(--ledger-ink)] dark:border-blue-400"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
             >
               <Scale className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
               <span>Laporan Akuntansi</span>
-            </Button>
+            </button>
           )}
 
           {/* Tab 2: Pengaturan Sistem */}
           {canManageConfig && (
-            <Button
-              variant={activeSubTab === "config" ? "secondary" : "ghost"}
-              size="sm"
+            <button
+              type="button"
               onClick={() => onSubTabChange("config")}
-              className={`h-9 rounded-xl text-xs font-semibold gap-1.5 shrink-0 transition-all ${
+              aria-current={activeSubTab === "config" ? "page" : undefined}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-2.5 min-h-[44px] sm:min-h-[38px] text-xs font-semibold whitespace-nowrap shrink-0 border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset rounded-t-md",
                 activeSubTab === "config"
-                  ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-white/60 dark:hover:bg-slate-800/50"
-              }`}
+                  ? "border-[var(--ledger-ink)] text-[var(--ledger-ink)]"
+                  : "border-transparent text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              )}
             >
-              <Settings className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" />
+              <Settings className="w-3.5 h-3.5 text-[var(--ledger-muted)]" />
               <span>Pengaturan Sistem</span>
-            </Button>
+            </button>
           )}
-        </div>
+        </nav>
 
         {/* Quick Utility Buttons for Owner */}
         {isOwner && (
-          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          <div className="flex items-center gap-1.5 pb-1.5 shrink-0 flex-wrap">
             {onOpenDataHygiene && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onOpenDataHygiene}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span>Rapikan Data</span>
               </Button>
             )}
@@ -94,9 +99,9 @@ export const GovernanceHubView: React.FC<GovernanceHubViewProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={onOpenAuditDuplicates}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 <span>Audit Duplikat</span>
               </Button>
             )}
@@ -106,9 +111,9 @@ export const GovernanceHubView: React.FC<GovernanceHubViewProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={onOpenImport}
-                className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100"
+                className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <Upload className="w-3.5 h-3.5 text-slate-500" />
+                <Upload className="w-3.5 h-3.5 text-[var(--ledger-muted)]" />
                 <span>Import CSV</span>
               </Button>
             )}

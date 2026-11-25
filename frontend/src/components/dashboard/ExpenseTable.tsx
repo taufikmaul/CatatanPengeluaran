@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
+import { LedgerStateBlock } from "@/components/common/LedgerPrimitives";
 import {
   ExpenseViewMode,
   InvoiceFeeFooter,
@@ -1323,13 +1324,13 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex justify-between items-center mb-4">
+      <div className="bg-[var(--ledger-surface)] border border-[color:var(--ledger-hairline)] rounded-xl p-4 space-y-3">
+        <div className="flex justify-between items-center mb-3">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-5 w-24" />
         </div>
         {[...Array(6)].map((_, i) => (
-          <Skeleton key={i} className="h-14 w-full rounded-xl" />
+          <Skeleton key={i} className="h-12 w-full rounded-lg" />
         ))}
       </div>
     );
@@ -1339,40 +1340,38 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
 
   if (activeLength === 0) {
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-8 text-center shadow-sm space-y-2.5">
+      <div className="bg-[var(--ledger-surface)] border border-[color:var(--ledger-hairline)] rounded-xl overflow-hidden">
         {onViewModeChange && (
-          <div className="flex justify-end">
+          <div className="px-3.5 py-2.5 border-b border-[color:var(--ledger-hairline)] flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-[var(--ledger-ink)]">Daftar Transaksi</h3>
             <InvoiceViewModeToggle mode={viewMode} onChange={onViewModeChange} />
           </div>
         )}
-        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center mx-auto">
-          <Inbox className="w-6 h-6" />
-        </div>
-        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-          Tidak ada transaksi ditemukan
-        </h3>
-        <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
-          Coba sesuaikan filter bulan, tahun, atau kata kunci pencarian Anda untuk melihat catatan pengeluaran.
-        </p>
+        <LedgerStateBlock
+          variant="empty"
+          icon={<Inbox className="w-7 h-7" />}
+          title="Tidak ada transaksi ditemukan"
+          description="Coba sesuaikan filter bulan, tahun, atau kata kunci pencarian Anda untuk melihat catatan pengeluaran."
+        />
       </div>
     );
   }
 
   const tableHeader = (
-    <div className="flex flex-row items-center justify-between flex-wrap gap-2.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+    <div className="flex flex-row items-center justify-between flex-wrap gap-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
           Daftar Transaksi
         </h3>
-        <Badge variant="secondary" className="text-xs tabular-nums font-semibold">
+        <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)]">
           {isGroupedMode
             ? `${totalCount} invoice${
                 totalItemsCount !== undefined ? ` (${totalItemsCount} item)` : ""
               }`
             : `${totalCount} item`}
-        </Badge>
+        </span>
       </div>
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {onViewModeChange && (
           <InvoiceViewModeToggle mode={viewMode} onChange={onViewModeChange} />
         )}
@@ -1382,7 +1381,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             variant="outline"
             size="sm"
             onClick={onOpenDataHygiene}
-            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             title="Cek kesehatan & rapikan data transaksi secara otomatis"
           >
             <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -1395,7 +1394,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             variant="outline"
             size="sm"
             onClick={onOpenAuditDuplicates}
-            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
           >
             <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>Audit Duplikat</span>
@@ -1407,14 +1406,14 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
             variant="outline"
             size="sm"
             onClick={onOpenActivityLog}
-            className="h-8 rounded-xl text-xs gap-1.5 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="h-8 rounded-lg text-xs gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
           >
-            <History className="w-3.5 h-3.5 text-indigo-600" />
+            <History className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
             <span>Log Aktivitas Belanja</span>
           </Button>
         )}
-        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium hidden sm:inline">
-          Halaman {page} dari {totalPages}
+        <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)] hidden sm:inline ml-1">
+          Hal. {page}/{totalPages}
         </span>
       </div>
     </div>
@@ -1426,11 +1425,13 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       recordCount={totalCount}
       isLoading={isLoading}
       header={tableHeader}
-      containerClassName="shadow-sm"
+      containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
+      headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5"
+      footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
       tableWrapperClassName="hidden md:block"
     >
       {/* Mobile View: Invoice Group Cards or Flat Item Cards */}
-      <div className="block md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+      <div className="block md:hidden divide-y divide-[color:var(--ledger-hairline)]">
         {isGroupedMode
           ? invoiceGroups.map((g) => {
               const catColor = getCategoryColor(g.primary_category);

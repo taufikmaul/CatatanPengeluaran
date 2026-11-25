@@ -15,6 +15,10 @@ import {
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import { DataTable } from "@/components/common/DataTable";
+import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+} from "@/components/common/LedgerPrimitives";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { ColumnDef } from "@tanstack/react-table";
@@ -532,18 +536,26 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
     setPrintAssets(targets);
   };
 
-  return (
-    <div className="space-y-3.5 pb-6">
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-0.5">
-        <Badge
-          variant="outline"
-          className="text-xs font-semibold px-2.5 py-1 rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 shadow-xs w-fit"
-        >
-          {assets.length} Aset Terdaftar
-        </Badge>
+  const totalAcq = summary?.total_acquisition_cost ?? 0;
+  const totalDepr = summary?.total_accumulated_depreciation ?? 0;
+  const totalNbv = summary?.total_net_book_value ?? 0;
 
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+  return (
+    <div className="space-y-3 pb-6">
+      {/* 1. Editorial Header Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Buku Inventaris &amp; Penyusutan Aset
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {summary?.active_assets ?? assets.length} unit aktif •{" "}
+            {summary?.capitalized_count ?? 0} dikapitalisasi •{" "}
+            {summary?.low_value_count ?? 0} nilai rendah
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
           {/* Dropdown: Alat & Analisa (Khusus Owner) */}
           {isOwner && (
             <DropdownMenu>
@@ -552,18 +564,18 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-900 dark:text-blue-300"
+                  className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
                 >
-                  <Calculator className="w-3.5 h-3.5" />
+                  <Calculator className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                   <span>Alat &amp; Audit</span>
                   <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
-                className="w-56 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                className="w-56 rounded-xl p-1.5 shadow-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+                <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
                   Audit &amp; Sinkronisasi
                 </DropdownMenuLabel>
                 <DropdownMenuItem
@@ -573,7 +585,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                   <Calculator className="w-3.5 h-3.5 text-blue-500" />
                   <div>
                     <div className="font-medium">Analisa Ulang Aset</div>
-                    <div className="text-[10px] text-slate-400">
+                    <div className="text-[10px] text-[var(--ledger-muted)]">
                       Evaluasi threshold &amp; umur manfaat
                     </div>
                   </div>
@@ -592,7 +604,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                     <div className="font-medium">
                       {syncMutation.isPending ? "Sinkronisasi..." : "Sinkron Data Asset"}
                     </div>
-                    <div className="text-[10px] text-slate-400">
+                    <div className="text-[10px] text-[var(--ledger-muted)]">
                       Tarik belanja kategori Asset ke inventaris
                     </div>
                   </div>
@@ -608,7 +620,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             size="sm"
             onClick={handleOpenBatchPrint}
             disabled={assets.length === 0}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5"
+            className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
           >
             <QrCode className="w-3.5 h-3.5" />
             <span>Cetak Label QR {selectedIds.length > 0 ? `(${selectedIds.length})` : ""}</span>
@@ -621,18 +633,18 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800"
+                className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
               >
-                <Table2 className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
+                <Table2 className="w-3.5 h-3.5 text-[var(--ledger-muted)]" />
                 <span>Import / Masal</span>
                 <ChevronDown className="w-3 h-3 opacity-70 ml-0.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-52 rounded-xl p-1.5 shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+              className="w-52 rounded-xl p-1.5 shadow-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
             >
-              <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
+              <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
                 Pilihan Input Massal
               </DropdownMenuLabel>
               <DropdownMenuItem
@@ -642,7 +654,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                 <Table2 className="w-3.5 h-3.5 text-blue-500" />
                 <div>
                   <div className="font-medium">Tambah Masal</div>
-                  <div className="text-[10px] text-slate-400">
+                  <div className="text-[10px] text-[var(--ledger-muted)]">
                     Spreadsheet input multi-aset
                   </div>
                 </div>
@@ -654,7 +666,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
                 <div>
                   <div className="font-medium">Import CSV</div>
-                  <div className="text-[10px] text-slate-400">Upload template file CSV</div>
+                  <div className="text-[10px] text-[var(--ledger-muted)]">Upload template file CSV</div>
                 </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -665,87 +677,75 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             type="button"
             size="sm"
             onClick={() => setIsAddOpen(true)}
-            className="h-9 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+            className="h-8 rounded-lg text-xs font-semibold gap-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 ledger-press"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
             <span>Tambah Aset</span>
           </Button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-slate-200 bg-white shadow-xs">
-          <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Total Unit Inventaris</span>
-              <Boxes className="w-4 h-4 text-blue-600" />
-            </div>
-            <p className="text-xl font-bold text-slate-900 tabular-nums">
-              {summary?.active_assets ?? 0} <span className="text-xs font-normal text-slate-500">unit aktif</span>
-            </p>
-            <p className="text-[11px] text-slate-600">
-              {summary?.capitalized_count ?? 0} dikapitalisasi • {summary?.low_value_count ?? 0} nilai rendah
-            </p>
-          </CardContent>
-        </Card>
+      {/* 2. Unified Asymmetric Metric Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isLoading && !summary}
+        primary={{
+          label: "Nilai Buku Bersih (NBV)",
+          value: formatRupiah(totalNbv),
+          valueClassName: "text-[var(--signal-cleared)]",
+          subtext: `${summary?.warranty_expiring_count ?? 0} garansi segera habis • ${summary?.upcoming_service_count ?? 0} jadwal servis`,
+          segments:
+            totalAcq > 0
+              ? [
+                  {
+                    key: "nbv",
+                    label: "Nilai Buku",
+                    value: Math.max(0, totalNbv),
+                    displayValue: formatRupiah(totalNbv),
+                    colorClass: "bg-emerald-600 dark:bg-emerald-400",
+                  },
+                  {
+                    key: "depr",
+                    label: "Akum. Susut",
+                    value: Math.max(0, totalDepr),
+                    displayValue: formatRupiah(totalDepr),
+                    colorClass: "bg-amber-500 dark:bg-amber-400",
+                  },
+                ]
+              : undefined,
+        }}
+        supporting={[
+          {
+            key: "units",
+            label: "Total Unit Inventaris",
+            value: `${summary?.active_assets ?? 0} Unit`,
+            subtext: `${summary?.capitalized_count ?? 0} dikapitalisasi • ${summary?.low_value_count ?? 0} beban`,
+          },
+          {
+            key: "acq",
+            label: "Harga Perolehan (1-2100)",
+            value: formatRupiah(totalAcq),
+            subtext: "Aset tetap aktif di Neraca",
+          },
+          {
+            key: "depr",
+            label: "Akum. Penyusutan (1-2190)",
+            value: formatRupiah(totalDepr),
+            valueClassName: "text-[var(--signal-dp)]",
+            subtext: `Susut bln ini: ${formatRupiah(summary?.monthly_depreciation_total ?? 0)}`,
+          },
+        ]}
+      />
 
-        <Card className="border-slate-200 bg-white shadow-xs">
-          <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Harga Perolehan (1-2100)</span>
-              <Wallet className="w-4 h-4 text-slate-700" />
-            </div>
-            <p className="text-xl font-bold text-slate-900 tabular-nums">
-              {formatRupiah(summary?.total_acquisition_cost ?? 0)}
-            </p>
-            <p className="text-[11px] text-slate-600">
-              Aset tetap aktif di Neraca
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 bg-white shadow-xs">
-          <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Akum. Penyusutan (1-2190)</span>
-              <TrendingDown className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-xl font-bold text-amber-800 tabular-nums">
-              {formatRupiah(summary?.total_accumulated_depreciation ?? 0)}
-            </p>
-            <p className="text-[11px] text-slate-600 tabular-nums">
-              Beban susut bulan ini: {formatRupiah(summary?.monthly_depreciation_total ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-emerald-200 bg-emerald-50/40 shadow-xs">
-          <CardContent className="p-4 space-y-1">
-            <div className="flex items-center justify-between text-xs text-emerald-800 font-medium">
-              <span>Nilai Buku Bersih (NBV)</span>
-              <ShieldAlert className="w-4 h-4 text-emerald-700" />
-            </div>
-            <p className="text-xl font-bold text-emerald-900 tabular-nums">
-              {formatRupiah(summary?.total_net_book_value ?? 0)}
-            </p>
-            <p className="text-[11px] text-slate-700">
-              {summary?.warranty_expiring_count ?? 0} garansi segera habis • {summary?.upcoming_service_count ?? 0} perlu servis
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filter Bar */}
-      <Card className="border-slate-200 bg-white shadow-xs">
-        <div className="p-3.5 border-b border-slate-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* 3. Unified Ledger Filter & DataTable Surface */}
+      <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+        <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+          <div className="relative flex-1 max-w-md min-w-0">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Cari kode aset, nama, seri, vendor, lokasi..."
-              className="pl-9 h-9 text-xs rounded-xl"
+              className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
             />
           </div>
 
@@ -753,7 +753,8 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             <select
               value={capFilter}
               onChange={(e) => setCapFilter(e.target.value)}
-              className="h-9 px-3 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+              aria-label="Filter tipe kapitalisasi aset"
+              className="h-9 px-2.5 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] font-medium text-[var(--ledger-ink)]"
             >
               <option value="all">Semua Kapitalisasi</option>
               <option value="capitalized">Dikapitalisasi (Disusutkan)</option>
@@ -762,7 +763,8 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 px-3 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+              aria-label="Filter status inventaris aset"
+              className="h-9 px-2.5 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] font-medium text-[var(--ledger-ink)]"
             >
               <option value="all">Semua Status</option>
               <option value="Aktif">Aktif</option>
@@ -774,13 +776,14 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             <select
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
-              className="h-9 px-3 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+              aria-label="Filter kelompok inventaris aset"
+              className="h-9 px-2.5 text-xs rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] font-medium text-[var(--ledger-ink)]"
             >
               <option value="all">Semua Kelompok</option>
-              <option value="Mesin & Peralatan Dapur">Mesin & Peralatan Dapur</option>
-              <option value="Pendingin & Showcase">Pendingin & Showcase</option>
-              <option value="Elektronik & POS">Elektronik & POS</option>
-              <option value="Furnitur & Rak">Furnitur & Rak</option>
+              <option value="Mesin & Peralatan Dapur">Mesin &amp; Peralatan Dapur</option>
+              <option value="Pendingin & Showcase">Pendingin &amp; Showcase</option>
+              <option value="Elektronik & POS">Elektronik &amp; POS</option>
+              <option value="Furnitur & Rak">Furnitur &amp; Rak</option>
               <option value="Kendaraan Operasional">Kendaraan Operasional</option>
               <option value="Perlengkapan Kecil">Perlengkapan Kecil</option>
             </select>
@@ -789,24 +792,28 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
 
         {/* Content States: Loading / Error / Empty / Table */}
         {isLoading ? (
-          <div className="py-12 flex items-center justify-center gap-2 text-xs text-slate-500">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            Memuat inventaris aset...
+          <div className="py-10 flex items-center justify-center gap-2 text-xs text-[var(--ledger-muted)]">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+            <span>Memuat inventaris aset...</span>
           </div>
         ) : isError ? (
-          <div className="py-12 text-center space-y-2">
-            <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
-            <p className="text-xs font-semibold text-slate-800">Gagal memuat data inventaris.</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
-              Coba Lagi
-            </Button>
-          </div>
+          <LedgerStateBlock
+            variant="error"
+            title="Gagal memuat data inventaris"
+            description="Periksa koneksi jaringan lalu coba muat ulang inventaris aset."
+            actions={
+              <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
+                Coba Lagi
+              </Button>
+            }
+          />
         ) : assets.length === 0 ? (
-          <div className="py-12 text-center space-y-2 text-xs text-slate-500">
-            <Boxes className="w-9 h-9 text-slate-300 mx-auto" />
-            <p className="font-semibold text-slate-700">Belum ada data aset di inventaris.</p>
-            <p>Catat pengeluaran berkategori <strong>Asset</strong> atau klik <strong>Sinkron Data Asset</strong> untuk memigrasi transaksi lama.</p>
-          </div>
+          <LedgerStateBlock
+            variant="empty"
+            icon={<Boxes className="w-7 h-7" />}
+            title="Belum ada data aset di inventaris"
+            description="Catat pengeluaran berkategori Asset atau klik Sinkron Data Asset untuk memigrasi transaksi lama."
+          />
         ) : (
           <DataTable
             columns={assetColumns}
@@ -815,21 +822,22 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             defaultPageSize={10}
             onRowClick={(ast) => setDetailAssetId(ast.id)}
             containerClassName="border-0 rounded-none shadow-none"
+            footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
             tableWrapperClassName="hidden md:block"
           >
             {/* Mobile Cards */}
-            <div className="md:hidden divide-y divide-slate-100">
+            <div className="md:hidden divide-y divide-[color:var(--ledger-hairline)]">
               {assets.map((ast) => (
                 <div
                   key={ast.id}
                   onClick={() => setDetailAssetId(ast.id)}
-                  className="p-3.5 space-y-2 active:bg-slate-50"
+                  className="p-3.5 space-y-2 ledger-hover-recessed transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <span className="font-mono text-[11px] font-bold text-blue-700">{ast.asset_code}</span>
-                      <p className="text-sm font-bold text-slate-900 truncate">{ast.name}</p>
-                      <p className="text-[11px] text-slate-500">{ast.location} • {ast.status}</p>
+                      <span className="font-mono text-[11px] font-bold text-blue-600 dark:text-blue-400">{ast.asset_code}</span>
+                      <p className="text-sm font-bold text-[var(--ledger-ink)] truncate">{ast.name}</p>
+                      <p className="text-[11px] text-[var(--ledger-muted)]">{ast.location} • {ast.status}</p>
                     </div>
                     <Button
                       type="button"
@@ -844,16 +852,16 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
                       <QrCode className="w-4 h-4" />
                     </Button>
                   </div>
-                  <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-slate-600">Perolehan: <strong className="text-slate-900">{formatRupiah(ast.acquisition_cost || 0)}</strong></span>
-                    <span className="text-emerald-800 font-bold">NBV: {formatRupiah(ast.net_book_value || 0)}</span>
+                  <div className="flex items-center justify-between text-xs pt-1 tabular-nums">
+                    <span className="text-[var(--ledger-muted)]">Perolehan: <strong className="text-[var(--ledger-ink)]">{formatRupiah(ast.acquisition_cost || 0)}</strong></span>
+                    <span className="text-[var(--signal-cleared)] font-bold">NBV: {formatRupiah(ast.net_book_value || 0)}</span>
                   </div>
                 </div>
               ))}
             </div>
           </DataTable>
         )}
-      </Card>
+      </div>
 
       {/* Modal Analisa Ulang Aset */}
       <Dialog open={isReanalyzeOpen} onOpenChange={setIsReanalyzeOpen}>

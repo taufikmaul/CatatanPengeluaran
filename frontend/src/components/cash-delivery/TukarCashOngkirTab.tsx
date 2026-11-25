@@ -5,11 +5,20 @@ import { Expense, MonthlyReport } from "@/types";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import { parseTelegramLink } from "@/lib/telegram";
 import { TelegramIcon } from "@/components/ui/TelegramIcon";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+  LedgerStatusTabs,
+} from "@/components/common/LedgerPrimitives";
+import { cn } from "@/lib/utils";
 import { DataTable } from "@/components/common/DataTable";
 import {
   dataGridFeatures,
@@ -29,16 +38,9 @@ import {
   Clock,
   Edit2,
   Trash2,
-  Eye,
-  ExternalLink,
-  Tag,
-  Wallet,
-  ChevronLeft,
-  ChevronRight,
-  Inbox,
-  Sparkles,
-  Info,
-  Calendar,
+  ChevronDown,
+  ChevronUp,
+  X,
 } from "lucide-react";
 
 interface TukarCashOngkirTabProps {
@@ -82,6 +84,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number>(25);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [isCouriersExpanded, setIsCouriersExpanded] = useState<boolean>(true);
 
   useEffect(() => {
     setSelectedMonth(currentMonth);
@@ -221,11 +224,11 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
         id: "expense_date",
         header: ({ column }) => <DataGridColumnHeader title="Tanggal" column={column} />,
         cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-slate-600 whitespace-nowrap">
+          <span className="font-mono text-[11px] text-[var(--ledger-muted)] whitespace-nowrap">
             {formatDateId(row.original.expense_date)}
           </span>
         ),
-        size: 110,
+        size: 94,
       },
       {
         id: "type",
@@ -234,18 +237,18 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
           const type = getItemType(row.original);
           const isTukar = type === "tukar_cash";
           return isTukar ? (
-            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
-              <ArrowLeftRight className="w-3 h-3 text-indigo-600" />
+            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/60 dark:text-indigo-300 dark:border-indigo-800 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
+              <ArrowLeftRight className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
               Tukar Cash
             </Badge>
           ) : (
-            <Badge className="bg-sky-50 text-sky-700 border-sky-200 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
-              <Truck className="w-3 h-3 text-sky-600" />
+            <Badge className="bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800 gap-1 text-[10px] font-semibold py-0.5 whitespace-nowrap">
+              <Truck className="w-3 h-3 text-sky-600 dark:text-sky-400" />
               Ongkir Kurir
             </Badge>
           );
         },
-        size: 130,
+        size: 112,
       },
       {
         accessorKey: "item_name",
@@ -258,34 +261,34 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
               className="cursor-pointer group/item"
               onClick={() => onViewExpense?.(e)}
             >
-              <div className="font-semibold text-slate-900 group-hover/item:text-blue-600 max-w-xs truncate transition-colors">
+              <div className="font-semibold text-[var(--ledger-ink)] group-hover/item:text-blue-600 dark:group-hover/item:text-blue-400 max-w-[190px] truncate transition-colors">
                 {e.item_name}
               </div>
               {e.notes && e.notes !== "-" && (
-                <div className="text-[11px] text-slate-500 max-w-xs truncate mt-0.5">
+                <div className="text-[11px] text-[var(--ledger-muted)] max-w-[190px] truncate mt-0.5">
                   {e.notes}
                 </div>
               )}
               {e.invoice_number && e.invoice_number !== "-" && (
-                <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                <div className="text-[10px] font-mono text-[var(--ledger-muted)] mt-0.5">
                   Ref/Inv: {e.invoice_number}
                 </div>
               )}
             </div>
           );
         },
-        size: 220,
+        size: 198,
       },
       {
         accessorKey: "supplier",
         id: "supplier",
         header: () => <span>Supplier / Provider</span>,
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-slate-700 font-medium">
+          <span className="whitespace-nowrap text-[var(--ledger-ink)] font-medium">
             {row.original.supplier || "-"}
           </span>
         ),
-        size: 150,
+        size: 130,
       },
       {
         accessorKey: "pay_method",
@@ -295,29 +298,29 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
           const e = row.original;
           return (
             <div className="whitespace-nowrap flex items-center gap-1">
-              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
+              <span className="px-2 py-0.5 rounded-md bg-[var(--ledger-recessed)] text-[var(--ledger-ink)] text-[10px] font-medium">
                 {e.pay_method}
               </span>
               {e.is_reimbursement && (
-                <span className="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 text-[9px] font-bold">
+                <span className="px-1.5 py-0.5 rounded-md bg-[var(--signal-talangan-soft)] text-[var(--signal-talangan)] text-[9px] font-bold">
                   Reimburse
                 </span>
               )}
             </div>
           );
         },
-        size: 130,
+        size: 115,
       },
       {
         accessorKey: "total_price",
         id: "total_price",
         header: () => <div className="text-right">Nominal</div>,
         cell: ({ row }) => (
-          <div className="text-right font-bold text-slate-900 tabular-nums whitespace-nowrap text-xs">
+          <div className="text-right font-bold text-[var(--ledger-ink)] tabular-nums whitespace-nowrap text-xs">
             {formatRupiah(row.original.total_price)}
           </div>
         ),
-        size: 120,
+        size: 104,
       },
       {
         accessorKey: "pay_status",
@@ -333,13 +336,13 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
                 className="inline-flex items-center gap-1 transition-opacity hover:opacity-80"
               >
                 {e.pay_status === "Lunas" ? (
-                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] gap-1 font-semibold">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 text-[10px] gap-1 font-semibold">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                     Lunas
                   </Badge>
                 ) : (
-                  <Badge className="bg-rose-50 text-rose-700 border-rose-200 text-[10px] gap-1 font-semibold">
-                    <Clock className="w-3 h-3 text-rose-600" />
+                  <Badge className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800 text-[10px] gap-1 font-semibold">
+                    <Clock className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                     Pending
                   </Badge>
                 )}
@@ -347,7 +350,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
             </div>
           );
         },
-        size: 110,
+        size: 92,
       },
       {
         id: "actions",
@@ -362,7 +365,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
                   href={tgLink.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  className="p-1.5 rounded-lg text-[var(--ledger-muted)] hover:text-blue-600 dark:hover:text-blue-400 hover:bg-[var(--ledger-recessed)] transition-colors"
                   title="Buka pesan Telegram asli"
                 >
                   <TelegramIcon className="w-3.5 h-3.5" />
@@ -371,7 +374,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
               <button
                 type="button"
                 onClick={() => onEditExpense(e)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] hover:bg-[var(--ledger-recessed)] transition-colors"
                 title="Edit"
               >
                 <Edit2 className="w-3.5 h-3.5" />
@@ -381,7 +384,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
                   type="button"
                   onClick={() => handleDelete(e.id)}
                   disabled={deletingId === e.id}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                  className="p-1.5 rounded-lg text-[var(--ledger-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-[var(--ledger-recessed)] transition-colors disabled:opacity-50"
                   title="Hapus"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -390,7 +393,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
             </div>
           );
         },
-        size: 100,
+        size: 80,
       },
     ],
     [canDelete, deletingId, onEditExpense, onToggleStatus, onViewExpense]
@@ -425,275 +428,475 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
     },
   });
 
+  const courierSummaryList = reportData?.ongkir_by_courier || [];
+  const maxCourierAmount = Math.max(1, ...courierSummaryList.map((c) => c.total_amount || 0));
+
   return (
     <div className="space-y-3">
-      {/* 4 Kartu KPI Ringkasan */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        {/* KPI 1: Tukar Cash */}
-        <Card className="border-indigo-200/80 dark:border-indigo-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Total Tukar Cash</span>
-              <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
-                <ArrowLeftRight className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <div className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {formatRupiah(totalTukarCash)}
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-              <span>{tukarCashCount} transaksi</span>
-              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-indigo-50/50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800">
-                Kasir ⇄ Rekening
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+      {/* 1. Editorial Header Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Buku Kurir &amp; Tukar Cash Kasir
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {tukarCashCount + ongkirCount} transaksi tercatat •{" "}
+            {courierSummaryList.length} layanan kurir aktif pada{" "}
+            {MONTH_NAMES[(selectedMonth || 1) - 1] || ""} {selectedYear}
+          </p>
+        </div>
 
-        {/* KPI 2: Total Biaya Ongkir */}
-        <Card className="border-sky-200/80 dark:border-sky-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Total Biaya Ongkir</span>
-              <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400">
+        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+          {onAddNewExpense && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onAddNewExpense("ongkir")}
+                className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 rounded-lg text-xs h-9 px-3 font-semibold gap-1.5 ledger-press"
+              >
                 <Truck className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <div className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {formatRupiah(totalOngkir)}
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-              <span>{ongkirCount} trip</span>
-              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-sky-50/50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800">
-                Operasional
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* KPI 3: Ongkir Ditalangi (Reimburse) */}
-        <Card className="border-purple-200/80 dark:border-purple-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 sm:p-4 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Ongkir Ditalangi</span>
-              <div className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400">
-                <Tag className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <div className="text-lg sm:text-xl font-bold tracking-tight text-purple-900 dark:text-purple-200 tabular-nums">
-              {formatRupiah(ongkirReimburseTotal)}
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-              <span>{ongkirReimburseCount} via GoPay/OVO</span>
-              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-purple-50/50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800">
-                Perlu Reimburse
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* KPI 4: Ongkir Tunai Kasir */}
-        <Card className="border-emerald-200/80 dark:border-emerald-900/50 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 sm:p-4 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Ongkir Tunai Kasir</span>
-              <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-                <Wallet className="w-3.5 h-3.5" />
-              </div>
-            </div>
-            <div className="text-lg sm:text-xl font-bold tracking-tight text-emerald-900 dark:text-emerald-200 tabular-nums">
-              {formatRupiah(ongkirTunaiTotal)}
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
-              <span>Langsung dari kasir</span>
-              <Badge variant="outline" className="text-[9px] px-1 py-0 bg-emerald-50/50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
-                Cash Kasir
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
+                <span>+ Ongkir</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onAddNewExpense("tukar_cash")}
+                className="rounded-lg text-xs h-9 px-3 font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] ledger-press"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>+ Tukar Cash</span>
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="text-xs h-9 rounded-lg gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+        </div>
       </div>
 
-      {/* Rekap Ongkir per Kurir */}
-      {reportData?.ongkir_by_courier && reportData.ongkir_by_courier.length > 0 && (
-        <Card className="border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs rounded-xl">
-          <CardContent className="p-3 sm:p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Truck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  Rekap Biaya per Kurir (Bulan Ini)
-                </h3>
-              </div>
-              <span className="text-[11px] text-slate-500">
-                {reportData.ongkir_by_courier.length} layanan kurir
+      {/* 2. Unified Asymmetric Metric Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isLoading && !reportData}
+        primary={{
+          label: "Total Biaya Ongkir",
+          value: formatRupiah(totalOngkir),
+          subtext: `${ongkirCount} trip pengiriman kurir`,
+          active: filterType === "ongkir",
+          onClick: () => {
+            setFilterType((prev) => (prev === "ongkir" ? "all" : "ongkir"));
+            setPage(1);
+          },
+          segments:
+            totalOngkir > 0
+              ? [
+                  {
+                    key: "tunai",
+                    label: "Tunai Kasir",
+                    value: ongkirTunaiTotal,
+                    displayValue: formatRupiah(ongkirTunaiTotal),
+                    colorClass: "bg-emerald-600 dark:bg-emerald-400",
+                  },
+                  {
+                    key: "reimburse",
+                    label: "Ditalangi",
+                    value: ongkirReimburseTotal,
+                    displayValue: formatRupiah(ongkirReimburseTotal),
+                    colorClass: "bg-[#5B3EAE] dark:bg-[#AD9CFF]",
+                  },
+                ]
+              : undefined,
+        }}
+        supporting={[
+          {
+            key: "reimburse",
+            label: "Ongkir Ditalangi",
+            value: formatRupiah(ongkirReimburseTotal),
+            valueClassName: "text-[var(--signal-talangan)]",
+            subtext: `${ongkirReimburseCount} trip via e-wallet / staf`,
+            accentTone: "talangan",
+          },
+          {
+            key: "tunai",
+            label: "Ongkir Tunai Kasir",
+            value: formatRupiah(ongkirTunaiTotal),
+            valueClassName: "text-[var(--signal-cleared)]",
+            subtext: "Dibayar langsung dari kasir",
+            accentTone: "cleared",
+          },
+          {
+            key: "tukar-cash",
+            label: "Total Tukar Cash",
+            value: formatRupiah(totalTukarCash),
+            subtext: `${tukarCashCount} transaksi kasir ⇄ rekening`,
+            active: filterType === "tukar_cash",
+            accentTone: "neutral",
+            onClick: () => {
+              setFilterType((prev) => (prev === "tukar_cash" ? "all" : "tukar_cash"));
+              setPage(1);
+            },
+          },
+        ]}
+      />
+
+      {/* 3. Flat Courier Breakdown Directory (Zero Nested Cards) */}
+      {courierSummaryList.length > 0 && (
+        <section aria-label="Rekap biaya per kurir" className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <h3 className="text-sm font-bold text-[var(--ledger-ink)] truncate">
+                Rekap Biaya per Kurir
+              </h3>
+              <span className="text-xs text-[var(--ledger-muted)] tabular-nums shrink-0">
+                {courierSummaryList.length} layanan kurir
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              {reportData.ongkir_by_courier.map((c) => (
-                <div
-                  key={c.courier_name}
-                  className="p-2.5 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col justify-between gap-1"
-                >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {c.courier_name}
-                    </span>
-                    {c.is_subscribed && (
-                      <Badge variant="outline" className="text-[9px] px-1 py-0 border-amber-200 bg-amber-50 text-amber-800 shrink-0">
-                        Langganan
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                    {formatRupiah(c.total_amount)}
-                  </div>
-                  <div className="text-[10px] text-slate-500 tabular-nums">
-                    {c.trip_count} trip • rata-rata {formatRupiah(c.avg_per_trip)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filter Bar & Controls */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-3 sm:p-4 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          {/* Segmented Button Tipe Filter */}
-          <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => {
-                setFilterType("all");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filterType === "all"
-                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-2xs font-bold"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              Semua ({tukarCashCount + ongkirCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFilterType("tukar_cash");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                filterType === "tukar_cash"
-                  ? "bg-white dark:bg-slate-700 text-indigo-900 dark:text-indigo-300 shadow-2xs font-bold"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Tukar Cash ({tukarCashCount})</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFilterType("ongkir");
-                setPage(1);
-              }}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                filterType === "ongkir"
-                  ? "bg-white dark:bg-slate-700 text-sky-900 dark:text-sky-300 shadow-2xs font-bold"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
-              }`}
-            >
-              <Truck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-              <span>Ongkir Kurir ({ongkirCount})</span>
-            </button>
-          </div>
-
-          {/* Action Buttons & Quick Refresh */}
-          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-            {onAddNewExpense && (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => onAddNewExpense("ongkir")}
-                  className="bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs h-9 px-3 font-semibold gap-1.5 shadow-xs"
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  <span>+ Ongkir</span>
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => onAddNewExpense("tukar_cash")}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs h-9 px-3 font-semibold gap-1.5 shadow-xs"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  <span>+ Tukar Cash</span>
-                </Button>
-              </>
-            )}
             <Button
-              variant="outline"
+              type="button"
+              variant="ghost"
               size="sm"
-              onClick={() => refetch()}
-              className="text-xs h-9 rounded-xl gap-1.5 border-slate-200 dark:border-slate-800"
+              onClick={() => setIsCouriersExpanded((prev) => !prev)}
+              aria-expanded={isCouriersExpanded}
+              className="min-h-[36px] text-xs font-medium text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)] gap-1 px-2.5"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>{isCouriersExpanded ? "Tutup Rekap" : "Buka Rekap"}</span>
+              {isCouriersExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
             </Button>
           </div>
-        </div>
 
-        {/* Input Search, Filters, & Status */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 pt-1">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input
-              type="text"
-              placeholder="Cari nama karyawan, driver, no. resi, bank transfer, invoice..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="pl-9 h-10 text-xs rounded-xl"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Filters
-              variant="advanced"
-              advancedMode="popover"
-              advancedAlign="end"
-              reorderable
-              fields={cashDeliveryFilterFields}
-              query={cashDeliveryFilterQuery}
-              onQueryChange={handleCashDeliveryQueryChange}
-              className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700"
-            >
-              <option value="">Semua Status Bayar</option>
-              <option value="Lunas">Hanya Lunas</option>
-              <option value="Belum Lunas">Belum Lunas / Pending</option>
-            </select>
-          </div>
-        </div>
-      </div>
+          {isCouriersExpanded && (
+            <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden divide-y divide-[color:var(--ledger-hairline)]">
+              {courierSummaryList.map((c) => {
+                const isSelected = search.toLowerCase() === c.courier_name.toLowerCase();
+                return (
+                  <div
+                    key={c.courier_name}
+                    className={cn(
+                      "px-3.5 py-2 grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center transition-colors",
+                      isSelected ? "ledger-recessed-band" : "ledger-hover-recessed"
+                    )}
+                  >
+                    <div className="lg:col-span-4 flex items-center gap-2.5 min-w-0">
+                      <div
+                        aria-hidden="true"
+                        className="w-8 h-8 rounded-lg bg-[var(--ledger-recessed)] text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center justify-center shrink-0"
+                      >
+                        <Truck className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-semibold text-sm text-[var(--ledger-ink)] truncate">
+                            {c.courier_name}
+                          </span>
+                          {c.is_subscribed && (
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200 shrink-0">
+                              Langganan
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-[var(--ledger-muted)] tabular-nums">
+                          {c.trip_count} trip • rata-rata {formatRupiah(c.avg_per_trip)}
+                        </div>
+                      </div>
+                    </div>
 
-      {/* DataTable Data Transaksi */}
-      <DataTable
-        table={cashDeliveryTable}
-        recordCount={totalCount}
-        isLoading={isLoading}
-        scrollAreaClassName="min-h-[300px]"
-      />
+                    <div className="lg:col-span-5 min-w-0">
+                      <div
+                        aria-hidden="true"
+                        className="h-1.5 w-full rounded-full bg-[var(--ledger-recessed)] overflow-hidden"
+                      >
+                        <div
+                          className="h-full bg-sky-600 dark:bg-sky-400 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${Math.min(100, Math.max(6, Math.round((c.total_amount / maxCourierAmount) * 100)))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-3 flex items-center justify-between lg:justify-end gap-2 tabular-nums">
+                      <span className="text-sm font-bold text-[var(--ledger-ink)]">
+                        {formatRupiah(c.total_amount)}
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={isSelected ? "default" : "outline"}
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          setFilterType("ongkir");
+                          setSearch(isSelected ? "" : c.courier_name);
+                          setPage(1);
+                        }}
+                        className={cn(
+                          "min-h-[36px] sm:min-h-[32px] px-3 text-xs font-semibold rounded-lg ledger-press",
+                          isSelected && "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                        )}
+                      >
+                        {isSelected ? "Filter Aktif" : "Filter"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 4. Status Tabs + Unified Ledger Table Container */}
+      <section aria-label="Daftar transaksi kurir dan tukar cash" className="space-y-2 min-w-0">
+        <LedgerStatusTabs
+          tabs={[
+            { value: "all", label: "Semua", count: tukarCashCount + ongkirCount },
+            { value: "tukar_cash", label: "Tukar Cash", count: tukarCashCount },
+            { value: "ongkir", label: "Ongkir Kurir", count: ongkirCount },
+          ]}
+          value={filterType}
+          onChange={(next) => {
+            setFilterType(next);
+            setPage(1);
+          }}
+          layoutId="cash-delivery-type-underline"
+          ariaLabel="Filter jenis transaksi kurir dan tukar cash"
+        />
+
+        <DataTable
+          table={cashDeliveryTable}
+          recordCount={totalCount}
+          isLoading={isLoading}
+          containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
+          headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
+          footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+          tableWrapperClassName="hidden md:block"
+          scrollAreaClassName="md:min-h-[300px]"
+          emptyMessage={
+            <LedgerStateBlock
+              variant="empty"
+              icon={<Truck className="w-7 h-7" />}
+              title="Belum ada transaksi kurir & tukar cash"
+              description="Sesuaikan filter pencarian/status atau tambahkan transaksi Ongkir maupun Tukar Cash baru."
+            />
+          }
+          header={
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
+                    Daftar Kurir &amp; Tukar Cash
+                  </h3>
+                  <span className="text-xs font-mono-ledger tabular-nums text-[var(--ledger-muted)]">
+                    {totalCount} transaksi
+                  </span>
+                </div>
+                {(search || statusFilter || filterType !== "all") && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearch("");
+                      setStatusFilter("");
+                      setFilterType("all");
+                      setPage(1);
+                    }}
+                    className="h-7 px-2 text-xs text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                  >
+                    Reset Filter
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <InputGroup className="h-9 bg-[var(--ledger-surface)]">
+                    <InputGroupAddon align="inline-start" className="pl-2.5 pr-1">
+                      <Search className="size-3.5 text-[var(--ledger-muted)]" />
+                    </InputGroupAddon>
+                    <InputGroupInput
+                      type="text"
+                      placeholder="Cari nama karyawan, driver, no. resi, bank transfer, invoice..."
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
+                      aria-label="Cari transaksi kurir dan tukar cash"
+                      className="h-9 text-xs"
+                    />
+                    {search.length > 0 && (
+                      <InputGroupAddon align="inline-end" className="pr-1.5">
+                        <InputGroupButton
+                          size="icon-xs"
+                          aria-label="Bersihkan kata kunci"
+                          onClick={() => {
+                            setSearch("");
+                            setPage(1);
+                          }}
+                        >
+                          <X className="size-3" />
+                        </InputGroupButton>
+                      </InputGroupAddon>
+                    )}
+                  </InputGroup>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Filters
+                    variant="advanced"
+                    advancedMode="popover"
+                    advancedAlign="end"
+                    reorderable
+                    fields={cashDeliveryFilterFields}
+                    query={cashDeliveryFilterQuery}
+                    onQueryChange={handleCashDeliveryQueryChange}
+                    className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+                  />
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setPage(1);
+                    }}
+                    aria-label="Filter status bayar kurir & tukar cash"
+                    className="h-9 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] px-2.5 text-xs font-medium text-[var(--ledger-ink)]"
+                  >
+                    <option value="">Semua Status Bayar</option>
+                    <option value="Lunas">Hanya Lunas</option>
+                    <option value="Belum Lunas">Belum Lunas / Pending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          }
+        >
+          <div className="md:hidden divide-y divide-[color:var(--ledger-hairline)]">
+            {expenses.map((e) => {
+              const itemType = getItemType(e);
+              const isTukar = itemType === "tukar_cash";
+              const isLunas = e.pay_status === "Lunas";
+              const tgLink = parseTelegramLink(e.msg_link);
+              return (
+                <div
+                  key={e.id}
+                  onClick={() => onViewExpense?.(e)}
+                  className="p-3.5 hover:bg-[var(--ledger-recessed)]/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                            isTukar
+                              ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/70 dark:bg-sky-950/50 dark:text-sky-300"
+                              : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/50 dark:text-amber-300"
+                          }`}
+                        >
+                          {isTukar ? (
+                            <ArrowLeftRight className="w-2.5 h-2.5 mr-1 inline" />
+                          ) : (
+                            <Truck className="w-2.5 h-2.5 mr-1 inline" />
+                          )}
+                          {isTukar ? "Tukar Cash" : "Ongkir Kurir"}
+                        </span>
+                        <span className="text-[11px] font-medium tabular-nums text-[var(--ledger-muted)]">
+                          {formatDateId(e.expense_date)}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-[var(--ledger-ink)] truncate">
+                        {e.item_name}
+                      </p>
+                      <p className="text-xs text-[var(--ledger-muted)] truncate">
+                        {e.supplier || "-"} · {e.pay_method || "-"}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 space-y-1">
+                      <p className="text-sm font-bold font-mono tabular-nums text-[var(--ledger-ink)]">
+                        {formatRupiah(e.total_price)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          onToggleStatus(e);
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                          isLunas
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                            : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                        }`}
+                      >
+                        {isLunas ? (
+                          <CheckCircle2 className="w-3 h-3" />
+                        ) : (
+                          <Clock className="w-3 h-3" />
+                        )}
+                        {isLunas ? "Lunas" : "Belum"}
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    className="mt-2.5 pt-2 border-t border-[color:var(--ledger-hairline)] flex items-center justify-end gap-1"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    {tgLink?.url && (
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      >
+                        <a
+                          href={tgLink.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Lihat Sumber Telegram"
+                        >
+                          <TelegramIcon className="w-4 h-4" />
+                        </a>
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onEditExpense(e)}
+                      className="h-9 w-9 text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+                      title="Edit transaksi"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    {canDelete && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        disabled={deletingId === e.id}
+                        onClick={() => handleDelete(e.id)}
+                        className="h-9 w-9 text-[var(--ledger-muted)] hover:text-red-600"
+                        title="Hapus transaksi"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DataTable>
+      </section>
     </div>
   );
 };

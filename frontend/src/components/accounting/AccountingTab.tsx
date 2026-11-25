@@ -3,11 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { getAccountingReport, getDailyCashflow, exportDailyCashflowCsv, api } from "@/lib/api";
 import { AccountingReportData, AccountLineItem, Expense, DailyCashflowResponse } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
+import {
+  LedgerStateBlock,
+  LedgerStatusTabs,
+} from "@/components/common/LedgerPrimitives";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { ColumnDef } from "@tanstack/react-table";
@@ -839,31 +842,33 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
   );
 
   return (
-    <div className="space-y-4 pb-6 print:p-0">
-      {/* ─────────────────────────────────────────────────────────────
-          1. HEADER & CONTROLS
-      ───────────────────────────────────────────────────────────── */}
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-0.5 print:hidden">
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="text-xs font-semibold px-2.5 py-1 rounded-lg border-blue-200 bg-blue-50/50 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 shadow-xs"
-          >
-            Standar SAK EMKM
-          </Badge>
-          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            Periode {periodLabel}
-          </span>
+    <div className="space-y-3.5 pb-6 print:p-0">
+      {/* 1. Editorial Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5 print:hidden">
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+              Laporan &amp; Analisis Akuntansi
+            </h2>
+            <Badge
+              variant="outline"
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-md border-blue-200 bg-blue-50/60 text-blue-700 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300"
+            >
+              SAK EMKM
+            </Badge>
+          </div>
+          <p className="text-xs text-[var(--ledger-muted)]">
+            Periode {periodLabel} • Laba Rugi, Neraca, Arus Kas &amp; Buku Besar
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <Button
             variant="outline"
             size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
+            className="h-8 gap-1.5 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] rounded-lg"
             title="Refresh Data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
@@ -876,7 +881,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               size="sm"
               onClick={handleExportCashflowCsv}
               disabled={isExportingCashflow || !dailyCashflowData}
-              className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg hover:text-emerald-700 dark:hover:text-emerald-400"
+              className="h-8 gap-1.5 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] rounded-lg"
               title="Export Arus Kas Harian ke CSV (Cash In, Cash Out, Saldo)"
             >
               <Download className={`w-3.5 h-3.5 ${isExportingCashflow ? "animate-spin" : ""}`} />
@@ -888,7 +893,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               size="sm"
               onClick={handleExportCsv}
               disabled={!accountingData}
-              className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
+              className="h-8 gap-1.5 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] rounded-lg"
               title="Export CSV Akuntansi (SAK EMKM)"
             >
               <Download className="w-3.5 h-3.5" />
@@ -900,7 +905,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             variant="outline"
             size="sm"
             onClick={handlePrint}
-            className="h-8 gap-1.5 text-xs text-slate-600 dark:text-slate-300 rounded-lg"
+            className="h-8 gap-1.5 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)] rounded-lg"
             title="Cetak Laporan"
           >
             <Printer className="w-3.5 h-3.5" />
@@ -919,358 +924,314 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
         </p>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          LOADING & ERROR STATES
-      ───────────────────────────────────────────────────────────── */}
+      {/* LOADING & ERROR STATES */}
       {isLoading && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-xl" />
-            ))}
-          </div>
+        <div className="space-y-3.5">
+          <Skeleton className="h-24 w-full rounded-xl" />
           <Skeleton className="h-96 w-full rounded-xl" />
         </div>
       )}
 
       {isError && (
-        <Card className="border-rose-200 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20">
-          <CardContent className="p-6 text-center">
-            <AlertCircle className="w-8 h-8 text-rose-500 mx-auto mb-2" />
-            <h3 className="font-semibold text-rose-800 dark:text-rose-200 text-sm">
-              Gagal Memuat Laporan Akuntansi
-            </h3>
-            <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 max-w-md mx-auto">
-              {(error as Error)?.message || "Terjadi kesalahan saat memproses data buku besar."}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              className="mt-3.5 text-xs border-rose-300 text-rose-700 hover:bg-rose-100"
-            >
-              Coba Lagi
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)]">
+          <LedgerStateBlock
+            variant="error"
+            title="Gagal Memuat Laporan Akuntansi"
+            description={(error as Error)?.message || "Terjadi kesalahan saat memproses data buku besar."}
+            actions={
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Coba Lagi
+              </Button>
+            }
+          />
+        </div>
       )}
 
       {accountingData && (
         <>
-          {/* ─────────────────────────────────────────────────────────────
-              2. TOP KPI CARDS (FINANCIAL SUMMARY)
-          ───────────────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-            {/* 1. Total Beban Usaha (Laba Rugi) */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-3.5">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>Total Beban Usaha</span>
-                  <Badge variant="outline" className="text-[10px] font-mono py-0 bg-slate-50 dark:bg-slate-800">
-                    Laba Rugi
-                  </Badge>
-                </div>
-                <div className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1.5 tabular-nums">
-                  {formatRupiah(accountingData.laba_rugi.total_beban)}
-                </div>
-                <div className="flex items-center gap-1.5 mt-2 text-[11px]">
-                  {accountingData.laba_rugi.mom_beban_change_pct !== null && accountingData.laba_rugi.mom_beban_change_pct !== undefined ? (
-                    <span
-                      className={`inline-flex items-center font-medium ${
-                        accountingData.laba_rugi.mom_beban_change_pct > 0
-                          ? "text-rose-600 dark:text-rose-400"
-                          : "text-emerald-600 dark:text-emerald-400"
-                      }`}
-                    >
-                      {accountingData.laba_rugi.mom_beban_change_pct > 0 ? (
-                        <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-                      ) : (
-                        <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
-                      )}
-                      {accountingData.laba_rugi.mom_beban_change_pct > 0 ? `+` : ``}
-                      {accountingData.laba_rugi.mom_beban_change_pct}% MoM
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">Periode awal</span>
-                  )}
-                  <span className="text-slate-400">vs {accountingData.prev_month_name}</span>
-                </div>
-              </CardContent>
-            </Card>
+          {/* 2. Unified 5-Column Financial KPI Hairline Strip (Zero Nested Cards) */}
+          <section
+            aria-label="Ringkasan utama laporan akuntansi"
+            className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 lg:divide-x divide-[color:var(--ledger-hairline)]"
+          >
+            {/* 1. Total Beban Usaha */}
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col justify-between gap-1.5 min-w-0">
+              <div className="flex items-center justify-between gap-1.5 text-xs text-[var(--ledger-muted)] font-semibold">
+                <span className="truncate">Total Beban Usaha</span>
+                <span className="text-[10px] font-mono-ledger px-1.5 py-0.5 rounded bg-[var(--ledger-recessed)] text-[var(--ledger-ink)] shrink-0 whitespace-nowrap">
+                  Laba Rugi
+                </span>
+              </div>
+              <div className="text-lg sm:text-xl font-bold text-[var(--ledger-ink)] tabular-nums">
+                {formatRupiah(accountingData.laba_rugi.total_beban)}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                {accountingData.laba_rugi.mom_beban_change_pct !== null &&
+                accountingData.laba_rugi.mom_beban_change_pct !== undefined ? (
+                  <span
+                    className={`inline-flex items-center font-semibold tabular-nums shrink-0 ${
+                      accountingData.laba_rugi.mom_beban_change_pct > 0
+                        ? "text-[var(--signal-unpaid)]"
+                        : "text-[var(--signal-cleared)]"
+                    }`}
+                  >
+                    {accountingData.laba_rugi.mom_beban_change_pct > 0 ? (
+                      <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
+                    ) : (
+                      <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
+                    )}
+                    {accountingData.laba_rugi.mom_beban_change_pct > 0 ? `+` : ``}
+                    {accountingData.laba_rugi.mom_beban_change_pct}% MoM
+                  </span>
+                ) : (
+                  <span className="text-[var(--ledger-muted)]">Periode awal</span>
+                )}
+                <span className="text-[var(--ledger-muted)] truncate">
+                  vs {accountingData.prev_month_name}
+                </span>
+              </div>
+            </div>
 
             {/* 2. Harga Pokok Penjualan (HPP) */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-3.5">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span className="text-amber-700 dark:text-amber-400 font-medium">Beban Pokok (HPP)</span>
-                  <Badge variant="outline" className="text-[10px] font-mono py-0 bg-amber-50 text-amber-700 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800">
-                    Akun 5-XXXX
-                  </Badge>
-                </div>
-                <div className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1.5 tabular-nums">
-                  {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
-                </div>
-                <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
-                  <span>Porsi: <strong>{accountingData.analisis.cost_structure.hpp_ratio}%</strong></span>
-                  {accountingData.laba_rugi.mom_hpp_change_pct !== null && (
-                    <span className={accountingData.laba_rugi.mom_hpp_change_pct > 0 ? "text-amber-600" : "text-emerald-600"}>
-                      {accountingData.laba_rugi.mom_hpp_change_pct > 0 ? `+` : ``}
-                      {accountingData.laba_rugi.mom_hpp_change_pct}%
-                    </span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col justify-between gap-1.5 min-w-0">
+              <div className="flex items-center justify-between gap-1.5 text-xs font-semibold">
+                <span className="text-[var(--signal-dp)] truncate">Beban Pokok (HPP)</span>
+                <span className="text-[10px] font-mono-ledger px-1.5 py-0.5 rounded bg-[var(--signal-dp-soft)] text-[var(--signal-dp)] shrink-0 whitespace-nowrap">
+                  5-XXXX
+                </span>
+              </div>
+              <div className="text-lg sm:text-xl font-bold text-[var(--ledger-ink)] tabular-nums">
+                {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-[var(--ledger-muted)] tabular-nums">
+                <span>
+                  Porsi: <strong className="text-[var(--ledger-ink)]">{accountingData.analisis.cost_structure.hpp_ratio}%</strong>
+                </span>
+                {accountingData.laba_rugi.mom_hpp_change_pct !== null && (
+                  <span
+                    className={
+                      accountingData.laba_rugi.mom_hpp_change_pct > 0
+                        ? "text-[var(--signal-dp)] font-semibold"
+                        : "text-[var(--signal-cleared)] font-semibold"
+                    }
+                  >
+                    {accountingData.laba_rugi.mom_hpp_change_pct > 0 ? `+` : ``}
+                    {accountingData.laba_rugi.mom_hpp_change_pct}%
+                  </span>
+                )}
+              </div>
+            </div>
 
             {/* 3. Beban Operasional (OPEX) */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-3.5">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span className="text-blue-700 dark:text-blue-400 font-medium">Operasional (OPEX)</span>
-                  <Badge variant="outline" className="text-[10px] font-mono py-0 bg-blue-50 text-blue-700 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800">
-                    Akun 6-XXXX
-                  </Badge>
-                </div>
-                <div className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1.5 tabular-nums">
-                  {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
-                </div>
-                <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
-                  <span>Porsi: <strong>{accountingData.analisis.cost_structure.opex_ratio}%</strong></span>
-                  {accountingData.laba_rugi.mom_opex_change_pct !== null && (
-                    <span className={accountingData.laba_rugi.mom_opex_change_pct > 0 ? "text-rose-600" : "text-emerald-600"}>
-                      {accountingData.laba_rugi.mom_opex_change_pct > 0 ? `+` : ``}
-                      {accountingData.laba_rugi.mom_opex_change_pct}%
-                    </span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col justify-between gap-1.5 min-w-0">
+              <div className="flex items-center justify-between gap-1.5 text-xs font-semibold">
+                <span className="text-blue-700 dark:text-blue-400 truncate">Operasional (OPEX)</span>
+                <span className="text-[10px] font-mono-ledger px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 shrink-0 whitespace-nowrap">
+                  6-XXXX
+                </span>
+              </div>
+              <div className="text-lg sm:text-xl font-bold text-[var(--ledger-ink)] tabular-nums">
+                {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-[var(--ledger-muted)] tabular-nums">
+                <span>
+                  Porsi: <strong className="text-[var(--ledger-ink)]">{accountingData.analisis.cost_structure.opex_ratio}%</strong>
+                </span>
+                {accountingData.laba_rugi.mom_opex_change_pct !== null && (
+                  <span
+                    className={
+                      accountingData.laba_rugi.mom_opex_change_pct > 0
+                        ? "text-[var(--signal-unpaid)] font-semibold"
+                        : "text-[var(--signal-cleared)] font-semibold"
+                    }
+                  >
+                    {accountingData.laba_rugi.mom_opex_change_pct > 0 ? `+` : ``}
+                    {accountingData.laba_rugi.mom_opex_change_pct}%
+                  </span>
+                )}
+              </div>
+            </div>
 
             {/* 4. Belanja Modal / Aset Tetap */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-3.5">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span className="text-purple-700 dark:text-purple-400 font-medium">Aset Tetap (Capex)</span>
-                  <Badge variant="outline" className="text-[10px] font-mono py-0 bg-purple-50 text-purple-700 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800">
-                    Neraca 1-2100
-                  </Badge>
-                </div>
-                <div className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1.5 tabular-nums">
-                  {formatRupiah(accountingData.neraca.subtotal_aset_tetap)}
-                </div>
-                <div className="mt-2 text-[11px] text-slate-500">
-                  Peralatan, showcase, mesin tahan lama
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col justify-between gap-1.5 min-w-0">
+              <div className="flex items-center justify-between gap-1.5 text-xs font-semibold">
+                <span className="text-[var(--signal-talangan)] truncate">Aset Tetap (Capex)</span>
+                <span className="text-[10px] font-mono-ledger px-1.5 py-0.5 rounded bg-[var(--signal-talangan-soft)] text-[var(--signal-talangan)] shrink-0 whitespace-nowrap">
+                  1-2100
+                </span>
+              </div>
+              <div className="text-lg sm:text-xl font-bold text-[var(--ledger-ink)] tabular-nums">
+                {formatRupiah(accountingData.neraca.subtotal_aset_tetap)}
+              </div>
+              <div className="text-[11px] text-[var(--ledger-muted)] truncate">
+                Peralatan, showcase, mesin tahan lama
+              </div>
+            </div>
 
             {/* 5. Hutang Belanja (Kewajiban) */}
-            <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-              <CardContent className="p-3.5">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span className="text-rose-700 dark:text-rose-400 font-medium">Hutang Belanja</span>
-                  <Badge variant="outline" className="text-[10px] font-mono py-0 bg-rose-50 text-rose-700 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800">
-                    Kewajiban 2-1110
-                  </Badge>
-                </div>
-                <div className="text-lg md:text-xl font-bold text-slate-900 dark:text-slate-100 mt-1.5 tabular-nums">
-                  {formatRupiah(accountingData.neraca.subtotal_kewajiban)}
-                </div>
-                <div className="mt-2 text-[11px] text-slate-500 flex items-center justify-between">
-                  <span>{accountingData.neraca.detail_hutang.length} nota tempo</span>
-                  {accountingData.neraca.subtotal_kewajiban > 0 ? (
-                    <span className="text-rose-600 font-medium">Belum Lunas</span>
-                  ) : (
-                    <span className="text-emerald-600 font-medium">Nihil (Lunas)</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 flex flex-col justify-between gap-1.5 min-w-0">
+              <div className="flex items-center justify-between gap-1.5 text-xs font-semibold">
+                <span className="text-[var(--signal-unpaid)] truncate">Hutang Belanja</span>
+                <span className="text-[10px] font-mono-ledger px-1.5 py-0.5 rounded bg-[var(--signal-unpaid-soft)] text-[var(--signal-unpaid)] shrink-0 whitespace-nowrap">
+                  2-1110
+                </span>
+              </div>
+              <div className="text-lg sm:text-xl font-bold text-[var(--ledger-ink)] tabular-nums">
+                {formatRupiah(accountingData.neraca.subtotal_kewajiban)}
+              </div>
+              <div className="text-[11px] text-[var(--ledger-muted)] flex items-center justify-between tabular-nums">
+                <span>{accountingData.neraca.detail_hutang.length} nota tempo</span>
+                {accountingData.neraca.subtotal_kewajiban > 0 ? (
+                  <span className="text-[var(--signal-unpaid)] font-semibold">Belum Lunas</span>
+                ) : (
+                  <span className="text-[var(--signal-cleared)] font-semibold">Nihil (Lunas)</span>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Editorial Sub-Tab Bar Navigation */}
+          <div className="print:hidden">
+            <LedgerStatusTabs
+              tabs={[
+                { value: "laba_rugi", label: "1. Laporan Laba Rugi" },
+                { value: "neraca", label: "2. Posisi Keuangan (Neraca)" },
+                { value: "arus_kas", label: "3. Laporan Arus Kas" },
+                { value: "analisis", label: "4. Analisis & Rasio Finansial" },
+                { value: "buku_besar", label: "5. Buku Besar & Rincian Akun" },
+              ]}
+              value={activeSubTab}
+              onChange={(next) => setActiveSubTab(next)}
+              layoutId="accounting-subtab-underline"
+              ariaLabel="Sub-laporan akuntansi SAK EMKM"
+            />
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              3. SUB-TAB BAR NAVIGATION
-          ───────────────────────────────────────────────────────────── */}
-          <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-0 text-sm print:hidden">
-            <button
-              onClick={() => setActiveSubTab("laba_rugi")}
-              className={`flex items-center gap-2 px-4 py-2.5 font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                activeSubTab === "laba_rugi"
-                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>1. Laporan Laba Rugi</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSubTab("neraca")}
-              className={`flex items-center gap-2 px-4 py-2.5 font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                activeSubTab === "neraca"
-                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              <span>2. Posisi Keuangan (Neraca)</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSubTab("arus_kas")}
-              className={`flex items-center gap-2 px-4 py-2.5 font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                activeSubTab === "arus_kas"
-                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span>3. Laporan Arus Kas</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSubTab("analisis")}
-              className={`flex items-center gap-2 px-4 py-2.5 font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                activeSubTab === "analisis"
-                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              }`}
-            >
-              <PieChart className="w-4 h-4" />
-              <span>4. Analisis & Rasio Finansial</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSubTab("buku_besar")}
-              className={`flex items-center gap-2 px-4 py-2.5 font-medium border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
-                activeSubTab === "buku_besar"
-                  ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 font-semibold"
-                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-              }`}
-            >
-              <Receipt className="w-4 h-4" />
-              <span>5. Buku Besar & Rincian Akun</span>
-            </button>
-          </div>
-
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 1: LAPORAN LABA RUGI (INCOME STATEMENT)
-          ───────────────────────────────────────────────────────────── */}
+          {/* TAB 1: LAPORAN LABA RUGI (INCOME STATEMENT) */}
           {activeSubTab === "laba_rugi" && (
-            <div className="space-y-3.5">
-              {/* 0. SECTION PENDAPATAN & LABA BERSIH (Akun Kepala 4 - dari Transaksi Masuk) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-                <div className="bg-emerald-50/70 dark:bg-emerald-950/30 px-5 py-3.5 border-b border-emerald-200/70 dark:border-emerald-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="space-y-3">
+              {/* 0. SECTION PENDAPATAN & LABA BERSIH (Zero Nested Cards) */}
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="ledger-recessed-subtle px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded">
+                    <span className="font-mono-ledger text-[11px] font-bold text-[var(--signal-cleared)] bg-[var(--signal-cleared-soft)] px-2 py-0.5 rounded">
                       AKUN 4-1100
                     </span>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                       Pendapatan Usaha &amp; Ringkasan Laba / Rugi
                     </h3>
                   </div>
-                  <div className="text-right text-xs text-slate-500">
+                  <div className="text-xs text-[var(--ledger-muted)] tabular-nums">
                     {accountingData.laba_rugi.paid_tx_count || 0} transaksi masuk dibayar
                   </div>
                 </div>
-                <CardContent className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                      <div className="text-[11px] text-slate-500">Penjualan Kotor</div>
-                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-                        {formatRupiah(accountingData.laba_rugi.revenue_gross || 0)}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                      <div className="text-[11px] text-slate-500">Diskon &amp; Fee Platform</div>
-                      <div className="text-sm font-bold text-rose-600 tabular-nums mt-0.5">
-                        -{formatRupiah((accountingData.laba_rugi.revenue_discount || 0) + (accountingData.laba_rugi.revenue_platform_fee || 0))}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
-                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400">Pendapatan Bersih</div>
-                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">
-                        {formatRupiah(accountingData.laba_rugi.revenue_net || 0)}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Laba Kotor (Net - HPP)</span>
-                        {accountingData.laba_rugi.gross_margin_pct != null && (
-                          <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                            {accountingData.laba_rugi.gross_margin_pct}%
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5">
-                        {formatRupiah(accountingData.laba_rugi.gross_profit || 0)}
-                      </div>
-                    </div>
-                    <div className={`rounded-lg border p-3 ${
-                      (accountingData.laba_rugi.net_profit || 0) >= 0
-                        ? "border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/60 dark:bg-emerald-950/20"
-                        : "border-rose-200 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20"
-                    }`}>
-                      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300">
-                        <span>Laba / Rugi Bersih</span>
-                        {accountingData.laba_rugi.net_margin_pct != null && (
-                          <span className="font-mono font-semibold">
-                            {accountingData.laba_rugi.net_margin_pct}%
-                          </span>
-                        )}
-                      </div>
-                      <div className={`text-sm font-bold tabular-nums mt-0.5 ${
-                        (accountingData.laba_rugi.net_profit || 0) >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
-                      }`}>
-                        {formatRupiah(accountingData.laba_rugi.net_profit || 0)}
-                      </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 lg:divide-x divide-[color:var(--ledger-hairline)]">
+                  <div className="px-3.5 py-2.5 sm:px-4 sm:py-3">
+                    <div className="text-[11px] font-semibold text-[var(--ledger-muted)]">Penjualan Kotor</div>
+                    <div className="text-sm sm:text-base font-bold text-[var(--ledger-ink)] tabular-nums mt-0.5">
+                      {formatRupiah(accountingData.laba_rugi.revenue_gross || 0)}
                     </div>
                   </div>
+                  <div className="px-3.5 py-2.5 sm:px-4 sm:py-3">
+                    <div className="text-[11px] font-semibold text-[var(--ledger-muted)]">Diskon &amp; Fee Platform</div>
+                    <div className="text-sm sm:text-base font-bold text-[var(--signal-unpaid)] tabular-nums mt-0.5">
+                      -{formatRupiah((accountingData.laba_rugi.revenue_discount || 0) + (accountingData.laba_rugi.revenue_platform_fee || 0))}
+                    </div>
+                  </div>
+                  <div className="px-3.5 py-2.5 sm:px-4 sm:py-3 signal-surface-cleared">
+                    <div className="text-[11px] font-semibold text-[var(--signal-cleared)]">Pendapatan Bersih</div>
+                    <div className="text-sm sm:text-base font-bold text-[var(--signal-cleared)] tabular-nums mt-0.5">
+                      {formatRupiah(accountingData.laba_rugi.revenue_net || 0)}
+                    </div>
+                  </div>
+                  <div className="px-3.5 py-2.5 sm:px-4 sm:py-3">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--ledger-muted)]">
+                      <span>Laba Kotor (Net - HPP)</span>
+                      {accountingData.laba_rugi.gross_margin_pct != null && (
+                        <span className="font-mono-ledger text-[var(--ledger-ink)]">
+                          {accountingData.laba_rugi.gross_margin_pct}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm sm:text-base font-bold text-[var(--ledger-ink)] tabular-nums mt-0.5">
+                      {formatRupiah(accountingData.laba_rugi.gross_profit || 0)}
+                    </div>
+                  </div>
+                  <div
+                    className={`col-span-2 lg:col-span-1 px-3.5 py-2.5 sm:px-4 sm:py-3 ${
+                      (accountingData.laba_rugi.net_profit || 0) >= 0
+                        ? "signal-surface-cleared"
+                        : "signal-surface-unpaid"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--ledger-muted)]">
+                      <span>Laba / Rugi Bersih</span>
+                      {accountingData.laba_rugi.net_margin_pct != null && (
+                        <span className="font-mono-ledger text-[var(--ledger-ink)]">
+                          {accountingData.laba_rugi.net_margin_pct}%
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-sm sm:text-base font-bold tabular-nums mt-0.5 ${
+                        (accountingData.laba_rugi.net_profit || 0) >= 0
+                          ? "text-[var(--signal-cleared)]"
+                          : "text-[var(--signal-unpaid)]"
+                      }`}
+                    >
+                      {formatRupiah(accountingData.laba_rugi.net_profit || 0)}
+                    </div>
+                  </div>
+                </div>
 
-                  {accountingData.laba_rugi.revenue_by_channel && accountingData.laba_rugi.revenue_by_channel.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                {accountingData.laba_rugi.revenue_by_channel &&
+                  accountingData.laba_rugi.revenue_by_channel.length > 0 && (
+                    <div className="px-4 py-2.5 border-t border-[color:var(--ledger-hairline)] flex flex-wrap gap-2">
                       {accountingData.laba_rugi.revenue_by_channel.map((ch) => (
                         <div
                           key={ch.channel}
-                          className="text-xs px-2.5 py-1.5 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                          className="text-xs px-2.5 py-1 rounded-md bg-[var(--ledger-recessed)] text-[var(--ledger-ink)] tabular-nums"
                         >
-                          <span className="font-medium text-slate-800 dark:text-slate-200">{ch.channel}</span>{" "}
-                          <span className="text-slate-400">({ch.tx_count} tx • {ch.percentage}%)</span>:{" "}
-                          <span className="font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          <span className="font-medium">{ch.channel}</span>{" "}
+                          <span className="text-[var(--ledger-muted)]">
+                            ({ch.tx_count} tx • {ch.percentage}%)
+                          </span>
+                          :{" "}
+                          <span className="font-semibold text-[var(--signal-cleared)]">
                             {formatRupiah(ch.net_received)}
                           </span>
                         </div>
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
+              </div>
 
               {/* Visual Proportion Bar HPP vs OPEX */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs">
+              <div className="bg-[var(--ledger-surface)] border border-[color:var(--ledger-hairline)] rounded-xl px-4 py-3">
                 <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  <span className="font-bold text-[var(--ledger-ink)]">
                     Struktur Beban Usaha Laba Rugi
                   </span>
-                  <div className="flex items-center gap-4 text-xs">
-                    <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
-                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                  <div className="flex items-center gap-4 text-xs tabular-nums">
+                    <span className="flex items-center gap-1.5 text-[var(--signal-dp)] font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
                       HPP ({accountingData.analisis.cost_structure.hpp_ratio}%)
                     </span>
-                    <span className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400 font-medium">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                    <span className="flex items-center gap-1.5 text-blue-700 dark:text-blue-400 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 inline-block" />
                       OPEX ({accountingData.analisis.cost_structure.opex_ratio}%)
                     </span>
                   </div>
                 </div>
-                <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
+                <div className="w-full h-2 bg-[var(--ledger-recessed)] rounded-full overflow-hidden flex">
                   <div
                     className="bg-amber-500 h-full transition-all duration-500"
                     style={{ width: `${accountingData.analisis.cost_structure.hpp_ratio}%` }}
                     title={`HPP: ${formatRupiah(accountingData.laba_rugi.subtotal_hpp)}`}
                   />
                   <div
-                    className="bg-blue-500 h-full transition-all duration-500"
+                    className="bg-blue-600 dark:bg-blue-400 h-full transition-all duration-500"
                     style={{ width: `${accountingData.analisis.cost_structure.opex_ratio}%` }}
                     title={`OPEX: ${formatRupiah(accountingData.laba_rugi.subtotal_opex)}`}
                   />
@@ -1278,19 +1239,19 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
               </div>
 
               {/* 1. SECTION HPP (Akun Kepala 5) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-                <div className="bg-amber-50/70 dark:bg-amber-950/30 px-5 py-3.5 border-b border-amber-200/70 dark:border-amber-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="ledger-recessed-subtle px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/60 px-2 py-0.5 rounded">
+                    <span className="font-mono-ledger text-[11px] font-bold text-[var(--signal-dp)] bg-[var(--signal-dp-soft)] px-2 py-0.5 rounded">
                       AKUN 5-XXXX
                     </span>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                       Harga Pokok Penjualan (HPP / Beban Pokok)
                     </h3>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 mr-2">Subtotal HPP:</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm tabular-nums">
+                  <div className="text-right tabular-nums">
+                    <span className="text-xs text-[var(--ledger-muted)] mr-2">Subtotal HPP:</span>
+                    <span className="font-bold text-[var(--ledger-ink)] text-sm">
                       {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
                     </span>
                   </div>
@@ -1303,22 +1264,23 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   defaultPageSize={10}
                   tableLayout={{ columnsResizable: false, width: "auto" }}
                   containerClassName="border-0 rounded-none shadow-none"
+                  footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
                 >
-                  <div className="bg-amber-50/50 dark:bg-amber-950/20 border-t border-amber-200 dark:border-amber-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <div className="ledger-recessed-band border-t border-[color:var(--ledger-hairline)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-[var(--ledger-ink)]">
                     <span>Subtotal Harga Pokok Penjualan (HPP)</span>
                     <div className="flex items-center gap-4 tabular-nums">
-                      <span className="text-amber-800 dark:text-amber-300">
+                      <span className="text-[var(--signal-dp)]">
                         {formatRupiah(accountingData.laba_rugi.subtotal_hpp)}
                       </span>
-                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                      <span className="text-[var(--ledger-muted)] font-medium">
                         Lalu: {formatRupiah(accountingData.laba_rugi.prev_subtotal_hpp)}
                       </span>
                       {accountingData.laba_rugi.mom_hpp_change_pct !== null && (
                         <span
                           className={
                             accountingData.laba_rugi.mom_hpp_change_pct > 0
-                              ? "text-rose-600"
-                              : "text-emerald-600"
+                              ? "text-[var(--signal-unpaid)]"
+                              : "text-[var(--signal-cleared)]"
                           }
                         >
                           {accountingData.laba_rugi.mom_hpp_change_pct > 0 ? `+` : ``}
@@ -1328,22 +1290,22 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     </div>
                   </div>
                 </DataTable>
-              </Card>
+              </div>
 
               {/* 2. SECTION OPEX (Akun Kepala 6) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-                <div className="bg-blue-50/70 dark:bg-blue-950/30 px-5 py-3.5 border-b border-blue-200/70 dark:border-blue-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="ledger-recessed-subtle px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded">
+                    <span className="font-mono-ledger text-[11px] font-bold text-blue-700 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-300 px-2 py-0.5 rounded">
                       AKUN 6-XXXX
                     </span>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                      Beban Operasional & Umum (OPEX)
+                    <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
+                      Beban Operasional &amp; Umum (OPEX)
                     </h3>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 mr-2">Subtotal OPEX:</span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100 text-sm tabular-nums">
+                  <div className="text-right tabular-nums">
+                    <span className="text-xs text-[var(--ledger-muted)] mr-2">Subtotal OPEX:</span>
+                    <span className="font-bold text-[var(--ledger-ink)] text-sm">
                       {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
                     </span>
                   </div>
@@ -1356,22 +1318,23 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   defaultPageSize={10}
                   tableLayout={{ columnsResizable: false, width: "auto" }}
                   containerClassName="border-0 rounded-none shadow-none"
+                  footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
                 >
-                  <div className="bg-blue-50/50 dark:bg-blue-950/20 border-t border-blue-200 dark:border-blue-900 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-900 dark:text-slate-100">
+                  <div className="ledger-recessed-band border-t border-[color:var(--ledger-hairline)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-[var(--ledger-ink)]">
                     <span>Subtotal Beban Operasional &amp; Umum (OPEX)</span>
                     <div className="flex items-center gap-4 tabular-nums">
-                      <span className="text-blue-800 dark:text-blue-300">
+                      <span className="text-blue-700 dark:text-blue-400">
                         {formatRupiah(accountingData.laba_rugi.subtotal_opex)}
                       </span>
-                      <span className="text-slate-600 dark:text-slate-400 font-medium">
+                      <span className="text-[var(--ledger-muted)] font-medium">
                         Lalu: {formatRupiah(accountingData.laba_rugi.prev_subtotal_opex)}
                       </span>
                       {accountingData.laba_rugi.mom_opex_change_pct !== null && (
                         <span
                           className={
                             accountingData.laba_rugi.mom_opex_change_pct > 0
-                              ? "text-rose-600"
-                              : "text-emerald-600"
+                              ? "text-[var(--signal-unpaid)]"
+                              : "text-[var(--signal-cleared)]"
                           }
                         >
                           {accountingData.laba_rugi.mom_opex_change_pct > 0 ? `+` : ``}
@@ -1381,10 +1344,10 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     </div>
                   </div>
                 </DataTable>
-              </Card>
+              </div>
 
               {/* 3. GRAND TOTAL BEBAN USAHA */}
-              <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-slate-900 dark:bg-slate-950 text-white px-4 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs uppercase tracking-wider text-slate-300 font-semibold">
@@ -1394,15 +1357,15 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       HPP + OPEX
                     </Badge>
                   </div>
-                  <p className="text-xs text-slate-300 mt-1">
-                    Seluruh biaya operasional dan pokok bahan yang dibebankan pada periode {accountingData.month_name} {accountingData.year}
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Seluruh biaya operasional dan pokok bahan pada periode {accountingData.month_name} {accountingData.year}
                   </p>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl md:text-3xl font-extrabold tabular-nums tracking-tight">
+                  <div className="text-xl md:text-2xl font-extrabold tabular-nums tracking-tight">
                     {formatRupiah(accountingData.laba_rugi.total_beban)}
                   </div>
-                  <div className="text-xs text-slate-300 mt-1">
+                  <div className="text-xs text-slate-300 mt-0.5 tabular-nums">
                     Bulan lalu: {formatRupiah(accountingData.laba_rugi.prev_total_beban)}{" "}
                     {accountingData.laba_rugi.mom_beban_change_pct !== null && (
                       <span className={accountingData.laba_rugi.mom_beban_change_pct > 0 ? "text-rose-300 font-semibold" : "text-emerald-300 font-semibold"}>
@@ -1416,22 +1379,20 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             </div>
           )}
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 2: LAPORAN POSISI KEUANGAN / NERACA
-          ───────────────────────────────────────────────────────────── */}
+          {/* TAB 2: LAPORAN POSISI KEUANGAN / NERACA */}
           {activeSubTab === "neraca" && (
-            <div className="space-y-3.5">
+            <div className="space-y-3">
               {/* Posisi Kas & Bank per Rekening Setup (Terhubung ke COA 1-11xx) */}
               {accountingData.neraca.rekening_positions && accountingData.neraca.rekening_positions.length > 0 && (
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <Wallet className="w-4 h-4 text-blue-600" />
-                      <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                      <Wallet className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                         Posisi Kas &amp; Bank per Rekening Setup (Akun 1-11xx)
                       </h3>
                     </div>
-                    <span className="font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
+                    <span className="font-mono-ledger text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
                       Total Estimasi: {formatRupiah(accountingData.neraca.total_rekening_balance || 0)}
                     </span>
                   </div>
@@ -1442,87 +1403,88 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     defaultPageSize={10}
                     tableLayout={{ columnsResizable: false, width: "auto" }}
                     containerClassName="border-0 rounded-none shadow-none"
+                    footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
                   />
-                </Card>
+                </div>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {/* SISI KIRI: ASET (AKTIVA) */}
-                <div className="space-y-3.5">
+                <div className="space-y-3">
                   {/* Aset Lancar */}
-                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                    <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                  <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-emerald-600" />
-                        <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                        <Wallet className="w-4 h-4 text-[var(--signal-cleared)]" />
+                        <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                           Aset Lancar (Posisi Kas &amp; Bank)
                         </h3>
                       </div>
-                      <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400 tabular-nums">
+                      <span className="font-mono-ledger text-xs font-semibold text-[var(--signal-cleared)] tabular-nums">
                         {formatRupiah(accountingData.neraca.subtotal_aset_lancar)}
                       </span>
                     </div>
 
-                    <div className="p-4 space-y-3">
+                    <div className="divide-y divide-[color:var(--ledger-hairline)]">
                       {accountingData.neraca.aset_lancar.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs">
+                        <div key={idx} className="flex items-center justify-between px-4 py-2.5 ledger-hover-recessed text-xs transition-colors">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-slate-600 dark:text-slate-300">{item.account_code}</span>
-                              <span className="font-semibold text-slate-900 dark:text-slate-100">{item.account_name}</span>
+                              <span className="font-mono-ledger font-bold text-[var(--ledger-muted)]">{item.account_code}</span>
+                              <span className="font-semibold text-[var(--ledger-ink)]">{item.account_name}</span>
                             </div>
-                            <span className="text-[11px] text-slate-400 mt-0.5 block">{item.description}</span>
+                            <span className="text-[11px] text-[var(--ledger-muted)] mt-0.5 block">{item.description}</span>
                           </div>
-                          <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums text-sm">
+                          <span className="font-bold text-[var(--ledger-ink)] tabular-nums text-sm">
                             {formatRupiah(item.nominal)}
                           </span>
                         </div>
                       ))}
                     </div>
-                  </Card>
+                  </div>
 
                   {/* Aset Tetap */}
-                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                    <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                  <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Building className="w-4 h-4 text-purple-600" />
-                        <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                          Aset Tetap (Peralatan & Mesin)
+                        <Building className="w-4 h-4 text-[var(--signal-talangan)]" />
+                        <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
+                          Aset Tetap (Peralatan &amp; Mesin)
                         </h3>
                       </div>
-                      <span className="font-mono text-xs font-semibold text-purple-700 dark:text-purple-400 tabular-nums">
+                      <span className="font-mono-ledger text-xs font-semibold text-[var(--signal-talangan)] tabular-nums">
                         {formatRupiah(accountingData.neraca.subtotal_aset_tetap)}
                       </span>
                     </div>
 
-                    <div className="p-4 space-y-2.5">
+                    <div className="divide-y divide-[color:var(--ledger-hairline)]">
                       {accountingData.neraca.aset_tetap.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 text-xs">
+                        <div key={idx} className="flex items-center justify-between px-4 py-2.5 ledger-hover-recessed text-xs transition-colors">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-slate-600 dark:text-slate-300">{item.account_code}</span>
-                              <span className="font-semibold text-slate-900 dark:text-slate-100">{item.account_name}</span>
+                              <span className="font-mono-ledger font-bold text-[var(--ledger-muted)]">{item.account_code}</span>
+                              <span className="font-semibold text-[var(--ledger-ink)]">{item.account_name}</span>
                             </div>
-                            <span className="text-[11px] text-slate-400 mt-0.5 block">{item.description}</span>
+                            <span className="text-[11px] text-[var(--ledger-muted)] mt-0.5 block">{item.description}</span>
                           </div>
-                          <span className={`font-bold tabular-nums text-sm ${item.nominal < 0 ? "text-amber-700 dark:text-amber-400" : "text-slate-900 dark:text-slate-100"}`}>
+                          <span className={`font-bold tabular-nums text-sm ${item.nominal < 0 ? "text-[var(--signal-dp)]" : "text-[var(--ledger-ink)]"}`}>
                             {item.nominal < 0 ? `(${formatRupiah(Math.abs(item.nominal))})` : formatRupiah(item.nominal)}
                           </span>
                         </div>
                       ))}
                       {accountingData.neraca.aset_tetap_summary && (
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-slate-100">
+                        <div className="flex items-center justify-between px-4 py-2.5 ledger-recessed-band text-xs font-bold text-[var(--ledger-ink)]">
                           <span>Nilai Buku Bersih Aset Tetap</span>
-                          <span className="tabular-nums text-purple-700 dark:text-purple-400">
+                          <span className="tabular-nums text-[var(--signal-talangan)]">
                             {formatRupiah(accountingData.neraca.aset_tetap_summary.net_book_value)}
                           </span>
                         </div>
                       )}
                     </div>
-                  </Card>
+                  </div>
 
                   {/* Total Aset (Aktiva) */}
-                  <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between shadow-xs">
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 dark:bg-slate-950 border border-[color:var(--ledger-hairline)] text-white flex items-center justify-between">
                     <div>
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
                         Total Aset (Aktiva)
@@ -1538,31 +1500,31 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 </div>
 
                 {/* SISI KANAN: KEWAJIBAN (PASSIVA) */}
-                <div className="space-y-3.5">
-                  <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                    <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <ShieldAlert className="w-4 h-4 text-rose-600" />
-                        <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                          Kewajiban Lancar (Hutang Belanja & Tempo)
+                        <ShieldAlert className="w-4 h-4 text-[var(--signal-unpaid)]" />
+                        <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
+                          Kewajiban Lancar (Hutang Belanja &amp; Tempo)
                         </h3>
                       </div>
-                      <span className="font-mono text-xs font-semibold text-rose-700 dark:text-rose-400 tabular-nums">
+                      <span className="font-mono-ledger text-xs font-semibold text-[var(--signal-unpaid)] tabular-nums">
                         {formatRupiah(accountingData.neraca.subtotal_kewajiban)}
                       </span>
                     </div>
 
-                    <div className="p-4 space-y-3">
+                    <div className="divide-y divide-[color:var(--ledger-hairline)]">
                       {accountingData.neraca.kewajiban_lancar.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2.5 rounded-lg bg-rose-50/60 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-xs">
+                        <div key={idx} className="flex items-center justify-between px-4 py-2.5 signal-surface-unpaid-subtle text-xs">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-rose-800 dark:text-rose-300">{item.account_code}</span>
-                              <span className="font-semibold text-rose-900 dark:text-rose-100">{item.account_name}</span>
+                              <span className="font-mono-ledger font-bold text-[var(--signal-unpaid)]">{item.account_code}</span>
+                              <span className="font-semibold text-[var(--ledger-ink)]">{item.account_name}</span>
                             </div>
-                            <span className="text-[11px] text-rose-600 dark:text-rose-400 mt-0.5 block">{item.description}</span>
+                            <span className="text-[11px] text-[var(--ledger-muted)] mt-0.5 block">{item.description}</span>
                           </div>
-                          <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums text-sm">
+                          <span className="font-bold text-[var(--signal-unpaid)] tabular-nums text-sm">
                             {formatRupiah(item.nominal)}
                           </span>
                         </div>
@@ -1570,20 +1532,20 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
                       {/* Detail Faktur / Tagihan Belum Lunas */}
                       {accountingData.neraca.detail_hutang.length > 0 ? (
-                        <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800">
-                          <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
-                            Daftar Faktur / Nota Tempo Belum Lunas:
-                          </h4>
-                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        <div>
+                          <div className="px-4 py-2 ledger-recessed-subtle text-[11px] font-bold text-[var(--ledger-muted)]">
+                            Daftar Faktur / Nota Tempo Belum Lunas ({accountingData.neraca.detail_hutang.length})
+                          </div>
+                          <div className="divide-y divide-[color:var(--ledger-hairline)] max-h-60 overflow-y-auto">
                             {accountingData.neraca.detail_hutang.map((h, i) => (
-                              <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-slate-50 dark:bg-slate-800/40">
+                              <div key={i} className="flex items-center justify-between text-xs px-4 py-2 ledger-hover-recessed">
                                 <div>
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">{h.barang}</span>
-                                  <span className="text-[10px] text-slate-400 block">
+                                  <span className="font-medium text-[var(--ledger-ink)]">{h.barang}</span>
+                                  <span className="text-[10px] text-[var(--ledger-muted)] block">
                                     Toko: {h.supplier || "-"} • Jatuh Tempo: {h.tempo || "-"}
                                   </span>
                                 </div>
-                                <span className="font-semibold text-rose-600 tabular-nums">
+                                <span className="font-semibold text-[var(--signal-unpaid)] tabular-nums">
                                   {formatRupiah(h.nominal)}
                                 </span>
                               </div>
@@ -1591,50 +1553,50 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <div className="p-4 text-center text-xs text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg">
-                          <CheckCircle2 className="w-5 h-5 mx-auto mb-1 text-emerald-500" />
+                        <div className="px-4 py-4 text-center text-xs text-[var(--signal-cleared)] font-medium">
+                          <CheckCircle2 className="w-5 h-5 mx-auto mb-1" />
                           Tidak ada hutang belanja atau tempo yang tertunggak pada bulan ini.
                         </div>
                       )}
                     </div>
-                  </Card>
+                  </div>
 
                   {/* Ekuitas (Modal & Laba Berjalan) */}
                   {accountingData.neraca.ekuitas && accountingData.neraca.ekuitas.length > 0 && (
-                    <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                      <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between">
+                    <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Scale className="w-4 h-4 text-blue-600" />
-                          <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                          <Scale className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                             Ekuitas (Modal &amp; Laba Berjalan)
                           </h3>
                         </div>
-                        <span className="font-mono text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
+                        <span className="font-mono-ledger text-xs font-semibold text-blue-700 dark:text-blue-400 tabular-nums">
                           {formatRupiah(accountingData.neraca.subtotal_ekuitas || 0)}
                         </span>
                       </div>
-                      <div className="p-4 space-y-2.5">
+                      <div className="divide-y divide-[color:var(--ledger-hairline)]">
                         {accountingData.neraca.ekuitas.map((item, idx) => (
                           <div
                             key={idx}
-                            className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-xs"
+                            className="flex items-center justify-between px-4 py-2.5 ledger-hover-recessed text-xs transition-colors"
                           >
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-blue-800 dark:text-blue-300">
+                                <span className="font-mono-ledger font-bold text-blue-700 dark:text-blue-400">
                                   {item.account_code}
                                 </span>
-                                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                                <span className="font-semibold text-[var(--ledger-ink)]">
                                   {item.account_name}
                                 </span>
                               </div>
-                              <span className="text-[11px] text-slate-500 mt-0.5 block">
+                              <span className="text-[11px] text-[var(--ledger-muted)] mt-0.5 block">
                                 {item.description}
                               </span>
                             </div>
                             <span
                               className={`font-bold tabular-nums text-sm ${
-                                item.nominal >= 0 ? "text-blue-700 dark:text-blue-300" : "text-rose-600"
+                                item.nominal >= 0 ? "text-blue-700 dark:text-blue-400" : "text-[var(--signal-unpaid)]"
                               }`}
                             >
                               {formatRupiah(item.nominal)}
@@ -1642,11 +1604,11 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                           </div>
                         ))}
                       </div>
-                    </Card>
+                    </div>
                   )}
 
                   {/* Total Kewajiban + Ekuitas (Passiva) */}
-                  <div className="p-4 rounded-xl bg-slate-900 text-white flex items-center justify-between shadow-xs">
+                  <div className="px-4 py-3 rounded-xl bg-slate-900 dark:bg-slate-950 border border-[color:var(--ledger-hairline)] text-white flex items-center justify-between">
                     <div>
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
                         Total Kewajiban &amp; Ekuitas (Passiva)
@@ -1667,181 +1629,173 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
             </div>
           )}
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 3: LAPORAN ARUS KAS (CASH FLOW STATEMENT)
-          ───────────────────────────────────────────────────────────── */}
+          {/* TAB 3: LAPORAN ARUS KAS (CASH FLOW STATEMENT) */}
           {activeSubTab === "arus_kas" && (
-            <div className="space-y-3.5">
-              {/* Ringkasan Arus Kas Masuk vs Keluar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <Card className="border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-xs">
-                  <CardContent className="p-3.5">
-                    <div className="text-xs text-emerald-700 dark:text-emerald-400">Total Kas Masuk (Penjualan Bersih)</div>
-                    <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-1">
-                      +{formatRupiah(accountingData.arus_kas.total_kas_masuk || 0)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <CardContent className="p-3.5">
-                    <div className="text-xs text-slate-500">Total Kas Keluar Riil</div>
-                    <div className="text-lg font-bold text-rose-600 tabular-nums mt-1">
-                      -{formatRupiah(accountingData.arus_kas.total_kas_keluar_riil)}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <CardContent className="p-3.5">
-                    <div className="text-xs text-slate-500">Arus Kas Bersih (Net Cash Flow)</div>
-                    <div className={`text-lg font-bold tabular-nums mt-1 ${
-                      (accountingData.arus_kas.net_cash_flow || 0) >= 0 ? "text-emerald-700" : "text-rose-700"
-                    }`}>
-                      {formatRupiah(accountingData.arus_kas.net_cash_flow || 0)}
-                    </div>
-                  </CardContent>
-                </Card>
+            <div className="space-y-3">
+              {/* Ringkasan Arus Kas Masuk vs Keluar (Single Hairline Strip) */}
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[color:var(--ledger-hairline)]">
+                <div className="px-4 py-3 signal-surface-cleared">
+                  <div className="text-xs font-semibold text-[var(--signal-cleared)]">Total Kas Masuk (Penjualan Bersih)</div>
+                  <div className="text-lg font-bold text-[var(--signal-cleared)] tabular-nums mt-0.5">
+                    +{formatRupiah(accountingData.arus_kas.total_kas_masuk || 0)}
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-xs font-semibold text-[var(--ledger-muted)]">Total Kas Keluar Riil</div>
+                  <div className="text-lg font-bold text-[var(--signal-unpaid)] tabular-nums mt-0.5">
+                    -{formatRupiah(accountingData.arus_kas.total_kas_keluar_riil)}
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-xs font-semibold text-[var(--ledger-muted)]">Arus Kas Bersih (Net Cash Flow)</div>
+                  <div
+                    className={`text-lg font-bold tabular-nums mt-0.5 ${
+                      (accountingData.arus_kas.net_cash_flow || 0) >= 0
+                        ? "text-[var(--signal-cleared)]"
+                        : "text-[var(--signal-unpaid)]"
+                    }`}
+                  >
+                    {formatRupiah(accountingData.arus_kas.net_cash_flow || 0)}
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 3 Aktivitas Arus Kas (Unified 3-Column Hairline Panel) */}
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[color:var(--ledger-hairline)]">
                 {/* 1. Aktivitas Operasi */}
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                <div className="flex flex-col justify-between">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle">
+                    <span className="text-xs font-bold text-[var(--ledger-ink)] block">
                       Aktivitas Operasi
                     </span>
-                    <span className="text-[11px] text-slate-400">Pembayaran HPP, bahan baku & OPEX toko</span>
+                    <span className="text-[11px] text-[var(--ledger-muted)]">Pembayaran HPP, bahan baku &amp; OPEX toko</span>
                   </div>
-                  <CardContent className="p-4 space-y-3">
-                    {accountingData.arus_kas.aktivitas_operasi.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-600 dark:text-slate-300 max-w-[65%]">{item.activity}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          ({formatRupiah(item.nominal)})
-                        </span>
-                      </div>
-                    ))}
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center font-bold text-xs">
-                      <span>Kas Keluar Operasi:</span>
-                      <span className="text-rose-600 tabular-nums">
+                  <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      {accountingData.arus_kas.aktivitas_operasi.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs">
+                          <span className="text-[var(--ledger-muted)] max-w-[65%]">{item.activity}</span>
+                          <span className="font-bold text-[var(--ledger-ink)] tabular-nums">
+                            ({formatRupiah(item.nominal)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-2 border-t border-[color:var(--ledger-hairline)] flex justify-between items-center font-bold text-xs">
+                      <span className="text-[var(--ledger-ink)]">Kas Keluar Operasi:</span>
+                      <span className="text-[var(--signal-unpaid)] tabular-nums">
                         ({formatRupiah(accountingData.arus_kas.subtotal_operasi)})
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
                 {/* 2. Aktivitas Investasi */}
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                <div className="flex flex-col justify-between">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle">
+                    <span className="text-xs font-bold text-[var(--ledger-ink)] block">
                       Aktivitas Investasi
                     </span>
-                    <span className="text-[11px] text-slate-400">Pembelian aset tetap, mesin & peralatan</span>
+                    <span className="text-[11px] text-[var(--ledger-muted)]">Pembelian aset tetap, mesin &amp; peralatan</span>
                   </div>
-                  <CardContent className="p-4 space-y-3">
-                    {accountingData.arus_kas.aktivitas_investasi.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-600 dark:text-slate-300 max-w-[65%]">{item.activity}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          ({formatRupiah(item.nominal)})
-                        </span>
-                      </div>
-                    ))}
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center font-bold text-xs">
-                      <span>Kas Keluar Investasi:</span>
-                      <span className="text-rose-600 tabular-nums">
+                  <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      {accountingData.arus_kas.aktivitas_investasi.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs">
+                          <span className="text-[var(--ledger-muted)] max-w-[65%]">{item.activity}</span>
+                          <span className="font-bold text-[var(--ledger-ink)] tabular-nums">
+                            ({formatRupiah(item.nominal)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-2 border-t border-[color:var(--ledger-hairline)] flex justify-between items-center font-bold text-xs">
+                      <span className="text-[var(--ledger-ink)]">Kas Keluar Investasi:</span>
+                      <span className="text-[var(--signal-unpaid)] tabular-nums">
                         ({formatRupiah(accountingData.arus_kas.subtotal_investasi)})
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
 
                 {/* 3. Aktivitas Kliring / Transfer */}
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                <div className="flex flex-col justify-between">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle">
+                    <span className="text-xs font-bold text-[var(--ledger-ink)] block">
                       Aktivitas Kliring
                     </span>
-                    <span className="text-[11px] text-slate-400">Tukar cash kasir / transfer kliring</span>
+                    <span className="text-[11px] text-[var(--ledger-muted)]">Tukar cash kasir / transfer kliring</span>
                   </div>
-                  <CardContent className="p-4 space-y-3">
-                    {accountingData.arus_kas.aktivitas_kliring.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-slate-600 dark:text-slate-300 max-w-[65%]">{item.activity}</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100 tabular-nums">
-                          ({formatRupiah(item.nominal)})
-                        </span>
-                      </div>
-                    ))}
-                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center font-bold text-xs">
-                      <span>Kas Kliring:</span>
-                      <span className="text-slate-700 dark:text-slate-300 tabular-nums">
+                  <div className="p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      {accountingData.arus_kas.aktivitas_kliring.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs">
+                          <span className="text-[var(--ledger-muted)] max-w-[65%]">{item.activity}</span>
+                          <span className="font-bold text-[var(--ledger-ink)] tabular-nums">
+                            ({formatRupiah(item.nominal)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-2 border-t border-[color:var(--ledger-hairline)] flex justify-between items-center font-bold text-xs">
+                      <span className="text-[var(--ledger-ink)]">Kas Kliring:</span>
+                      <span className="text-[var(--ledger-ink)] tabular-nums">
                         ({formatRupiah(accountingData.arus_kas.subtotal_kliring)})
                       </span>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </div>
 
-              {/* Total Arus Kas Riil & Distribusi Pembayaran */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+              {/* Total Arus Kas Riil & Distribusi Pembayaran (Zero Nested Cards) */}
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="px-4 py-3 border-b border-[color:var(--ledger-hairline)] flex flex-col md:flex-row md:items-center justify-between gap-2">
                   <div>
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    <h4 className="font-bold text-[var(--ledger-ink)] text-sm">
                       Total Pengeluaran Kas Riil (Net Cash Outflow)
                     </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Total dana kas & bank yang keluar dari kasir pada periode {accountingData.month_name} {accountingData.year}
+                    <p className="text-xs text-[var(--ledger-muted)] mt-0.5">
+                      Distribusi realisasi kas keluar berdasarkan metode pembayaran periode {accountingData.month_name} {accountingData.year}
                     </p>
                   </div>
-                  <div className="text-2xl font-black text-rose-600 dark:text-rose-400 tabular-nums">
+                  <div className="text-xl font-extrabold text-[var(--signal-unpaid)] tabular-nums">
                     {formatRupiah(accountingData.arus_kas.total_kas_keluar_riil)}
                   </div>
                 </div>
 
-                {/* Metode Pembayaran Distribution */}
-                <div className="mt-4">
-                  <h5 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-3">
-                    Distribusi Realisasi Berdasarkan Metode Pembayaran:
-                  </h5>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                    {accountingData.arus_kas.metode_bayar_distribution.map((m, idx) => (
-                      <div key={idx} className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
-                        <span className="text-slate-500 font-medium block">{m.metode}</span>
-                        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 block mt-1 tabular-nums">
-                          {formatRupiah(m.nominal)}
-                        </span>
-                        <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full mt-2 overflow-hidden">
-                          <div className="bg-blue-600 h-full rounded-full" style={{ width: `${m.percentage}%` }} />
-                        </div>
-                        <span className="text-[10px] text-slate-400 mt-1 block text-right">{m.percentage}%</span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y lg:divide-y-0 divide-[color:var(--ledger-hairline)]">
+                  {accountingData.arus_kas.metode_bayar_distribution.map((m, idx) => (
+                    <div key={idx} className="px-3.5 py-2.5 text-xs space-y-1">
+                      <div className="flex items-center justify-between text-[var(--ledger-muted)] font-medium">
+                        <span className="truncate">{m.metode}</span>
+                        <span className="text-[10px] font-mono-ledger tabular-nums">{m.percentage}%</span>
                       </div>
-                    ))}
-                  </div>
+                      <span className="text-sm font-bold text-[var(--ledger-ink)] block tabular-nums truncate">
+                        {formatRupiah(m.nominal)}
+                      </span>
+                      <div className="w-full bg-[var(--ledger-recessed)] h-1 rounded-full overflow-hidden">
+                        <div className="bg-blue-600 dark:bg-blue-400 h-full rounded-full" style={{ width: `${m.percentage}%` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </Card>
+              </div>
 
               {/* Rekapitulasi & Tabel Arus Kas Harian (Daily Cashflow) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs overflow-hidden">
-                {/* Header Card dengan Filter Rekening & Tombol Export */}
-                <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col md:flex-row md:items-center justify-between gap-2.5">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
-                        <FileSpreadsheet className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
-                        Buku Kas &amp; Arus Kas Harian (Daily Cashflow)
-                      </h4>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <h4 className="font-bold text-[var(--ledger-ink)] text-sm">
+                      Buku Kas &amp; Arus Kas Harian (Daily Cashflow)
+                    </h4>
+                    <p className="text-xs text-[var(--ledger-muted)] mt-0.5">
                       Rincian mutasi cash in, cash out, dan saldo berjalan per hari periode {accountingData.month_name} {accountingData.year}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* Filter Rekening */}
                     <div className="flex items-center gap-1.5">
-                      <label htmlFor="cashflow-acc-select" className="text-xs text-slate-500 font-medium">Rekening:</label>
+                      <label htmlFor="cashflow-acc-select" className="text-xs text-[var(--ledger-muted)] font-medium">Rekening:</label>
                       <select
                         id="cashflow-acc-select"
                         value={selectedCashflowAccount ?? ""}
@@ -1849,7 +1803,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                           const val = e.target.value;
                           setSelectedCashflowAccount(val ? Number(val) : null);
                         }}
-                        className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                        className="h-8 px-2.5 rounded-lg border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-xs text-[var(--ledger-ink)]"
                       >
                         <option value="">Semua Rekening &amp; Kas</option>
                         {dailyCashflowData?.bank_accounts?.map((acc) => (
@@ -1860,13 +1814,12 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       </select>
                     </div>
 
-                    {/* Tombol Export CSV */}
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleExportCashflowCsv}
                       disabled={isExportingCashflow || isLoadingCashflow || !dailyCashflowData}
-                      className="h-8 gap-1.5 text-xs bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg font-semibold shadow-2xs"
+                      className="h-8 gap-1.5 text-xs border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--signal-cleared)] rounded-lg font-semibold"
                       title="Unduh file CSV Arus Kas Harian"
                     >
                       <Download className={`w-3.5 h-3.5 ${isExportingCashflow ? "animate-spin" : ""}`} />
@@ -1875,46 +1828,44 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </div>
                 </div>
 
-                {/* KPI Strip: Saldo Awal, Total In, Total Out, Saldo Akhir */}
                 {dailyCashflowData && (
-                  <div className="grid grid-cols-2 sm:grid-cols-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 divide-x divide-y sm:divide-y-0 divide-slate-100 dark:divide-slate-800 text-xs">
-                    <div className="p-3">
-                      <span className="text-[11px] text-slate-500 block">Saldo Awal:</span>
-                      <span className="font-bold text-slate-900 dark:text-slate-100 text-sm tabular-nums">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 border-b border-[color:var(--ledger-hairline)] divide-x divide-y sm:divide-y-0 divide-[color:var(--ledger-hairline)] text-xs">
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[11px] text-[var(--ledger-muted)] block">Saldo Awal</span>
+                      <span className="font-bold text-[var(--ledger-ink)] text-sm tabular-nums">
                         {formatRupiah(dailyCashflowData.saldo_awal)}
                       </span>
                     </div>
-                    <div className="p-3">
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block">Total Cash In:</span>
-                      <span className="font-bold text-emerald-700 dark:text-emerald-300 text-sm tabular-nums">
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[11px] text-[var(--signal-cleared)] block">Total Cash In</span>
+                      <span className="font-bold text-[var(--signal-cleared)] text-sm tabular-nums">
                         +{formatRupiah(dailyCashflowData.total_cash_in)}
                       </span>
                     </div>
-                    <div className="p-3">
-                      <span className="text-[11px] text-rose-500 block">Total Cash Out:</span>
-                      <span className="font-bold text-rose-600 dark:text-rose-400 text-sm tabular-nums">
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[11px] text-[var(--signal-unpaid)] block">Total Cash Out</span>
+                      <span className="font-bold text-[var(--signal-unpaid)] text-sm tabular-nums">
                         -{formatRupiah(dailyCashflowData.total_cash_out)}
                       </span>
                     </div>
-                    <div className="p-3">
-                      <span className="text-[11px] text-slate-500 block">Arus Bersih (Net):</span>
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[11px] text-[var(--ledger-muted)] block">Arus Bersih (Net)</span>
                       <span className={`font-bold text-sm tabular-nums ${
-                        dailyCashflowData.net_cash_flow >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                        dailyCashflowData.net_cash_flow >= 0 ? "text-[var(--signal-cleared)]" : "text-[var(--signal-unpaid)]"
                       }`}>
                         {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
                         {formatRupiah(dailyCashflowData.net_cash_flow)}
                       </span>
                     </div>
-                    <div className="p-3 bg-blue-50/40 dark:bg-blue-950/20">
-                      <span className="text-[11px] text-blue-700 dark:text-blue-300 font-semibold block">Saldo Akhir:</span>
-                      <span className="font-black text-blue-900 dark:text-blue-200 text-sm tabular-nums">
+                    <div className="col-span-2 sm:col-span-1 px-3.5 py-2.5 ledger-recessed-band">
+                      <span className="text-[11px] text-[var(--ledger-ink)] font-semibold block">Saldo Akhir</span>
+                      <span className="font-black text-[var(--ledger-ink)] text-sm tabular-nums">
                         {formatRupiah(dailyCashflowData.saldo_akhir)}
                       </span>
                     </div>
                   </div>
                 )}
 
-                {/* Table Content */}
                 <div className="overflow-x-auto">
                   {isLoadingCashflow ? (
                     <div className="p-6 space-y-2">
@@ -1924,13 +1875,16 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       <Skeleton className="h-6 w-full" />
                     </div>
                   ) : isErrorCashflow ? (
-                    <div className="p-8 text-center text-xs text-rose-600">
-                      <AlertCircle className="w-5 h-5 mx-auto mb-1.5" />
-                      Gagal memuat data arus kas harian.
-                      <Button variant="ghost" size="sm" onClick={() => refetchCashflow()} className="mt-2 text-xs">
-                        Coba Lagi
-                      </Button>
-                    </div>
+                    <LedgerStateBlock
+                      variant="error"
+                      title="Gagal memuat data arus kas harian"
+                      description="Periksa koneksi jaringan lalu coba muat ulang."
+                      actions={
+                        <Button variant="outline" size="sm" onClick={() => refetchCashflow()}>
+                          Coba Lagi
+                        </Button>
+                      }
+                    />
                   ) : dailyCashflowData?.daily_rows?.length ? (
                     <DataTable
                       columns={dailyCashflowColumns}
@@ -1939,96 +1893,100 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                       defaultPageSize={10}
                       tableLayout={{ columnsResizable: false, width: "auto" }}
                       containerClassName="border-0 rounded-none shadow-none"
+                      footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
                     >
-                      <div className="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-900 dark:text-slate-100">
+                      <div className="border-t border-[color:var(--ledger-hairline)] ledger-recessed-band px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-[var(--ledger-ink)]">
                         <span>TOTAL &amp; SALDO AKHIR</span>
                         <div className="flex flex-wrap items-center gap-4 tabular-nums">
-                          <span className="text-emerald-700 dark:text-emerald-400">
+                          <span className="text-[var(--signal-cleared)]">
                             Masuk: +{formatRupiah(dailyCashflowData.total_cash_in)}
                           </span>
-                          <span className="text-rose-600 dark:text-rose-400">
+                          <span className="text-[var(--signal-unpaid)]">
                             Keluar: -{formatRupiah(dailyCashflowData.total_cash_out)}
                           </span>
                           <span
                             className={
                               dailyCashflowData.net_cash_flow >= 0
-                                ? "text-emerald-700 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
+                                ? "text-[var(--signal-cleared)]"
+                                : "text-[var(--signal-unpaid)]"
                             }
                           >
                             Net: {dailyCashflowData.net_cash_flow >= 0 ? "+" : ""}
                             {formatRupiah(dailyCashflowData.net_cash_flow)}
                           </span>
-                          <span className="text-blue-900 dark:text-blue-200 text-sm">
+                          <span className="text-[var(--ledger-ink)] text-sm">
                             Saldo: {formatRupiah(dailyCashflowData.saldo_akhir)}
                           </span>
-                          <span className="text-[11px] font-medium text-slate-500">
+                          <span className="text-[11px] font-medium text-[var(--ledger-muted)]">
                             ({dailyCashflowData.total_tx_in + dailyCashflowData.total_tx_out} tx)
                           </span>
                         </div>
                       </div>
                     </DataTable>
                   ) : (
-                    <div className="p-8 text-center text-xs text-slate-500">
-                      Tidak ada data arus kas untuk periode ini.
-                    </div>
+                    <LedgerStateBlock
+                      variant="empty"
+                      icon={<FileSpreadsheet className="w-7 h-7" />}
+                      title="Tidak ada data arus kas untuk periode ini"
+                      description="Transaksi masuk maupun keluar pada periode terpilih akan ditampilkan di sini."
+                    />
                   )}
                 </div>
-              </Card>
+              </div>
             </div>
           )}
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 4: ANALISIS & RASIO FINANSIAL (HEALTH & RATIOS)
-          ───────────────────────────────────────────────────────────── */}
+          {/* TAB 4: ANALISIS & RASIO FINANSIAL (HEALTH & RATIOS) */}
           {activeSubTab === "analisis" && (
-            <div className="space-y-3.5">
-              {/* Evaluasi Kesehatan Finansial (4 Cards) */}
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-blue-600" />
-                  Evaluasi Kesehatan Beban & Rasio Operasional (Target vs Realisasi)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-3">
+              {/* Evaluasi Kesehatan Finansial (Unified 4-Column Hairline Strip) */}
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-sm font-bold text-[var(--ledger-ink)]">
+                    Evaluasi Kesehatan Beban &amp; Rasio Operasional (Target vs Realisasi)
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 lg:divide-x divide-[color:var(--ledger-hairline)]">
                   {accountingData.analisis.health_evaluation.map((evalItem) => {
-                    const statusColor =
+                    const accentSurface =
                       evalItem.status === "healthy"
-                        ? "border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-200"
+                        ? "signal-surface-cleared"
                         : evalItem.status === "warning"
-                        ? "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200"
+                        ? "signal-surface-dp"
                         : evalItem.status === "danger"
-                        ? "border-rose-200 bg-rose-50/50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-200"
-                        : "border-slate-200 bg-slate-50/50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300";
+                        ? "signal-surface-unpaid"
+                        : "";
 
                     const badgeColor =
                       evalItem.status === "healthy"
-                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60"
+                        ? "bg-[var(--signal-cleared-soft)] text-[var(--signal-cleared)]"
                         : evalItem.status === "warning"
-                        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/60"
+                        ? "bg-[var(--signal-dp-soft)] text-[var(--signal-dp)]"
                         : evalItem.status === "danger"
-                        ? "bg-rose-100 text-rose-700 dark:bg-rose-900/60"
-                        : "bg-slate-100 text-slate-600 dark:bg-slate-800";
+                        ? "bg-[var(--signal-unpaid-soft)] text-[var(--signal-unpaid)]"
+                        : "bg-[var(--ledger-recessed)] text-[var(--ledger-muted)]";
 
                     return (
-                      <Card key={evalItem.key} className={`border ${statusColor} shadow-xs`}>
-                        <CardContent className="p-3.5">
+                      <div key={evalItem.key} className={`p-3.5 flex flex-col justify-between gap-2 ${accentSurface}`}>
+                        <div className="space-y-1.5">
                           <div className="flex items-start justify-between gap-2">
-                            <span className="text-xs font-bold leading-tight">{evalItem.title}</span>
-                            <Badge className={`text-[10px] uppercase font-bold ${badgeColor} border-0`}>
+                            <span className="text-xs font-bold leading-tight text-[var(--ledger-ink)]">{evalItem.title}</span>
+                            <Badge className={`text-[10px] uppercase font-bold ${badgeColor} border-0 shrink-0`}>
                               {evalItem.status}
                             </Badge>
                           </div>
-                          <div className="text-xl font-black mt-2 tabular-nums">
+                          <div className="text-xl font-black text-[var(--ledger-ink)] tabular-nums">
                             {evalItem.value}
                           </div>
-                          <div className="text-[11px] opacity-75 mt-0.5">
-                            Target Ideal: <strong>{evalItem.ideal_range}</strong>
+                          <div className="text-[11px] text-[var(--ledger-muted)]">
+                            Target Ideal: <strong className="text-[var(--ledger-ink)]">{evalItem.ideal_range}</strong>
                           </div>
-                          <p className="text-xs mt-2.5 leading-relaxed border-t border-black/5 dark:border-white/5 pt-2">
-                            {evalItem.note}
-                          </p>
-                        </CardContent>
-                      </Card>
+                        </div>
+                        <p className="text-xs leading-relaxed text-[var(--ledger-muted)] border-t border-[color:var(--ledger-hairline)] pt-2">
+                          {evalItem.note}
+                        </p>
+                      </div>
                     );
                   })}
                 </div>
@@ -2036,50 +1994,50 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
               {/* Analisis Variansi HPP Teoritis (Resep) vs HPP Aktual (Belanja) */}
               {accountingData.analisis.hpp_variance && (
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                      <h4 className="font-bold text-[var(--ledger-ink)] text-sm">
                         Variansi HPP Teoritis (Resep Menu) vs HPP Aktual (Belanja Bahan &amp; Kemasan)
                       </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-[var(--ledger-muted)] mt-0.5">
                         Membandingkan biaya resep dari kuantitas produk terjual terhadap realisasi belanja bahan baku pada periode ini
                       </p>
                     </div>
                     <Badge
                       variant="outline"
-                      className={`text-[10px] font-semibold ${
+                      className={`text-[10px] font-semibold shrink-0 ${
                         accountingData.analisis.hpp_variance.status === "aligned"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                          ? "bg-[var(--signal-cleared-soft)] text-[var(--signal-cleared)] border-emerald-300 dark:border-emerald-800"
                           : accountingData.analisis.hpp_variance.status === "surplus_purchase"
-                          ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                          : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
+                          ? "bg-[var(--signal-dp-soft)] text-[var(--signal-dp)] border-amber-300 dark:border-amber-800"
+                          : "bg-[var(--ledger-recessed)] text-[var(--ledger-muted)] border-[color:var(--ledger-hairline)]"
                       }`}
                     >
                       {accountingData.analisis.hpp_variance.matched_menu_count} menu cocok ({accountingData.analisis.hpp_variance.matched_qty_total} unit terjual)
                     </Badge>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                      <span className="text-[11px] text-slate-500 block">HPP Teoritis (Standar Resep)</span>
-                      <span className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 block">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[color:var(--ledger-hairline)]">
+                    <div className="px-4 py-3">
+                      <span className="text-[11px] font-semibold text-[var(--ledger-muted)] block">HPP Teoritis (Standar Resep)</span>
+                      <span className="text-base font-bold text-[var(--ledger-ink)] tabular-nums mt-0.5 block">
                         {formatRupiah(accountingData.analisis.hpp_variance.theoretical_hpp)}
                       </span>
                     </div>
-                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                      <span className="text-[11px] text-slate-500 block">HPP Aktual (Belanja Periode Ini)</span>
-                      <span className="text-base font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-0.5 block">
+                    <div className="px-4 py-3">
+                      <span className="text-[11px] font-semibold text-[var(--ledger-muted)] block">HPP Aktual (Belanja Periode Ini)</span>
+                      <span className="text-base font-bold text-[var(--ledger-ink)] tabular-nums mt-0.5 block">
                         {formatRupiah(accountingData.analisis.hpp_variance.actual_hpp)}
                       </span>
                     </div>
-                    <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                      <span className="text-[11px] text-slate-500 block">Selisih (Aktual - Teoritis)</span>
+                    <div className="px-4 py-3">
+                      <span className="text-[11px] font-semibold text-[var(--ledger-muted)] block">Selisih (Aktual - Teoritis)</span>
                       <span
                         className={`text-base font-bold tabular-nums mt-0.5 block ${
                           accountingData.analisis.hpp_variance.variance_nominal > 0
-                            ? "text-amber-700 dark:text-amber-400"
-                            : "text-emerald-700 dark:text-emerald-400"
+                            ? "text-[var(--signal-dp)]"
+                            : "text-[var(--signal-cleared)]"
                         }`}
                       >
                         {accountingData.analisis.hpp_variance.variance_nominal > 0 ? "+" : ""}
@@ -2094,26 +2052,24 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200/70 dark:border-slate-800">
+                  <p className="text-xs text-[var(--ledger-muted)] border-t border-[color:var(--ledger-hairline)] ledger-recessed-subtle px-4 py-2.5">
                     {accountingData.analisis.hpp_variance.note}
                   </p>
-                </Card>
+                </div>
               )}
 
               {/* Struktur Biaya Operasional (Cost Breakdown) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                  <div>
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-0.5">
-                      Struktur Biaya Komprehensif (% terhadap Omset Bersih &amp; Total Beban Usaha)
-                    </h4>
-                    <p className="text-xs text-slate-500">
-                      Proporsi setiap komponen biaya terhadap pendapatan bersih (omset) dan terhadap total belanja operasional
-                    </p>
-                  </div>
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle">
+                  <h4 className="font-bold text-[var(--ledger-ink)] text-sm">
+                    Struktur Biaya Komprehensif (% terhadap Omset Bersih &amp; Total Beban Usaha)
+                  </h4>
+                  <p className="text-xs text-[var(--ledger-muted)] mt-0.5">
+                    Proporsi setiap komponen biaya terhadap pendapatan bersih (omset) dan terhadap total belanja operasional
+                  </p>
                 </div>
 
-                <div className="space-y-3.5">
+                <div className="p-4 space-y-3">
                   {[
                     {
                       label: "Bahan Baku (Bahan Kue & Minuman)",
@@ -2160,159 +2116,160 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   ].map((cost, idx) => (
                     <div key={idx}>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{cost.label}</span>
+                        <span className="font-medium text-[var(--ledger-ink)]">{cost.label}</span>
                         <div className="flex items-center gap-3 tabular-nums">
                           {cost.revPct != null && (
                             <span className="font-semibold text-blue-700 dark:text-blue-400">
                               {cost.revPct}% omset
                             </span>
                           )}
-                          <span className="font-bold text-slate-900 dark:text-slate-100">
+                          <span className="font-bold text-[var(--ledger-ink)]">
                             {cost.pct}% beban
                           </span>
                         </div>
                       </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                      <div className="w-full bg-[var(--ledger-recessed)] h-1.5 rounded-full overflow-hidden">
                         <div className={`${cost.color} h-full rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, cost.pct)}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
-              </Card>
+              </div>
 
               {/* Analisis Variansi MoM (Lonjakan vs Efisiensi) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {/* Kenaikan Biaya Terbesar */}
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-rose-600" />
-                    <h4 className="font-bold text-xs text-rose-900 dark:text-rose-200 uppercase tracking-wider">
+                <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] signal-surface-unpaid-subtle flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-[var(--signal-unpaid)]" />
+                    <h4 className="font-bold text-xs text-[var(--signal-unpaid)] uppercase tracking-wider">
                       Akun dengan Lonjakan Biaya Terbesar (MoM)
                     </h4>
                   </div>
-                  <div className="p-4 space-y-2.5">
+                  <div className="divide-y divide-[color:var(--ledger-hairline)]">
                     {accountingData.analisis.top_variances_mom.top_increases.length > 0 ? (
                       accountingData.analisis.top_variances_mom.top_increases.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 dark:bg-slate-800/40">
+                        <div key={idx} className="flex justify-between items-center text-xs px-4 py-2.5 ledger-hover-recessed">
                           <div>
-                            <span className="font-bold text-slate-900 dark:text-slate-100">{item.account_name}</span>
-                            <span className="text-[10px] text-slate-400 block">{item.account_code} • {item.category}</span>
+                            <span className="font-bold text-[var(--ledger-ink)]">{item.account_name}</span>
+                            <span className="text-[10px] text-[var(--ledger-muted)] block">{item.account_code} • {item.category}</span>
                           </div>
-                          <div className="text-right">
-                            <span className="font-bold text-rose-600 block tabular-nums">
+                          <div className="text-right tabular-nums">
+                            <span className="font-bold text-[var(--signal-unpaid)] block">
                               +{formatRupiah(item.diff_nominal)}
                             </span>
-                            <span className="text-[10px] text-rose-500 font-semibold">
+                            <span className="text-[10px] text-[var(--signal-unpaid)] font-semibold">
                               {item.mom_change_pct ? `+${item.mom_change_pct}%` : "Baru"}
                             </span>
                           </div>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-slate-400 text-center py-4">Tidak ada lonjakan biaya signifikan.</p>
+                      <p className="text-xs text-[var(--ledger-muted)] text-center py-6">Tidak ada lonjakan biaya signifikan.</p>
                     )}
                   </div>
-                </Card>
+                </div>
 
                 {/* Penghematan Biaya Terbesar */}
-                <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
-                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center gap-2">
-                    <TrendingDown className="w-4 h-4 text-emerald-600" />
-                    <h4 className="font-bold text-xs text-emerald-900 dark:text-emerald-200 uppercase tracking-wider">
+                <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] signal-surface-cleared flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4 text-[var(--signal-cleared)]" />
+                    <h4 className="font-bold text-xs text-[var(--signal-cleared)] uppercase tracking-wider">
                       Akun dengan Efisiensi / Penurunan Terbesar (MoM)
                     </h4>
                   </div>
-                  <div className="p-4 space-y-2.5">
+                  <div className="divide-y divide-[color:var(--ledger-hairline)]">
                     {accountingData.analisis.top_variances_mom.top_savings.length > 0 ? (
                       accountingData.analisis.top_variances_mom.top_savings.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-2 rounded bg-slate-50 dark:bg-slate-800/40">
+                        <div key={idx} className="flex justify-between items-center text-xs px-4 py-2.5 ledger-hover-recessed">
                           <div>
-                            <span className="font-bold text-slate-900 dark:text-slate-100">{item.account_name}</span>
-                            <span className="text-[10px] text-slate-400 block">{item.account_code} • {item.category}</span>
+                            <span className="font-bold text-[var(--ledger-ink)]">{item.account_name}</span>
+                            <span className="text-[10px] text-[var(--ledger-muted)] block">{item.account_code} • {item.category}</span>
                           </div>
-                          <div className="text-right">
-                            <span className="font-bold text-emerald-600 block tabular-nums">
+                          <div className="text-right tabular-nums">
+                            <span className="font-bold text-[var(--signal-cleared)] block">
                               {formatRupiah(item.diff_nominal)}
                             </span>
-                            <span className="text-[10px] text-emerald-500 font-semibold">
+                            <span className="text-[10px] text-[var(--signal-cleared)] font-semibold">
                               {item.mom_change_pct}%
                             </span>
                           </div>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-slate-400 text-center py-4">Belum ada penghematan yang tercatat.</p>
+                      <p className="text-xs text-[var(--ledger-muted)] text-center py-6">Belum ada penghematan yang tercatat.</p>
                     )}
                   </div>
-                </Card>
+                </div>
               </div>
             </div>
           )}
 
-          {/* ─────────────────────────────────────────────────────────────
-              TAB 5: BUKU BESAR & RINCIAN AKUN (GENERAL LEDGER DRILL-DOWN)
-          ───────────────────────────────────────────────────────────── */}
+          {/* TAB 5: BUKU BESAR & RINCIAN AKUN (GENERAL LEDGER DRILL-DOWN) */}
           {activeSubTab === "buku_besar" && (
-            <div className="space-y-3.5">
+            <div className="space-y-3">
               {/* Ringkasan Akun Kas (1-11xx) & Pendapatan (4-xxxx) */}
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-3">
-                  Ringkasan Akun Kas/Bank (1-11xx) &amp; Pendapatan (4-xxxx)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                  <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                    <span className="font-mono font-bold text-emerald-700">4-1100</span>
-                    <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle">
+                  <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
+                    Ringkasan Akun Kas/Bank (1-11xx) &amp; Pendapatan (4-xxxx)
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 lg:divide-x divide-[color:var(--ledger-hairline)] text-xs">
+                  <div className="px-4 py-3 signal-surface-cleared">
+                    <span className="font-mono-ledger font-bold text-[var(--signal-cleared)]">4-1100</span>
+                    <div className="font-semibold text-[var(--ledger-ink)] mt-0.5">
                       Pendapatan Penjualan Kotor
                     </div>
-                    <div className="text-sm font-bold text-emerald-700 tabular-nums mt-1">
+                    <div className="text-base font-bold text-[var(--signal-cleared)] tabular-nums mt-1">
                       {formatRupiah(accountingData.laba_rugi.revenue_gross || 0)}
                     </div>
                   </div>
-                  <div className="p-3 rounded-lg border border-rose-200 bg-rose-50/40 dark:border-rose-900/50 dark:bg-rose-950/20">
-                    <span className="font-mono font-bold text-rose-700">4-1200</span>
-                    <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5">
+                  <div className="px-4 py-3 signal-surface-unpaid-subtle">
+                    <span className="font-mono-ledger font-bold text-[var(--signal-unpaid)]">4-1200</span>
+                    <div className="font-semibold text-[var(--ledger-ink)] mt-0.5">
                       Diskon &amp; Komisi Platform
                     </div>
-                    <div className="text-sm font-bold text-rose-700 tabular-nums mt-1">
+                    <div className="text-base font-bold text-[var(--signal-unpaid)] tabular-nums mt-1">
                       -{formatRupiah((accountingData.laba_rugi.revenue_discount || 0) + (accountingData.laba_rugi.revenue_platform_fee || 0))}
                     </div>
                   </div>
                   {(accountingData.neraca.rekening_positions || []).slice(0, 2).map((rek) => (
                     <div
                       key={rek.id}
-                      className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30"
+                      className="px-4 py-3"
                     >
-                      <span className="font-mono font-bold text-blue-700">{rek.account_code}</span>
-                      <div className="font-semibold text-slate-900 dark:text-slate-100 mt-0.5 truncate">
+                      <span className="font-mono-ledger font-bold text-blue-700 dark:text-blue-400">{rek.account_code}</span>
+                      <div className="font-semibold text-[var(--ledger-ink)] mt-0.5 truncate">
                         {rek.name}
                       </div>
-                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums mt-1">
+                      <div className="text-base font-bold text-[var(--ledger-ink)] tabular-nums mt-1">
                         {formatRupiah(rek.estimated_balance)}
                       </div>
                     </div>
                   ))}
                 </div>
-              </Card>
+              </div>
 
-              <Card className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs p-3.5 sm:p-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
+                <div className="p-3.5 sm:px-4 sm:py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[color:var(--ledger-hairline)]">
                   <div>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    <h3 className="font-bold text-[var(--ledger-ink)] text-sm">
                       Buku Besar Akun (General Ledger Drill-Down)
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-[var(--ledger-muted)] mt-0.5">
                       Pilih akun akuntansi untuk memeriksa seluruh rincian transaksi belanja riil yang membentuk saldo akun tersebut.
                     </p>
                   </div>
 
                   {/* Account Selector */}
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Pilih Akun:</span>
+                    <span className="text-xs font-semibold text-[var(--ledger-muted)] shrink-0">Pilih Akun:</span>
                     <select
                       value={selectedLedgerAccount}
                       onChange={(e) => setSelectedLedgerAccount(e.target.value)}
-                      className="text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-1.5 px-3 focus:outline-hidden cursor-pointer"
+                      aria-label="Pilih akun buku besar"
+                      className="h-9 text-xs font-semibold bg-[var(--ledger-surface)] text-[var(--ledger-ink)] border border-[color:var(--ledger-hairline)] rounded-lg px-3 focus:outline-hidden cursor-pointer max-w-full"
                     >
                       {accountingData.all_accounts.map((acc) => (
                         <option key={acc.account_code} value={acc.account_code}>
@@ -2323,29 +2280,29 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   </div>
                 </div>
 
-                {/* Account Detail Summary Header */}
+                {/* Account Detail Summary Band */}
                 {selectedAccountInfo && (
-                  <div className="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="px-4 py-3 border-b border-[color:var(--ledger-hairline)] ledger-recessed-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 px-2 py-0.5 rounded">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono-ledger text-xs font-bold bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 px-2 py-0.5 rounded">
                           {selectedAccountInfo.account_code}
                         </span>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        <h4 className="text-sm font-bold text-[var(--ledger-ink)]">
                           {selectedAccountInfo.account_name}
                         </h4>
                         <Badge variant="outline" className="text-[10px]">
                           {selectedAccountInfo.account_group}
                         </Badge>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Kategori Terhubung: <strong>{selectedAccountInfo.category}</strong> • {selectedAccountInfo.description}
+                      <p className="text-xs text-[var(--ledger-muted)] mt-1">
+                        Kategori Terhubung: <strong className="text-[var(--ledger-ink)]">{selectedAccountInfo.category}</strong> • {selectedAccountInfo.description}
                       </p>
                     </div>
 
-                    <div className="text-right">
-                      <span className="text-xs text-slate-500 block">Total Saldo Periode:</span>
-                      <span className="text-xl font-black text-slate-900 dark:text-slate-100 tabular-nums">
+                    <div className="sm:text-right">
+                      <span className="text-xs text-[var(--ledger-muted)] block">Total Saldo Periode</span>
+                      <span className="text-xl font-black text-[var(--ledger-ink)] tabular-nums">
                         {formatRupiah(selectedAccountInfo.total)}
                       </span>
                     </div>
@@ -2353,41 +2310,42 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                 )}
 
                 {/* Search in Ledger */}
-                <div className="mt-4 flex items-center justify-between gap-3">
+                <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] flex items-center justify-between gap-3">
                   <div className="relative flex-1 max-w-sm">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
                     <input
                       type="text"
                       placeholder="Cari transaksi, supplier, catatan..."
                       value={ledgerSearch}
                       onChange={(e) => setLedgerSearch(e.target.value)}
-                      className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-hidden focus:border-blue-500"
+                      className="w-full h-9 text-xs pl-8 pr-3 rounded-lg bg-[var(--ledger-surface)] text-[var(--ledger-ink)] border border-[color:var(--ledger-hairline)] focus:outline-hidden focus:ring-1 focus:ring-ring"
                     />
                   </div>
-                  <span className="text-xs text-slate-500 tabular-nums">
-                    Menampilkan <strong>{filteredLedgerExpenses.length}</strong> transaksi
+                  <span className="text-xs text-[var(--ledger-muted)] tabular-nums">
+                    Menampilkan <strong className="text-[var(--ledger-ink)]">{filteredLedgerExpenses.length}</strong> transaksi
                   </span>
                 </div>
 
                 {/* Ledger Transactions Table */}
-                <div className="mt-3">
-                  <DataTable
-                    columns={ledgerColumns}
-                    data={filteredLedgerExpenses}
-                    getRowId={(exp) => String(exp.id)}
-                    isLoading={isLoadingLedger}
-                    defaultPageSize={10}
-                    tableLayout={{ columnsResizable: false, width: "auto" }}
-                    containerClassName="rounded-lg"
-                    emptyState={
-                      <div className="py-8 text-center text-slate-400 text-xs">
-                        Tidak ada transaksi untuk akun ini pada periode{" "}
-                        {accountingData.month_name} {accountingData.year}.
-                      </div>
-                    }
-                  />
-                </div>
-              </Card>
+                <DataTable
+                  columns={ledgerColumns}
+                  data={filteredLedgerExpenses}
+                  getRowId={(exp) => String(exp.id)}
+                  isLoading={isLoadingLedger}
+                  defaultPageSize={10}
+                  tableLayout={{ columnsResizable: false, width: "auto" }}
+                  containerClassName="border-0 rounded-none shadow-none"
+                  footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
+                  emptyState={
+                    <LedgerStateBlock
+                      variant="empty"
+                      icon={<Receipt className="w-7 h-7" />}
+                      title="Tidak ada transaksi untuk akun ini"
+                      description={`Belum ada transaksi pada periode ${accountingData.month_name} ${accountingData.year} untuk akun terpilih.`}
+                    />
+                  }
+                />
+              </div>
             </div>
           )}
         </>

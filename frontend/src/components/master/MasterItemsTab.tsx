@@ -33,6 +33,10 @@ import {
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
 import {
+  LedgerMetricStrip,
+  LedgerStateBlock,
+} from "@/components/common/LedgerPrimitives";
+import {
   dataGridFeatures,
   type DataGridFeatures,
 } from "@/components/reui/data-grid/data-grid";
@@ -1211,119 +1215,147 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* ── Bento Metrics Strip (Living Overview) ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        {/* Card 1: Total Catalog */}
-        <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-medium">Total Item Baku</span>
-            <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <PackageCheck className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {bentoStats.total}
-            </span>
-            <span className="text-[11px] text-slate-400">
-              di {bentoStats.categoriesCount} kategori
-            </span>
-          </div>
-        </div>
-
-        {/* Card 2: Kelengkapan Resep (Interactive Pill) */}
-        <button
-          type="button"
-          onClick={() => {
-            setFilterRecipeStatus((prev) => (prev === "configured" ? "" : "configured"));
-          }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterRecipeStatus === "configured"
-              ? "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-xs ring-2 ring-emerald-500/20"
-              : "bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-emerald-200 shadow-2xs"
-          }`}
-          title="Klik untuk filter: Item sudah diatur satuan resep"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-              Resep Terkonfigurasi
-            </span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <Scale className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-bold tracking-tight text-emerald-800 dark:text-emerald-300 tabular-nums">
-              {bentoStats.configuredCount}
-            </span>
-            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-              ({bentoStats.configuredPct}%)
-            </span>
-          </div>
-        </button>
-
-        {/* Card 3: Perlu Dilengkapi (Interactive Alert Pill) */}
-        <button
-          type="button"
-          onClick={() => {
-            setFilterRecipeStatus((prev) => (prev === "unconfigured" ? "" : "unconfigured"));
-          }}
-          className={`p-3.5 rounded-2xl border text-left transition-all ${
-            filterRecipeStatus === "unconfigured"
-              ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 shadow-xs ring-2 ring-amber-500/20"
-              : "bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 hover:border-amber-200 shadow-2xs"
-          }`}
-          title="Klik untuk filter: Item belum punya satuan resep"
-        >
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
-              Belum Diatur Resep
-            </span>
-            <div className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <AlertTriangle className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-bold tracking-tight text-amber-900 dark:text-amber-300 tabular-nums">
-              {bentoStats.unconfiguredCount}
-            </span>
-            <span className="text-[11px] text-amber-600 dark:text-amber-400">
-              perlu dikonversi
-            </span>
-          </div>
-        </button>
-
-        {/* Card 4: Aktif Digunakan Transaksi */}
-        <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500">
-            <span className="text-[11px] font-medium">Aktif di Transaksi</span>
-            <div className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <Receipt className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 tabular-nums">
-              {bentoStats.activeInTxCount}
-            </span>
-            <span className="text-[11px] text-slate-400">
-              pernah dibeli di struk
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {masterItems.length} Master Item
-          </Badge>
-          <span className="text-xs text-slate-500 hidden sm:inline">
-            Standarisasi nama item untuk pencocokan otomatis transaksi
-          </span>
+      {/* 1. Editorial Header Strip */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+        <div className="space-y-0.5 min-w-0">
+          <h2 className="text-lg font-bold tracking-tight text-[var(--ledger-ink)]">
+            Katalog Master Item &amp; Satuan Baku
+          </h2>
+          <p className="text-xs text-[var(--ledger-muted)] tabular-nums">
+            {bentoStats.total} master item di {bentoStats.categoriesCount} kategori • Standarisasi nama &amp; konversi satuan resep
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+          {canDelete && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
+                  >
+                    <DatabaseZap className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Alat &amp; Audit</span>
+                    <ChevronDown className="w-3 h-3 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 rounded-xl border border-[color:var(--ledger-hairline)] p-1.5 shadow-lg bg-[var(--ledger-surface)] text-[var(--ledger-ink)]">
+                  <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
+                    Pemeliharaan &amp; Deteksi
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    disabled={importHistoryMutation.isPending}
+                    onClick={() => importHistoryMutation.mutate()}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <DatabaseZap className="w-3.5 h-3.5 text-blue-500" />
+                    <div>
+                      <div className="font-medium">
+                        {importHistoryMutation.isPending ? "Menarik data..." : "Tarik dari Histori Transaksi"}
+                      </div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">Ekstrak item dari struk belanja lama</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setShowAuditModal(true);
+                      refetchAudit();
+                    }}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <SearchCheck className="w-3.5 h-3.5 text-amber-500" />
+                    <div>
+                      <div className="font-medium">Audit Item Duplikat</div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">Deteksi kesamaan &amp; gabungkan item</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={autoFillRecipeMutation.isPending || masterItems.length === 0}
+                    onClick={() => autoFillRecipeMutation.mutate()}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <div>
+                      <div className="font-medium">
+                        {autoFillRecipeMutation.isPending
+                          ? "Mengisi satuan resep..."
+                          : "Auto-Isi Satuan Resep"}
+                      </div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">Turunkan satuan terkecil dari satuan beli</div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
+                  >
+                    <Table2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Import &amp; Masal</span>
+                    <ChevronDown className="w-3 h-3 opacity-80" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-60 rounded-xl border border-[color:var(--ledger-hairline)] p-1.5 shadow-lg bg-[var(--ledger-surface)] text-[var(--ledger-ink)]">
+                  <DropdownMenuLabel className="text-[11px] font-semibold text-[var(--ledger-muted)] px-2 py-1">
+                    Pilihan Input Massal
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => setIsBulkFormOpen(true)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                    <div>
+                      <div className="font-medium">Form Input Masal</div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">Input spreadsheet interaktif</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setIsCsvImportOpen(true)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                    <div>
+                      <div className="font-medium">Import dari CSV</div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">Upload template file CSV</div>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1 border-[color:var(--ledger-hairline)]" />
+                  <DropdownMenuItem
+                    onClick={() => setShowBulkBox((v) => !v)}
+                    className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    <div>
+                      <div className="font-medium">
+                        {showBulkBox ? "Tutup Form Paste" : "Paste Teks Sekaligus"}
+                      </div>
+                      <div className="text-[10px] text-[var(--ledger-muted)]">1 baris = 1 item nama baku</div>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={syncExistingMutation.isPending || masterItems.length === 0}
+                onClick={() => syncExistingMutation.mutate()}
+                className="h-8 rounded-lg text-xs font-semibold gap-1.5 border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] text-[var(--ledger-ink)]"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
+                />
+                <span className="hidden sm:inline">Cocokkan ({masterItems.length})</span>
+              </Button>
+            </>
+          )}
+
           {canEdit && (
             <Button
               size="sm"
@@ -1338,146 +1370,82 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 setKonversiResep(nextHint ? nextHint.factor : "");
                 setIsAddDialogOpen(true);
               }}
-              className="h-8 rounded-xl text-xs font-semibold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+              className="h-8 rounded-lg text-xs font-semibold gap-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 ledger-press"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Tambah Item</span>
             </Button>
           )}
-
-          {canDelete && (
-            <>
-            {/* Dropdown: Alat & Audit */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
-                >
-                  <DatabaseZap className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Alat &amp; Audit</span>
-                  <ChevronDown className="w-3 h-3 opacity-80" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
-                <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
-                  Pemeliharaan &amp; Deteksi
-                </DropdownMenuLabel>
-                <DropdownMenuItem
-                  disabled={importHistoryMutation.isPending}
-                  onClick={() => importHistoryMutation.mutate()}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <DatabaseZap className="w-3.5 h-3.5 text-blue-500" />
-                  <div>
-                    <div className="font-medium">
-                      {importHistoryMutation.isPending ? "Menarik data..." : "Tarik dari Histori Transaksi"}
-                    </div>
-                    <div className="text-[10px] text-slate-400">Ekstrak item dari struk belanja lama</div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    setShowAuditModal(true);
-                    refetchAudit();
-                  }}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <SearchCheck className="w-3.5 h-3.5 text-amber-500" />
-                  <div>
-                    <div className="font-medium">Audit Item Duplikat</div>
-                    <div className="text-[10px] text-slate-400">Deteksi kesamaan &amp; gabungkan item</div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={autoFillRecipeMutation.isPending || masterItems.length === 0}
-                  onClick={() => autoFillRecipeMutation.mutate()}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                  <div>
-                    <div className="font-medium">
-                      {autoFillRecipeMutation.isPending
-                        ? "Mengisi satuan resep..."
-                        : "Auto-Isi Satuan Resep"}
-                    </div>
-                    <div className="text-[10px] text-slate-400">Turunkan satuan terkecil dari satuan beli</div>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Dropdown: Input & Import Masal */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
-                >
-                  <Table2 className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Import &amp; Masal</span>
-                  <ChevronDown className="w-3 h-3 opacity-80" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60 rounded-xl border border-slate-200 dark:border-slate-800 p-1.5 shadow-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
-                <DropdownMenuLabel className="text-[11px] font-semibold text-slate-400 px-2 py-1">
-                  Pilihan Input Massal
-                </DropdownMenuLabel>
-                <DropdownMenuItem
-                  onClick={() => setIsBulkFormOpen(true)}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <Table2 className="w-3.5 h-3.5 text-blue-500" />
-                  <div>
-                    <div className="font-medium">Form Input Masal</div>
-                    <div className="text-[10px] text-slate-400">Input spreadsheet interaktif</div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setIsCsvImportOpen(true)}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
-                  <div>
-                    <div className="font-medium">Import dari CSV</div>
-                    <div className="text-[10px] text-slate-400">Upload template file CSV</div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="my-1 border-slate-100 dark:border-slate-800" />
-                <DropdownMenuItem
-                  onClick={() => setShowBulkBox((v) => !v)}
-                  className="text-xs gap-2 py-2 cursor-pointer rounded-lg"
-                >
-                  <FileText className="w-3.5 h-3.5 text-amber-500" />
-                  <div>
-                    <div className="font-medium">
-                      {showBulkBox ? "Tutup Form Paste" : "Paste Teks Sekaligus"}
-                    </div>
-                    <div className="text-[10px] text-slate-400">1 baris = 1 item nama baku</div>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {/* Cocokkan Data Lama */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={syncExistingMutation.isPending || masterItems.length === 0}
-              onClick={() => syncExistingMutation.mutate()}
-              className="h-8 rounded-xl text-xs font-semibold gap-1.5 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 shadow-2xs"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${syncExistingMutation.isPending ? "animate-spin" : ""}`}
-              />
-              <span className="hidden sm:inline">Cocokkan ({masterItems.length})</span>
-            </Button>
-            </>
-          )}
         </div>
       </div>
+
+      {/* 2. Unified Asymmetric Metric Strip (Zero Nested Cards) */}
+      <LedgerMetricStrip
+        isLoading={isLoading && masterItems.length === 0}
+        primary={{
+          label: "Total Item Baku",
+          value: `${bentoStats.total} Item`,
+          subtext: `Tersebar di ${bentoStats.categoriesCount} kategori belanja`,
+          active: filterRecipeStatus === "",
+          onClick: () => setFilterRecipeStatus(""),
+          segments:
+            bentoStats.total > 0
+              ? [
+                  {
+                    key: "configured",
+                    label: "Terkonfigurasi",
+                    value: bentoStats.configuredCount,
+                    displayValue: `${bentoStats.configuredCount} (${bentoStats.configuredPct}%)`,
+                    colorClass: "bg-emerald-600 dark:bg-emerald-400",
+                  },
+                  {
+                    key: "unconfigured",
+                    label: "Belum Diatur",
+                    value: bentoStats.unconfiguredCount,
+                    displayValue: `${bentoStats.unconfiguredCount}`,
+                    colorClass: "bg-amber-500 dark:bg-amber-400",
+                  },
+                ]
+              : undefined,
+        }}
+        supporting={[
+          {
+            key: "configured",
+            label: "Resep Terkonfigurasi",
+            value: `${bentoStats.configuredCount} Item`,
+            valueClassName: "text-[var(--signal-cleared)]",
+            subtext: `${bentoStats.configuredPct}% siap dihitung HPP resep`,
+            active: filterRecipeStatus === "configured",
+            accentTone: "cleared",
+            onClick: () =>
+              setFilterRecipeStatus((prev) =>
+                prev === "configured" ? "" : "configured"
+              ),
+          },
+          {
+            key: "unconfigured",
+            label: "Belum Diatur Resep",
+            value: `${bentoStats.unconfiguredCount} Item`,
+            valueClassName:
+              bentoStats.unconfiguredCount > 0
+                ? "text-[var(--signal-dp)]"
+                : "text-[var(--ledger-ink)]",
+            subtext: "Klik untuk filter item tanpa satuan resep",
+            active: filterRecipeStatus === "unconfigured",
+            accentTone: "dp",
+            onClick: () =>
+              setFilterRecipeStatus((prev) =>
+                prev === "unconfigured" ? "" : "unconfigured"
+              ),
+          },
+          {
+            key: "active-tx",
+            label: "Aktif di Transaksi",
+            value: `${bentoStats.activeInTxCount} Item`,
+            subtext: "Pernah tercatat pada struk belanja",
+          },
+        ]}
+      />
 
       {/* Bulk Paste Box */}
       {canDelete && showBulkBox && (
@@ -2061,119 +2029,120 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         table={masterTable}
         recordCount={filteredItems.length}
         isLoading={isLoading}
+        containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
         headerClassName="p-0"
+        footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
         emptyMessage={
-          <div className="py-12 flex flex-col items-center justify-center text-center px-4 max-w-md mx-auto">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 mb-3 border border-slate-200 dark:border-slate-700">
-              <PackageCheck className="w-6 h-6 stroke-[1.5]" />
-            </div>
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-              Tidak Ada Item yang Cocok
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
-              {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan)
+          <LedgerStateBlock
+            variant="empty"
+            icon={<PackageCheck className="w-7 h-7" />}
+            title="Tidak Ada Item yang Cocok"
+            description={
+              Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan)
                 ? "Tidak ada item master yang sesuai dengan kriteria filter atau pencarian saat ini."
-                : "Belum ada item bahan baku yang terdaftar di katalog master."}
-            </p>
-            <div className="flex items-center gap-2">
-              {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearch("");
-                    setFilterCat("");
-                    setFilterRecipeStatus("");
-                    setFilterTipeSatuan("");
-                  }}
-                  className="rounded-xl text-xs h-8"
-                >
-                  Reset Filter
-                </Button>
-              )}
-              {canEdit && (
-                <Button
-                  size="sm"
-                  onClick={() => setIsAddDialogOpen(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs h-8 font-medium gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Tambah Item Baru
-                </Button>
-              )}
-            </div>
-          </div>
+                : "Belum ada item bahan baku yang terdaftar di katalog master."
+            }
+            actions={
+              <>
+                {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearch("");
+                      setFilterCat("");
+                      setFilterRecipeStatus("");
+                      setFilterTipeSatuan("");
+                    }}
+                    className="rounded-lg text-xs h-8"
+                  >
+                    Reset Filter
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    onClick={() => setIsAddDialogOpen(true)}
+                    className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 rounded-lg text-xs h-8 font-semibold gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tambah Item Baru
+                  </Button>
+                )}
+              </>
+            }
+          />
         }
         header={
           <>
-            <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <Input
-                placeholder="Cari nama item baku atau kata kunci alias..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 h-9 text-xs rounded-xl bg-slate-50/70 dark:bg-slate-800/70"
-              />
+            <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+              <div className="relative flex-1 max-w-md min-w-0">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                <Input
+                  placeholder="Cari nama item baku atau kata kunci alias..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Filters
+                  variant="advanced"
+                  advancedMode="popover"
+                  advancedAlign="end"
+                  reorderable
+                  fields={masterFilterFields}
+                  query={masterFilterQuery}
+                  onQueryChange={handleMasterQueryChange}
+                  className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
+                />
+                <AdaptiveSelect
+                  value={filterCat}
+                  onValueChange={setFilterCat}
+                  aria-label="Filter kategori master item"
+                  placeholder={`Semua Kategori (${masterItems.length})`}
+                  searchPlaceholder="Cari kategori..."
+                  className="w-44 text-xs"
+                  options={[
+                    { value: "", label: `Semua Kategori (${masterItems.length})` },
+                    ...categories.map((c) => ({ value: c, label: c })),
+                  ]}
+                />
+                <AdaptiveSelect
+                  value={filterRecipeStatus}
+                  onValueChange={(val) =>
+                    setFilterRecipeStatus(
+                      val as "" | "configured" | "unconfigured"
+                    )
+                  }
+                  aria-label="Filter status satuan resep"
+                  placeholder="Semua Satuan Resep"
+                  className="w-44 text-xs"
+                  options={[
+                    { value: "", label: "Semua Satuan Resep" },
+                    { value: "configured", label: "Resep: Sudah Diatur" },
+                    { value: "unconfigured", label: "Resep: Belum Diatur" },
+                  ]}
+                />
+                <AdaptiveSelect
+                  value={filterTipeSatuan}
+                  onValueChange={(val) =>
+                    setFilterTipeSatuan(
+                      val as "" | "keduanya" | "paket" | "ecer"
+                    )
+                  }
+                  aria-label="Filter tipe satuan master item"
+                  placeholder="Semua Tipe Satuan"
+                  className="w-40 text-xs"
+                  options={[
+                    { value: "", label: "Semua Tipe Satuan" },
+                    { value: "keduanya", label: "Paket & Ecer" },
+                    { value: "paket", label: "Hanya Paket" },
+                    { value: "ecer", label: "Hanya Ecer" },
+                  ]}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Filters
-                variant="advanced"
-                advancedMode="popover"
-                advancedAlign="end"
-                reorderable
-                fields={masterFilterFields}
-                query={masterFilterQuery}
-                onQueryChange={handleMasterQueryChange}
-                className="[--filter-field-width:9rem] [--filter-operator-width:6.5rem] [--filter-value-width:11rem]"
-              />
-              <AdaptiveSelect
-                value={filterCat}
-                onValueChange={setFilterCat}
-                aria-label="Filter kategori master item"
-                placeholder={`Semua Kategori (${masterItems.length})`}
-                searchPlaceholder="Cari kategori..."
-                className="w-48 text-xs"
-                options={[
-                  { value: "", label: `Semua Kategori (${masterItems.length})` },
-                  ...categories.map((c) => ({ value: c, label: c })),
-                ]}
-              />
-              <AdaptiveSelect
-                value={filterRecipeStatus}
-                onValueChange={(val) =>
-                  setFilterRecipeStatus(
-                    val as "" | "configured" | "unconfigured"
-                  )
-                }
-                aria-label="Filter status satuan resep"
-                placeholder="Semua Satuan Resep"
-                className="w-44 text-xs"
-                options={[
-                  { value: "", label: "Semua Satuan Resep" },
-                  { value: "configured", label: "Resep: Sudah Diatur" },
-                  { value: "unconfigured", label: "Resep: Belum Diatur" },
-                ]}
-              />
-              <AdaptiveSelect
-                value={filterTipeSatuan}
-                onValueChange={(val) =>
-                  setFilterTipeSatuan(
-                    val as "" | "keduanya" | "paket" | "ecer"
-                  )
-                }
-                aria-label="Filter tipe satuan master item"
-                placeholder="Semua Tipe Satuan"
-                className="w-40 text-xs"
-                options={[
-                  { value: "", label: "Semua Tipe Satuan" },
-                  { value: "keduanya", label: "Paket & Ecer" },
-                  { value: "paket", label: "Hanya Paket" },
-                  { value: "ecer", label: "Hanya Ecer" },
-                ]}
-              />
-            </div>
-          </div>
 
           {/* Active Filter Chips / Pills */}
           {(Boolean(search) || Boolean(filterCat) || Boolean(filterRecipeStatus) || Boolean(filterTipeSatuan)) && (
