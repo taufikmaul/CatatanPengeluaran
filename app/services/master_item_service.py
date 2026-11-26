@@ -7,9 +7,9 @@ import re
 from typing import Any
 from uuid import uuid4
 from difflib import SequenceMatcher
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.master_item import MasterItem
+from app.models.master_item import MasterItem, MasterItemPackaging
 from app.models.expense import Expense
 from app.models.expense_log import ExpenseLog
 from app.models.supplier import Supplier
@@ -82,6 +82,8 @@ _RECIPE_UNIT_CANON: dict[str, str] = {
     "sak": "Sak",
     "bal": "Bal",
     "dus": "Dus",
+    "karton": "Dus",
+    "ctn": "Dus",
 }
 
 _DIRECT_RECIPE_MAP: dict[str, tuple[str, float]] = {
@@ -199,6 +201,473 @@ def infer_recipe_unit_conversion(
                 return res_unit, res_factor
 
     return None, None
+
+
+_METRIC_CONVERSIONS: dict[tuple[str, str], float] = {
+    ("Kg", "Gram"): 1000.0,
+    ("Ons", "Gram"): 100.0,
+    ("Liter", "ml"): 1000.0,
+    ("Meter", "cm"): 100.0,
+    ("Lusin", "Pcs"): 12.0,
+    ("Kodi", "Pcs"): 20.0,
+    ("Gross", "Pcs"): 144.0,
+    ("Tray", "Butir"): 30.0,
+}
+
+
+def _units_match(a: str | None, b: str | None) -> bool:
+    """Bandingkan dua satuan secara kanonik (case-insensitive & alias-aware)."""
+    ca = normalize_recipe_unit(a) or (a or "").strip()
+    cb = normalize_recipe_unit(b) or (b or "").strip()
+    if not ca or not cb:
+        return False
+    return ca.lower() == cb.lower()
+
+
+def _convert_direct_qty_to_base(
+    qty: float,
+    unit: str | None,
+    target_base_unit: str | None = None,
+) -> tuple[float | None, str | None]:
+    """Konversi kuantitas satuan standar/metrik langsung ke base_unit (jika kompatibel)."""
+    if qty <= 0 or not unit:
+        return None, None
+    norm_u = normalize_recipe_unit(unit)
+    norm_target = normalize_recipe_unit(target_base_unit) if target_base_unit else None
+    if not norm_u:
+        return None, None
+
+    if norm_target:
+        if norm_u == norm_target:
+            return round(qty, 4), norm_target
+        mult = _METRIC_CONVERSIONS.get((norm_u, norm_target))
+        if mult is not None:
+            return round(qty * mult, 4), norm_target
+        inv = _METRIC_CONVERSIONS.get((norm_target, norm_u))
+        if inv is not None and inv > 0:
+            return round(qty / inv, 4), norm_target
+        return None, None
+
+    mapped = _DIRECT_RECIPE_MAP.get(norm_u)
+    if mapped:
+        target_u, mult = mapped
+        return round(qty * mult, 4), target_u
+    return None, None
+
+
+def _score_packaging_keywords(pkg: MasterItemPackaging, raw_text: str) -> int:
+    """Hitung kecocokan keyword/label/ukuran kemasan pada teks struk."""
+    if not raw_text:
+        return 0
+    text_l = raw_text.lower()
+    text_compact = re.sub(r"[^a-z0-9]", "", text_l)
+    score = 0
+
+    # Bonus jika satuan beli (atau sinonimnya) muncul langsung di teks struk
+    p_unit_l = (pkg.purchase_unit or "").strip().lower()
+    p_unit_aliases: dict[str, tuple[str, ...]] = {
+        "dus": ("dus", "karton", "ctn"),
+        "kaleng": ("kaleng", "klg", "can"),
+        "bungkus": ("bungkus", "bks"),
+        "botol": ("botol", "btl"),
+        "pouch": ("pouch",),
+        "box": ("box", "kotak"),
+        "pack": ("pack", "pak"),
+        "sak": ("sak", "karung"),
+    }
+    for alias in p_unit_aliases.get(p_unit_l, (p_unit_l,)):
+        if alias and re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", text_l):
+            score += 3
+            break
+
+    tokens: list[str] = []
+    if pkg.keywords:
+        tokens.extend(k.strip() for k in re.split(r"[,;|]", pkg.keywords) if k.strip())
+    if pkg.retail_unit and pkg.retail_unit.lower() != p_unit_l:
+        tokens.append(pkg.retail_unit.strip())
+    for m in re.finditer(
+        r"\d+(?:[.,]\d+)?\s*(?:x\s*\d+(?:[.,]\d+)?\s*)?(?:kg|gram|gr|g|liter|lt|l|ml|pcs)",
+        pkg.label or "",
+        re.IGNORECASE,
+    ):
+        tokens.append(m.group(0).strip())
+
+    seen: set[str] = set()
+    for tok in tokens:
+        t_l = tok.lower()
+        t_comp = re.sub(r"[^a-z0-9]", "", t_l)
+        if not t_comp or t_comp in seen:
+            continue
+        seen.add(t_comp)
+        if re.search(r"(?<![a-z0-9])" + re.escape(t_l) + r"(?![a-z0-9])", text_l):
+            score += 2
+        elif len(t_comp) >= 3 and t_comp in text_compact:
+            score += 1
+    return score
+
+
+async def get_packaging_latest_prices(
+    db: AsyncSession,
+    master_item_ids: set[int] | None = None,
+) -> dict[int, float]:
+    """Ambil unit_price terbaru yang CONFIRMED untuk setiap packaging_id."""
+    stmt = (
+        select(Expense.packaging_id, Expense.unit_price, Expense.total_price, Expense.qty)
+        .where(
+            Expense.packaging_id.isnot(None),
+            or_(Expense.review_status.is_(None), Expense.review_status != "DRAFT_WARNING"),
+        )
+        .order_by(Expense.expense_date.desc(), Expense.id.desc())
+    )
+    if master_item_ids:
+        stmt = stmt.where(Expense.master_item_id.in_(master_item_ids))
+    rows = (await db.execute(stmt)).all()
+    prices: dict[int, float] = {}
+    for row in rows:
+        pid = int(row.packaging_id)
+        if pid in prices:
+            continue
+        eff = resolve_effective_unit_price(row.unit_price, row.total_price, row.qty)
+        if eff > 0:
+            prices[pid] = eff
+    return prices
+
+
+async def sync_master_item_packagings(
+    db: AsyncSession,
+    master_item: MasterItem,
+    packagings_data: list[dict[str, Any]] | None,
+) -> None:
+    """Sinkronkan daftar MasterItemPackaging dan selaraskan field legacy MasterItem."""
+    if packagings_data is None:
+        return
+
+    cleaned_rows: list[MasterItemPackaging] = []
+    has_default = False
+    for raw in packagings_data:
+        if not isinstance(raw, dict):
+            continue
+        p_unit_raw = str(raw.get("purchase_unit") or "").strip()
+        r_unit_raw = str(raw.get("retail_unit") or p_unit_raw).strip()
+        b_unit_raw = str(raw.get("base_unit") or "").strip()
+        r_qty = float(raw.get("retail_qty") or 1.0)
+        b_qty = float(raw.get("base_qty") or 0.0)
+        if not p_unit_raw or not b_unit_raw or b_qty <= 0 or r_qty <= 0:
+            continue
+
+        norm_p = (await normalize_unit_to_master(db, p_unit_raw)) or p_unit_raw
+        norm_r = (await normalize_unit_to_master(db, r_unit_raw)) or r_unit_raw
+        norm_b = normalize_recipe_unit(b_unit_raw) or b_unit_raw
+        label = str(raw.get("label") or "").strip() or f"{norm_p} ({r_qty:g} {norm_r} = {b_qty:g} {norm_b})"
+        is_def = bool(raw.get("is_default", False)) and not has_default
+        if is_def:
+            has_default = True
+        cleaned_rows.append(
+            MasterItemPackaging(
+                master_item_id=master_item.id,
+                label=label[:120],
+                purchase_unit=norm_p[:50],
+                retail_qty=round(r_qty, 4),
+                retail_unit=norm_r[:50],
+                base_qty=round(b_qty, 4),
+                base_unit=norm_b[:50],
+                keywords=str(raw.get("keywords") or "").strip(),
+                is_default=is_def,
+                is_active=bool(raw.get("is_active", True)),
+            )
+        )
+
+    if cleaned_rows and not has_default:
+        active_first = next((r for r in cleaned_rows if r.is_active), cleaned_rows[0])
+        active_first.is_default = True
+
+    await db.execute(
+        delete(MasterItemPackaging).where(MasterItemPackaging.master_item_id == master_item.id)
+    )
+    await db.flush()
+    if cleaned_rows:
+        db.add_all(cleaned_rows)
+        await db.flush()
+    await db.refresh(master_item, ["packagings"])
+
+    if cleaned_rows:
+        default_pkg = next((r for r in cleaned_rows if r.is_default and r.is_active), None) or cleaned_rows[0]
+        master_item.satuan_beli = default_pkg.purchase_unit
+        master_item.satuan_ecer = default_pkg.retail_unit
+        master_item.satuan_resep = default_pkg.base_unit
+        master_item.konversi_resep = round(float(default_pkg.base_qty), 6)
+        if len(cleaned_rows) > 1 or default_pkg.retail_qty > 1:
+            master_item.tipe_satuan = "keduanya"
+
+
+def _pick_closest_by_price(
+    candidates: list[MasterItemPackaging],
+    unit_price: float,
+    pkg_last_prices: dict[int, float] | None,
+) -> MasterItemPackaging:
+    """Pilih kandidat terbaik berdasarkan kedekatan harga historis atau default."""
+    if unit_price > 0 and pkg_last_prices:
+        scored: list[tuple[float, MasterItemPackaging]] = []
+        for c in candidates:
+            hp = pkg_last_prices.get(c.id, 0.0)
+            if hp > 0:
+                ratio = max(unit_price / hp, hp / unit_price)
+                scored.append((ratio, c))
+        if scored:
+            scored.sort(key=lambda x: x[0])
+            return scored[0][1]
+    return next((c for c in candidates if c.is_default), candidates[0])
+
+
+def _is_price_anomalous(
+    unit_price: float,
+    pkg: MasterItemPackaging,
+    pkg_last_prices: dict[int, float] | None,
+) -> tuple[bool, float]:
+    if unit_price <= 0 or not pkg_last_prices:
+        return False, 0.0
+    hist = float(pkg_last_prices.get(pkg.id, 0.0) or 0.0)
+    if hist <= 0:
+        return False, 0.0
+    if unit_price < hist * 0.4 or unit_price > hist * 2.5:
+        return True, hist
+    return False, hist
+
+
+def resolve_packaging_conversion(
+    master_item: MasterItem | None,
+    qty: float,
+    unit: str | None,
+    unit_price: float,
+    raw_text: str = "",
+    explicit_packaging_id: int | None = None,
+    pkg_last_prices: dict[int, float] | None = None,
+    allow_draft_warning: bool = True,
+) -> dict[str, Any]:
+    """
+    Hitung snapshot konversi kemasan bertingkat (beli -> ecer -> satuan resep)
+    serta deteksi ambiguitas/anomali harga sebagai DRAFT_WARNING.
+    `base_unit_price` selalu dihitung dari `unit_price`.
+    """
+    qty_val = float(qty) if (qty is not None and float(qty) > 0) else 1.0
+    unit_price_val = max(0.0, float(unit_price or 0.0))
+    unit_clean = (unit or "Pcs").strip() or "Pcs"
+
+    def _from_pkg(
+        pkg: MasterItemPackaging,
+        review_status: str = "CONFIRMED",
+        review_warning: str | None = None,
+    ) -> dict[str, Any]:
+        b_qty = round(qty_val * float(pkg.base_qty), 4)
+        r_qty = round(qty_val * float(pkg.retail_qty), 4)
+        b_price = round(unit_price_val / float(pkg.base_qty), 4) if (unit_price_val > 0 and float(pkg.base_qty) > 0) else None
+        return {
+            "packaging_id": pkg.id,
+            "resolved_unit": pkg.purchase_unit,
+            "retail_qty": r_qty,
+            "retail_unit": pkg.retail_unit,
+            "base_qty": b_qty,
+            "base_unit": pkg.base_unit,
+            "base_unit_price": b_price,
+            "review_status": review_status,
+            "review_warning": review_warning,
+        }
+
+    active_pkgs = [p for p in (getattr(master_item, "packagings", None) or []) if p.is_active] if master_item else []
+
+    if explicit_packaging_id is not None and active_pkgs:
+        found = next((p for p in active_pkgs if p.id == int(explicit_packaging_id)), None)
+        if found:
+            return _from_pkg(found)
+
+    if master_item and active_pkgs:
+        unit_matches = [p for p in active_pkgs if _units_match(p.purchase_unit, unit_clean)]
+        item_base_unit = active_pkgs[0].base_unit or master_item.satuan_resep
+
+        if len(unit_matches) == 1:
+            cand = unit_matches[0]
+            anomalous, hist = _is_price_anomalous(unit_price_val, cand, pkg_last_prices)
+            if anomalous and allow_draft_warning:
+                return _from_pkg(
+                    cand,
+                    review_status="DRAFT_WARNING",
+                    review_warning=(
+                        f"Harga satuan Rp {unit_price_val:,.0f}/{cand.purchase_unit} menyimpang jauh dari "
+                        f"histori varian '{cand.label}' (Rp {hist:,.0f}). Mohon konfirmasi di Web."
+                    ),
+                )
+            return _from_pkg(cand)
+
+        if len(unit_matches) > 1:
+            scored_kw = sorted(
+                ((_score_packaging_keywords(p, raw_text), p) for p in unit_matches),
+                key=lambda x: x[0],
+                reverse=True,
+            )
+            top_score, top_pkg = scored_kw[0]
+            second_score = scored_kw[1][0]
+            if top_score > 0 and top_score > second_score:
+                anomalous, hist = _is_price_anomalous(unit_price_val, top_pkg, pkg_last_prices)
+                if anomalous and allow_draft_warning:
+                    return _from_pkg(
+                        top_pkg,
+                        review_status="DRAFT_WARNING",
+                        review_warning=(
+                            f"Harga satuan Rp {unit_price_val:,.0f}/{top_pkg.purchase_unit} menyimpang dari "
+                            f"histori '{top_pkg.label}' (Rp {hist:,.0f}). Mohon konfirmasi di Web."
+                        ),
+                    )
+                return _from_pkg(top_pkg)
+
+            guess = _pick_closest_by_price(unit_matches, unit_price_val, pkg_last_prices)
+            if allow_draft_warning:
+                labels = ", ".join(p.label for p in unit_matches)
+                return _from_pkg(
+                    guess,
+                    review_status="DRAFT_WARNING",
+                    review_warning=(
+                        f"'{master_item.item_name}' memiliki {len(unit_matches)} varian kemasan '{unit_clean}' "
+                        f"({labels}). Mohon konfirmasi varian yang dibeli di Web."
+                    ),
+                )
+            return _from_pkg(guess)
+
+        if _units_match(unit_clean, "Pcs"):
+            scored_all = sorted(
+                ((_score_packaging_keywords(p, raw_text), p) for p in active_pkgs),
+                key=lambda x: x[0],
+                reverse=True,
+            )
+            if scored_all[0][0] > 0 and (len(scored_all) == 1 or scored_all[0][0] > scored_all[1][0]):
+                winner = scored_all[0][1]
+                anomalous, hist = _is_price_anomalous(unit_price_val, winner, pkg_last_prices)
+                if anomalous and allow_draft_warning:
+                    return _from_pkg(
+                        winner,
+                        review_status="DRAFT_WARNING",
+                        review_warning=(
+                            f"Struk terbaca '{unit_clean}' dan dicocokkan ke '{winner.label}', namun harga "
+                            f"Rp {unit_price_val:,.0f} menyimpang dari histori (Rp {hist:,.0f}). Konfirmasi di Web."
+                        ),
+                    )
+                return _from_pkg(winner)
+
+        direct_base_qty, direct_base_unit = _convert_direct_qty_to_base(qty_val, unit_clean, item_base_unit)
+        if direct_base_qty is not None and direct_base_unit:
+            b_price = round((qty_val * unit_price_val) / direct_base_qty, 4) if (unit_price_val > 0 and direct_base_qty > 0) else None
+            return {
+                "packaging_id": None,
+                "resolved_unit": unit_clean,
+                "retail_qty": round(qty_val, 4),
+                "retail_unit": unit_clean,
+                "base_qty": direct_base_qty,
+                "base_unit": direct_base_unit,
+                "base_unit_price": b_price,
+                "review_status": "CONFIRMED",
+                "review_warning": None,
+            }
+
+        guess = _pick_closest_by_price(active_pkgs, unit_price_val, pkg_last_prices)
+        if allow_draft_warning:
+            return _from_pkg(
+                guess,
+                review_status="DRAFT_WARNING",
+                review_warning=(
+                    f"Satuan '{unit_clean}' belum terdaftar pada varian kemasan '{master_item.item_name}' "
+                    f"(default: {guess.label}). Mohon konfirmasi kemasan di Web."
+                ),
+            )
+
+    if master_item and master_item.satuan_resep and master_item.konversi_resep and float(master_item.konversi_resep) > 0:
+        konv = float(master_item.konversi_resep)
+        if _units_match(master_item.satuan_beli, unit_clean):
+            b_qty = round(qty_val * konv, 4)
+            b_price = round(unit_price_val / konv, 4) if unit_price_val > 0 else None
+            return {
+                "packaging_id": None,
+                "resolved_unit": unit_clean,
+                "retail_qty": round(qty_val, 4),
+                "retail_unit": master_item.satuan_ecer or unit_clean,
+                "base_qty": b_qty,
+                "base_unit": master_item.satuan_resep,
+                "base_unit_price": b_price,
+                "review_status": "CONFIRMED",
+                "review_warning": None,
+            }
+        direct_base_qty, direct_base_unit = _convert_direct_qty_to_base(qty_val, unit_clean, master_item.satuan_resep)
+        if direct_base_qty is not None and direct_base_unit:
+            b_price = round((qty_val * unit_price_val) / direct_base_qty, 4) if (unit_price_val > 0 and direct_base_qty > 0) else None
+            return {
+                "packaging_id": None,
+                "resolved_unit": unit_clean,
+                "retail_qty": round(qty_val, 4),
+                "retail_unit": unit_clean,
+                "base_qty": direct_base_qty,
+                "base_unit": direct_base_unit,
+                "base_unit_price": b_price,
+                "review_status": "CONFIRMED",
+                "review_warning": None,
+            }
+
+    if _units_match(unit_clean, "Pcs"):
+        inf_text_unit, inf_text_factor = infer_recipe_unit_conversion(None, None, None, raw_text)
+        if inf_text_unit and inf_text_factor and inf_text_factor > 0:
+            b_qty = round(qty_val * float(inf_text_factor), 4)
+            b_price = round(unit_price_val / float(inf_text_factor), 4) if unit_price_val > 0 else None
+            return {
+                "packaging_id": None,
+                "resolved_unit": unit_clean,
+                "retail_qty": round(qty_val, 4),
+                "retail_unit": unit_clean,
+                "base_qty": b_qty,
+                "base_unit": inf_text_unit,
+                "base_unit_price": b_price,
+                "review_status": "CONFIRMED",
+                "review_warning": None,
+            }
+
+    inf_unit, inf_factor = infer_recipe_unit_conversion(unit_clean, unit_clean, None, raw_text)
+    direct_base_qty, direct_base_unit = _convert_direct_qty_to_base(qty_val, unit_clean, None)
+    if direct_base_qty is not None and direct_base_unit:
+        b_price = round((qty_val * unit_price_val) / direct_base_qty, 4) if (unit_price_val > 0 and direct_base_qty > 0) else None
+        return {
+            "packaging_id": None,
+            "resolved_unit": unit_clean,
+            "retail_qty": round(qty_val, 4),
+            "retail_unit": unit_clean,
+            "base_qty": direct_base_qty,
+            "base_unit": direct_base_unit,
+            "base_unit_price": b_price,
+            "review_status": "CONFIRMED",
+            "review_warning": None,
+        }
+
+    if inf_unit and inf_factor and inf_factor > 0:
+        b_qty = round(qty_val * float(inf_factor), 4)
+        b_price = round(unit_price_val / float(inf_factor), 4) if unit_price_val > 0 else None
+        return {
+            "packaging_id": None,
+            "resolved_unit": unit_clean,
+            "retail_qty": round(qty_val, 4),
+            "retail_unit": unit_clean,
+            "base_qty": b_qty,
+            "base_unit": inf_unit,
+            "base_unit_price": b_price,
+            "review_status": "CONFIRMED",
+            "review_warning": None,
+        }
+
+    return {
+        "packaging_id": None,
+        "resolved_unit": unit_clean,
+        "retail_qty": None,
+        "retail_unit": None,
+        "base_qty": None,
+        "base_unit": None,
+        "base_unit_price": None,
+        "review_status": "CONFIRMED",
+        "review_warning": None,
+    }
 
 
 async def auto_fill_master_item_recipe_units(
@@ -468,6 +937,7 @@ async def match_and_normalize_extracted_items(
     db: AsyncSession,
     items: list[dict],
     preserve_explicit_pay_status: bool = False,
+    allow_draft_warning: bool = True,
 ) -> list[dict]:
     """
     Cocokkan setiap item hasil ekstraksi AI/input dengan katalog MasterItem.
@@ -477,6 +947,8 @@ async def match_and_normalize_extracted_items(
     - Menyesuaikan `satuan` / `unit` agar SELALU sesuai data master yang terdaftar
     - Mendeteksi turunan kemasan (mis. 1 Bungkus isi 1Kg vs 1 Bungkus isi 500g)
       dan otomatis menyinkronkannya ke MasterItem.isi_paket
+    - Menghitung snapshot konversi kemasan (`retail_qty`, `base_qty`, `base_unit_price`)
+      serta menandai `DRAFT_WARNING` bila varian kemasan ambigu/anomali harga
     - Menyimpan nama asli struk & turunan ke `keterangan`
     """
     if not items:
@@ -485,6 +957,7 @@ async def match_and_normalize_extracted_items(
     master_items = await list_master_items(db)
     valid_units = await get_valid_units(db)
     valid_pms = await get_active_names(db, "metode_bayar")
+    pkg_last_prices = await get_packaging_latest_prices(db)
 
     # Pemetaan kata kemasan di teks struk/input ke satuan master resmi
     pkg_kw_map = {
@@ -547,6 +1020,9 @@ async def match_and_normalize_extracted_items(
             or "tarik tunai" in raw_name_lower
         ):
             item["master_item_id"] = None
+            item["packaging_id"] = None
+            item["review_status"] = "CONFIRMED"
+            item["review_warning"] = None
             # Pastikan satuan khusus tukar cash / ongkir tetap valid
             current_unit = (item.get("satuan") or item.get("unit") or "").strip()
             if kat_check == "tukar cash" or "tukar cash" in raw_name_lower:
@@ -569,6 +1045,15 @@ async def match_and_normalize_extracted_items(
         if not matched and raw_name:
             matched = find_best_master_match(raw_name, master_items)
 
+        qty_val = float(item.get("qty") or 1.0)
+        price_val = resolve_effective_unit_price(
+            item.get("harga_satuan") if "harga_satuan" in item else item.get("unit_price"),
+            item.get("total_harga") if "total_harga" in item else item.get("total_price"),
+            qty_val,
+        )
+        old_notes = item.get("keterangan") if "keterangan" in item else item.get("notes", "-")
+        item_allow_draft = allow_draft_warning and str(item.get("review_status") or "").upper() != "CONFIRMED"
+
         if not matched:
             # Jika tidak cocok ke master item, tetap pastikan satuan sesuai data master
             current_unit = (item.get("satuan") or item.get("unit") or "").strip()
@@ -576,10 +1061,24 @@ async def match_and_normalize_extracted_items(
             final_unit = norm_u or "Pcs"
             item["satuan"] = final_unit
             item["unit"] = final_unit
+            conv = resolve_packaging_conversion(
+                None,
+                qty=qty_val,
+                unit=final_unit,
+                unit_price=price_val,
+                raw_text=f"{raw_name} {old_notes or ''}",
+                allow_draft_warning=False,
+            )
+            if item.get("base_qty") is None and conv["base_qty"] is not None:
+                item["retail_qty"] = conv["retail_qty"]
+                item["retail_unit"] = conv["retail_unit"]
+                item["base_qty"] = conv["base_qty"]
+                item["base_unit"] = conv["base_unit"]
+                item["base_unit_price"] = conv["base_unit_price"]
+            item.setdefault("review_status", "CONFIRMED")
             continue
 
         # Simpan nama asli ke keterangan bila berbeda
-        old_notes = item.get("keterangan") if "keterangan" in item else item.get("notes", "-")
         new_notes = append_original_name_to_notes(raw_name, matched.item_name, old_notes)
 
         # 1. Deteksi Turunan Satuan (misal: '1Kg', '500g', 'isi 500g', '6 pouch 2kg')
@@ -605,14 +1104,17 @@ async def match_and_normalize_extracted_items(
 
         # 2. Penentuan Satuan (WAJIB SESUAI DATA MASTER YANG TERDAFTAR)
         current_unit = (item.get("satuan") or item.get("unit") or "").strip()
-        norm_current = await normalize_unit_to_master(db, current_unit) if current_unit else None
+        norm_current = await normalize_unit_to_master(db, current_unit, valid_units=valid_units) if current_unit else None
+        if not norm_current and current_unit:
+            mapped_alias = pkg_kw_map.get(current_unit.lower())
+            if mapped_alias:
+                norm_current = await normalize_unit_to_master(db, mapped_alias, valid_units=valid_units)
 
+        active_pkgs = [p for p in (getattr(matched, "packagings", None) or []) if p.is_active]
         chosen_unit = None
-        # Jika user sudah memilih satuan secara eksplisit dan bukan 'Pcs' default
         if norm_current and norm_current.lower() != "pcs":
             chosen_unit = norm_current
         else:
-            # Deteksi dari kata kemasan di teks nama struk
             detected_pkg = None
             for kw, candidate_unit in pkg_kw_map.items():
                 if re.search(r'\b' + re.escape(kw) + r'\b', raw_name_lower):
@@ -623,16 +1125,49 @@ async def match_and_normalize_extracted_items(
                 chosen_unit = await normalize_unit_to_master(db, detected_pkg)
 
             if not chosen_unit:
-                if any(k in raw_name_lower for k in ("ecer", "biji", "butir")):
+                if active_pkgs and norm_current and norm_current.lower() == "pcs":
+                    # Biarkan resolver memeriksa apakah 'Pcs' cocok ke kemasan/keyword atau ambigu
+                    chosen_unit = "Pcs"
+                elif any(k in raw_name_lower for k in ("ecer", "biji", "butir")):
                     chosen_unit = await normalize_unit_to_master(db, matched.satuan_ecer)
                 else:
                     chosen_unit = await normalize_unit_to_master(db, matched.satuan_beli)
 
-        # Fallback akhir ke satuan_beli atau Pcs, selalu divalidasi ke master
         if not chosen_unit:
             chosen_unit = await normalize_unit_to_master(db, matched.satuan_beli) or "Pcs"
 
+        # 3. Resolusi Varian Kemasan & Snapshot Konversi
+        explicit_pid = item.get("packaging_id")
+        conv = resolve_packaging_conversion(
+            matched,
+            qty=qty_val,
+            unit=chosen_unit,
+            unit_price=price_val,
+            raw_text=f"{raw_name} {old_notes or ''} {detected_derivative or ''}",
+            explicit_packaging_id=explicit_pid,
+            pkg_last_prices=pkg_last_prices,
+            allow_draft_warning=item_allow_draft,
+        )
+        if conv["resolved_unit"] and conv["resolved_unit"] != chosen_unit:
+            norm_res_u = await normalize_unit_to_master(db, conv["resolved_unit"])
+            if norm_res_u:
+                chosen_unit = norm_res_u
+
         item["master_item_id"] = matched.id
+        if item.get("base_qty") is None or item.get("packaging_id") is None:
+            item["packaging_id"] = conv["packaging_id"]
+            if item.get("retail_qty") is None:
+                item["retail_qty"] = conv["retail_qty"]
+                item["retail_unit"] = conv["retail_unit"]
+            if item.get("base_qty") is None:
+                item["base_qty"] = conv["base_qty"]
+                item["base_unit"] = conv["base_unit"]
+                item["base_unit_price"] = conv["base_unit_price"]
+        if not item.get("review_status"):
+            item["review_status"] = conv["review_status"]
+        if item.get("review_warning") is None:
+            item["review_warning"] = conv["review_warning"]
+
         if "barang" in item:
             item["barang"] = matched.item_name
             item["keterangan"] = new_notes
@@ -667,6 +1202,7 @@ async def create_master_item(
     satuan_ecer: str = "Pcs",
     satuan_resep: str | None = None,
     konversi_resep: float | None = None,
+    packagings: list[dict[str, Any]] | None = None,
 ) -> MasterItem:
     """Buat satu MasterItem baru atau update jika nama sudah ada."""
     clean_name = item_name.strip()
@@ -712,6 +1248,8 @@ async def create_master_item(
                 existing.satuan_resep = inf_u
                 existing.konversi_resep = inf_f
         await db.flush()
+        if packagings is not None:
+            await sync_master_item_packagings(db, existing, packagings)
         return existing
 
     if not norm_resep and clean_konv is None:
@@ -735,6 +1273,31 @@ async def create_master_item(
     )
     db.add(item)
     await db.flush()
+    if packagings is not None:
+        await sync_master_item_packagings(db, item, packagings)
+    elif norm_resep and clean_konv and float(clean_konv) > 0:
+        default_label = (
+            f"{norm_beli} ({isi_paket.strip()})"
+            if isi_paket and isi_paket.strip()
+            else f"{norm_beli} ({float(clean_konv):g} {norm_resep})"
+        )
+        await sync_master_item_packagings(
+            db,
+            item,
+            [
+                {
+                    "label": default_label[:120],
+                    "purchase_unit": norm_beli,
+                    "retail_qty": 1.0,
+                    "retail_unit": norm_ecer,
+                    "base_qty": float(clean_konv),
+                    "base_unit": norm_resep,
+                    "keywords": (isi_paket or "").strip(),
+                    "is_default": True,
+                    "is_active": True,
+                }
+            ],
+        )
     return item
 
 
@@ -1060,11 +1623,11 @@ async def get_master_items_latest_stats(
     """
     Hitung statistik harga & transaksi terbaru dari SELURUH tabel expenses
     untuk setiap MasterItem (diurutkan expense_date DESC, id DESC):
-    - `last_unit_price`: harga satuan dari transaksi paling baru
-    - `last_supplier`: supplier dari transaksi paling baru
-    - `last_date`: tanggal transaksi paling baru (ISO string)
-    - `tx_count`: jumlah seluruh transaksi yang terhubung ke item ini
-    - `prev_unit_price` / `prev_date`: harga & tanggal transaksi kedua terbaru
+    - `last_unit_price`: harga satuan dari transaksi CONFIRMED paling baru
+    - `last_base_unit_price`: harga per satuan resep (dari `unit_price`) transaksi CONFIRMED terbaru
+    - `prev_base_unit_price`: harga per satuan resep transaksi CONFIRMED kedua terbaru
+    - `packaging_last_prices`: dict[packaging_id, latest_unit_price]
+    - `last_supplier`, `last_date`, `tx_count`
     """
     if master_items is None:
         master_items = await list_master_items(db)
@@ -1072,6 +1635,7 @@ async def get_master_items_latest_stats(
         return {}
 
     target_ids = {m.id for m in master_items}
+    master_by_id = {m.id: m for m in master_items}
     name_to_mid: dict[str, int] = {}
     for m in master_items:
         clean_nm = (m.item_name or "").strip().lower()
@@ -1085,6 +1649,11 @@ async def get_master_items_latest_stats(
         Expense.unit_price,
         Expense.total_price,
         Expense.qty,
+        Expense.unit,
+        Expense.packaging_id,
+        Expense.base_qty,
+        Expense.base_unit_price,
+        Expense.review_status,
         Expense.supplier,
         Expense.expense_date,
         Expense.category,
@@ -1118,6 +1687,7 @@ async def get_master_items_latest_stats(
         if mid is None:
             continue
 
+        is_draft = (row.review_status or "CONFIRMED") == "DRAFT_WARNING"
         eff_price = resolve_effective_unit_price(row.unit_price, row.total_price, row.qty)
         sup_clean = (row.supplier or "").strip()
         dt_str = row.expense_date.isoformat() if row.expense_date else None
@@ -1126,37 +1696,94 @@ async def get_master_items_latest_stats(
         if entry is None:
             entry = {
                 "last_unit_price": 0.0,
+                "last_base_unit_price": None,
                 "latest_price_date": None,
                 "prev_unit_price": None,
+                "prev_base_unit_price": None,
                 "prev_date": None,
                 "last_supplier": "",
                 "last_date": dt_str,
                 "tx_count": 0,
+                "draft_warning_count": 0,
+                "packaging_last_prices": {},
             }
             stats[mid] = entry
 
         entry["tx_count"] += 1
+        if is_draft:
+            entry["draft_warning_count"] += 1
+            continue
+
         if entry["last_date"] is None and dt_str:
             entry["last_date"] = dt_str
         if not entry["last_supplier"] and sup_clean and sup_clean != "-":
             entry["last_supplier"] = sup_clean
 
+        if row.packaging_id is not None and eff_price > 0:
+            pid = int(row.packaging_id)
+            if pid not in entry["packaging_last_prices"]:
+                entry["packaging_last_prices"][pid] = eff_price
+
+        # Hitung harga per satuan dasar (base_unit_price) dari unit_price
+        row_base_price: float | None = None
+        if row.base_unit_price is not None and float(row.base_unit_price) > 0:
+            row_base_price = float(row.base_unit_price)
+        elif row.base_qty is not None and float(row.base_qty) > 0 and eff_price > 0 and float(row.qty or 0) > 0:
+            row_base_price = round((eff_price * float(row.qty)) / float(row.base_qty), 4)
+        else:
+            mi_obj = master_by_id.get(mid)
+            if mi_obj and mi_obj.konversi_resep and float(mi_obj.konversi_resep) > 0 and eff_price > 0:
+                if not row.unit or _units_match(row.unit, mi_obj.satuan_beli):
+                    row_base_price = round(eff_price / float(mi_obj.konversi_resep), 4)
+
         if eff_price > 0:
             if entry["last_unit_price"] <= 0:
                 entry["last_unit_price"] = eff_price
+                entry["last_base_unit_price"] = row_base_price
                 entry["latest_price_date"] = dt_str
             elif entry["prev_unit_price"] is None:
                 entry["prev_unit_price"] = eff_price
+                entry["prev_base_unit_price"] = row_base_price
                 entry["prev_date"] = dt_str
 
     return stats
+
+
+def serialize_master_item_packagings(
+    m: MasterItem,
+    pkg_last_prices: dict[int, float] | None = None,
+) -> list[dict[str, Any]]:
+    """Serialisasikan daftar varian kemasan MasterItem lengkap dengan harga historisnya."""
+    out: list[dict[str, Any]] = []
+    for p in getattr(m, "packagings", None) or []:
+        last_p = float((pkg_last_prices or {}).get(p.id, 0.0) or 0.0)
+        b_price = round(last_p / float(p.base_qty), 4) if (last_p > 0 and float(p.base_qty) > 0) else None
+        out.append(
+            {
+                "id": p.id,
+                "master_item_id": p.master_item_id,
+                "label": p.label,
+                "purchase_unit": p.purchase_unit,
+                "retail_qty": float(p.retail_qty),
+                "retail_unit": p.retail_unit,
+                "base_qty": float(p.base_qty),
+                "base_unit": p.base_unit,
+                "keywords": p.keywords or "",
+                "is_default": bool(p.is_default),
+                "is_active": bool(p.is_active),
+                "last_unit_price": last_p if last_p > 0 else None,
+                "base_unit_price": b_price,
+                "created_at": p.created_at,
+            }
+        )
+    return out
 
 
 async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     """
     Kembalikan daftar saran autocomplete untuk form tambah/edit pengeluaran:
     - `items`: gabungan MasterItem + item unik dari histori Expense beserta harga terakhir,
-      kategori, dan supplier terakhir (diambil dari transaksi paling baru).
+      kategori, varian kemasan, dan supplier terakhir (diambil dari transaksi paling baru).
     - `suppliers`: daftar nama toko/supplier unik yang paling sering digunakan.
     """
     master_items = await list_master_items(db)
@@ -1171,6 +1798,7 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
             Expense.unit_price,
             Expense.total_price,
             Expense.qty,
+            Expense.review_status,
             Expense.supplier,
             Expense.expense_date,
         ).order_by(Expense.expense_date.desc(), Expense.id.desc())
@@ -1181,6 +1809,8 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
     supplier_counts: dict[str, dict] = {}
 
     for e in all_expenses:
+        if (e.review_status or "CONFIRMED") == "DRAFT_WARNING":
+            continue
         name = (e.item_name or "").strip()
         sup = (e.supplier or "").strip()
         price = resolve_effective_unit_price(e.unit_price, e.total_price, e.qty)
@@ -1231,6 +1861,11 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
             if hist and hist.get("last_supplier") and hist["last_supplier"] != "-"
             else (m.default_supplier or "-")
         )
+        last_price = float(hist["last_unit_price"]) if hist else 0.0
+        base_price = hist.get("last_base_unit_price") if hist else None
+        if base_price is None and last_price > 0 and m.konversi_resep and float(m.konversi_resep) > 0:
+            base_price = round(last_price / float(m.konversi_resep), 4)
+        pkg_prices = hist.get("packaging_last_prices", {}) if hist else {}
         suggestions_map[key] = {
             "id": m.id,
             "item_name": m.item_name,
@@ -1240,7 +1875,11 @@ async def get_item_and_supplier_suggestions(db: AsyncSession) -> dict:
             "tipe_satuan": m.tipe_satuan or "keduanya",
             "isi_paket": m.isi_paket or "",
             "satuan_ecer": m.satuan_ecer or "Pcs",
-            "last_unit_price": float(hist["last_unit_price"]) if hist else 0.0,
+            "satuan_resep": m.satuan_resep,
+            "konversi_resep": m.konversi_resep,
+            "recipe_unit_price": base_price,
+            "packagings": serialize_master_item_packagings(m, pkg_prices),
+            "last_unit_price": last_price,
             "last_supplier": last_sup,
             "last_date": hist["last_date"] if hist else None,
             "tx_count": int(hist["tx_count"]) if hist else 0,

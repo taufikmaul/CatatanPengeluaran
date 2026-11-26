@@ -124,6 +124,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       msg_link: "Web Dashboard",
       user_id: null,
       master_item_id: null,
+      packaging_id: null,
+      review_status: "CONFIRMED",
+      review_warning: null,
     },
   });
 
@@ -416,9 +419,18 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: initialData.msg_link || "Web Dashboard",
         user_id: initialData.user_id ?? null,
         master_item_id: initialData.master_item_id ?? null,
+        packaging_id: initialData.packaging_id ?? null,
+        review_status: initialData.review_status || "CONFIRMED",
+        review_warning: initialData.review_warning ?? null,
         supplier_id: initialData.supplier_id ?? null,
         bank_account_id: initialData.bank_account_id ?? null,
       });
+      if (initialData.master_item_id) {
+        const foundSug = itemSuggestions.find((s) => s.id === initialData.master_item_id) || null;
+        setSelectedSuggestionHint(foundSug);
+      } else {
+        setSelectedSuggestionHint(null);
+      }
     } else if (repeatData) {
       reset({
         expense_date: new Date().toISOString().split("T")[0],
@@ -445,8 +457,17 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: "Web Dashboard",
         user_id: repeatData.user_id ?? null,
         master_item_id: repeatData.master_item_id ?? null,
+        packaging_id: repeatData.packaging_id ?? null,
+        review_status: "CONFIRMED",
+        review_warning: null,
         supplier_id: repeatData.supplier_id ?? null,
       });
+      if (repeatData.master_item_id) {
+        const foundSug = itemSuggestions.find((s) => s.id === repeatData.master_item_id) || null;
+        setSelectedSuggestionHint(foundSug);
+      } else {
+        setSelectedSuggestionHint(null);
+      }
     } else {
       reset({
         expense_date: new Date().toISOString().split("T")[0],
@@ -473,8 +494,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         msg_link: "Web Dashboard",
         user_id: null,
         master_item_id: null,
+        packaging_id: null,
+        review_status: "CONFIRMED",
+        review_warning: null,
         supplier_id: null,
       });
+      setSelectedSuggestionHint(null);
     }
     setInvoiceWarning(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -485,6 +510,13 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
     if (s.is_master && s.id) {
       setValue("master_item_id", s.id);
     }
+    const defaultPkg =
+      s.packagings?.find((p) => p.is_default && p.is_active !== false) ||
+      s.packagings?.[0] ||
+      null;
+    setValue("packaging_id", defaultPkg?.id ?? null);
+    setValue("review_status", "CONFIRMED");
+    setValue("review_warning", null);
     if (s.category && categories.includes(s.category)) {
       setValue("category", s.category);
     }
@@ -492,11 +524,12 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
       setValue("supplier", s.last_supplier);
     }
     const curUnitPrice = getValues("unit_price");
-    if (s.last_unit_price > 0 && (!curUnitPrice || Number(curUnitPrice) === 0)) {
-      setValue("unit_price", s.last_unit_price);
+    const suggestedPrice = defaultPkg?.last_unit_price ?? s.last_unit_price;
+    if (suggestedPrice > 0 && (!curUnitPrice || Number(curUnitPrice) === 0)) {
+      setValue("unit_price", suggestedPrice);
     }
-    if (s.satuan_beli) {
-      setValue("unit", s.satuan_beli);
+    if (defaultPkg?.purchase_unit || s.satuan_beli) {
+      setValue("unit", defaultPkg?.purchase_unit || s.satuan_beli || "Pcs");
     }
     setSelectedSuggestionHint(s);
     setShowItemDropdown(false);
@@ -504,6 +537,21 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
 
   const applyExtractedItemToForm = (item: OcrExtractedItem) => {
     if (item.barang) setValue("item_name", item.barang, { shouldValidate: true });
+    setValue("master_item_id", item.master_item_id ?? null);
+    setValue("packaging_id", item.packaging_id ?? null);
+    setValue("review_status", item.review_status || "CONFIRMED");
+    setValue("review_warning", item.review_warning ?? null);
+    const matchedSug =
+      (item.master_item_id
+        ? itemSuggestions.find((s) => s.id === item.master_item_id)
+        : null) ||
+      (item.barang
+        ? itemSuggestions.find(
+            (s) => s.item_name.toLowerCase() === item.barang!.trim().toLowerCase()
+          )
+        : null) ||
+      null;
+    setSelectedSuggestionHint(matchedSug);
     if (item.qty) setValue("qty", Number(item.qty));
     if (item.satuan || item.unit) setValue("unit", item.satuan || item.unit);
     if (item.harga_satuan) setValue("unit_price", Number(item.harga_satuan));
@@ -565,13 +613,21 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
         applyExtractedItemToForm(res.items[0]);
         if (res.items.length > 1 && onBatchSubmit && !initialData && !repeatData) {
           setActiveTab("multi");
-          toast.success(
-            `Berhasil membaca ${res.items.length} item dari struk dan dimuat ke mode Multi-Item.`
-          );
+          if ((res.warning_count || 0) > 0) {
+            toast.warning(
+              `Berhasil membaca ${res.items.length} item, namun ${res.warning_count} item butuh konfirmasi varian kemasan.`
+            );
+          } else {
+            toast.success(
+              `Berhasil membaca ${res.items.length} item dari struk dan dimuat ke mode Multi-Item.`
+            );
+          }
         } else {
           setActiveTab("form");
           setOcrSuccessBanner(
-            `Berhasil membaca ${res.items.length} item dari struk. Silakan periksa rincian data lalu simpan.`
+            (res.warning_count || 0) > 0
+              ? `Berhasil membaca ${res.items.length} item, periksa peringatan varian kemasan sebelum simpan.`
+              : `Berhasil membaca ${res.items.length} item dari struk. Silakan periksa rincian data lalu simpan.`
           );
         }
       } else {
@@ -675,8 +731,17 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
           it.is_reimbursement !== undefined
             ? Boolean(it.is_reimbursement)
             : currentIsReimb,
-        msg_link: "Web Dashboard",
+        msg_link: "Web Scan Struk (AI)",
         user_id: watch("user_id") || null,
+        master_item_id: it.master_item_id ?? null,
+        packaging_id: it.packaging_id ?? null,
+        retail_qty: it.retail_qty ?? null,
+        retail_unit: it.retail_unit ?? null,
+        base_qty: it.base_qty ?? null,
+        base_unit: it.base_unit ?? null,
+        base_unit_price: it.base_unit_price ?? null,
+        review_status: it.review_status || "CONFIRMED",
+        review_warning: it.review_warning ?? null,
       };
     });
 
@@ -909,6 +974,7 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                                   : "bg-background text-foreground border-input hover:bg-muted/60"
                               }`}
                             >
+                              {it.review_status === "DRAFT_WARNING" ? "⚠ " : ""}
                               {it.barang || `Item #${idx + 1}`} (
                               {formatRupiah(Number(it.total_harga || 0))})
                             </button>

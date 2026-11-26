@@ -73,12 +73,37 @@ api.interceptors.response.use(
   }
 );
 
-export async function scanExpenseOcr(file: File) {
+export async function scanExpenseOcr(
+  file: File
+): Promise<import("@/types").OcrScanResponse> {
   const formData = new FormData();
   formData.append("file", file);
   const res = await api.post("/expenses/ocr", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+  return res.data;
+}
+
+export async function getDraftWarningCount(): Promise<{ ok: boolean; count: number }> {
+  const res = await api.get("/expenses/draft-warnings/count");
+  return res.data;
+}
+
+export async function confirmExpenseUnit(
+  expenseId: number,
+  payload: {
+    master_item_id?: number | null;
+    packaging_id?: number | null;
+    qty?: number;
+    unit?: string;
+    unit_price?: number;
+    retail_qty?: number | null;
+    retail_unit?: string | null;
+    base_qty?: number | null;
+    base_unit?: string | null;
+  }
+): Promise<Expense> {
+  const res = await api.post(`/expenses/${expenseId}/confirm-unit`, payload);
   return res.data;
 }
 
@@ -643,6 +668,7 @@ export async function getGroupedExpenses(params?: {
   due_urgency?: "overdue" | "soon" | string;
   include_ongkir?: boolean;
   talangan_type?: string;
+  review_status?: string;
 }): Promise<ExpenseInvoiceListResponse> {
   const q = new URLSearchParams();
   if (params?.page) q.append("page", String(params.page));
@@ -673,6 +699,7 @@ export async function getGroupedExpenses(params?: {
   if (params?.due_urgency) q.append("due_urgency", params.due_urgency);
   if (params?.include_ongkir) q.append("include_ongkir", "true");
   if (params?.talangan_type) q.append("talangan_type", params.talangan_type);
+  if (params?.review_status) q.append("review_status", params.review_status);
   const res = await api.get(`/expenses/grouped?${q.toString()}`);
   return res.data;
 }

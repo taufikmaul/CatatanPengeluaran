@@ -61,6 +61,14 @@ export interface Expense {
   user_id?: number | null;
   user_name?: string | null;
   master_item_id?: number | null;
+  packaging_id?: number | null;
+  retail_qty?: number | null;
+  retail_unit?: string | null;
+  base_qty?: number | null;
+  base_unit?: string | null;
+  base_unit_price?: number | null;
+  review_status?: "CONFIRMED" | "DRAFT_WARNING" | string;
+  review_warning?: string | null;
   bank_account_id?: number | null;
   reconciled_at?: string | null;
   reconciled_ref?: string | null;
@@ -620,6 +628,23 @@ export interface MonthlyReport {
   summary_metrics?: SummaryMetrics;
 }
 
+export interface MasterItemPackaging {
+  id?: number;
+  master_item_id?: number;
+  label: string;
+  purchase_unit: string;
+  retail_qty: number;
+  retail_unit: string;
+  base_qty: number;
+  base_unit: string;
+  keywords?: string;
+  is_default: boolean;
+  is_active: boolean;
+  last_unit_price?: number | null;
+  base_unit_price?: number | null;
+  created_at?: string;
+}
+
 export interface MasterItem {
   id: number;
   item_name: string;
@@ -634,6 +659,7 @@ export interface MasterItem {
   satuan_resep?: string | null;
   konversi_resep?: number | null;
   recipe_unit_price?: number | null;
+  packagings?: MasterItemPackaging[];
   last_unit_price: number;
   last_supplier: string;
   tx_count: number;
@@ -717,6 +743,7 @@ export interface ItemSuggestion {
   satuan_resep?: string | null;
   konversi_resep?: number | null;
   recipe_unit_price?: number | null;
+  packagings?: MasterItemPackaging[];
   last_unit_price: number;
   last_supplier: string;
   last_date?: string | null;
@@ -898,6 +925,14 @@ export interface ExpenseFormData {
   msg_link?: string;
   user_id?: number | null;
   master_item_id?: number | null;
+  packaging_id?: number | null;
+  retail_qty?: number | null;
+  retail_unit?: string | null;
+  base_qty?: number | null;
+  base_unit?: string | null;
+  base_unit_price?: number | null;
+  review_status?: string;
+  review_warning?: string | null;
   supplier_id?: number | null;
   bank_account_id?: number | null;
   asset_id?: number | null;
@@ -929,12 +964,22 @@ export interface OcrExtractedItem {
   no_invoice?: string;
   is_reimbursement?: boolean;
   keterangan?: string;
+  master_item_id?: number | null;
+  packaging_id?: number | null;
+  retail_qty?: number | null;
+  retail_unit?: string | null;
+  base_qty?: number | null;
+  base_unit?: string | null;
+  base_unit_price?: number | null;
+  review_status?: string;
+  review_warning?: string | null;
 }
 
 export interface OcrScanResponse {
   ok: boolean;
   message?: string;
   items?: OcrExtractedItem[];
+  warning_count?: number;
 }
 
 export interface AiAnalysisData {

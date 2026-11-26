@@ -66,6 +66,23 @@ class Expense(Base):
     )
     master_item: Mapped["MasterItem | None"] = relationship("MasterItem", foreign_keys=[master_item_id], lazy="selectin")
 
+    # Snapshot konversi kemasan & status konfirmasi (tidak berubah walau MasterItemPackaging diubah)
+    packaging_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("master_item_packagings.id", name="fk_expenses_packaging_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    retail_qty: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True, default=None)
+    retail_unit: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    base_qty: Mapped[Decimal | None] = mapped_column(Numeric(16, 4), nullable=True, default=None)
+    base_unit: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
+    base_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 4), nullable=True, default=None)
+    review_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="CONFIRMED", server_default=text("'CONFIRMED'"), index=True
+    )
+    review_warning: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
     # Relasi master supplier (toko/vendor)
     supplier_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True, index=True

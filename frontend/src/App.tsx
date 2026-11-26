@@ -5,6 +5,7 @@ import {
   createExpenseBatch,
   exchangeSsoToken,
   getBankAccounts,
+  getDraftWarningCount,
   getExpenseUsers,
   getGroupedExpenses,
   getPurchaseRequestStats,
@@ -36,6 +37,7 @@ const FilterBar = React.lazy(() => import("@/components/dashboard/FilterBar").th
 const ExpenseTable = React.lazy(() => import("@/components/dashboard/ExpenseTable").then(m => ({ default: m.ExpenseTable })));
 const OwnerMobileView = React.lazy(() => import("@/components/dashboard/OwnerMobileView").then(m => ({ default: m.OwnerMobileView })));
 const ExpenseDetailModal = React.lazy(() => import("@/components/dashboard/ExpenseDetailModal").then(m => ({ default: m.ExpenseDetailModal })));
+const ConfirmPackagingModal = React.lazy(() => import("@/components/dashboard/ConfirmPackagingModal").then(m => ({ default: m.ConfirmPackagingModal })));
 const PriceHistoryModal = React.lazy(() => import("@/components/dashboard/PriceHistoryModal").then(m => ({ default: m.PriceHistoryModal })));
 const BudgetSetupDialog = React.lazy(() => import("@/components/dashboard/BudgetSetupDialog").then(m => ({ default: m.BudgetSetupDialog })));
 const ExpenseActivityLogModal = React.lazy(() => import("@/components/dashboard/ExpenseActivityLogModal").then(m => ({ default: m.ExpenseActivityLogModal })));
@@ -280,6 +282,7 @@ function MainDashboardApp() {
   const [payMethod, setPayMethod] = useState<string>("");
   const [isReimbursement, setIsReimbursement] = useState<boolean | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<"" | "DRAFT_WARNING">("");
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number>(25);
   const [txViewMode, setTxViewMode] = useState<ExpenseViewMode>("grouped");
@@ -292,6 +295,7 @@ function MainDashboardApp() {
   // Modal & Drawer states
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [confirmingPackagingExpense, setConfirmingPackagingExpense] = useState<Expense | null>(null);
   const [viewingExpense, setViewingExpense] = useState<Expense | null>(null);
   const [repeatingExpense, setRepeatingExpense] = useState<Expense | null>(null);
   const [inspectedItemName, setInspectedItemName] = useState<string | null>(null);
@@ -463,6 +467,58 @@ function MainDashboardApp() {
     }
   }, [authData?.authenticated, userRole, activeTab, isStaff, isWarehouse, isPurchasing, isAdminInput, navigate]);
 
+  // Deep-link spesifik transaksi dari Telegram (?expense_id=... atau ?confirm_unit=...)
+  useEffect(() => {
+    if (!authData?.authenticated || !canViewFinancialData) return;
+    const params = new URLSearchParams(location.search);
+    const confirmParam = params.get("confirm_unit");
+    const expenseParam = params.get("expense_id");
+    const rawTargetId = confirmParam || expenseParam;
+    if (!rawTargetId) return;
+    const targetId = Number(rawTargetId);
+    if (!Number.isInteger(targetId) || targetId <= 0) return;
+
+    let cancelled = false;
+    api
+      .get<Expense>(`/expenses/${targetId}`)
+      .then((res) => {
+        if (cancelled || !res.data) return;
+        const exp = res.data;
+        if (exp.expense_date && /^\d{4}-\d{2}-\d{2}/.test(exp.expense_date)) {
+          const [yStr, mStr] = exp.expense_date.split("-");
+          const yNum = Number(yStr);
+          const mNum = Number(mStr);
+          if (yNum > 2000 && mNum >= 1 && mNum <= 12) {
+            setYear(yNum);
+            setMonthStart(mNum);
+            setMonthEnd(mNum);
+          }
+        }
+        setHighlightedExpenseId(exp.id);
+        if (confirmParam || exp.review_status === "DRAFT_WARNING") {
+          setConfirmingPackagingExpense(exp);
+        } else {
+          setViewingExpense(exp);
+        }
+      })
+      .catch(() => {
+        toast.error(`Transaksi #${targetId} tidak ditemukan atau sudah dihapus.`);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        const cleanParams = new URLSearchParams(location.search);
+        cleanParams.delete("expense_id");
+        cleanParams.delete("confirm_unit");
+        cleanParams.delete("ids");
+        const q = cleanParams.toString();
+        navigate(`${location.pathname}${q ? `?${q}` : ""}`, { replace: true });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authData?.authenticated, canViewFinancialData, location.search, location.pathname, navigate]);
+
   // Listen for 401 unauthorized event
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -490,13 +546,21 @@ function MainDashboardApp() {
     staleTime: 30_000,
   });
 
+  const { data: draftWarningCountData } = useQuery({
+    queryKey: ["draft-warning-count"],
+    queryFn: getDraftWarningCount,
+    enabled: !!authData?.authenticated && canViewFinancialData,
+    staleTime: 30_000,
+  });
+  const draftWarningCount = draftWarningCountData?.count || 0;
+
   // 3. Expenses List Query (Per Item Mode)
   const {
     data: expensesData,
     isLoading: isFlatExpensesLoading,
     refetch: refetchFlatExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
+    queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -513,6 +577,7 @@ function MainDashboardApp() {
       if (payMethod) params.append("pay_method", payMethod);
       if (isReimbursement !== null) params.append("is_reimbursement", String(isReimbursement));
       if (selectedUserId !== null) params.append("user_id", String(selectedUserId));
+      if (reviewStatusFilter) params.append("review_status", reviewStatusFilter);
 
       const res = await api.get(`/expenses?${params.toString()}`);
       return res.data;
@@ -526,7 +591,7 @@ function MainDashboardApp() {
     isLoading: isGroupedExpensesLoading,
     refetch: refetchGroupedExpenses,
   } = useQuery<ExpenseInvoiceListResponse>({
-    queryKey: ["expenses-grouped", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId],
+    queryKey: ["expenses-grouped", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
     queryFn: () =>
       getGroupedExpenses({
         page,
@@ -540,6 +605,7 @@ function MainDashboardApp() {
         pay_method: payMethod || undefined,
         is_reimbursement: isReimbursement,
         user_id: selectedUserId,
+        review_status: reviewStatusFilter || undefined,
       }),
     enabled: !!authData?.authenticated && canViewFinancialData && txViewMode === "grouped",
   });
@@ -661,6 +727,7 @@ function MainDashboardApp() {
           : "Catatan pengeluaran berhasil ditambahkan"
       );
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
@@ -695,6 +762,7 @@ function MainDashboardApp() {
     onSuccess: (saved) => {
       toast.success(`${saved.length} catatan pengeluaran berhasil disimpan`);
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
@@ -763,6 +831,7 @@ function MainDashboardApp() {
         toast.info(`Transaksi #${updated.id} diubah ke Belum Lunas`);
       }
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
@@ -806,6 +875,7 @@ function MainDashboardApp() {
         toast.info(`Status Lunas invoice dibatalkan (${data.updated_count} item)`);
       }
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
@@ -849,6 +919,7 @@ function MainDashboardApp() {
     onSuccess: () => {
       toast.success("Pengeluaran berhasil dihapus");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
       queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
@@ -1339,6 +1410,29 @@ function MainDashboardApp() {
                     />
 
                     {/* Admin Input Expense Table */}
+                    {(draftWarningCount > 0 || reviewStatusFilter === "DRAFT_WARNING") && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50/90 dark:border-amber-700 dark:bg-amber-950/40 px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs">
+                        <span className="text-amber-900 dark:text-amber-200 font-medium">
+                          {draftWarningCount > 0
+                            ? `${draftWarningCount} transaksi AI/struk berstatus Draft menunggu konfirmasi varian kemasan.`
+                            : "Menampilkan filter Draft Konfirmasi Kemasan."}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReviewStatusFilter((prev) =>
+                              prev === "DRAFT_WARNING" ? "" : "DRAFT_WARNING"
+                            );
+                            setPage(1);
+                          }}
+                          className="px-2.5 py-1 rounded-md border border-amber-400 bg-white dark:bg-amber-900/50 text-amber-950 dark:text-amber-100 font-semibold hover:bg-amber-100 transition-colors"
+                        >
+                          {reviewStatusFilter === "DRAFT_WARNING"
+                            ? "Tampilkan Semua Transaksi"
+                            : `Filter ${draftWarningCount} Draft`}
+                        </button>
+                      </div>
+                    )}
                     <ExpenseTable
                       expenses={expensesData?.data || []}
                       invoiceGroups={groupedExpensesData?.data || []}
@@ -1375,6 +1469,7 @@ function MainDashboardApp() {
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
+                      onConfirmPackaging={(item) => setConfirmingPackagingExpense(item)}
                       canDelete={canDelete}
                       categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
@@ -1572,6 +1667,29 @@ function MainDashboardApp() {
                       />
 
                       {/* Desktop Expense Data Table */}
+                      {(draftWarningCount > 0 || reviewStatusFilter === "DRAFT_WARNING") && (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50/90 dark:border-amber-700 dark:bg-amber-950/40 px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs">
+                          <span className="text-amber-900 dark:text-amber-200 font-medium">
+                            {draftWarningCount > 0
+                              ? `${draftWarningCount} transaksi AI/struk berstatus Draft menunggu konfirmasi varian kemasan.`
+                              : "Menampilkan filter Draft Konfirmasi Kemasan."}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReviewStatusFilter((prev) =>
+                                prev === "DRAFT_WARNING" ? "" : "DRAFT_WARNING"
+                              );
+                              setPage(1);
+                            }}
+                            className="px-2.5 py-1 rounded-md border border-amber-400 bg-white dark:bg-amber-900/50 text-amber-950 dark:text-amber-100 font-semibold hover:bg-amber-100 transition-colors"
+                          >
+                            {reviewStatusFilter === "DRAFT_WARNING"
+                              ? "Tampilkan Semua Transaksi"
+                              : `Filter ${draftWarningCount} Draft`}
+                          </button>
+                        </div>
+                      )}
                       <ExpenseTable
                         expenses={expensesData?.data || []}
                         invoiceGroups={groupedExpensesData?.data || []}
@@ -1608,6 +1726,7 @@ function MainDashboardApp() {
                         onOpenActivityLog={() => setIsActivityLogOpen(true)}
                         onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                         onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
+                        onConfirmPackaging={(item) => setConfirmingPackagingExpense(item)}
                         canDelete={canDelete}
                         highlightedExpenseId={highlightedExpenseId}
                       />
@@ -1740,6 +1859,29 @@ function MainDashboardApp() {
                     />
 
                     {/* Admin Input Expense Table */}
+                    {(draftWarningCount > 0 || reviewStatusFilter === "DRAFT_WARNING") && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50/90 dark:border-amber-700 dark:bg-amber-950/40 px-3.5 py-2.5 flex items-center justify-between gap-3 flex-wrap text-xs">
+                        <span className="text-amber-900 dark:text-amber-200 font-medium">
+                          {draftWarningCount > 0
+                            ? `${draftWarningCount} transaksi AI/struk berstatus Draft menunggu konfirmasi varian kemasan.`
+                            : "Menampilkan filter Draft Konfirmasi Kemasan."}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReviewStatusFilter((prev) =>
+                              prev === "DRAFT_WARNING" ? "" : "DRAFT_WARNING"
+                            );
+                            setPage(1);
+                          }}
+                          className="px-2.5 py-1 rounded-md border border-amber-400 bg-white dark:bg-amber-900/50 text-amber-950 dark:text-amber-100 font-semibold hover:bg-amber-100 transition-colors"
+                        >
+                          {reviewStatusFilter === "DRAFT_WARNING"
+                            ? "Tampilkan Semua Transaksi"
+                            : `Filter ${draftWarningCount} Draft`}
+                        </button>
+                      </div>
+                    )}
                     <ExpenseTable
                       expenses={expensesData?.data || []}
                       invoiceGroups={groupedExpensesData?.data || []}
@@ -1776,6 +1918,7 @@ function MainDashboardApp() {
                       onOpenActivityLog={() => setIsActivityLogOpen(true)}
                       onOpenAuditDuplicates={() => setIsAuditModalOpen(true)}
                       onOpenDataHygiene={() => setIsDataHygieneModalOpen(true)}
+                      onConfirmPackaging={(item) => setConfirmingPackagingExpense(item)}
                       canDelete={canDelete}
                       categoryCoaMap={categoryCoaMap}
                       highlightedExpenseId={highlightedExpenseId}
@@ -2173,6 +2316,28 @@ function MainDashboardApp() {
           </React.Suspense>
         )}
 
+        {/* Confirm Packaging Modal (Draft Warning) */}
+        {!!confirmingPackagingExpense && (
+          <React.Suspense fallback={null}>
+            <ConfirmPackagingModal
+              isOpen={!!confirmingPackagingExpense}
+              onClose={() => setConfirmingPackagingExpense(null)}
+              expense={confirmingPackagingExpense}
+              itemSuggestions={suggestionsData?.items || []}
+              units={activeUnits}
+              onConfirmed={() => {
+                queryClient.invalidateQueries({ queryKey: ["expenses"] });
+                queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
+                queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
+                queryClient.invalidateQueries({ queryKey: ["master-items"] });
+                queryClient.invalidateQueries({ queryKey: ["suggestions"] });
+                queryClient.invalidateQueries({ queryKey: ["menus"] });
+                queryClient.invalidateQueries({ queryKey: ["report"] });
+              }}
+            />
+          </React.Suspense>
+        )}
+
         {/* Expense Detail Modal with Telegram Cross-Check */}
         {!!viewingExpense && (
           <React.Suspense fallback={null}>
@@ -2210,6 +2375,7 @@ function MainDashboardApp() {
               initialMode={paymentModalMode}
               onPaymentUpdated={() => {
                 queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-talangan"] });
@@ -2223,6 +2389,7 @@ function MainDashboardApp() {
               }}
               onInvoiceUpdated={() => {
                 queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["draft-warning-count"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-grouped"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-unpaid"] });
                 queryClient.invalidateQueries({ queryKey: ["expenses-unpaid-grouped"] });

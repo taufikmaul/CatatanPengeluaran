@@ -36,6 +36,8 @@ from app.services.master_item_service import (
     merge_master_items,
     normalize_recipe_unit,
     auto_fill_master_item_recipe_units,
+    sync_master_item_packagings,
+    serialize_master_item_packagings,
 )
 
 router = APIRouter(
@@ -48,10 +50,39 @@ router = APIRouter(
 def _compute_recipe_unit_price(
     last_unit_price: float,
     konversi_resep: float | None,
+    last_base_unit_price: float | None = None,
 ) -> float | None:
+    if last_base_unit_price is not None and float(last_base_unit_price) > 0:
+        return round(float(last_base_unit_price), 4)
     if last_unit_price > 0 and konversi_resep is not None and float(konversi_resep) > 0:
         return round(float(last_unit_price) / float(konversi_resep), 4)
     return None
+
+
+def _to_master_item_response(m: MasterItem, h: dict | None = None) -> MasterItemResponse:
+    stats = h or {}
+    last_price = float(stats.get("last_unit_price") or 0.0)
+    last_base_price = stats.get("last_base_unit_price")
+    pkg_prices = stats.get("packaging_last_prices") or {}
+    return MasterItemResponse(
+        id=m.id,
+        item_name=m.item_name,
+        category=m.category,
+        default_supplier=m.default_supplier or "-",
+        aliases=m.aliases or "",
+        satuan_beli=m.satuan_beli or "Pcs",
+        tipe_satuan=m.tipe_satuan or "keduanya",
+        isi_paket=m.isi_paket or "",
+        satuan_ecer=m.satuan_ecer or "Pcs",
+        satuan_resep=m.satuan_resep,
+        konversi_resep=m.konversi_resep,
+        recipe_unit_price=_compute_recipe_unit_price(last_price, m.konversi_resep, last_base_price),
+        last_unit_price=last_price,
+        last_supplier=stats.get("last_supplier") or m.default_supplier or "-",
+        tx_count=int(stats.get("tx_count") or 0),
+        packagings=serialize_master_item_packagings(m, pkg_prices),
+        created_at=m.created_at,
+    )
 
 
 @router.get("", dependencies=[Depends(require_roles("admin", "purchasing", "warehouse", "admin_input"))])
@@ -59,31 +90,7 @@ async def get_master_items(db: AsyncSession = Depends(get_db)):
     """Ambil semua daftar Master Item beserta statistik histori harga terbaru & jumlah transaksi."""
     items = await list_master_items(db)
     latest_stats = await get_master_items_latest_stats(db, items)
-
-    data = []
-    for m in items:
-        h = latest_stats.get(m.id, {})
-        last_price = float(h.get("last_unit_price") or 0.0)
-        data.append(
-            MasterItemResponse(
-                id=m.id,
-                item_name=m.item_name,
-                category=m.category,
-                default_supplier=m.default_supplier or "-",
-                aliases=m.aliases or "",
-                satuan_beli=m.satuan_beli or "Pcs",
-                tipe_satuan=m.tipe_satuan or "keduanya",
-                isi_paket=m.isi_paket or "",
-                satuan_ecer=m.satuan_ecer or "Pcs",
-                satuan_resep=m.satuan_resep,
-                konversi_resep=m.konversi_resep,
-                recipe_unit_price=_compute_recipe_unit_price(last_price, m.konversi_resep),
-                last_unit_price=last_price,
-                last_supplier=h.get("last_supplier") or m.default_supplier or "-",
-                tx_count=int(h.get("tx_count") or 0),
-                created_at=m.created_at,
-            )
-        )
+    data = [_to_master_item_response(m, latest_stats.get(m.id, {})) for m in items]
 
     return {
         "ok": True,
@@ -145,30 +152,12 @@ async def add_master_item(
         satuan_ecer=norm_ecer,
         satuan_resep=normalize_recipe_unit(payload.satuan_resep),
         konversi_resep=payload.konversi_resep,
+        packagings=[p.model_dump() for p in payload.packagings] if payload.packagings is not None else None,
     )
     await db.commit()
-    await db.refresh(item)
+    await db.refresh(item, ["packagings"])
     latest_stats = await get_master_items_latest_stats(db, [item])
-    h = latest_stats.get(item.id, {})
-    last_unit_price = float(h.get("last_unit_price") or 0.0)
-    return MasterItemResponse(
-        id=item.id,
-        item_name=item.item_name,
-        category=item.category,
-        default_supplier=item.default_supplier or "-",
-        aliases=item.aliases or "",
-        satuan_beli=item.satuan_beli or "Pcs",
-        tipe_satuan=item.tipe_satuan or "keduanya",
-        isi_paket=item.isi_paket or "",
-        satuan_ecer=item.satuan_ecer or "Pcs",
-        satuan_resep=item.satuan_resep,
-        konversi_resep=item.konversi_resep,
-        recipe_unit_price=_compute_recipe_unit_price(last_unit_price, item.konversi_resep),
-        last_unit_price=last_unit_price,
-        last_supplier=h.get("last_supplier") or item.default_supplier or "-",
-        tx_count=int(h.get("tx_count") or 0),
-        created_at=item.created_at,
-    )
+    return _to_master_item_response(item, latest_stats.get(item.id, {}))
 
 
 @router.post("/auto-fill-recipe-units", dependencies=[Depends(require_roles("admin", "purchasing"))])
@@ -418,6 +407,12 @@ async def update_master_item(
             item.konversi_resep = None
         else:
             item.konversi_resep = round(float(payload.konversi_resep), 6)
+    if "packagings" in payload.model_fields_set and payload.packagings is not None:
+        await sync_master_item_packagings(
+            db,
+            item,
+            [p.model_dump() for p in payload.packagings],
+        )
 
     # Sinkronisasi order/transaksi yang terhubung ke produk ini
     from app.models.expense import Expense
@@ -442,28 +437,9 @@ async def update_master_item(
             exp.sheets_synced = False
 
     await db.commit()
-    await db.refresh(item)
+    await db.refresh(item, ["packagings"])
     latest_stats = await get_master_items_latest_stats(db, [item])
-    h = latest_stats.get(item.id, {})
-    last_unit_price = float(h.get("last_unit_price") or 0.0)
-    return MasterItemResponse(
-        id=item.id,
-        item_name=item.item_name,
-        category=item.category,
-        default_supplier=item.default_supplier or "-",
-        aliases=item.aliases or "",
-        satuan_beli=item.satuan_beli or "Pcs",
-        tipe_satuan=item.tipe_satuan or "keduanya",
-        isi_paket=item.isi_paket or "",
-        satuan_ecer=item.satuan_ecer or "Pcs",
-        satuan_resep=item.satuan_resep,
-        konversi_resep=item.konversi_resep,
-        recipe_unit_price=_compute_recipe_unit_price(last_unit_price, item.konversi_resep),
-        last_unit_price=last_unit_price,
-        last_supplier=h.get("last_supplier") or item.default_supplier or "-",
-        tx_count=int(h.get("tx_count") or 0),
-        created_at=item.created_at,
-    )
+    return _to_master_item_response(item, latest_stats.get(item.id, {}))
 
 
 @router.delete("/{item_id}", dependencies=[Depends(require_admin_role)])

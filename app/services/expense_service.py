@@ -112,6 +112,15 @@ async def record_expense_log(
     return log_entry
 
 
+def _to_dec_or_none(val: Any) -> Decimal | None:
+    if val is None or val == "":
+        return None
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return None
+
+
 async def save_expenses(
     db: AsyncSession,
     items: list[dict],
@@ -119,6 +128,7 @@ async def save_expenses(
     user_id: int | None = None,
     actor: str | None = None,
     allow_zero: bool = True,
+    allow_draft_warning: bool = True,
 ) -> list[Expense]:
     """
     Simpan list item pengeluaran ke Postgres.
@@ -126,7 +136,7 @@ async def save_expenses(
     """
     from app.services.master_item_service import match_and_normalize_extracted_items
 
-    await match_and_normalize_extracted_items(db, items)
+    await match_and_normalize_extracted_items(db, items, allow_draft_warning=allow_draft_warning)
 
     saved = []
     today = date.today()
@@ -277,6 +287,14 @@ async def save_expenses(
             msg_link=msg_link,
             user_id=user_id,
             master_item_id=master_item_id,
+            packaging_id=item.get("packaging_id") if not is_tukar and not is_ongk else None,
+            retail_qty=_to_dec_or_none(item.get("retail_qty")) if not is_tukar and not is_ongk else None,
+            retail_unit=item.get("retail_unit") if not is_tukar and not is_ongk else None,
+            base_qty=_to_dec_or_none(item.get("base_qty")) if not is_tukar and not is_ongk else None,
+            base_unit=item.get("base_unit") if not is_tukar and not is_ongk else None,
+            base_unit_price=_to_dec_or_none(item.get("base_unit_price")) if not is_tukar and not is_ongk else None,
+            review_status=item.get("review_status") or "CONFIRMED",
+            review_warning=item.get("review_warning"),
             bank_account_id=item.get("bank_account_id"),
             sheets_synced=False,
         )
@@ -1494,6 +1512,7 @@ def _build_expense_filter_query(
     month_end: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    review_status: str | None = None,
 ):
     """Bangun query Expense dengan filter & pengurutan terpadu."""
     resolved_order = (sort_order or ("asc" if sort_by == "due_date" else "desc")).lower()
@@ -1580,6 +1599,8 @@ def _build_expense_filter_query(
         query = query.where(Expense.supplier_id == supplier_id)
     elif supplier:
         query = query.where(Expense.supplier == supplier)
+    if review_status:
+        query = query.where(Expense.review_status == review_status.strip().upper())
     if search:
         search_term = f"%{search.strip()}%"
         query = query.outerjoin(User, Expense.user_id == User.id).where(
@@ -1617,6 +1638,7 @@ async def get_all_expenses_paginated(
     month_end: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    review_status: str | None = None,
 ) -> tuple[list[Expense], int]:
     """Untuk dashboard web: paginated list dengan filter kategori, bulan, tahun, search, status, reimbursement, user, supplier, dan special_type (tukar_cash, ongkir, all_cash_delivery, talangan, unpaid)."""
     query = _build_expense_filter_query(
@@ -1639,6 +1661,7 @@ async def get_all_expenses_paginated(
         month_end=month_end,
         start_date=start_date,
         end_date=end_date,
+        review_status=review_status,
     )
 
     count_result = await db.execute(select(func.count()).select_from(query.subquery()))
@@ -1872,6 +1895,7 @@ async def get_grouped_expenses_paginated(
     month_end: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    review_status: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     """
     Ambil daftar transaksi yang sudah dikelompokkan dalam 1 grup invoice (Smart Grouping Opsi B)
@@ -1898,6 +1922,7 @@ async def get_grouped_expenses_paginated(
         month_end=month_end,
         start_date=start_date,
         end_date=end_date,
+        review_status=review_status,
     )
 
     res = await db.execute(query)
@@ -2032,7 +2057,7 @@ async def update_expense(
         if hasattr(expense, field):
             old_val = getattr(expense, field)
             # Khusus konversi jika perlu
-            if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price", "paid_amount", "dp_percent") and val is not None:
+            if field in ("qty", "unit_price", "shipping_fee", "tax", "other_fee", "discount", "total_price", "paid_amount", "dp_percent", "retail_qty", "base_qty", "base_unit_price") and val is not None:
                 val = Decimal(str(val))
             elif field == "expense_date" and isinstance(val, str):
                 try:
@@ -2338,6 +2363,37 @@ async def update_expense(
             changes["unit"] = {"old": expense.unit, "new": norm_u}
             expense.unit = norm_u
 
+    # Hitung ulang snapshot konversi kemasan jika qty/unit/unit_price/master_item/packaging berubah
+    conversion_triggers = {"qty", "unit", "unit_price", "total_price", "master_item_id", "packaging_id"}
+    if not is_special and (conversion_triggers & set(updates.keys())) and "base_qty" not in updates:
+        from app.models.master_item import MasterItem
+        from app.services.master_item_service import resolve_packaging_conversion
+
+        mi_obj = await db.get(MasterItem, expense.master_item_id) if expense.master_item_id else None
+        explicit_pid = updates.get("packaging_id") if "packaging_id" in updates else expense.packaging_id
+        if "unit" in updates and "packaging_id" not in updates and mi_obj:
+            explicit_pid = None
+        conv = resolve_packaging_conversion(
+            mi_obj,
+            qty=float(expense.qty or 1),
+            unit=expense.unit,
+            unit_price=float(expense.unit_price or 0),
+            raw_text=f"{expense.item_name or ''} {expense.notes or ''}",
+            explicit_packaging_id=explicit_pid,
+            allow_draft_warning=False,
+        )
+        expense.packaging_id = conv["packaging_id"]
+        if conv["resolved_unit"] and "unit" not in updates and "packaging_id" in updates:
+            expense.unit = conv["resolved_unit"]
+        expense.retail_qty = _to_dec_or_none(conv["retail_qty"])
+        expense.retail_unit = conv["retail_unit"]
+        expense.base_qty = _to_dec_or_none(conv["base_qty"])
+        expense.base_unit = conv["base_unit"]
+        expense.base_unit_price = _to_dec_or_none(conv["base_unit_price"])
+        if any(k in updates for k in ("unit", "packaging_id", "master_item_id")):
+            expense.review_status = "CONFIRMED"
+            expense.review_warning = None
+
     # Normalisasi metode bayar ke format baku
     if "pay_method" in updates and expense.pay_method:
         from app.services.master_data_service import normalize_payment_method_name
@@ -2381,6 +2437,99 @@ async def update_expense(
         from app.services.asset_service import sync_expense_to_fixed_assets
         await sync_expense_to_fixed_assets(db, expense, actor=actor)
 
+    await db.flush()
+    return expense
+
+
+async def confirm_expense_unit(
+    db: AsyncSession,
+    expense_id: int,
+    *,
+    master_item_id: int | None = None,
+    packaging_id: int | None = None,
+    qty: float | None = None,
+    unit: str | None = None,
+    unit_price: float | None = None,
+    retail_qty: float | None = None,
+    retail_unit: str | None = None,
+    base_qty: float | None = None,
+    base_unit: str | None = None,
+    actor: str = "system",
+) -> Expense | None:
+    """Konfirmasi transaksi DRAFT_WARNING di Web dan perbarui snapshot konversi kemasan."""
+    expense = await get_expense_by_id(db, expense_id)
+    if not expense:
+        return None
+
+    from app.models.master_item import MasterItem
+    from app.services.master_data_service import normalize_unit_to_master
+    from app.services.master_item_service import resolve_packaging_conversion
+
+    if master_item_id is not None:
+        expense.master_item_id = master_item_id
+    if qty is not None and qty > 0:
+        expense.qty = Decimal(str(qty))
+    if unit_price is not None and unit_price >= 0:
+        expense.unit_price = Decimal(str(unit_price))
+    if unit is not None and unit.strip():
+        norm_u = await normalize_unit_to_master(db, unit.strip())
+        expense.unit = norm_u or unit.strip()
+
+    mi_obj = await db.get(MasterItem, expense.master_item_id) if expense.master_item_id else None
+    if base_qty is not None and base_qty > 0 and base_unit:
+        expense.packaging_id = packaging_id
+        expense.retail_qty = _to_dec_or_none(retail_qty) if retail_qty is not None else expense.qty
+        expense.retail_unit = retail_unit or expense.unit
+        expense.base_qty = Decimal(str(round(base_qty, 4)))
+        expense.base_unit = base_unit.strip()
+        up_val = float(expense.unit_price or 0)
+        q_val = float(expense.qty or 1)
+        expense.base_unit_price = (
+            Decimal(str(round((q_val * up_val) / float(base_qty), 4)))
+            if up_val > 0 and base_qty > 0
+            else None
+        )
+    else:
+        conv = resolve_packaging_conversion(
+            mi_obj,
+            qty=float(expense.qty or 1),
+            unit=expense.unit,
+            unit_price=float(expense.unit_price or 0),
+            raw_text=f"{expense.item_name or ''} {expense.notes or ''}",
+            explicit_packaging_id=packaging_id,
+            allow_draft_warning=False,
+        )
+        expense.packaging_id = conv["packaging_id"]
+        if conv["resolved_unit"]:
+            norm_res = await normalize_unit_to_master(db, conv["resolved_unit"])
+            expense.unit = norm_res or conv["resolved_unit"]
+        expense.retail_qty = _to_dec_or_none(conv["retail_qty"])
+        expense.retail_unit = conv["retail_unit"]
+        expense.base_qty = _to_dec_or_none(conv["base_qty"])
+        expense.base_unit = conv["base_unit"]
+        expense.base_unit_price = _to_dec_or_none(conv["base_unit_price"])
+
+    old_status = expense.review_status
+    expense.review_status = "CONFIRMED"
+    expense.review_warning = None
+    expense.sheets_synced = False
+
+    await record_expense_log(
+        db,
+        expense_id=expense.id,
+        action="CONFIRM_UNIT",
+        actor=actor,
+        details={
+            "old_review_status": old_status,
+            "packaging_id": expense.packaging_id,
+            "unit": expense.unit,
+            "retail_qty": float(expense.retail_qty) if expense.retail_qty is not None else None,
+            "retail_unit": expense.retail_unit,
+            "base_qty": float(expense.base_qty) if expense.base_qty is not None else None,
+            "base_unit": expense.base_unit,
+            "base_unit_price": float(expense.base_unit_price) if expense.base_unit_price is not None else None,
+        },
+    )
     await db.flush()
     return expense
 
@@ -2951,6 +3100,14 @@ async def batch_insert_expenses(
             msg_link=item.get("msg_link") or "Import CSV",
             user_id=item.get("user_id") or user_id,
             master_item_id=item.get("master_item_id"),
+            packaging_id=item.get("packaging_id") if not is_tukar else None,
+            retail_qty=_to_dec_or_none(item.get("retail_qty")) if not is_tukar else None,
+            retail_unit=item.get("retail_unit") if not is_tukar else None,
+            base_qty=_to_dec_or_none(item.get("base_qty")) if not is_tukar else None,
+            base_unit=item.get("base_unit") if not is_tukar else None,
+            base_unit_price=_to_dec_or_none(item.get("base_unit_price")) if not is_tukar else None,
+            review_status=item.get("review_status") or "CONFIRMED",
+            review_warning=item.get("review_warning"),
             bank_account_id=item.get("bank_account_id"),
             sheets_synced=sheets_synced,
         )

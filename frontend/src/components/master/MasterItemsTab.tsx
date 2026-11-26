@@ -15,6 +15,12 @@ import {
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import {
+  PackagingVariantsEditor,
+  type EditablePackagingVariant,
+  toEditableVariants,
+  toApiPackagingsPayload,
+} from "./PackagingVariantsEditor";
+import {
   MasterItem,
   DuplicatePair,
   MasterItemAuditResponse,
@@ -328,6 +334,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   // Edit dialog state
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [addPackagings, setAddPackagings] = useState<EditablePackagingVariant[]>([]);
+  const [editPackagings, setEditPackagings] = useState<EditablePackagingVariant[]>([]);
   const [editForm, setEditForm] = useState({
     item_name: "",
     category: "",
@@ -450,6 +458,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const addMutation = useMutation({
     mutationFn: async () => {
       const parsedKonv = Number(konversiResep);
+      const packagingsPayload = toApiPackagingsPayload(addPackagings);
       return (
         await api.post("/master-items", {
           item_name: itemName,
@@ -462,6 +471,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           satuan_ecer: satuanEcer || "Pcs",
           satuan_resep: satuanResep.trim() || null,
           konversi_resep: parsedKonv > 0 ? parsedKonv : null,
+          ...(packagingsPayload.length > 0 ? { packagings: packagingsPayload } : {}),
         })
       ).data;
     },
@@ -472,6 +482,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       setAliases("");
       setDefaultSupplier("");
       setIsiPaket("");
+      setAddPackagings([]);
       setRecipeUnitTouched(false);
       const nextHint = suggestLocalRecipeUnit(satuanBeli, "");
       setSatuanResep(nextHint ? nextHint.unit : "");
@@ -796,6 +807,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   const startEdit = (item: MasterItem) => {
     setEditingItem(item);
+    setEditPackagings(toEditableVariants(item.packagings));
     setEditForm({
       item_name: item.item_name,
       category: item.category,
@@ -1008,6 +1020,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 ) : (
                   <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0 h-4 font-medium">
                     Ecer
+                  </Badge>
+                )}
+                {item.packagings && item.packagings.length > 1 && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium text-muted-foreground">
+                    {item.packagings.length} varian
                   </Badge>
                 )}
               </div>
@@ -1727,6 +1744,17 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
+            <PackagingVariantsEditor
+              variants={addPackagings}
+              onChange={setAddPackagings}
+              units={units}
+              recipeUnits={recipeUnitOptions}
+              defaultPurchaseUnit={satuanBeli}
+              defaultRetailUnit={satuanEcer}
+              defaultBaseUnit={satuanResep}
+              defaultBaseQty={konversiResep}
+            />
+
             <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
               <Button
                 type="button"
@@ -1783,6 +1811,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                   default_supplier: editForm.default_supplier.trim() || "-",
                   satuan_resep: cleanUnit || null,
                   konversi_resep: cleanUnit && cleanKonv > 0 ? cleanKonv : null,
+                  packagings: toApiPackagingsPayload(editPackagings),
                 },
               });
             }}
@@ -2000,6 +2029,17 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 )}
               </div>
             </div>
+
+            <PackagingVariantsEditor
+              variants={editPackagings}
+              onChange={setEditPackagings}
+              units={units}
+              recipeUnits={recipeUnitOptions}
+              defaultPurchaseUnit={editForm.satuan_beli}
+              defaultRetailUnit={editForm.satuan_ecer}
+              defaultBaseUnit={editForm.satuan_resep}
+              defaultBaseQty={editForm.konversi_resep}
+            />
 
             <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
               <Button

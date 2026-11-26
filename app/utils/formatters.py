@@ -254,6 +254,28 @@ def is_ongkir_or_tukar_cash(
     return False
 
 
+def build_transaction_dashboard_url(
+    dashboard_url: str,
+    ids_str: str = "",
+    review_draft: bool = False,
+) -> str:
+    """Bangun URL spesifik menuju transaksi tertentu di Dashboard Web."""
+    base = (dashboard_url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    id_list = [x.strip() for x in str(ids_str or "").split(",") if x.strip().isdigit()]
+    if not id_list:
+        return base
+    tx_base = base if base.endswith("/transactions") else f"{base}/transactions"
+    primary_id = id_list[0]
+    query_parts = [f"expense_id={primary_id}"]
+    if len(id_list) > 1:
+        query_parts.append(f"ids={','.join(id_list)}")
+    if review_draft:
+        query_parts.append(f"confirm_unit={primary_id}")
+    return f"{tx_base}?{'&'.join(query_parts)}"
+
+
 def build_expense_action_keyboard(
     ids_str: str,
     is_paid: bool,
@@ -301,7 +323,19 @@ def build_expense_action_keyboard(
             ])
 
     if dashboard_url and not is_ongkir_or_cash:
-        rows.append([{"text": "🌐 Lihat Dashboard", "url": dashboard_url}])
+        draft_ids = [
+            str(e.id)
+            for e in (expenses or [])
+            if getattr(e, "id", None) is not None
+            and getattr(e, "review_status", None) == "DRAFT_WARNING"
+        ]
+        has_draft = len(draft_ids) > 0
+        target_ids = ",".join(draft_ids) if has_draft else ids_str
+        target_url = build_transaction_dashboard_url(
+            dashboard_url, target_ids, review_draft=has_draft
+        )
+        btn_label = "⚠️ Konfirmasi Kemasan (Web)" if has_draft else "🌐 Lihat Dashboard"
+        rows.append([{"text": btn_label, "url": target_url}])
 
     return {"inline_keyboard": rows}
 

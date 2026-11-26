@@ -20,6 +20,7 @@ from app.utils.formatters import (
     build_items_summary,
     build_progress_text,
     build_expense_action_keyboard,
+    build_transaction_dashboard_url,
     is_ongkir_or_tukar_cash,
 )
 from app.config import settings
@@ -1003,12 +1004,65 @@ class HermesAgent:
             pay_label = "⏳ Belum Lunas (Hutang)"
         reimb_label = "💼 Ya (Ditalangi)" if is_reimb else "🏷️ Tidak (Reguler)"
 
+        dash_url = (settings.public_dashboard_url or "").strip()
+        draft_warnings: list[str] = []
+        conversion_notes: list[str] = []
+        for exp in (saved_expenses or []):
+            r_status = getattr(exp, "review_status", "CONFIRMED") or "CONFIRMED"
+            r_warn = getattr(exp, "review_warning", None)
+            if r_status == "DRAFT_WARNING":
+                warn_text = r_warn or "Varian kemasan perlu dikonfirmasi di Web."
+                exp_id = getattr(exp, "id", None)
+                item_link = (
+                    build_transaction_dashboard_url(dash_url, str(exp_id), review_draft=True)
+                    if dash_url and exp_id is not None
+                    else ""
+                )
+                link_line = f"\n  👉 Konfirmasi: {item_link}" if item_link else ""
+                draft_warnings.append(
+                    f"• *{escape_markdown(exp.item_name)}*: {escape_markdown(warn_text)}{link_line}"
+                )
+            elif getattr(exp, "base_qty", None) and getattr(exp, "base_unit", None):
+                b_qty = fmt_qty(float(exp.base_qty))
+                b_unit = escape_markdown(exp.base_unit)
+                r_part = ""
+                if getattr(exp, "retail_qty", None) and getattr(exp, "retail_unit", None):
+                    if str(exp.retail_unit).lower() != str(exp.unit or "").lower() or float(exp.retail_qty) != float(exp.qty or 0):
+                        r_part = f"{fmt_qty(float(exp.retail_qty))} {escape_markdown(exp.retail_unit)} → "
+                price_part = ""
+                if getattr(exp, "base_unit_price", None) and float(exp.base_unit_price) > 0:
+                    price_part = f" ({fmt_rupiah(float(exp.base_unit_price))}/{b_unit})"
+                conversion_notes.append(
+                    f"• {escape_markdown(exp.item_name)}: {r_part}*{b_qty} {b_unit}*{price_part}"
+                )
+
+        conv_block = ""
+        if conversion_notes:
+            conv_block = "\n\n📦 *Konversi Otomatis:*\n" + "\n".join(conversion_notes)
+
+        draft_block = ""
+        if draft_warnings:
+            fallback_hint = "\n👉 Silakan buka Dashboard Web untuk konfirmasi kemasan." if not dash_url else ""
+            draft_block = (
+                "\n\n⚠️ *Draft — Perlu Konfirmasi Kemasan di Web:*\n"
+                + "\n".join(draft_warnings)
+                + fallback_hint
+            )
+
+        header_title = (
+            f"⚠️ *Disimpan sebagai Draft ({len(items)} Item)*"
+            if draft_warnings
+            else f"✅ *Berhasil Disimpan! ({len(items)} Item)*"
+        )
+
         success_msg = (
-            f"✅ *Berhasil Disimpan! ({len(items)} Item)*\n\n"
+            f"{header_title}\n\n"
             f"📝 *Rincian:*\n{item_list_str}\n\n"
             f"💰 *Total: {fmt_rupiah(total)}*\n"
             f"💳 *Status Bayar:* {pay_label}\n"
-            f"💼 *Status Reimburse:* {reimb_label}\n\n"
+            f"💼 *Status Reimburse:* {reimb_label}"
+            f"{conv_block}"
+            f"{draft_block}\n\n"
             f"_Data telah masuk ke database._"
             f"{insight}"
         )

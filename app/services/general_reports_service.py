@@ -220,6 +220,9 @@ async def get_materials_report(
         Expense.unit,
         Expense.unit_price,
         Expense.total_price,
+        Expense.base_qty,
+        Expense.base_unit,
+        Expense.review_status,
     ).where(
         and_(
             Expense.expense_date >= s_date,
@@ -233,7 +236,9 @@ async def get_materials_report(
     unique_suppliers: set[str] = set()
     total_bruto = 0.0
 
-    for master_item_id, item_name, category, supplier, qty, unit, unit_price, total_price in cur_rows:
+    for master_item_id, item_name, category, supplier, qty, unit, unit_price, total_price, base_qty, base_unit, review_status in cur_rows:
+        if (review_status or "CONFIRMED") == "DRAFT_WARNING":
+            continue
         if not _is_material_expense(category, item_name, supplier, coa_map):
             continue
 
@@ -253,6 +258,8 @@ async def get_materials_report(
                 "category": category or "Bahan Kue",
                 "supplier": sup_name,
                 "total_qty": 0.0,
+                "total_base_qty": 0.0,
+                "base_unit": base_unit,
                 "total_spend": 0.0,
                 "total_bruto": 0.0,
                 "tx_count": 0,
@@ -260,6 +267,10 @@ async def get_materials_report(
             }
 
         item_agg[key]["total_qty"] += qty_f
+        if base_qty is not None and float(base_qty) > 0:
+            item_agg[key]["total_base_qty"] += float(base_qty)
+            if not item_agg[key]["base_unit"] and base_unit:
+                item_agg[key]["base_unit"] = base_unit
         item_agg[key]["total_spend"] += total_f
         item_agg[key]["total_bruto"] += bruto_f
         item_agg[key]["tx_count"] += 1
@@ -289,6 +300,7 @@ async def get_materials_report(
                 Expense.supplier,
                 Expense.qty,
                 Expense.total_price,
+                Expense.review_status,
             ).where(
                 and_(
                     Expense.expense_date >= prev_start,
@@ -299,7 +311,9 @@ async def get_materials_report(
     ).fetchall()
 
     prev_agg: dict[str, dict[str, float]] = {}
-    for master_item_id, item_name, category, supplier, qty, total_price in prev_rows:
+    for master_item_id, item_name, category, supplier, qty, total_price, review_status in prev_rows:
+        if (review_status or "CONFIRMED") == "DRAFT_WARNING":
+            continue
         if not _is_material_expense(category, item_name, supplier, coa_map):
             continue
         pk = f"mid:{master_item_id}" if master_item_id else f"name:{(item_name or '').strip().lower()}"
@@ -338,9 +352,11 @@ async def get_materials_report(
         mi = master_map.get(mid) if mid else None
         unit = (mi.satuan_beli if mi and mi.satuan_beli else agg["unit"]) or "Pcs"
 
-        recipe_unit = mi.satuan_resep if mi and mi.satuan_resep else None
+        recipe_unit = agg["base_unit"] or (mi.satuan_resep if mi and mi.satuan_resep else None)
         recipe_unit_cost: float | None = None
-        if mi and mi.konversi_resep and mi.konversi_resep > 0 and wap > 0:
+        if agg["total_base_qty"] > 0 and agg["total_bruto"] > 0:
+            recipe_unit_cost = round(agg["total_bruto"] / agg["total_base_qty"], 2)
+        elif mi and mi.konversi_resep and mi.konversi_resep > 0 and wap > 0:
             recipe_unit_cost = round(wap / float(mi.konversi_resep), 2)
 
         prev_wap: float | None = None

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Expense, ExpenseInvoiceGroup } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
+import { formatConversionQty } from "@/lib/packagingConversion";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
   getExpensePaymentBreakdown,
@@ -80,6 +81,7 @@ interface ExpenseTableProps {
   onOpenActivityLog?: () => void;
   onOpenAuditDuplicates?: () => void;
   onOpenDataHygiene?: () => void;
+  onConfirmPackaging?: (expense: Expense) => void;
   canDelete?: boolean;
   highlightedExpenseId?: number | null;
   categoryCoaMap?: Record<string, { code: string; name: string; group: string }>;
@@ -110,6 +112,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   onOpenActivityLog,
   onOpenAuditDuplicates,
   onOpenDataHygiene,
+  onConfirmPackaging,
   canDelete = true,
   highlightedExpenseId,
   categoryCoaMap,
@@ -124,6 +127,21 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       setDeletingId(id);
       onDeleteExpense(id);
     }
+  };
+
+  const formatUnitConversionText = (exp: Expense): string | null => {
+    if (!exp.base_qty || !exp.base_unit) return null;
+    const parts: string[] = [];
+    if (
+      exp.retail_qty &&
+      exp.retail_unit &&
+      (exp.retail_unit.toLowerCase() !== (exp.unit || "").toLowerCase() ||
+        exp.retail_qty !== exp.qty)
+    ) {
+      parts.push(`${formatConversionQty(exp.retail_qty)} ${exp.retail_unit}`);
+    }
+    parts.push(`${formatConversionQty(exp.base_qty)} ${exp.base_unit}`);
+    return parts.join(" → ");
   };
 
   const toggleMobileExpand = (key: string) => {
@@ -239,7 +257,25 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                                   Terpilih
                                 </span>
                               )}
+                              {it.review_status === "DRAFT_WARNING" && (
+                                <button
+                                  type="button"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    onConfirmPackaging?.(it);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 transition-colors"
+                                  title={it.review_warning || "Klik untuk konfirmasi varian kemasan"}
+                                >
+                                  Draft • Konfirmasi
+                                </button>
+                              )}
                             </div>
+                            {formatUnitConversionText(it) && (
+                              <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium mt-0.5">
+                                {formatUnitConversionText(it)}
+                              </div>
+                            )}
                             {it.notes && it.notes !== "-" && (
                               <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                                 {it.notes}
@@ -492,6 +528,20 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     <Briefcase className="w-2.5 h-2.5" />
                     <span>Reimburse</span>
                   </span>
+                )}
+                {g.items.some((it) => it.review_status === "DRAFT_WARNING") && (
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      const firstDraft = g.items.find((it) => it.review_status === "DRAFT_WARNING");
+                      if (firstDraft) onConfirmPackaging?.(firstDraft);
+                    }}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-200 transition-colors shrink-0"
+                    title="Ada item yang menunggu konfirmasi varian kemasan"
+                  >
+                    Draft • Konfirmasi
+                  </button>
                 )}
                 {tgMeta.isUrl && (
                   <a
@@ -915,6 +965,19 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                     <span>Reimburse</span>
                   </span>
                 )}
+                {e.review_status === "DRAFT_WARNING" && (
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onConfirmPackaging?.(e);
+                    }}
+                    title={e.review_warning || "Klik untuk konfirmasi varian kemasan"}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-200 transition-colors shrink-0"
+                  >
+                    Draft • Konfirmasi
+                  </button>
+                )}
                 {tgMeta.isUrl && (
                   <a
                     href={tgMeta.url!}
@@ -978,14 +1041,24 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
         header: ({ column }) => (
           <DataGridColumnHeader title="Qty" column={column} className="justify-end text-right" />
         ),
-        cell: ({ row }) => (
-          <div className="text-right text-slate-700 dark:text-slate-300 tabular-nums font-medium whitespace-nowrap">
-            <span>{row.original.qty}</span>
-            <span className="text-[11px] text-slate-500 font-normal ml-1">
-              {row.original.unit || "Pcs"}
-            </span>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const convTxt = formatUnitConversionText(row.original);
+          return (
+            <div className="text-right text-slate-700 dark:text-slate-300 tabular-nums font-medium whitespace-nowrap">
+              <div>
+                <span>{row.original.qty}</span>
+                <span className="text-[11px] text-slate-500 font-normal ml-1">
+                  {row.original.unit || "Pcs"}
+                </span>
+              </div>
+              {convTxt && (
+                <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-normal">
+                  {convTxt}
+                </div>
+              )}
+            </div>
+          );
+        },
         size: 80,
       },
       {
@@ -1613,6 +1686,20 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
                                     {it.qty} {it.unit || "Pcs"} × {formatRupiah(it.unit_price)} •{" "}
                                     <span>{it.category}</span>
                                   </div>
+                                  {formatUnitConversionText(it) && (
+                                    <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium mt-0.5">
+                                      {formatUnitConversionText(it)}
+                                    </div>
+                                  )}
+                                  {it.review_status === "DRAFT_WARNING" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onConfirmPackaging?.(it)}
+                                      className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300"
+                                    >
+                                      Draft • Konfirmasi Kemasan
+                                    </button>
+                                  )}
                                   {it.notes && it.notes !== "-" && (
                                     <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                                       {it.notes}

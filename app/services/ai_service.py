@@ -102,7 +102,7 @@ Instruksi Tambahan:
 - Jika ada nomor invoice/nota (No. Nota, Inv #, No. Pesanan, Struk #), ekstrak ke "no_invoice". Jika tidak ditemukan isi "-".
 - Jika caption atau teks mengandung kata "reimburse", "rembes", "talangan", "ditalangi", set "is_reimbursement": true, jika tidak false.
 - Ekstrak "satuan" barang jika tertera di nota atau teks (misal: "bungkus", "box", "dus", "karton", "pouch", "kg", "gram", "kaleng", "pack", "sak", "bal", "botol", "tray", "pcs"). Jika tidak tertera, isi "Pcs".
-- Jika terdapat turunan kemasan atau berat/isi per bungkus (misal "1 bungkus isi 1kg", "500g", "isi 6 pouch 2kg"), sertakan di nama barang atau keterangan agar dapat dicocokkan ke turunan master.
+- Jika terdapat turunan kemasan, jenis wadah, atau berat/isi per kemasan (misal "1 bungkus isi 1kg", "500g", "klg 480g", "pouch 2kg", "isi 8 pouch 2kg", "24x480g", "900ml"), WAJIB pertahankan info ukuran/kemasan tersebut di kolom "barang" atau "keterangan" agar sistem dapat mencocokkan varian kemasan dengan tepat.
 
 Aturan Biaya & Diskon (Khususnya Marketplace seperti Shopee/Tokopedia/TikTok):
 - "ongkir": Ongkos kirim BERSIH yang benar-benar ditagihkan/dibayar (ongkir asli dikurangi voucher diskon gratis ongkir). Jika gratis ongkir penuh, isi 0.

@@ -3,6 +3,11 @@ import { Control, UseFormRegister, UseFormSetValue, useWatch } from "react-hook-
 import { BankAccount, ExpenseFormData, ItemSuggestion } from "@/types";
 import { CategoryFormProfile } from "@/lib/categoryFormConfig";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
+import {
+  computeLiveConversionPreview,
+  formatConversionQty,
+} from "@/lib/packagingConversion";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,6 +73,8 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
     dueDate = "-",
     expenseDate = "",
     dpPaymentDate = "",
+    packagingId = null,
+    reviewWarning = null,
   ] = useWatch({
     control,
     name: [
@@ -88,6 +95,8 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
       "due_date",
       "expense_date",
       "dp_payment_date",
+      "packaging_id",
+      "review_warning",
     ],
   });
 
@@ -128,17 +137,48 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
       : 0;
 
   const matchedReference = useMemo(() => {
-    if (selectedSuggestionHint && selectedSuggestionHint.last_unit_price > 0) {
+    if (selectedSuggestionHint) {
       return selectedSuggestionHint;
     }
     const q = (itemName || "").trim().toLowerCase();
     if (!q) return null;
     return (
-      itemSuggestions.find(
-        (s) => s.item_name.toLowerCase() === q && s.last_unit_price > 0
-      ) || null
+      itemSuggestions.find((s) => s.item_name.toLowerCase() === q) || null
     );
   }, [selectedSuggestionHint, itemName, itemSuggestions]);
+
+  const activePackagings = useMemo(
+    () => (matchedReference?.packagings || []).filter((p) => p.is_active !== false),
+    [matchedReference]
+  );
+
+  const selectedPackaging = useMemo(() => {
+    if (activePackagings.length === 0) return null;
+    if (packagingId) {
+      const byId = activePackagings.find((p) => p.id === packagingId);
+      if (byId) return byId;
+    }
+    const uLow = (unit || "").trim().toLowerCase();
+    const byUnit = activePackagings.filter(
+      (p) => p.purchase_unit.toLowerCase() === uLow
+    );
+    return byUnit.length === 1 ? byUnit[0] : null;
+  }, [activePackagings, packagingId, unit]);
+
+  const liveConversion = useMemo(
+    () =>
+      computeLiveConversionPreview({
+        qty: Number(qty || 1),
+        unit: unit || "Pcs",
+        unitPrice: Number(unitPrice || 0),
+        selectedPackaging,
+        legacySatuanBeli: matchedReference?.satuan_beli,
+        legacySatuanEcer: matchedReference?.satuan_ecer,
+        legacySatuanResep: matchedReference?.satuan_resep,
+        legacyKonversiResep: matchedReference?.konversi_resep,
+      }),
+    [qty, unit, unitPrice, selectedPackaging, matchedReference]
+  );
 
   const orderedUnits = useMemo(() => {
     if (!catProfile.allowedUnits) return units;
@@ -245,12 +285,13 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
               ) : (
                 <AdaptiveSelect
                   value={unit || "Pcs"}
-                  onValueChange={(val) =>
+                  onValueChange={(val) => {
                     setValue("unit", val || "Pcs", {
                       shouldValidate: true,
                       shouldDirty: true,
-                    })
-                  }
+                    });
+                    setValue("packaging_id", null);
+                  }}
                   options={orderedUnits}
                   placeholder="Pilih satuan..."
                   searchPlaceholder="Cari satuan..."
@@ -280,12 +321,103 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
 
           <PriceSpikeAlert
             currentPrice={Number(unitPrice || 0)}
-            referencePrice={matchedReference?.last_unit_price}
+            referencePrice={
+              selectedPackaging?.last_unit_price ?? matchedReference?.last_unit_price
+            }
             itemName={matchedReference?.item_name}
             onApplyReferencePrice={(refPrice) =>
               setValue("unit_price", refPrice, { shouldValidate: true, shouldDirty: true })
             }
           />
+
+          {reviewWarning && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700/80 dark:bg-amber-950/40 px-2.5 py-2 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <span>{reviewWarning}</span>
+            </div>
+          )}
+
+          {activePackagings.length > 0 && (
+            <div className="pt-2 border-t border-border/70 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span className="font-medium text-foreground">Varian Kemasan</span>
+                <span>Pilih kemasan sesuai nota</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activePackagings.map((pkg) => {
+                  const isSelected = selectedPackaging?.id === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id || pkg.label}
+                      type="button"
+                      onClick={() => {
+                        setValue("packaging_id", pkg.id ?? null);
+                        setValue("unit", pkg.purchase_unit, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                        setValue("review_status", "CONFIRMED");
+                        setValue("review_warning", null);
+                        if (
+                          pkg.last_unit_price &&
+                          pkg.last_unit_price > 0 &&
+                          Number(unitPrice || 0) === 0
+                        ) {
+                          setValue("unit_price", pkg.last_unit_price, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors text-left ${
+                        isSelected
+                          ? "bg-foreground text-background border-foreground"
+                          : "bg-background text-foreground border-input hover:bg-muted/60"
+                      }`}
+                    >
+                      <span>{pkg.label}</span>
+                      <span className="ml-1 opacity-75">
+                        ({formatConversionQty(pkg.base_qty)} {pkg.base_unit})
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {liveConversion.base_qty !== null && liveConversion.base_unit && (
+            <div className="rounded-md border border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/30 px-2.5 py-1.5 text-[11px] text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap font-medium">
+                <span>
+                  {formatConversionQty(Number(qty || 1))} {unit || "Pcs"}
+                </span>
+                {liveConversion.retail_qty !== null &&
+                  liveConversion.retail_unit &&
+                  (liveConversion.retail_unit.toLowerCase() !==
+                    (unit || "").toLowerCase() ||
+                    liveConversion.retail_qty !== Number(qty || 1)) && (
+                    <>
+                      <ArrowRight className="w-3 h-3 shrink-0" />
+                      <span>
+                        {formatConversionQty(liveConversion.retail_qty)}{" "}
+                        {liveConversion.retail_unit}
+                      </span>
+                    </>
+                  )}
+                <ArrowRight className="w-3 h-3 shrink-0" />
+                <strong className="tabular-nums">
+                  {formatConversionQty(liveConversion.base_qty)}{" "}
+                  {liveConversion.base_unit}
+                </strong>
+              </div>
+              {liveConversion.base_unit_price !== null && (
+                <span className="tabular-nums font-semibold">
+                  {formatRupiah(liveConversion.base_unit_price)}/{liveConversion.base_unit}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 

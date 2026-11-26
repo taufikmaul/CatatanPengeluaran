@@ -28,9 +28,14 @@ import {
   Trash2,
   Copy,
   AlertTriangle,
+  ArrowRight,
 } from "lucide-react";
 import { InlineMathInput } from "./InlineMathInput";
 import { PriceSpikeAlert } from "./PriceSpikeAlert";
+import {
+  computeLiveConversionPreview,
+  formatConversionQty,
+} from "@/lib/packagingConversion";
 
 function allocateInvoiceDpAcrossRows(
   rowTotals: number[],
@@ -64,6 +69,8 @@ export interface MultiExpenseRow {
   unit_price: number;
   notes: string;
   master_item_id: number | null;
+  packaging_id?: number | null;
+  review_warning?: string | null;
   reference_price?: number | null;
 }
 
@@ -210,7 +217,9 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
             unit: it.satuan || it.unit || prof.defaultUnit || "Pcs",
             unit_price: up,
             notes: it.keterangan && it.keterangan !== "-" ? it.keterangan : "",
-            master_item_id: null,
+            master_item_id: it.master_item_id ?? null,
+            packaging_id: it.packaging_id ?? null,
+            review_warning: it.review_warning ?? null,
             reference_price: null,
           };
         })
@@ -296,13 +305,20 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
   const handleSelectSuggestion = (rowId: string, s: ItemSuggestion) => {
     const nextCat =
       s.category && categories.includes(s.category) ? s.category : undefined;
+    const defaultPkg =
+      s.packagings?.find((p) => p.is_default && p.is_active !== false) ||
+      s.packagings?.[0] ||
+      null;
+    const suggestedPrice = defaultPkg?.last_unit_price ?? s.last_unit_price;
     updateRow(rowId, {
       item_name: s.item_name,
       ...(nextCat ? { category: nextCat } : {}),
-      unit: s.satuan_beli || "Pcs",
-      unit_price: s.last_unit_price > 0 ? s.last_unit_price : 0,
+      unit: defaultPkg?.purchase_unit || s.satuan_beli || "Pcs",
+      unit_price: suggestedPrice > 0 ? suggestedPrice : 0,
       master_item_id: s.is_master && s.id ? s.id : null,
-      reference_price: s.last_unit_price > 0 ? s.last_unit_price : null,
+      packaging_id: defaultPkg?.id ?? null,
+      review_warning: null,
+      reference_price: suggestedPrice > 0 ? suggestedPrice : null,
     });
     if (
       s.last_supplier &&
@@ -465,6 +481,9 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
         msg_link: msgLink.trim() || "Web Dashboard",
         user_id: userId,
         master_item_id: r.master_item_id,
+        packaging_id: r.packaging_id ?? null,
+        review_status: "CONFIRMED",
+        review_warning: null,
       };
     });
 
@@ -625,13 +644,42 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                       .slice(0, 6)
                   : [];
 
-              const matchedItemRef =
-                row.reference_price ||
-                itemSuggestions.find(
-                  (s) =>
-                    s.item_name.toLowerCase() === q && s.last_unit_price > 0
-                )?.last_unit_price ||
+              const matchedSuggestion =
+                (row.master_item_id
+                  ? itemSuggestions.find((s) => s.id === row.master_item_id)
+                  : null) ||
+                itemSuggestions.find((s) => s.item_name.toLowerCase() === q) ||
                 null;
+              const rowPackagings = (matchedSuggestion?.packagings || []).filter(
+                (p) => p.is_active !== false
+              );
+              const selectedRowPkg =
+                (row.packaging_id
+                  ? rowPackagings.find((p) => p.id === row.packaging_id)
+                  : null) ||
+                (() => {
+                  const uLow = (row.unit || "").trim().toLowerCase();
+                  const hits = rowPackagings.filter(
+                    (p) => p.purchase_unit.toLowerCase() === uLow
+                  );
+                  return hits.length === 1 ? hits[0] : null;
+                })();
+              const rowConv = computeLiveConversionPreview({
+                qty: row.qty,
+                unit: row.unit,
+                unitPrice: row.unit_price,
+                selectedPackaging: selectedRowPkg,
+                legacySatuanBeli: matchedSuggestion?.satuan_beli,
+                legacySatuanEcer: matchedSuggestion?.satuan_ecer,
+                legacySatuanResep: matchedSuggestion?.satuan_resep,
+                legacyKonversiResep: matchedSuggestion?.konversi_resep,
+              });
+              const matchedItemRef =
+                selectedRowPkg?.last_unit_price ||
+                row.reference_price ||
+                (matchedSuggestion && matchedSuggestion.last_unit_price > 0
+                  ? matchedSuggestion.last_unit_price
+                  : null);
 
               return (
                 <div
@@ -732,7 +780,10 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                         value={row.unit}
                         disabled={rowProfile.lockUnit}
                         onValueChange={(nextUnit) =>
-                          updateRow(row.rowId, { unit: nextUnit })
+                          updateRow(row.rowId, {
+                            unit: nextUnit,
+                            packaging_id: null,
+                          })
                         }
                         options={rowProfile.allowedUnits || units}
                         placeholder="Satuan"
@@ -787,6 +838,80 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                       updateRow(row.rowId, { unit_price: refPrice })
                     }
                   />
+
+                  {row.review_warning && (
+                    <div className="sm:ml-7 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700/80 dark:bg-amber-950/40 px-2.5 py-1.5 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <span>{row.review_warning}</span>
+                    </div>
+                  )}
+
+                  {(rowPackagings.length > 0 || rowConv.base_qty !== null) && (
+                    <div className="sm:pl-7 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                      {rowPackagings.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {rowPackagings.map((pkg) => {
+                            const isPicked = selectedRowPkg?.id === pkg.id;
+                            return (
+                              <button
+                                key={pkg.id || pkg.label}
+                                type="button"
+                                onClick={() =>
+                                  updateRow(row.rowId, {
+                                    packaging_id: pkg.id ?? null,
+                                    unit: pkg.purchase_unit,
+                                    review_warning: null,
+                                    ...(pkg.last_unit_price &&
+                                    pkg.last_unit_price > 0 &&
+                                    row.unit_price === 0
+                                      ? { unit_price: pkg.last_unit_price }
+                                      : {}),
+                                  })
+                                }
+                                className={`px-2 py-0.5 rounded border font-medium transition-colors ${
+                                  isPicked
+                                    ? "bg-foreground text-background border-foreground"
+                                    : "bg-background text-foreground border-input hover:bg-muted/60"
+                                }`}
+                              >
+                                {pkg.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {rowConv.base_qty !== null && rowConv.base_unit && (
+                        <div className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
+                          <span>
+                            {formatConversionQty(row.qty)} {row.unit}
+                          </span>
+                          {rowConv.retail_qty !== null &&
+                            rowConv.retail_unit &&
+                            (rowConv.retail_unit.toLowerCase() !==
+                              (row.unit || "").toLowerCase() ||
+                              rowConv.retail_qty !== row.qty) && (
+                              <>
+                                <ArrowRight className="w-3 h-3 shrink-0" />
+                                <span>
+                                  {formatConversionQty(rowConv.retail_qty)}{" "}
+                                  {rowConv.retail_unit}
+                                </span>
+                              </>
+                            )}
+                          <ArrowRight className="w-3 h-3 shrink-0" />
+                          <strong className="tabular-nums">
+                            {formatConversionQty(rowConv.base_qty)}{" "}
+                            {rowConv.base_unit}
+                          </strong>
+                          {rowConv.base_unit_price !== null && (
+                            <span className="text-muted-foreground font-normal ml-1">
+                              ({formatRupiah(rowConv.base_unit_price)}/{rowConv.base_unit})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Baris Bawah: Catatan per Item + Subtotal Baris */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:pl-7">

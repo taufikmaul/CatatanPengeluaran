@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 import base64
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, status, Request
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.connection import get_db
 from app.models.expense import Expense
@@ -15,6 +16,7 @@ from app.api.schemas import (
     ExpenseBatchCreate,
     ExpenseUpdate,
     ExpenseResponse,
+    ExpenseConfirmUnitRequest,
     ExpenseListResponse,
     ExpenseInvoiceGroupResponse,
     ExpenseInvoiceListResponse,
@@ -36,6 +38,7 @@ from app.services.expense_service import (
     get_all_expense_users,
     get_item_price_history,
     update_expense,
+    confirm_expense_unit,
     delete_expense,
     batch_insert_expenses,
     record_expense_log,
@@ -132,6 +135,14 @@ def _to_response_dict(e: Expense) -> dict:
         "user_id": e.user_id,
         "user_name": user_name,
         "master_item_id": getattr(e, "master_item_id", None),
+        "packaging_id": getattr(e, "packaging_id", None),
+        "retail_qty": float(e.retail_qty) if getattr(e, "retail_qty", None) is not None else None,
+        "retail_unit": getattr(e, "retail_unit", None),
+        "base_qty": float(e.base_qty) if getattr(e, "base_qty", None) is not None else None,
+        "base_unit": getattr(e, "base_unit", None),
+        "base_unit_price": float(e.base_unit_price) if getattr(e, "base_unit_price", None) is not None else None,
+        "review_status": getattr(e, "review_status", None) or "CONFIRMED",
+        "review_warning": getattr(e, "review_warning", None),
         "supplier_id": getattr(e, "supplier_id", None),
         "bank_account_id": getattr(e, "bank_account_id", None),
         "reconciled_at": getattr(e, "reconciled_at", None),
@@ -163,6 +174,7 @@ async def list_expenses(
     sort_order: str | None = Query(None),
     include_ongkir: bool = Query(False),
     talangan_type: str | None = Query(None),
+    review_status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     expenses, total = await get_all_expenses_paginated(
@@ -188,6 +200,7 @@ async def list_expenses(
         month_end=month_end,
         start_date=start_date,
         end_date=end_date,
+        review_status=review_status,
     )
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
 
@@ -225,6 +238,7 @@ async def list_expenses_grouped(
     due_urgency: str | None = Query(None),
     include_ongkir: bool = Query(False),
     talangan_type: str | None = Query(None),
+    review_status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Ambil daftar transaksi terkelompok per 1 grup invoice beserta items-nya."""
@@ -252,6 +266,7 @@ async def list_expenses_grouped(
         month_end=month_end,
         start_date=start_date,
         end_date=end_date,
+        review_status=review_status,
     )
     total_pages = (total_groups + per_page - 1) // per_page if total_groups > 0 else 1
 
@@ -303,10 +318,22 @@ async def create_expense(
                 "category": payload.category or "Operasional",
                 "supplier": payload.supplier or "-",
                 "notes": payload.notes or "-",
+                "qty": float(payload.qty or 1),
                 "unit": payload.unit or "Pcs",
+                "unit_price": float(payload.unit_price or 0),
+                "total_price": float(payload.total_price or 0),
                 "master_item_id": payload.master_item_id,
+                "packaging_id": payload.packaging_id,
+                "retail_qty": payload.retail_qty,
+                "retail_unit": payload.retail_unit,
+                "base_qty": payload.base_qty,
+                "base_unit": payload.base_unit,
+                "base_unit_price": payload.base_unit_price,
+                "review_status": payload.review_status or "CONFIRMED",
+                "review_warning": payload.review_warning,
             }
         ],
+        allow_draft_warning=False,
     )
     norm = normalized_list[0]
 
@@ -418,6 +445,14 @@ async def create_expense(
         msg_link=payload.msg_link or "Web Dashboard",
         user_id=payload.user_id,
         master_item_id=norm.get("master_item_id") or payload.master_item_id,
+        packaging_id=norm.get("packaging_id") if norm.get("packaging_id") is not None else payload.packaging_id,
+        retail_qty=Decimal(str(norm["retail_qty"])) if norm.get("retail_qty") is not None else (Decimal(str(payload.retail_qty)) if payload.retail_qty is not None else None),
+        retail_unit=norm.get("retail_unit") or payload.retail_unit,
+        base_qty=Decimal(str(norm["base_qty"])) if norm.get("base_qty") is not None else (Decimal(str(payload.base_qty)) if payload.base_qty is not None else None),
+        base_unit=norm.get("base_unit") or payload.base_unit,
+        base_unit_price=Decimal(str(norm["base_unit_price"])) if norm.get("base_unit_price") is not None else (Decimal(str(payload.base_unit_price)) if payload.base_unit_price is not None else None),
+        review_status=norm.get("review_status") or payload.review_status or "CONFIRMED",
+        review_warning=norm.get("review_warning") if norm.get("review_warning") is not None else payload.review_warning,
         bank_account_id=payload.bank_account_id,
         sheets_synced=False,
     )
@@ -581,6 +616,14 @@ async def create_expense_batch(
             "msg_link": it.msg_link or "Web Dashboard",
             "user_id": it.user_id,
             "master_item_id": it.master_item_id,
+            "packaging_id": it.packaging_id,
+            "retail_qty": it.retail_qty,
+            "retail_unit": it.retail_unit,
+            "base_qty": it.base_qty,
+            "base_unit": it.base_unit,
+            "base_unit_price": it.base_unit_price,
+            "review_status": it.review_status or "CONFIRMED",
+            "review_warning": it.review_warning,
             "bank_account_id": it.bank_account_id,
             "asset_id": it.asset_id,
             "maintenance_type": it.maintenance_type,
@@ -623,8 +666,9 @@ async def create_expense_batch(
 @router.post("/ocr")
 async def scan_expense_ocr(
     file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Pindai gambar nota/struk/invoice dengan Vision AI untuk auto-fill form pengeluaran."""
+    """Pindai gambar nota/struk/invoice dengan Vision AI dan cocokkan varian kemasan MasterItem."""
     content = await file.read()
     validate_upload_file(
         content,
@@ -645,12 +689,35 @@ async def scan_expense_ocr(
             "ok": False,
             "message": extracted.get("message") or "Gagal membaca struk/nota. Pastikan foto jelas dan pencahayaan cukup.",
             "items": [],
+            "warning_count": 0,
         }
 
+    from app.services.master_item_service import match_and_normalize_extracted_items
+
+    items = list(extracted.get("items", []))
+    await match_and_normalize_extracted_items(db, items, allow_draft_warning=True)
+    await db.commit()
+
+    warning_count = sum(1 for it in items if it.get("review_status") == "DRAFT_WARNING")
     return {
         "ok": True,
-        "items": extracted.get("items", []),
+        "items": items,
+        "warning_count": warning_count,
     }
+
+
+@router.get("/draft-warnings/count")
+async def get_draft_warning_count(db: AsyncSession = Depends(get_db)):
+    """Hitung jumlah transaksi DRAFT_WARNING yang menunggu konfirmasi kemasan di Web."""
+    count = int(
+        (
+            await db.execute(
+                select(func.count(Expense.id)).where(Expense.review_status == "DRAFT_WARNING")
+            )
+        ).scalar()
+        or 0
+    )
+    return {"ok": True, "count": count}
 
 
 @router.get("/users/list", response_model=list[ExpenseUserResponse])
@@ -1161,6 +1228,42 @@ async def update_expense_endpoint(
 
     actor = f"dashboard:{role}"
     expense = await update_expense(db, expense_id, updates, actor=actor)
+    if not expense:
+        raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
+
+    await db.commit()
+    await db.refresh(expense)
+    if expense.user_id:
+        try:
+            await db.refresh(expense, ["user"])
+        except Exception:
+            pass
+    return ExpenseResponse(**_to_response_dict(expense))
+
+
+@router.post("/{expense_id}/confirm-unit", response_model=ExpenseResponse)
+async def confirm_expense_unit_endpoint(
+    expense_id: int,
+    payload: ExpenseConfirmUnitRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Konfirmasi varian kemasan & satuan konversi untuk transaksi DRAFT_WARNING."""
+    actor = f"dashboard:{get_current_role(request)}"
+    expense = await confirm_expense_unit(
+        db,
+        expense_id,
+        master_item_id=payload.master_item_id,
+        packaging_id=payload.packaging_id,
+        qty=payload.qty,
+        unit=payload.unit,
+        unit_price=payload.unit_price,
+        retail_qty=payload.retail_qty,
+        retail_unit=payload.retail_unit,
+        base_qty=payload.base_qty,
+        base_unit=payload.base_unit,
+        actor=actor,
+    )
     if not expense:
         raise HTTPException(status_code=404, detail="Data pengeluaran tidak ditemukan")
 

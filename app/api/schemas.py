@@ -66,6 +66,14 @@ class ExpenseBase(BaseModel):
     msg_link: str = "Web Dashboard"
     user_id: int | None = None
     master_item_id: int | None = None
+    packaging_id: int | None = None
+    retail_qty: float | None = Field(None, gt=0)
+    retail_unit: str | None = None
+    base_qty: float | None = Field(None, gt=0)
+    base_unit: str | None = None
+    base_unit_price: float | None = Field(None, ge=0)
+    review_status: str = "CONFIRMED"
+    review_warning: str | None = None
     supplier_id: int | None = None
     bank_account_id: int | None = None
     # Opsional: integrasi otomatis ke Inventaris Aset & Maintenance
@@ -112,6 +120,14 @@ class ExpenseUpdate(BaseModel):
     msg_link: str | None = None
     user_id: int | None = None
     master_item_id: int | None = None
+    packaging_id: int | None = None
+    retail_qty: float | None = Field(None, gt=0)
+    retail_unit: str | None = None
+    base_qty: float | None = Field(None, gt=0)
+    base_unit: str | None = None
+    base_unit_price: float | None = Field(None, ge=0)
+    review_status: str | None = None
+    review_warning: str | None = None
     supplier_id: int | None = None
     bank_account_id: int | None = None
     # Opsional: integrasi otomatis ke Inventaris Aset & Maintenance
@@ -157,6 +173,14 @@ class ExpenseResponse(BaseModel):
     user_id: int | None = None
     user_name: str | None = None
     master_item_id: int | None = None
+    packaging_id: int | None = None
+    retail_qty: float | None = None
+    retail_unit: str | None = None
+    base_qty: float | None = None
+    base_unit: str | None = None
+    base_unit_price: float | None = None
+    review_status: str = "CONFIRMED"
+    review_warning: str | None = None
     supplier_id: int | None = None
     bank_account_id: int | None = None
     reconciled_at: datetime | None = None
@@ -164,6 +188,18 @@ class ExpenseResponse(BaseModel):
     sheets_synced: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExpenseConfirmUnitRequest(BaseModel):
+    master_item_id: int | None = None
+    packaging_id: int | None = None
+    qty: float | None = Field(None, gt=0)
+    unit: str | None = None
+    unit_price: float | None = Field(None, ge=0)
+    retail_qty: float | None = Field(None, gt=0)
+    retail_unit: str | None = None
+    base_qty: float | None = Field(None, gt=0)
+    base_unit: str | None = None
 
 
 class ExpenseDuplicatePair(BaseModel):
@@ -616,6 +652,44 @@ class DailyCashflowResponse(BaseModel):
     daily_rows: list[DailyCashflowRow]
 
 
+class MasterItemPackagingBase(BaseModel):
+    label: str = Field(..., min_length=1, max_length=120)
+    purchase_unit: str = Field(..., min_length=1, max_length=50)
+    retail_qty: float = Field(1.0, gt=0)
+    retail_unit: str = Field(..., min_length=1, max_length=50)
+    base_qty: float = Field(..., gt=0)
+    base_unit: str = Field(..., min_length=1, max_length=50)
+    keywords: str = ""
+    is_default: bool = False
+    is_active: bool = True
+
+
+class MasterItemPackagingCreate(MasterItemPackagingBase):
+    pass
+
+
+class MasterItemPackagingUpdate(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=120)
+    purchase_unit: str | None = Field(None, min_length=1, max_length=50)
+    retail_qty: float | None = Field(None, gt=0)
+    retail_unit: str | None = Field(None, min_length=1, max_length=50)
+    base_qty: float | None = Field(None, gt=0)
+    base_unit: str | None = Field(None, min_length=1, max_length=50)
+    keywords: str | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+
+
+class MasterItemPackagingResponse(MasterItemPackagingBase):
+    id: int
+    master_item_id: int
+    last_unit_price: float | None = None
+    base_unit_price: float | None = None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MasterItemCreate(BaseModel):
     item_name: str
     category: str = "Bahan Kue"
@@ -627,6 +701,7 @@ class MasterItemCreate(BaseModel):
     satuan_ecer: str = "Pcs"
     satuan_resep: str | None = None
     konversi_resep: float | None = Field(None, gt=0)
+    packagings: list[MasterItemPackagingCreate] | None = None
 
 
 class MasterItemUpdate(BaseModel):
@@ -640,6 +715,7 @@ class MasterItemUpdate(BaseModel):
     satuan_ecer: str | None = None
     satuan_resep: str | None = None
     konversi_resep: float | None = Field(None, gt=0)
+    packagings: list[MasterItemPackagingCreate] | None = None
 
 
 class MasterItemBulkRequest(BaseModel):
@@ -665,6 +741,7 @@ class MasterItemResponse(BaseModel):
     last_unit_price: float = 0.0
     last_supplier: str = "-"
     tx_count: int = 0
+    packagings: list[MasterItemPackagingResponse] = []
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

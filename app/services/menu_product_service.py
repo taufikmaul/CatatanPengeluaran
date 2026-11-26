@@ -395,20 +395,40 @@ async def get_existing_anonymous_codes(db: AsyncSession) -> set[str]:
 
 async def build_master_price_history_map(db: AsyncSession) -> dict[int, dict[str, Any]]:
     """
-    Ambil 2 harga beli unit terbaru dari tabel expenses untuk setiap master_item_id
-    guna mendeteksi kenaikan harga bahan baku (Price Drift) — konsisten dengan
-    statistik latest price MasterItem & Riwayat Harga.
+    Ambil 2 harga beli unit terbaru dari tabel expenses yang CONFIRMED untuk setiap master_item_id
+    guna mendeteksi kenaikan harga bahan baku (Price Drift).
+    Jika transaksi memakai kemasan berbeda (mis. ecer Kaleng vs Karton), harga dinormalisasi
+    ke unit referensi MasterItem (`konversi_resep` atau default packaging `base_qty`) melalui `last_base_unit_price`.
     """
-    from app.services.master_item_service import get_master_items_latest_stats
+    from app.services.master_item_service import get_master_items_latest_stats, list_master_items
 
-    latest_stats = await get_master_items_latest_stats(db)
+    master_items = await list_master_items(db)
+    master_by_id = {m.id: m for m in master_items}
+    latest_stats = await get_master_items_latest_stats(db, master_items)
     history_map: dict[int, dict[str, Any]] = {}
     for mid, st in latest_stats.items():
         latest_price = float(st.get("last_unit_price") or 0.0)
         if latest_price <= 0:
             continue
+        mi = master_by_id.get(mid)
+        ref_konv: float | None = None
+        if mi:
+            if mi.konversi_resep and float(mi.konversi_resep) > 0:
+                ref_konv = float(mi.konversi_resep)
+            elif getattr(mi, "packagings", None):
+                def_pkg = next((p for p in mi.packagings if p.is_default and p.is_active), None) or mi.packagings[0]
+                if def_pkg and float(def_pkg.base_qty or 0) > 0:
+                    ref_konv = float(def_pkg.base_qty)
+
+        last_base_p = st.get("last_base_unit_price")
+        prev_base_p = st.get("prev_base_unit_price")
+        if last_base_p is not None and float(last_base_p) > 0 and ref_konv and ref_konv > 0:
+            latest_price = round(float(last_base_p) * ref_konv, 2)
+
         latest_date = st.get("latest_price_date") or st.get("last_date")
         prev_price = st.get("prev_unit_price")
+        if prev_base_p is not None and float(prev_base_p) > 0 and ref_konv and ref_konv > 0:
+            prev_price = round(float(prev_base_p) * ref_konv, 2)
         prev_date = st.get("prev_date")
         change_pct: float | None = None
         has_increase = False
