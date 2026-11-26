@@ -10,6 +10,8 @@ import { MasterItem } from "@/types";
 import { formatRupiah } from "@/lib/formatters";
 import { Search, ChevronsUpDown, Check, X, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
 
 interface MasterItemComboboxProps {
   value: number | null;
@@ -39,8 +41,10 @@ export const MasterItemCombobox: React.FC<MasterItemComboboxProps> = ({
     return masterItems.find((m) => m.id === value) || null;
   }, [value, masterItems]);
 
+  const effectiveQuery = useMemo(() => getEffectiveSearchQuery(query), [query]);
+
   const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = effectiveQuery.toLowerCase();
     if (!q) return masterItems;
 
     return masterItems.filter((item) => {
@@ -60,7 +64,7 @@ export const MasterItemCombobox: React.FC<MasterItemComboboxProps> = ({
         supplier.includes(q)
       );
     });
-  }, [masterItems, query]);
+  }, [masterItems, effectiveQuery]);
 
   // Reset search and highlight when popover opens/closes
   useEffect(() => {
@@ -173,33 +177,36 @@ export const MasterItemCombobox: React.FC<MasterItemComboboxProps> = ({
         className="z-[70] w-[320px] sm:w-[380px] p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl space-y-2"
       >
         {/* Search Input Bar */}
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setHighlightedIndex(0);
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Ketik nama bahan, kategori, satuan..."
-            className="h-8 pl-8 pr-7 text-xs bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-700"
-          />
-          {query.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                searchInputRef.current?.focus();
+        <div>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setHighlightedIndex(0);
               }}
-              aria-label="Hapus pencarian"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
+              onKeyDown={handleKeyDown}
+              placeholder="Ketik nama bahan, kategori, satuan..."
+              className="h-8 pl-8 pr-7 text-xs bg-slate-50 dark:bg-slate-950/70 border-slate-200 dark:border-slate-700"
+            />
+            {query.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Hapus pencarian"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <SearchMinCharHint query={query} className="px-1" />
         </div>
 
         {/* Clear / Manual Option */}
@@ -267,22 +274,29 @@ export const MasterItemCombobox: React.FC<MasterItemComboboxProps> = ({
                       {isSelected && (
                         <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                       )}
-                      <span className="truncate">{item.item_name}</span>
+                      <span className="truncate">
+                        <HighlightText text={item.item_name} query={effectiveQuery} />
+                      </span>
                     </div>
                     <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
-                      <span>{item.category || "Bahan Kue"}</span>
+                      <span><HighlightText text={item.category || "Bahan Kue"} query={effectiveQuery} /></span>
                       <span>•</span>
-                      <span>Beli: {item.satuan_beli || "-"}</span>
+                      <span>Beli: <HighlightText text={item.satuan_beli || "-"} query={effectiveQuery} /></span>
                       {item.satuan_ecer && item.satuan_ecer !== item.satuan_beli && (
                         <>
                           <span>•</span>
-                          <span>Ecer: {item.satuan_ecer}</span>
+                          <span>Ecer: <HighlightText text={item.satuan_ecer} query={effectiveQuery} /></span>
                         </>
                       )}
                       {(item.default_supplier || item.last_supplier || item.supplier) && (
                         <>
                           <span>•</span>
-                          <span className="truncate">{item.default_supplier || item.last_supplier || item.supplier}</span>
+                          <span className="truncate">
+                            <HighlightText
+                              text={item.default_supplier || item.last_supplier || item.supplier}
+                              query={effectiveQuery}
+                            />
+                          </span>
                         </>
                       )}
                     </div>

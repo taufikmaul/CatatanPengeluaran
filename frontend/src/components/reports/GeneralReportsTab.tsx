@@ -44,6 +44,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { toast } from "sonner";
@@ -269,10 +271,15 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
     }
   };
 
+  const effectiveSearchTerm = useMemo(
+    () => getEffectiveSearchQuery(searchTerm),
+    [searchTerm]
+  );
+
   // Filtered rows for Bahan & HPP
   const filteredMaterialItems = useMemo(() => {
     const items = materialsQuery.data?.items || [];
-    const q = searchTerm.trim().toLowerCase();
+    const q = effectiveSearchTerm.toLowerCase();
     if (!q) return items;
     return items.filter(
       (it) =>
@@ -280,11 +287,11 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
         (it.supplier || "").toLowerCase().includes(q) ||
         it.category.toLowerCase().includes(q)
     );
-  }, [materialsQuery.data, searchTerm]);
+  }, [materialsQuery.data, effectiveSearchTerm]);
 
   const filteredHppMenus = useMemo(() => {
     const menus = hppQuery.data?.menus || [];
-    const q = searchTerm.trim().toLowerCase();
+    const q = effectiveSearchTerm.toLowerCase();
     if (!q) return menus;
     return menus.filter(
       (m) =>
@@ -292,7 +299,7 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
         m.category.toLowerCase().includes(q) ||
         m.classification.toLowerCase().includes(q)
     );
-  }, [hppQuery.data, searchTerm]);
+  }, [hppQuery.data, effectiveSearchTerm]);
 
   // Column definitions
   const salesChannelColumns = useMemo<ColumnDef<DataGridFeatures, SalesChannelRow>[]>(
@@ -961,16 +968,19 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
                   <h3 className="text-sm font-semibold text-[var(--ledger-ink)]">
                     Rincian Harga Rata-rata Tertimbang (WAP) Bahan
                   </h3>
-                  <div className="relative w-full sm:w-64">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-                    <Input
-                      type="search"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Cari item atau supplier..."
-                      aria-label="Cari item atau supplier bahan"
-                      className="pl-8 min-h-[44px] sm:min-h-[34px] text-xs bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-                    />
+                  <div className="w-full sm:w-64">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                      <Input
+                        type="search"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Cari item atau supplier..."
+                        aria-label="Cari item atau supplier bahan"
+                        className="pl-8 min-h-[44px] sm:min-h-[34px] text-xs bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                      />
+                    </div>
+                    <SearchMinCharHint query={searchTerm} />
                   </div>
                 </div>
                 <DataTable
@@ -978,6 +988,7 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
                   data={filteredMaterialItems}
                   getRowId={(r, i) => `${r.item_name}-${i}`}
                   defaultPageSize={15}
+                  searchQuery={searchTerm}
                   containerClassName="border-0 rounded-none shadow-none"
                   footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2"
                 />
@@ -1182,16 +1193,19 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
                       {hppQuery.data.hpp_basis_note}
                     </p>
                   </div>
-                  <div className="relative w-full sm:w-64">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-                    <Input
-                      type="search"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Cari nama menu atau kuadran..."
-                      aria-label="Cari nama menu atau kuadran"
-                      className="pl-8 min-h-[44px] sm:min-h-[34px] text-xs bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-                    />
+                  <div className="w-full sm:w-64">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                      <Input
+                        type="search"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Cari nama menu atau kuadran..."
+                        aria-label="Cari nama menu atau kuadran"
+                        className="pl-8 min-h-[44px] sm:min-h-[34px] text-xs bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                      />
+                    </div>
+                    <SearchMinCharHint query={searchTerm} />
                   </div>
                 </div>
                 <DataTable
@@ -1199,6 +1213,7 @@ export const GeneralReportsTab: React.FC<GeneralReportsTabProps> = ({
                   data={filteredHppMenus}
                   getRowId={(r) => String(r.menu_id)}
                   defaultPageSize={15}
+                  searchQuery={searchTerm}
                   containerClassName="border-0 rounded-none shadow-none"
                   footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2"
                 />

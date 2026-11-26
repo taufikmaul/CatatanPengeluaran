@@ -11,6 +11,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   History,
   Search,
@@ -143,12 +145,14 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
     return String(val);
   };
 
+  const effectiveSearch = getEffectiveSearchQuery(search);
+
   const filteredLogs = logs.filter((log) => {
     if (filterAction !== "ALL" && log.action !== filterAction) {
       return false;
     }
-    if (!search.trim()) return true;
-    const query = search.toLowerCase();
+    if (!effectiveSearch) return true;
+    const query = effectiveSearch.toLowerCase();
     const actorMatch = log.actor.toLowerCase().includes(query);
     const detailsMatch = log.details?.toLowerCase().includes(query) || false;
     const actionMatch = log.action.toLowerCase().includes(query);
@@ -205,14 +209,17 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
 
         {/* Filter bar */}
         <div className="flex flex-col sm:flex-row gap-2 my-2 shrink-0">
-          <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari berdasarkan nama barang, aktor, ID..."
-              className="pl-8 h-9 text-xs rounded-xl"
-            />
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari berdasarkan nama barang, aktor, ID..."
+                className="pl-8 h-9 text-xs rounded-xl"
+              />
+            </div>
+            <SearchMinCharHint query={search} />
           </div>
           <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
             {[
@@ -319,7 +326,9 @@ export const ExpenseActivityLogModal: React.FC<ExpenseActivityLogModalProps> = (
                   {/* Actor tag */}
                   <div className="text-[11px] text-slate-600 mb-1 flex items-center gap-1 font-medium">
                     <span className="text-slate-400">Pelaksana:</span>
-                    <span className="text-slate-800 font-semibold">{formatActorLabel(log.actor)}</span>
+                    <span className="text-slate-800 font-semibold">
+                      <HighlightText text={formatActorLabel(log.actor)} query={effectiveSearch} />
+                    </span>
                   </div>
 
                   {/* Diff details if available */}

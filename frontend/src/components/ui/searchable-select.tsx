@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/input-group";
 import { Check, ChevronDown, Search, X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
 
 export interface SelectOptionItem {
   value: string;
@@ -99,8 +101,10 @@ export const AdaptiveSelect: React.FC<AdaptiveSelectProps> = ({
     return normalizedOptions.find((o) => o.value === value) || null;
   }, [normalizedOptions, value]);
 
+  const effectiveQuery = useMemo(() => getEffectiveSearchQuery(query), [query]);
+
   const filteredOptions = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = effectiveQuery.toLowerCase();
     if (!q) return normalizedOptions;
     return normalizedOptions.filter((item) => {
       return (
@@ -110,7 +114,7 @@ export const AdaptiveSelect: React.FC<AdaptiveSelectProps> = ({
         (item.keywords && item.keywords.toLowerCase().includes(q))
       );
     });
-  }, [normalizedOptions, query]);
+  }, [normalizedOptions, effectiveQuery]);
 
   const canCreateCustom = useMemo(() => {
     if (!creatable) return false;
@@ -315,6 +319,7 @@ export const AdaptiveSelect: React.FC<AdaptiveSelectProps> = ({
             </InputGroupAddon>
           )}
         </InputGroup>
+        <SearchMinCharHint query={query} className="px-1" />
 
         <div
           ref={listRef}
@@ -354,7 +359,7 @@ export const AdaptiveSelect: React.FC<AdaptiveSelectProps> = ({
                             isSelected ? "font-semibold" : "font-normal"
                           )}
                         >
-                          {item.label}
+                          <HighlightText text={item.label} query={effectiveQuery} />
                         </span>
                         {item.badge && (
                           <span className="text-[10px] px-1.5 py-0 rounded bg-muted text-muted-foreground font-medium shrink-0">
@@ -364,7 +369,7 @@ export const AdaptiveSelect: React.FC<AdaptiveSelectProps> = ({
                       </div>
                       {item.sublabel && (
                         <div className="text-[11px] text-muted-foreground truncate">
-                          {item.sublabel}
+                          <HighlightText text={item.sublabel} query={effectiveQuery} />
                         </div>
                       )}
                     </div>

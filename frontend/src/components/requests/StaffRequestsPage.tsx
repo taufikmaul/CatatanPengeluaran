@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import {
+  SearchHighlightProvider,
+  SearchMinCharHint,
+} from "@/components/common/HighlightText";
+import {
   ShoppingBag,
   Plus,
   Clock,
@@ -242,18 +246,21 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 md:w-64">
-            <Search
-              className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-              aria-hidden="true"
-            />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari barang / pemohon..."
-              className="pl-8 h-10 sm:h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
-            />
+        <div className="flex items-start gap-2">
+          <div className="flex-1 md:w-64">
+            <div className="relative">
+              <Search
+                className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                aria-hidden="true"
+              />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari barang / pemohon..."
+                className="pl-8 h-10 sm:h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
+              />
+            </div>
+            <SearchMinCharHint query={searchQuery} />
           </div>
 
           <select
@@ -270,7 +277,8 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
       </div>
 
       {/* Daftar Pengajuan */}
-      <div className="space-y-3">
+      <SearchHighlightProvider query={searchQuery}>
+        <div className="space-y-3">
         {isLoadingRequests ? (
           <div className="py-16 text-center text-zinc-600 dark:text-zinc-400 text-xs">
             Memuat daftar pengajuan belanja...
@@ -336,7 +344,8 @@ export const StaffRequestsPage: React.FC<StaffRequestsPageProps> = ({
             />
           ))
         )}
-      </div>
+        </div>
+      </SearchHighlightProvider>
 
       {/* Modal Form Request Belanja (Quick Add) */}
       <PurchaseRequestDrawer

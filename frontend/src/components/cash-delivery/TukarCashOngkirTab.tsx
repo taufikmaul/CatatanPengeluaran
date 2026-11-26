@@ -20,6 +20,8 @@ import {
 } from "@/components/common/LedgerPrimitives";
 import { cn } from "@/lib/utils";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   dataGridFeatures,
   type DataGridFeatures,
@@ -77,6 +79,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
 }) => {
   const [filterType, setFilterType] = useState<"all" | "tukar_cash" | "ongkir">(initialType);
   const [search, setSearch] = useState("");
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
   const [selectedMonthEnd, setSelectedMonthEnd] = useState<number>(currentMonthEnd || currentMonth);
@@ -109,7 +112,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
       selectedMonthEnd,
       selectedYear,
       filterType,
-      search,
+      effectiveSearch,
       statusFilter,
     ],
     queryFn: async () => {
@@ -123,7 +126,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
       if (selectedMonthEnd && selectedMonthEnd !== selectedMonth) {
         params.append("month_end", String(selectedMonthEnd));
       }
-      if (search.trim()) params.append("search", search.trim());
+      if (effectiveSearch) params.append("search", effectiveSearch);
       if (statusFilter) params.append("status", statusFilter);
 
       const res = await api.get(`/expenses?${params.toString()}`);
@@ -676,6 +679,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
           table={cashDeliveryTable}
           recordCount={totalCount}
           isLoading={isLoading}
+          searchQuery={search}
           containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
           headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
           footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
@@ -750,6 +754,7 @@ export const TukarCashOngkirTab: React.FC<TukarCashOngkirTabProps> = ({
                       </InputGroupAddon>
                     )}
                   </InputGroup>
+                  <SearchMinCharHint query={search} />
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">

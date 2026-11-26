@@ -8,6 +8,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { toIsoDate } from "@/lib/formatters";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   Dialog,
   DialogContent,
@@ -240,17 +242,20 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
           ))}
         </div>
 
-        <div className="relative flex-1 sm:max-w-xs">
-          <Search
-            className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-            aria-hidden="true"
-          />
-          <Input
-            value={warehouseSearch}
-            onChange={(e) => setWarehouseSearch(e.target.value)}
-            placeholder="Cari barang atau supplier..."
-            className="pl-8 h-10 sm:h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
-          />
+        <div className="flex-1 sm:max-w-xs">
+          <div className="relative">
+            <Search
+              className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <Input
+              value={warehouseSearch}
+              onChange={(e) => setWarehouseSearch(e.target.value)}
+              placeholder="Cari barang atau supplier..."
+              className="pl-8 h-10 sm:h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
+            />
+          </div>
+          <SearchMinCharHint query={warehouseSearch} />
         </div>
       </div>
 
@@ -304,7 +309,10 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                        {item.item_name}
+                        <HighlightText
+                          text={item.item_name}
+                          query={getEffectiveSearchQuery(warehouseSearch)}
+                        />
                       </h4>
                       <Badge variant="outline" className="text-xs font-semibold">
                         Dipesan: {item.qty} {item.unit}
@@ -312,7 +320,13 @@ export const WarehouseReceivingPage: React.FC<WarehouseReceivingPageProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                       <Store className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
-                      <span>Supplier: {item.supplier_name || "-"}</span>
+                      <span>
+                        Supplier:{" "}
+                        <HighlightText
+                          text={item.supplier_name || "-"}
+                          query={getEffectiveSearchQuery(warehouseSearch)}
+                        />
+                      </span>
                     </div>
                   </div>
 

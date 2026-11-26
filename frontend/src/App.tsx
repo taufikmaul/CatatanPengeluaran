@@ -24,6 +24,7 @@ import {
 import { ExpenseViewMode } from "@/components/common/InvoiceGroupShared";
 import { Spinner } from "@/components/ui/spinner";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 
 // Lazy-loaded dashboard sections, tabs & heavy modals untuk optimasi chunk size & fast initial paint
 const StatCards = React.lazy(() => import("@/components/dashboard/StatCards").then(m => ({ default: m.StatCards })));
@@ -554,13 +555,15 @@ function MainDashboardApp() {
   });
   const draftWarningCount = draftWarningCountData?.count || 0;
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   // 3. Expenses List Query (Per Item Mode)
   const {
     data: expensesData,
     isLoading: isFlatExpensesLoading,
     refetch: refetchFlatExpenses,
   } = useQuery({
-    queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
+    queryKey: ["expenses", page, perPage, monthStart, monthEnd, year, category, effectiveSearch, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -572,7 +575,7 @@ function MainDashboardApp() {
         params.append("month_end", String(monthEnd));
       }
       if (category) params.append("category", category);
-      if (search) params.append("search", search);
+      if (effectiveSearch) params.append("search", effectiveSearch);
       if (status) params.append("status", status);
       if (payMethod) params.append("pay_method", payMethod);
       if (isReimbursement !== null) params.append("is_reimbursement", String(isReimbursement));
@@ -591,7 +594,7 @@ function MainDashboardApp() {
     isLoading: isGroupedExpensesLoading,
     refetch: refetchGroupedExpenses,
   } = useQuery<ExpenseInvoiceListResponse>({
-    queryKey: ["expenses-grouped", page, perPage, monthStart, monthEnd, year, category, search, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
+    queryKey: ["expenses-grouped", page, perPage, monthStart, monthEnd, year, category, effectiveSearch, status, payMethod, isReimbursement, selectedUserId, reviewStatusFilter],
     queryFn: () =>
       getGroupedExpenses({
         page,
@@ -600,7 +603,7 @@ function MainDashboardApp() {
         month_end: monthEnd && monthEnd !== monthStart ? monthEnd : null,
         year,
         category: category || undefined,
-        search: search || undefined,
+        search: effectiveSearch || undefined,
         status: status || undefined,
         pay_method: payMethod || undefined,
         is_reimbursement: isReimbursement,
@@ -1444,6 +1447,7 @@ function MainDashboardApp() {
                       pageSize={perPage}
                       totalPages={activeTotalPages}
                       totalCount={activeTotalCount}
+                      searchQuery={search}
                       onPageChange={setPage}
                       onPageSizeChange={(size) => {
                         setPerPage(size);
@@ -1701,6 +1705,7 @@ function MainDashboardApp() {
                         pageSize={perPage}
                         totalPages={activeTotalPages}
                         totalCount={activeTotalCount}
+                        searchQuery={search}
                         onPageChange={setPage}
                         onPageSizeChange={(size) => {
                           setPerPage(size);
@@ -1893,6 +1898,7 @@ function MainDashboardApp() {
                       pageSize={perPage}
                       totalPages={activeTotalPages}
                       totalCount={activeTotalCount}
+                      searchQuery={search}
                       onPageChange={setPage}
                       onPageSizeChange={(size) => {
                         setPerPage(size);

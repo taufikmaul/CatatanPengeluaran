@@ -85,6 +85,7 @@ interface ExpenseTableProps {
   canDelete?: boolean;
   highlightedExpenseId?: number | null;
   categoryCoaMap?: Record<string, { code: string; name: string; group: string }>;
+  searchQuery?: string;
 }
 
 export const ExpenseTable: React.FC<ExpenseTableProps> = ({
@@ -116,6 +117,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
   canDelete = true,
   highlightedExpenseId,
   categoryCoaMap,
+  searchQuery,
 }) => {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<ExpandedState>({});
@@ -1497,6 +1499,7 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
       table={(isGroupedMode ? groupedTable : table) as any}
       recordCount={totalCount}
       isLoading={isLoading}
+      searchQuery={searchQuery}
       header={tableHeader}
       containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
       headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5"

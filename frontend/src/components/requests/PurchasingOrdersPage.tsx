@@ -24,6 +24,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatRupiah } from "@/lib/formatters";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
 import {
   ShoppingBasket,
   Plus,
@@ -748,6 +750,7 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                     autoFocus
                   />
                 </div>
+                <SearchMinCharHint query={assignSupplierSearch} />
               </div>
 
               {isLoadingSupplierOptions ? (
@@ -763,7 +766,8 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                 </div>
               ) : (
                 (() => {
-                  const q = assignSupplierSearch.trim().toLowerCase();
+                  const effectiveSupQuery = getEffectiveSearchQuery(assignSupplierSearch);
+                  const q = effectiveSupQuery.toLowerCase();
                   const matching = (supplierOptionsData?.matching_suppliers || []).filter(
                     (s) => !q || s.name.toLowerCase().includes(q)
                   );
@@ -802,7 +806,7 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                        {sup.name}
+                                        <HighlightText text={sup.name} query={effectiveSupQuery} />
                                       </span>
                                       {sup.is_default_supplier && (
                                         <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] px-1.5 py-0">
@@ -871,7 +875,7 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                                     >
                                       <div className="min-w-0">
                                         <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block truncate">
-                                          {sup.name}
+                                          <HighlightText text={sup.name} query={effectiveSupQuery} />
                                         </span>
                                         <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
                                           Belum ada riwayat barang ini
@@ -1194,9 +1198,15 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                 className="text-xs h-10 sm:h-9"
                 autoFocus
               />
-              {showAddSuggestions && addItemName.trim().length >= 1 && (
+              {showAddSuggestions && isSearchTooShort(addItemName) && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3 py-2">
+                  <SearchMinCharHint query={addItemName} className="mt-0" />
+                </div>
+              )}
+              {showAddSuggestions && getEffectiveSearchQuery(addItemName).length >= 2 && (
                 (() => {
-                  const q = addItemName.trim().toLowerCase();
+                  const effectiveItemQuery = getEffectiveSearchQuery(addItemName);
+                  const q = effectiveItemQuery.toLowerCase();
                   const matches = itemSuggestions
                     .filter(
                       (s) =>
@@ -1229,11 +1239,18 @@ export const PurchasingOrdersPage: React.FC<PurchasingOrdersPageProps> = ({
                         >
                           <div className="min-w-0">
                             <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                              {s.item_name}
+                              <HighlightText text={s.item_name} query={effectiveItemQuery} />
                             </div>
                             <div className="text-[10px] text-zinc-500 truncate">
-                              {s.category} • {s.satuan_beli || "Pcs"}
-                              {s.last_supplier && s.last_supplier !== "-" ? ` • ${s.last_supplier}` : ""}
+                              <HighlightText text={s.category} query={effectiveItemQuery} /> • {s.satuan_beli || "Pcs"}
+                              {s.last_supplier && s.last_supplier !== "-" ? (
+                                <>
+                                  {" • "}
+                                  <HighlightText text={s.last_supplier} query={effectiveItemQuery} />
+                                </>
+                              ) : (
+                                ""
+                              )}
                             </div>
                           </div>
                           {s.last_unit_price > 0 && (

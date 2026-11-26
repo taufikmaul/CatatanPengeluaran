@@ -15,6 +15,8 @@ import {
 import { formatRupiah } from "@/lib/formatters";
 import { Check, ChevronsUpDown, Layers, Package, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
 
 export interface IngredientSourceValue {
   master_item_id: number | null;
@@ -105,8 +107,10 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
     return menuOptions.find((m) => m.id === value.sub_menu_id) || null;
   }, [value.sub_menu_id, menuOptions]);
 
+  const effectiveQuery = useMemo(() => getEffectiveSearchQuery(query), [query]);
+
   const filteredSubMenus = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = effectiveQuery.toLowerCase();
     const candidates = menuOptions.filter((m) => {
       if (excludeMenuId !== undefined && m.id === excludeMenuId) return false;
       if (m.item_type !== "prepared") return false;
@@ -125,10 +129,10 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
     });
 
     return [...candidates].sort((a, b) => a.name.localeCompare(b.name, "id"));
-  }, [menuOptions, excludeMenuId, query]);
+  }, [menuOptions, excludeMenuId, effectiveQuery]);
 
   const filteredMasterItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = effectiveQuery.toLowerCase();
     const filtered = masterItems.filter((item) => {
       if (!q) return true;
       const hay = [
@@ -154,7 +158,7 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
       });
     }
     return filtered;
-  }, [masterItems, costGroup, query]);
+  }, [masterItems, costGroup, effectiveQuery]);
 
   const flatOptions = useMemo<FlatOption[]>(() => {
     const list: FlatOption[] = [];
@@ -263,12 +267,20 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
             {isSelected && (
               <Check className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400 shrink-0" />
             )}
-            <span className="truncate">{item.item_name}</span>
+            <span className="truncate">
+              <HighlightText text={item.item_name} query={effectiveQuery} />
+            </span>
           </div>
           <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate">
-            {item.category || "Bahan Kue"} | Beli: {item.satuan_beli || "-"}
+            <HighlightText text={item.category || "Bahan Kue"} query={effectiveQuery} /> | Beli:{" "}
+            <HighlightText text={item.satuan_beli || "-"} query={effectiveQuery} />
             {item.satuan_ecer && item.satuan_ecer !== item.satuan_beli
-              ? ` | Ecer: ${item.satuan_ecer}`
+              ? (
+                <>
+                  {" | Ecer: "}
+                  <HighlightText text={item.satuan_ecer} query={effectiveQuery} />
+                </>
+              )
               : ""}
           </div>
         </div>
@@ -317,7 +329,9 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
             {isSelected && (
               <Check className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300 shrink-0" />
             )}
-            <span className="truncate">{menu.name}</span>
+            <span className="truncate">
+              <HighlightText text={menu.name} query={effectiveQuery} />
+            </span>
             <Badge
               variant="outline"
               className={cn(
@@ -331,7 +345,7 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
             </Badge>
           </div>
           <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5">
-            {menu.category} | Hasil: {menu.batch_yield_qty || 1} {unitLabel}
+            <HighlightText text={menu.category} query={effectiveQuery} /> | Hasil: {menu.batch_yield_qty || 1} {unitLabel}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -424,37 +438,40 @@ export const IngredientSourceCombobox: React.FC<IngredientSourceComboboxProps> =
         sideOffset={4}
         className="z-[70] w-[320px] sm:w-[410px] p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl space-y-2"
       >
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <Input
-            ref={searchInputRef}
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setHighlightedIndex(0);
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              costGroup === "packaging"
-                ? "Cari box, mika, pita, stiker, botol..."
-                : "Cari bahan mentah atau sub-resep prepared..."
-            }
-            className="h-9 pl-8 pr-7 text-xs bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700"
-          />
-          {query.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                searchInputRef.current?.focus();
+        <div>
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setHighlightedIndex(0);
               }}
-              aria-label="Hapus pencarian"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                costGroup === "packaging"
+                  ? "Cari box, mika, pita, stiker, botol..."
+                  : "Cari bahan mentah atau sub-resep prepared..."
+              }
+              className="h-9 pl-8 pr-7 text-xs bg-slate-50 dark:bg-slate-950 border-slate-300 dark:border-slate-700"
+            />
+            {query.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Hapus pencarian"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <SearchMinCharHint query={query} className="px-1" />
         </div>
 
         <div className="flex items-center justify-between px-1 text-[11px] text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 pb-1.5">

@@ -38,6 +38,8 @@ import {
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { ColumnDef } from "@tanstack/react-table";
@@ -115,10 +117,12 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
     queryFn: () => getBankAccounts(false),
   });
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: [
       "incoming-transactions",
-      { startDate, endDate, orderType, statusFilter, bankAccountId, search },
+      { startDate, endDate, orderType, statusFilter, bankAccountId, search: effectiveSearch },
     ],
     queryFn: () =>
       getIncomingTransactions({
@@ -128,7 +132,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         status: statusFilter !== "all" ? statusFilter : undefined,
         bank_account_id:
           bankAccountId !== "all" ? Number(bankAccountId) : undefined,
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
         limit: 200,
       }),
   });
@@ -216,7 +220,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
         status: statusFilter !== "all" ? statusFilter : undefined,
         bank_account_id:
           bankAccountId !== "all" ? Number(bankAccountId) : undefined,
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
       });
       toast.success("File CSV transaksi masuk berhasil diunduh.");
     } catch (err: any) {
@@ -898,6 +902,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                         </InputGroupAddon>
                       )}
                     </InputGroup>
+                    <SearchMinCharHint query={search} />
                   </div>
 
                   <select
@@ -1001,6 +1006,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
                   getRowId={(tx) => String(tx.id)}
                   getRowCanExpand={(row) => row.original.items.length > 0}
                   defaultPageSize={20}
+                  searchQuery={search}
                   containerClassName="border-0 rounded-none shadow-none"
                   footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
                 />
@@ -1032,7 +1038,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           endDate,
           orderType,
           statusFilter,
-          search,
+          search: effectiveSearch,
         }}
         onApplied={() => {
           queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });
@@ -1050,7 +1056,7 @@ export const IncomingTransactionsTab: React.FC<IncomingTransactionsTabProps> = (
           endDate,
           orderType,
           statusFilter,
-          search,
+          search: effectiveSearch,
         }}
         onDeleted={() => {
           queryClient.invalidateQueries({ queryKey: ["incoming-transactions"] });

@@ -32,6 +32,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   LedgerMetricStrip,
   LedgerStateBlock,
@@ -223,11 +225,13 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
   const [formIsSubscribed, setFormIsSubscribed] = useState(false);
   const [formIsActive, setFormIsActive] = useState(true);
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   // Query Data Suppliers
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: [
       "suppliers",
-      search,
+      effectiveSearch,
       supplierTypeFilter,
       statusFilter,
       unpaidFilter,
@@ -238,7 +242,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     ],
     queryFn: () =>
       getSuppliers({
-        search: search || undefined,
+        search: effectiveSearch || undefined,
         supplier_type: supplierTypeFilter === "all" ? undefined : supplierTypeFilter,
         is_active:
           statusFilter === "all" ? undefined : statusFilter === "active",
@@ -969,6 +973,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           table={supplierTable}
           recordCount={total}
           isLoading={isLoading}
+          searchQuery={search}
           containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
           scrollAreaClassName="min-h-[300px]"
           headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5"
@@ -984,17 +989,20 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
           header={
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
               {/* Search */}
-              <div className="relative w-full lg:w-80 min-w-0">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-                <Input
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Cari nama toko, alias, telp, alamat..."
-                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-                />
+              <div className="w-full lg:w-80 min-w-0">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                  <Input
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Cari nama toko, alias, telp, alamat..."
+                    className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                  />
+                </div>
+                <SearchMinCharHint query={search} />
               </div>
 
               {/* Filter & Sort Controls */}

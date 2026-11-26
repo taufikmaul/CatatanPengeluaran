@@ -39,6 +39,25 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Spinner } from "@/components/ui/spinner"
 import { PlusIcon } from "lucide-react"
+import {
+  highlightReactNode,
+  useSearchHighlight,
+} from "@/components/common/HighlightText"
+
+function renderHighlightedGridCell<TData extends object>(
+  cell: Cell<DataGridFeatures, TData, unknown>,
+  highlightQuery: string
+) {
+  const rendered = flexRender(cell.column.columnDef.cell, cell.getContext())
+  if (
+    !highlightQuery ||
+    cell.column.id === "actions" ||
+    cell.column.id === "select"
+  ) {
+    return rendered
+  }
+  return highlightReactNode(rendered, highlightQuery)
+}
 
 // Static spacing lookups; called once per cell, so they stay plain string
 // picks instead of runtime variant machinery.
@@ -2172,6 +2191,7 @@ function DataGridTableBodyRowExpandded<TData extends object>({
   row: Row<DataGridFeatures, TData>
 }) {
   const { props, table } = useDataGrid()
+  const highlightQuery = useSearchHighlight()
   const expandedContent = table
     .getAllColumns()
     .find((column) => column.columnDef.meta?.expandedContent)?.columnDef
@@ -2183,6 +2203,7 @@ function DataGridTableBodyRowExpandded<TData extends object>({
   if (!expandedContent) return null
 
   const bodyRowBottomBorderClasses = "[&:not(:last-child)>td]:border-b"
+  const content = expandedContent(row.original)
 
   return (
     <tr
@@ -2194,7 +2215,7 @@ function DataGridTableBodyRowExpandded<TData extends object>({
           (props.tableLayout?.columnsResizable ? 1 : 0)
         }
       >
-        {expandedContent(row.original)}
+        {highlightQuery ? highlightReactNode(content, highlightQuery) : content}
       </td>
     </tr>
   )
@@ -2455,6 +2476,7 @@ function DataGridTableRenderedRow<TData extends object>({
   centerWindow?: { start: number; end: number }
 }) {
   const { props, table } = useDataGrid()
+  const highlightQuery = useSearchHighlight()
   const startVisibleCells = row.getStartVisibleCells()
   const centerVisibleCells = row.getCenterVisibleCells()
   const endVisibleCells = row.getEndVisibleCells()
@@ -2478,7 +2500,7 @@ function DataGridTableRenderedRow<TData extends object>({
         {startVisibleCells.map(
           (cell: Cell<DataGridFeatures, TData, unknown>) => (
             <DataGridTableBodyRowCell cell={cell} key={cell.id}>
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              {renderHighlightedGridCell(cell, highlightQuery)}
             </DataGridTableBodyRowCell>
           )
         )}
@@ -2502,7 +2524,7 @@ function DataGridTableRenderedRow<TData extends object>({
                 centerWindow ? centerWindow.start + cellIndex : undefined
               }
             >
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              {renderHighlightedGridCell(cell, highlightQuery)}
             </DataGridTableBodyRowCell>
           )
         )}
@@ -2518,7 +2540,7 @@ function DataGridTableRenderedRow<TData extends object>({
         ) : null}
         {endVisibleCells.map((cell: Cell<DataGridFeatures, TData, unknown>) => (
           <DataGridTableBodyRowCell cell={cell} key={cell.id}>
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {renderHighlightedGridCell(cell, highlightQuery)}
           </DataGridTableBodyRowCell>
         ))}
         {props.tableLayout?.columnsResizable && !hasRightPinnedColumns ? (

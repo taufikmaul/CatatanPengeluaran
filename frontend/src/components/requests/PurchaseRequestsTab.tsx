@@ -38,6 +38,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatRupiah, formatDateId, toIsoDate } from "@/lib/formatters";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
 import { PurchaseRequestDrawer } from "@/components/forms/PurchaseRequestDrawer";
 import {
   Dialog,
@@ -195,14 +197,17 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
   // QUERIES
   // ==========================================
 
+  const effectiveSearchQuery = getEffectiveSearchQuery(searchQuery);
+  const effectiveWarehouseSearch = getEffectiveSearchQuery(warehouseSearch);
+
   // 1. Staf requests query
   const { data: requestData, isLoading: isLoadingRequests } = useQuery({
-    queryKey: ["purchase-requests", activeStatusTab, urgencyFilter, searchQuery],
+    queryKey: ["purchase-requests", activeStatusTab, urgencyFilter, effectiveSearchQuery],
     queryFn: () =>
       getPurchaseRequests({
         status: activeStatusTab === "ALL" ? undefined : activeStatusTab,
         urgency: urgencyFilter === "ALL" ? undefined : urgencyFilter,
-        search: searchQuery || undefined,
+        search: effectiveSearchQuery || undefined,
         limit: 100,
       }),
   });
@@ -227,8 +232,8 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
 
   // 3. Warehouse incoming query
   const { data: warehouseItems, isLoading: isLoadingWarehouse } = useQuery({
-    queryKey: ["warehouse-incoming", warehouseSearch],
-    queryFn: () => getWarehouseIncoming(warehouseSearch),
+    queryKey: ["warehouse-incoming", effectiveWarehouseSearch],
+    queryFn: () => getWarehouseIncoming(effectiveWarehouseSearch),
     enabled: activeMainTab === "gudang" && !isAdminInput,
   });
 
@@ -860,15 +865,18 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
             </div>
 
             {/* Search & Urgency */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 md:w-64">
-                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari barang / pemohon..."
-                  className="pl-8 h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
-                />
+            <div className="flex items-start gap-2">
+              <div className="flex-1 md:w-64">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari barang / pemohon..."
+                    className="pl-8 h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
+                  />
+                </div>
+                <SearchMinCharHint query={searchQuery} />
               </div>
 
               <select
@@ -1522,14 +1530,17 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
               ))}
             </div>
 
-            <div className="relative flex-1 sm:w-64">
-              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
-              <Input
-                value={warehouseSearch}
-                onChange={(e) => setWarehouseSearch(e.target.value)}
-                placeholder="Cari barang / supplier..."
-                className="pl-8 h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
-              />
+            <div className="flex-1 sm:w-64">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-3 pointer-events-none" />
+                <Input
+                  value={warehouseSearch}
+                  onChange={(e) => setWarehouseSearch(e.target.value)}
+                  placeholder="Cari barang / supplier..."
+                  className="pl-8 h-9 text-xs bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 rounded-lg"
+                />
+              </div>
+              <SearchMinCharHint query={warehouseSearch} />
             </div>
           </div>
 
@@ -1858,6 +1869,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                     autoFocus
                   />
                 </div>
+                <SearchMinCharHint query={assignSupplierSearch} />
               </div>
 
               {/* Daftar Supplier Terdaftar yang Punya Barang + Fallback Lainnya */}
@@ -1874,7 +1886,8 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                 </div>
               ) : (
                 (() => {
-                  const q = assignSupplierSearch.trim().toLowerCase();
+                  const effectiveSupQuery = getEffectiveSearchQuery(assignSupplierSearch);
+                  const q = effectiveSupQuery.toLowerCase();
                   const matching = (supplierOptionsData?.matching_suppliers || []).filter(
                     (s) => !q || s.name.toLowerCase().includes(q)
                   );
@@ -1915,7 +1928,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5">
                                       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                        {sup.name}
+                                        <HighlightText text={sup.name} query={effectiveSupQuery} />
                                       </span>
                                       {sup.is_default_supplier && (
                                         <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px] px-1.5 py-0">
@@ -1984,7 +1997,7 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                                     >
                                       <div className="min-w-0">
                                         <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block truncate">
-                                          {sup.name}
+                                          <HighlightText text={sup.name} query={effectiveSupQuery} />
                                         </span>
                                         <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
                                           Belum ada riwayat barang ini
@@ -2297,9 +2310,15 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                 className="text-xs h-10 sm:h-9"
                 autoFocus
               />
-              {showAddSuggestions && addItemName.trim().length >= 1 && (
+              {showAddSuggestions && isSearchTooShort(addItemName) && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3 py-2">
+                  <SearchMinCharHint query={addItemName} className="mt-0" />
+                </div>
+              )}
+              {showAddSuggestions && getEffectiveSearchQuery(addItemName).length >= 2 && (
                 (() => {
-                  const q = addItemName.trim().toLowerCase();
+                  const effectiveItemQuery = getEffectiveSearchQuery(addItemName);
+                  const q = effectiveItemQuery.toLowerCase();
                   const matches = itemSuggestions
                     .filter(
                       (s) =>
@@ -2332,11 +2351,18 @@ export const PurchaseRequestsTab: React.FC<PurchaseRequestsTabProps> = ({
                         >
                           <div className="min-w-0">
                             <div className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                              {s.item_name}
+                              <HighlightText text={s.item_name} query={effectiveItemQuery} />
                             </div>
                             <div className="text-[10px] text-zinc-500 truncate">
-                              {s.category} • {s.satuan_beli || "Pcs"}
-                              {s.last_supplier && s.last_supplier !== "-" ? ` • ${s.last_supplier}` : ""}
+                              <HighlightText text={s.category} query={effectiveItemQuery} /> • {s.satuan_beli || "Pcs"}
+                              {s.last_supplier && s.last_supplier !== "-" ? (
+                                <>
+                                  {" • "}
+                                  <HighlightText text={s.last_supplier} query={effectiveItemQuery} />
+                                </>
+                              ) : (
+                                ""
+                              )}
                             </div>
                           </div>
                           {s.last_unit_price > 0 && (

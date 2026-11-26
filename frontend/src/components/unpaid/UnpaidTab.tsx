@@ -52,6 +52,8 @@ import {
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   dataGridFeatures,
   type DataGridFeatures,
@@ -256,6 +258,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
   const [customEnd, setCustomEnd] = useState<string>(() => toIsoDate(new Date()));
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
   const [search, setSearch] = useState<string>("");
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
   const [sortBy, setSortBy] = useState<string>("due_date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
@@ -354,7 +357,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       rangeEnd,
       statusTab,
       selectedSupplierId,
-      search,
+      effectiveSearch,
       sortBy,
       sortOrder,
     ],
@@ -391,8 +394,8 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
         params.append("supplier_id", String(selectedSupplierId));
       }
 
-      if (search.trim()) {
-        params.append("search", search.trim());
+      if (effectiveSearch) {
+        params.append("search", effectiveSearch);
       }
 
       const res = await api.get(`/expenses?${params.toString()}`);
@@ -418,7 +421,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
       rangeEnd,
       statusTab,
       selectedSupplierId,
-      search,
+      effectiveSearch,
       sortBy,
       sortOrder,
     ],
@@ -453,7 +456,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
         end_date: periodMode === "custom" ? rangeEnd : null,
         status: apiStatus,
         supplier_id: selectedSupplierId,
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
       });
     },
   });
@@ -2105,6 +2108,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
           table={(isGroupedMode ? groupedUnpaidTable : unpaidTable) as any}
           recordCount={totalItems}
           isLoading={isExpensesLoading}
+          searchQuery={search}
           tableLayout={{ dense: true, columnsResizable: true }}
           containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
           headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
@@ -2166,6 +2170,7 @@ export const UnpaidTab: React.FC<UnpaidTabProps> = ({
                       </InputGroupAddon>
                     )}
                   </InputGroup>
+                  <SearchMinCharHint query={search} />
                 </div>
 
                 <div className="xl:col-span-3">

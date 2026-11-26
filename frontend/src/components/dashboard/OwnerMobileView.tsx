@@ -19,6 +19,7 @@ import { TelegramIcon } from "@/components/ui/TelegramIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
 import {
   Wallet,
   Receipt,
@@ -811,23 +812,26 @@ export function OwnerMobileView({
           </React.Suspense>
 
           {/* Search Bar Mobile */}
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <Input
-              placeholder="Cari barang, toko, invoice..."
-              value={search}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="pl-9 pr-8 min-h-[44px] rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => onSearchChange("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[32px] flex items-center justify-center text-xs font-bold text-slate-500 hover:text-slate-600"
-              >
-                ✕
-              </button>
-            )}
+          <div>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Input
+                placeholder="Cari barang, toko, invoice..."
+                value={search}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="pl-9 pr-8 min-h-[44px] rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => onSearchChange("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 min-h-[44px] min-w-[32px] flex items-center justify-center text-xs font-bold text-slate-500 hover:text-slate-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <SearchMinCharHint query={search} />
           </div>
 
           {/* Mode Toggle + Quick Utility Actions */}
@@ -1096,7 +1100,7 @@ export function OwnerMobileView({
                                   }
                                   className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left hover:text-blue-600"
                                 >
-                                  {single.item_name}
+                                  <HighlightText text={single.item_name} query={search} />
                                 </button>
                               ) : (
                                 <button
@@ -1104,7 +1108,7 @@ export function OwnerMobileView({
                                   onClick={() => toggleGroupExpand(g.group_key)}
                                   className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left"
                                 >
-                                  {summary.title}
+                                  <HighlightText text={summary.title} query={search} />
                                   {summary.extraCount > 0 && (
                                     <span className="text-blue-700 dark:text-blue-300 ml-1">
                                       +{summary.extraCount} lainnya
@@ -1128,19 +1132,19 @@ export function OwnerMobileView({
                             <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
                               <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1">
                                 <Store className="w-3 h-3 text-slate-500" />
-                                <span>{g.supplier || "Tanpa Toko"}</span>
+                                <span><HighlightText text={g.supplier || "Tanpa Toko"} query={search} /></span>
                               </span>
                               <span>•</span>
                               <span>{formatDateId(g.expense_date)}</span>
                               {g.invoice_number && g.invoice_number !== "-" && (
                                 <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-slate-700 dark:text-slate-300">
-                                  #{g.invoice_number}
+                                  #<HighlightText text={g.invoice_number} query={search} />
                                 </span>
                               )}
                               {g.user_name && (
                                 <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-200 border border-indigo-200/60 dark:border-indigo-900/60">
                                   <UserIcon className="w-2.5 h-2.5" />
-                                  <span>{g.user_name}</span>
+                                  <span><HighlightText text={g.user_name} query={search} /></span>
                                 </span>
                               )}
                             </div>
@@ -1289,15 +1293,15 @@ export function OwnerMobileView({
                                           }
                                           className="font-semibold text-xs text-slate-900 dark:text-slate-100 text-left hover:underline"
                                         >
-                                          {it.item_name}
+                                          <HighlightText text={it.item_name} query={search} />
                                         </button>
                                         <div className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-0.5">
                                           {it.qty} {it.unit || "Pcs"} × {formatRupiah(it.unit_price)} •{" "}
-                                          {it.category}
+                                          <HighlightText text={it.category} query={search} />
                                         </div>
                                         {it.notes && it.notes !== "-" && (
                                           <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                                            {it.notes}
+                                            <HighlightText text={it.notes} query={search} />
                                           </div>
                                         )}
                                       </div>
@@ -1418,7 +1422,7 @@ export function OwnerMobileView({
                             className="font-bold text-sm text-slate-900 dark:text-slate-100 text-left hover:text-blue-600 dark:hover:text-blue-400"
                             title="Klik untuk riwayat harga item ini"
                           >
-                            {e.item_name}
+                            <HighlightText text={e.item_name} query={search} />
                           </button>
                           {isHighlighted && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 animate-pulse">
@@ -1437,19 +1441,19 @@ export function OwnerMobileView({
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
                           <span className="font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
                             <Store className="w-3 h-3 text-slate-500" />
-                            <span>{e.supplier || "Tanpa Toko"}</span>
+                            <span><HighlightText text={e.supplier || "Tanpa Toko"} query={search} /></span>
                           </span>
                           <span>•</span>
                           <span>{formatDateId(e.expense_date)}</span>
                           {e.invoice_number && e.invoice_number !== "-" && (
                             <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
-                              #{e.invoice_number}
+                              #<HighlightText text={e.invoice_number} query={search} />
                             </span>
                           )}
                           {e.user_name && (
                             <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-900/60">
                               <UserIcon className="w-2.5 h-2.5" />
-                              <span>{e.user_name}</span>
+                              <span><HighlightText text={e.user_name} query={search} /></span>
                             </span>
                           )}
                         </div>

@@ -15,6 +15,8 @@ import {
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   LedgerMetricStrip,
   LedgerStateBlock,
@@ -239,11 +241,13 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
   const [newVendor, setNewVendor] = useState("");
   const [newWarranty, setNewWarranty] = useState("12");
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["assets", search, statusFilter, capFilter, groupFilter],
+    queryKey: ["assets", effectiveSearch, statusFilter, capFilter, groupFilter],
     queryFn: () =>
       getAssets({
-        search: search || undefined,
+        search: effectiveSearch || undefined,
         status: statusFilter,
         capitalization_status: capFilter,
         asset_group: groupFilter,
@@ -739,14 +743,17 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
       {/* 3. Unified Ledger Filter & DataTable Surface */}
       <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
         <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
-          <div className="relative flex-1 max-w-md min-w-0">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari kode aset, nama, seri, vendor, lokasi..."
-              className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-            />
+          <div className="flex-1 max-w-md min-w-0">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari kode aset, nama, seri, vendor, lokasi..."
+                className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+              />
+            </div>
+            <SearchMinCharHint query={search} />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -820,6 +827,7 @@ export const AssetsTab: React.FC<AssetsTabProps> = ({ isOwner }) => {
             data={assets}
             getRowId={(row) => String(row.id)}
             defaultPageSize={10}
+            searchQuery={search}
             onRowClick={(ast) => setDetailAssetId(ast.id)}
             containerClassName="border-0 rounded-none shadow-none"
             footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"

@@ -2,6 +2,7 @@ import React from "react";
 import { PurchaseRequest } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { HighlightText } from "@/components/common/HighlightText";
 import { formatRupiah, formatDateId } from "@/lib/formatters";
 import {
   Check,
@@ -150,7 +151,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
               {req.request_number || `#REQ-${req.id}`}
             </span>
             <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-              {req.title || req.item_name || "Request Belanja"}
+              <HighlightText text={req.title || req.item_name || "Request Belanja"} />
             </h3>
             {isUrgent && (
               <Badge className="bg-rose-700 text-white text-[10px] font-bold">
@@ -163,7 +164,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
             <span className="inline-flex items-center gap-1">
               <User className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
-              {req.requester_name || "Staf"}
+              <HighlightText text={req.requester_name || "Staf"} />
             </span>
             <span className="inline-flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
@@ -317,7 +318,7 @@ export const RequestCard: React.FC<RequestCardProps> = ({
                             isCancelled ? "line-through" : ""
                           }`}
                         >
-                          {it.item_name}
+                          <HighlightText text={it.item_name} />
                         </span>
                         <span className="ml-2 font-semibold text-amber-800 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-950 px-1.5 py-0.5 rounded text-[11px]">
                           {it.qty} {it.unit}

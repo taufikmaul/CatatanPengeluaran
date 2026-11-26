@@ -5,6 +5,8 @@ import { AiChatPanel } from "@/components/ai-chat/AiChatPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   deleteAiChatSession,
   listAiChatSessions,
@@ -41,15 +43,20 @@ export function AiChatFullPage({
     queryFn: () => listAiChatSessions(80),
   });
 
+  const effectiveSearchQuery = useMemo(
+    () => getEffectiveSearchQuery(searchQuery),
+    [searchQuery]
+  );
+
   const filteredSessions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = effectiveSearchQuery.toLowerCase();
     if (!q) return sessions;
     return sessions.filter(
       (s) =>
         s.title.toLowerCase().includes(q) ||
         (s.last_message_preview || "").toLowerCase().includes(q)
     );
-  }, [sessions, searchQuery]);
+  }, [sessions, effectiveSearchQuery]);
 
   const handleSaveRename = async (id: number) => {
     const trimmed = editingTitle.trim();
@@ -119,6 +126,7 @@ export function AiChatFullPage({
             className="h-9 pl-8 text-xs rounded-xl"
           />
         </div>
+        <SearchMinCharHint query={searchQuery} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
@@ -212,7 +220,9 @@ export function AiChatFullPage({
                     }}
                     className="min-w-0 flex-1 text-left space-y-0.5"
                   >
-                    <p className="truncate font-semibold text-foreground">{s.title}</p>
+                    <p className="truncate font-semibold text-foreground">
+                      <HighlightText text={s.title} query={effectiveSearchQuery} />
+                    </p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {s.provider === "sumopod" ? "Sumopod" : "OpenRouter"} / {s.model_id || "default"}
                     </p>

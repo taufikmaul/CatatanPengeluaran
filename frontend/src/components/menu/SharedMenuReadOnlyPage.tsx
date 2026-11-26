@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import { type DataGridFeatures } from "@/components/reui/data-grid/data-grid";
 import { DataGridColumnHeader } from "@/components/reui/data-grid/data-grid-column-header";
 import { ColumnDef } from "@tanstack/react-table";
@@ -76,11 +78,13 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [hppStatusFilter, setHppStatusFilter] = useState("all");
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["shared-menus", token, search, itemTypeFilter, categoryFilter, hppStatusFilter],
+    queryKey: ["shared-menus", token, effectiveSearch, itemTypeFilter, categoryFilter, hppStatusFilter],
     queryFn: () =>
       getSharedAnonymousMenus(token, {
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
         item_type: itemTypeFilter !== "all" ? itemTypeFilter : undefined,
         category: categoryFilter !== "all" ? categoryFilter : undefined,
         hpp_status: hppStatusFilter !== "all" ? hppStatusFilter : undefined,
@@ -523,14 +527,17 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
             <Card className="border-slate-200 dark:border-slate-800 shadow-none">
               <CardContent className="p-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <Input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Cari kode anonim atau kategori..."
-                      className="pl-8 h-10 sm:h-9 text-xs"
-                    />
+                  <div>
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Cari kode anonim atau kategori..."
+                        className="pl-8 h-10 sm:h-9 text-xs"
+                      />
+                    </div>
+                    <SearchMinCharHint query={search} />
                   </div>
                   <select
                     value={itemTypeFilter}
@@ -585,6 +592,7 @@ export const SharedMenuReadOnlyPage: React.FC<SharedMenuReadOnlyPageProps> = ({ 
                   columns={sharedMenuColumns}
                   data={items}
                   getRowId={(menu) => String(menu.id)}
+                  searchQuery={search}
                   getRowCanExpand={(row) => {
                     const m = row.original;
                     return Boolean(

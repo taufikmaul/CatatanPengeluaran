@@ -21,6 +21,8 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
 import { formatRupiah } from "@/lib/formatters";
 import { getCategoryFormProfile } from "@/lib/categoryFormConfig";
 import {
@@ -255,7 +257,9 @@ function filterQuickSuggestions(
   query: string,
   itemSuggestions: ItemSuggestion[]
 ): ItemSuggestion[] {
-  const q = query.trim().toLowerCase();
+  const raw = query.trim();
+  if (isSearchTooShort(raw)) return [];
+  const q = getEffectiveSearchQuery(raw).toLowerCase();
   if (!q) {
     return [...itemSuggestions]
       .sort((a, b) => (b.tx_count || 0) - (a.tx_count || 0))
@@ -901,10 +905,19 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                         </div>
                       )}
 
+                    {isSearchTooShort(parsedQuickInput.itemQuery) && (
+                      <div className="px-3 py-1.5 bg-amber-50/70 dark:bg-amber-950/30">
+                        <SearchMinCharHint query={parsedQuickInput.itemQuery} className="mt-0" />
+                      </div>
+                    )}
+
                     {matchedSuggestions.map((s, sIdx) => {
                       const isHighlighted = highlightedIndex === sIdx;
                       const previewUnit =
                         parsedQuickInput.unit || s.satuan_beli || "Pcs";
+                      const effectiveQuickQuery = getEffectiveSearchQuery(
+                        parsedQuickInput.itemQuery
+                      );
                       return (
                         <button
                           key={`${s.item_name}-${s.is_master}-${sIdx}`}
@@ -928,7 +941,7 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                         >
                           <div className="min-w-0">
                             <p className="font-medium text-foreground truncate">
-                              {s.item_name}
+                              <HighlightText text={s.item_name} query={effectiveQuickQuery} />
                               {parsedQuickInput.hasInlineModifier && (
                                 <span className="ml-1.5 font-semibold text-blue-600 dark:text-blue-400">
                                   ({parsedQuickInput.qty} {previewUnit})
@@ -936,11 +949,16 @@ export const PurchaseRequestDrawer: React.FC<PurchaseRequestDrawerProps> = ({
                               )}
                             </p>
                             <p className="text-[11px] text-muted-foreground truncate">
-                              {s.category || "Bahan Kue"} •{" "}
+                              <HighlightText text={s.category || "Bahan Kue"} query={effectiveQuickQuery} /> •{" "}
                               {s.satuan_beli || "Pcs"}
-                              {s.last_supplier && s.last_supplier !== "-"
-                                ? ` • Biasa di: ${s.last_supplier}`
-                                : ""}
+                              {s.last_supplier && s.last_supplier !== "-" ? (
+                                <>
+                                  {" • Biasa di: "}
+                                  <HighlightText text={s.last_supplier} query={effectiveQuickQuery} />
+                                </>
+                              ) : (
+                                ""
+                              )}
                             </p>
                           </div>
                           {s.last_unit_price > 0 && (

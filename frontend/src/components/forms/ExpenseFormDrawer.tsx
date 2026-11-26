@@ -27,6 +27,8 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
 import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import { DatePicker } from "@/components/ui/date-picker";
 import {
@@ -293,7 +295,9 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
   }, [categoryVal, isTukarCash, isOngkir, catProfile, initialData, setValue]);
 
   const filteredItemSuggestions = useMemo(() => {
-    const q = itemNameVal.trim().toLowerCase();
+    const raw = itemNameVal.trim();
+    if (isSearchTooShort(raw)) return [];
+    const q = getEffectiveSearchQuery(raw).toLowerCase();
     const activeCatLower = categoryVal.trim().toLowerCase();
     const sorted = [...itemSuggestions].sort((a, b) => {
       const aMatch = (a.category || "").toLowerCase() === activeCatLower ? 1 : 0;
@@ -1118,48 +1122,62 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                     {/* Dropdown Autocomplete Master Item */}
                     {catProfile.showMasterItemAutocomplete &&
                       showItemDropdown &&
-                      filteredItemSuggestions.length > 0 && (
+                      (isSearchTooShort(itemNameVal) || filteredItemSuggestions.length > 0) && (
                         <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto divide-y divide-border/50">
-                          {filteredItemSuggestions.map((s) => (
-                            <button
-                              key={`${s.item_name}-${s.is_master}`}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleSelectSuggestion(s);
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-accent/60 transition-colors flex items-center justify-between gap-2"
-                            >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-medium text-foreground truncate">
-                                    {s.item_name}
-                                  </span>
-                                  {s.is_master && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
-                                      Master
-                                    </Badge>
+                          {isSearchTooShort(itemNameVal) ? (
+                            <div className="px-3 py-2">
+                              <SearchMinCharHint query={itemNameVal} className="mt-0" />
+                            </div>
+                          ) : (
+                            filteredItemSuggestions.map((s) => {
+                              const effectiveQ = getEffectiveSearchQuery(itemNameVal);
+                              return (
+                                <button
+                                  key={`${s.item_name}-${s.is_master}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelectSuggestion(s);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-accent/60 transition-colors flex items-center justify-between gap-2"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-medium text-foreground truncate">
+                                        <HighlightText text={s.item_name} query={effectiveQ} />
+                                      </span>
+                                      {s.is_master && (
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
+                                          Master
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <span className="text-[11px] text-muted-foreground block truncate">
+                                      <HighlightText text={s.category} query={effectiveQ} />
+                                      {s.last_supplier && s.last_supplier !== "-" ? (
+                                        <>
+                                          {" • "}
+                                          <HighlightText text={s.last_supplier} query={effectiveQ} />
+                                        </>
+                                      ) : (
+                                        ""
+                                      )}
+                                      {s.isi_paket
+                                        ? ` • ${s.satuan_beli}: ${s.isi_paket}`
+                                        : s.satuan_beli && s.satuan_beli !== "Pcs"
+                                        ? ` • ${s.satuan_beli}`
+                                        : ""}
+                                    </span>
+                                  </div>
+                                  {s.last_unit_price > 0 && (
+                                    <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">
+                                      {formatRupiah(s.last_unit_price)}
+                                    </span>
                                   )}
-                                </div>
-                                <span className="text-[11px] text-muted-foreground block truncate">
-                                  {s.category}
-                                  {s.last_supplier && s.last_supplier !== "-"
-                                    ? ` • ${s.last_supplier}`
-                                    : ""}
-                                  {s.isi_paket
-                                    ? ` • ${s.satuan_beli}: ${s.isi_paket}`
-                                    : s.satuan_beli && s.satuan_beli !== "Pcs"
-                                    ? ` • ${s.satuan_beli}`
-                                    : ""}
-                                </span>
-                              </div>
-                              {s.last_unit_price > 0 && (
-                                <span className="text-xs font-semibold text-foreground tabular-nums shrink-0">
-                                  {formatRupiah(s.last_unit_price)}
-                                </span>
-                              )}
-                            </button>
-                          ))}
+                                </button>
+                              );
+                            })
+                          )}
                         </div>
                       )}
                   </div>

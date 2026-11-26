@@ -17,6 +17,11 @@ import { DataGridScrollArea } from "@/components/reui/data-grid/data-grid-scroll
 import { type DataGridI18nOverrides } from "@/components/reui/data-grid/data-grid-i18n";
 import { ColumnDef, Row, useTable } from "@tanstack/react-table";
 import { cn } from "@/lib/utils";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
+import {
+  SearchHighlightProvider,
+  highlightReactNode,
+} from "@/components/common/HighlightText";
 
 const DEFAULT_I18N: DataGridI18nOverrides = {
   labels: {
@@ -65,6 +70,8 @@ export interface DataTableBaseProps<TData extends object> {
   i18n?: DataGridI18nOverrides;
   /** Pesan kosong default */
   emptyMessage?: ReactNode | string;
+  /** Kata kunci pencarian aktif (minimal 2 karakter) untuk highlight isi sel */
+  searchQuery?: string;
 }
 
 export interface DataTableControlledProps<TData extends object>
@@ -120,10 +127,15 @@ function DataTableCore<TData extends object>({
   tableLayout = { dense: true, columnsResizable: true },
   i18n,
   emptyMessage,
+  searchQuery,
 }: DataTableBaseProps<TData> & {
   table: DataGridTableInstance<TData>;
   recordCount: number;
 }) {
+  const effectiveSearchQuery = useMemo(
+    () => getEffectiveSearchQuery(searchQuery),
+    [searchQuery]
+  );
   const currentPageSize = table.state.pagination?.pageSize ?? 10;
 
   const resolvedSizes = useMemo(() => {
@@ -154,58 +166,64 @@ function DataTableCore<TData extends object>({
   const isEmpty = !isLoading && recordCount === 0;
 
   return (
-    <DataGrid
-      table={table}
-      recordCount={recordCount}
-      isLoading={isLoading}
-      loadingMode={loadingMode}
-      onRowClick={onRowClick}
-      tableLayout={resolvedTableLayout}
-      i18n={mergedI18n}
-      emptyMessage={emptyMessage}
-    >
-      <div
-        className={cn(
-          "w-full rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs flex flex-col",
-          containerClassName
-        )}
+    <SearchHighlightProvider query={effectiveSearchQuery}>
+      <DataGrid
+        table={table}
+        recordCount={recordCount}
+        isLoading={isLoading}
+        loadingMode={loadingMode}
+        onRowClick={onRowClick}
+        tableLayout={resolvedTableLayout}
+        i18n={mergedI18n}
+        emptyMessage={emptyMessage}
       >
-        {header && (
-          <div
-            className={cn(
-              "border-b border-slate-100 dark:border-slate-800 p-3 sm:px-3.5 sm:py-2.5",
-              headerClassName
-            )}
-          >
-            {header}
-          </div>
-        )}
-
-        {isEmpty && emptyState ? (
-          emptyState
-        ) : (
-          <>
-            <div className={tableWrapperClassName}>
-              <DataGridScrollArea className={scrollAreaClassName}>
-                <DataGridTable />
-              </DataGridScrollArea>
+        <div
+          className={cn(
+            "w-full rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-xs flex flex-col",
+            containerClassName
+          )}
+        >
+          {header && (
+            <div
+              className={cn(
+                "border-b border-slate-100 dark:border-slate-800 p-3 sm:px-3.5 sm:py-2.5",
+                headerClassName
+              )}
+            >
+              {header}
             </div>
-            {children}
-          </>
-        )}
+          )}
 
-        {showPagination && (!isEmpty || isLoading) && (
-          <div
-            className={cn(
-              "border-t border-slate-100 dark:border-slate-800 px-3.5 py-2 bg-slate-50/50 dark:bg-slate-900/50",
-              footerClassName
-            )}
-          >
-            <DataGridPagination {...paginationProps} sizes={resolvedSizes} />
-          </div>
-        )}
-      </div>
-    </DataGrid>
+          {isEmpty && emptyState ? (
+            emptyState
+          ) : (
+            <>
+              <div className={tableWrapperClassName}>
+                <DataGridScrollArea className={scrollAreaClassName}>
+                  <DataGridTable />
+                </DataGridScrollArea>
+              </div>
+              {children
+                ? effectiveSearchQuery
+                  ? highlightReactNode(children, effectiveSearchQuery)
+                  : children
+                : null}
+            </>
+          )}
+
+          {showPagination && (!isEmpty || isLoading) && (
+            <div
+              className={cn(
+                "border-t border-slate-100 dark:border-slate-800 px-3.5 py-2 bg-slate-50/50 dark:bg-slate-900/50",
+                footerClassName
+              )}
+            >
+              <DataGridPagination {...paginationProps} sizes={resolvedSizes} />
+            </div>
+          )}
+        </div>
+      </DataGrid>
+    </SearchHighlightProvider>
   );
 }
 

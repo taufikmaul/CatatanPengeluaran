@@ -16,6 +16,11 @@ import {
 } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { CirclePlusIcon, CheckIcon } from "lucide-react"
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight"
+import {
+  HighlightText,
+  SearchMinCharHint,
+} from "@/components/common/HighlightText"
 
 interface DataGridColumnFilterProps<TData extends object, TValue> {
   column?: Column<DataGridFeatures, TData, TValue>
@@ -39,13 +44,16 @@ function DataGridColumnFilter<TData extends object, TValue>({
     Array.isArray(filterValue) ? (filterValue as string[]) : []
   )
   const [searchQuery, setSearchQuery] = useState("")
+  const effectiveSearchQuery = useMemo(
+    () => getEffectiveSearchQuery(searchQuery),
+    [searchQuery]
+  )
 
   const filteredOptions = useMemo(() => {
-    if (!searchQuery) return options
-    return options.filter((option) =>
-      option.label.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  }, [options, searchQuery])
+    if (!effectiveSearchQuery) return options
+    const q = effectiveSearchQuery.toLowerCase()
+    return options.filter((option) => option.label.toLowerCase().includes(q))
+  }, [options, effectiveSearchQuery])
 
   return (
     <Popover>
@@ -95,6 +103,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-8"
           />
+          <SearchMinCharHint query={searchQuery} />
         </div>
         <div className="max-h-[300px] overflow-y-auto">
           {filteredOptions.length === 0 ? (
@@ -148,7 +157,12 @@ function DataGridColumnFilter<TData extends object, TValue>({
                     {option.icon && (
                       <option.icon className="text-muted-foreground h-4 w-4" />
                     )}
-                    <span>{option.label}</span>
+                    <span>
+                      <HighlightText
+                        text={option.label}
+                        query={effectiveSearchQuery}
+                      />
+                    </span>
                     {facetCount !== undefined && (
                       <span className="ms-auto flex h-4 w-4 items-center justify-center font-mono text-xs">
                         {facetCount}

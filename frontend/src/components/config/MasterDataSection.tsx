@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   Dialog,
   DialogContent,
@@ -198,20 +200,25 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
     },
   });
 
+  const effectiveSearchQuery = useMemo(
+    () => getEffectiveSearchQuery(searchQuery),
+    [searchQuery]
+  );
+
   // Filter items by type and search
   const currentItems = useMemo(() => {
     return allItems
       .filter((it) => it.type === activeType)
       .filter((it) => {
-        if (!searchQuery.trim()) return true;
-        const q = searchQuery.toLowerCase();
+        if (!effectiveSearchQuery) return true;
+        const q = effectiveSearchQuery.toLowerCase();
         return (
           it.name.toLowerCase().includes(q) ||
           (it.description || "").toLowerCase().includes(q)
         );
       })
       .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
-  }, [allItems, activeType, searchQuery]);
+  }, [allItems, activeType, effectiveSearchQuery]);
 
   // Counts for tabs
   const counts = useMemo(() => {
@@ -405,15 +412,18 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
           </div>
 
           {/* Search bar & quick filter */}
-          <div className="pt-3 flex items-center gap-2">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={`Cari nama ${TYPE_CONFIG[activeType].singular.toLowerCase()}...`}
-                className="h-9 pl-8 text-xs rounded-xl"
-              />
+          <div className="pt-3 flex items-start gap-2">
+            <div className="flex-1 max-w-sm">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={`Cari nama ${TYPE_CONFIG[activeType].singular.toLowerCase()}...`}
+                  className="h-9 pl-8 text-xs rounded-xl"
+                />
+              </div>
+              <SearchMinCharHint query={searchQuery} />
             </div>
             {searchQuery && (
               <Button
@@ -440,8 +450,8 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
           ) : currentItems.length === 0 ? (
             <div className="p-8 text-center space-y-2">
               <p className="text-xs text-slate-500 font-medium">
-                {searchQuery
-                  ? `Tidak ada opsi yang cocok dengan pencarian "${searchQuery}"`
+                {effectiveSearchQuery
+                  ? `Tidak ada opsi yang cocok dengan pencarian "${effectiveSearchQuery}"`
                   : `Belum ada master data untuk ${TYPE_CONFIG[activeType].label}`}
               </p>
               <Button
@@ -477,7 +487,7 @@ export const MasterDataSection: React.FC<MasterDataSectionProps> = ({ onRefreshC
                               item.is_active ? "text-slate-900" : "text-slate-500 line-through"
                             }`}
                           >
-                            {item.name}
+                            <HighlightText text={item.name} query={effectiveSearchQuery} />
                           </span>
 
                           {item.is_default && (

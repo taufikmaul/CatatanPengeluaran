@@ -45,6 +45,8 @@ import {
 } from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   dataGridFeatures,
   type DataGridFeatures,
@@ -207,6 +209,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [mobileExpandedKeys, setMobileExpandedKeys] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState<string>("");
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number>(25);
 
@@ -295,7 +298,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       rangeEnd,
       statusFilter,
       selectedUserId,
-      search,
+      effectiveSearch,
       talanganType,
     ],
     enabled: !isCustomRangeInvalid && !isGroupedMode,
@@ -333,8 +336,8 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         params.append("user_id", String(selectedUserId));
       }
 
-      if (search.trim()) {
-        params.append("search", search.trim());
+      if (effectiveSearch) {
+        params.append("search", effectiveSearch);
       }
 
       const res = await api.get(`/expenses?${params.toString()}`);
@@ -360,7 +363,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
       rangeEnd,
       statusFilter,
       selectedUserId,
-      search,
+      effectiveSearch,
       talanganType,
     ],
     enabled: !isCustomRangeInvalid && isGroupedMode,
@@ -382,7 +385,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
         end_date: periodMode === "custom" && rangeEnd ? rangeEnd : undefined,
         reimbursed_status: statusFilter !== "all" ? statusFilter : undefined,
         user_id: selectedUserId !== null ? selectedUserId : undefined,
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
       }),
   });
 
@@ -1926,6 +1929,7 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
           table={(isGroupedMode ? groupedTalanganTable : talanganTable) as any}
           recordCount={totalInvoicesOrItems}
           isLoading={activeIsLoading}
+          searchQuery={search}
           tableLayout={{ dense: true, columnsResizable: true }}
           containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
           headerClassName="border-b border-[color:var(--ledger-hairline)] p-3 sm:px-3.5 sm:py-2.5 space-y-2"
@@ -1968,22 +1972,23 @@ export const TalanganTab: React.FC<TalanganTabProps> = ({
                       aria-label="Cari talangan"
                       className="h-9 text-xs"
                     />
-                    {search.length > 0 && (
-                      <InputGroupAddon align="inline-end" className="pr-1.5">
-                        <InputGroupButton
-                          size="icon-xs"
-                          aria-label="Bersihkan kata kunci"
-                          onClick={() => {
-                            setSearch("");
-                            setPage(1);
-                          }}
-                        >
-                          <X className="size-3" />
-                        </InputGroupButton>
-                      </InputGroupAddon>
-                    )}
-                  </InputGroup>
-                </div>
+                      {search.length > 0 && (
+                        <InputGroupAddon align="inline-end" className="pr-1.5">
+                          <InputGroupButton
+                            size="icon-xs"
+                            aria-label="Bersihkan kata kunci"
+                            onClick={() => {
+                              setSearch("");
+                              setPage(1);
+                            }}
+                          >
+                            <X className="size-3" />
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      )}
+                    </InputGroup>
+                    <SearchMinCharHint query={search} />
+                  </div>
 
                 <div className="xl:col-span-2">
                   <AdaptiveSelect

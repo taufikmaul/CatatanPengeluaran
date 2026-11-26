@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   LedgerStateBlock,
   LedgerStatusTabs,
@@ -162,17 +164,22 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
     staleTime: 60 * 1000,
   });
 
+  const effectiveLedgerSearch = useMemo(
+    () => getEffectiveSearchQuery(ledgerSearch),
+    [ledgerSearch]
+  );
+
   const filteredLedgerExpenses = useMemo(() => {
     if (!ledgerExpensesData?.data) return [];
-    if (!ledgerSearch.trim()) return ledgerExpensesData.data;
-    const q = ledgerSearch.toLowerCase();
+    if (!effectiveLedgerSearch) return ledgerExpensesData.data;
+    const q = effectiveLedgerSearch.toLowerCase();
     return ledgerExpensesData.data.filter(
       (e) =>
         e.item_name?.toLowerCase().includes(q) ||
         e.supplier?.toLowerCase().includes(q) ||
         e.notes?.toLowerCase().includes(q)
     );
-  }, [ledgerExpensesData, ledgerSearch]);
+  }, [ledgerExpensesData, effectiveLedgerSearch]);
 
   // Export Rekap Akuntansi ke CSV
   const handleExportCsv = () => {
@@ -2311,15 +2318,18 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
 
                 {/* Search in Ledger */}
                 <div className="px-4 py-2.5 border-b border-[color:var(--ledger-hairline)] flex items-center justify-between gap-3">
-                  <div className="relative flex-1 max-w-sm">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-                    <input
-                      type="text"
-                      placeholder="Cari transaksi, supplier, catatan..."
-                      value={ledgerSearch}
-                      onChange={(e) => setLedgerSearch(e.target.value)}
-                      className="w-full h-9 text-xs pl-8 pr-3 rounded-lg bg-[var(--ledger-surface)] text-[var(--ledger-ink)] border border-[color:var(--ledger-hairline)] focus:outline-hidden focus:ring-1 focus:ring-ring"
-                    />
+                  <div className="flex-1 max-w-sm">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                      <input
+                        type="text"
+                        placeholder="Cari transaksi, supplier, catatan..."
+                        value={ledgerSearch}
+                        onChange={(e) => setLedgerSearch(e.target.value)}
+                        className="w-full h-9 text-xs pl-8 pr-3 rounded-lg bg-[var(--ledger-surface)] text-[var(--ledger-ink)] border border-[color:var(--ledger-hairline)] focus:outline-hidden focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                    <SearchMinCharHint query={ledgerSearch} />
                   </div>
                   <span className="text-xs text-[var(--ledger-muted)] tabular-nums">
                     Menampilkan <strong className="text-[var(--ledger-ink)]">{filteredLedgerExpenses.length}</strong> transaksi
@@ -2333,6 +2343,7 @@ export const AccountingTab: React.FC<AccountingTabProps> = ({
                   getRowId={(exp) => String(exp.id)}
                   isLoading={isLoadingLedger}
                   defaultPageSize={10}
+                  searchQuery={ledgerSearch}
                   tableLayout={{ columnsResizable: false, width: "auto" }}
                   containerClassName="border-0 rounded-none shadow-none"
                   footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"

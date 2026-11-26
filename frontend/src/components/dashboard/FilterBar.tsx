@@ -6,6 +6,7 @@ import { ExpenseUser } from "@/types";
 import { Filters } from "@/components/reui/filters/filters";
 import type { FilterField, FilterQuery, FilterNode } from "@/components/reui/filters/filters-types";
 import { createFilterQuery, createFilterRule, isFilterRule } from "@/components/reui/filters/filters-query";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
 
 interface FilterBarProps {
   month: number;
@@ -194,23 +195,26 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     <div className="bg-[var(--ledger-surface)] border border-[color:var(--ledger-hairline)] rounded-xl p-3 sm:px-3.5 sm:py-3 space-y-2.5">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
         {/* Search Input */}
-        <div className="relative flex-1 min-w-0">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-          <Input
-            placeholder="Cari nama barang, supplier, invoice, penginput..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-8 pr-4 h-9 rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)] text-xs text-[var(--ledger-ink)]"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => onSearchChange("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
-            >
-              Clear
-            </button>
-          )}
+        <div className="flex-1 min-w-0">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+            <Input
+              placeholder="Cari nama barang, supplier, invoice, penginput..."
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="pl-8 pr-12 h-9 rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)] text-xs text-[var(--ledger-ink)]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => onSearchChange("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--ledger-muted)] hover:text-[var(--ledger-ink)]"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <SearchMinCharHint query={search} />
         </div>
 
         <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap">

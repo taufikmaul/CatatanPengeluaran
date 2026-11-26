@@ -33,6 +33,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   LedgerMetricStrip,
   LedgerStateBlock,
@@ -287,6 +289,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   const masterItems = masterRes?.data || [];
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   const filteredItems = useMemo(() => {
     return masterItems.filter((item) => {
       if (filterCat && item.category !== filterCat) return false;
@@ -296,8 +300,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       if (filterRecipeStatus === "configured" && !isConfigured) return false;
       if (filterRecipeStatus === "unconfigured" && isConfigured) return false;
       if (filterTipeSatuan && item.tipe_satuan !== filterTipeSatuan) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase();
+      if (effectiveSearch) {
+        const q = effectiveSearch.toLowerCase();
         return (
           item.item_name.toLowerCase().includes(q) ||
           (item.aliases || "").toLowerCase().includes(q) ||
@@ -310,7 +314,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       }
       return true;
     });
-  }, [masterItems, filterCat, filterRecipeStatus, filterTipeSatuan, search]);
+  }, [masterItems, filterCat, filterRecipeStatus, filterTipeSatuan, effectiveSearch]);
 
   // Bento living metrics computation
   const bentoStats = useMemo(() => {
@@ -1695,6 +1699,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         table={masterTable}
         recordCount={filteredItems.length}
         isLoading={isLoading}
+        searchQuery={search}
         containerClassName="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] shadow-none overflow-hidden"
         headerClassName="p-0"
         footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
@@ -1704,13 +1709,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             icon={<PackageCheck className="w-7 h-7" />}
             title="Tidak Ada Item yang Cocok"
             description={
-              Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan)
+              Boolean(effectiveSearch || filterCat || filterRecipeStatus || filterTipeSatuan)
                 ? "Tidak ada item master yang sesuai dengan kriteria filter atau pencarian saat ini."
                 : "Belum ada item bahan baku yang terdaftar di katalog master."
             }
             actions={
               <>
-                {Boolean(search || filterCat || filterRecipeStatus || filterTipeSatuan) && (
+                {Boolean(effectiveSearch || filterCat || filterRecipeStatus || filterTipeSatuan) && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1742,14 +1747,17 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
         header={
           <>
             <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)] flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-              <div className="relative flex-1 max-w-md min-w-0">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
-                <Input
-                  placeholder="Cari nama item baku atau kata kunci alias..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-                />
+              <div className="flex-1 max-w-md min-w-0">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--ledger-muted)]" />
+                  <Input
+                    placeholder="Cari nama item baku atau kata kunci alias..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                  />
+                </div>
+                <SearchMinCharHint query={search} />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Filters
@@ -1811,12 +1819,12 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             </div>
 
           {/* Active Filter Chips / Pills */}
-          {(Boolean(search) || Boolean(filterCat) || Boolean(filterRecipeStatus) || Boolean(filterTipeSatuan)) && (
+          {(Boolean(effectiveSearch) || Boolean(filterCat) || Boolean(filterRecipeStatus) || Boolean(filterTipeSatuan)) && (
             <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center gap-2 flex-wrap text-xs">
               <span className="text-[11px] font-medium text-slate-500">Filter Aktif:</span>
-              {search && (
+              {effectiveSearch && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-medium">
-                  <span>Cari: "{search}"</span>
+                  <span>Cari: "{effectiveSearch}"</span>
                   <button
                     type="button"
                     onClick={() => setSearch("")}

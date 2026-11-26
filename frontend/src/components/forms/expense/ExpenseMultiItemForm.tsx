@@ -22,6 +22,8 @@ import {
   InputGroupText,
 } from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
 import { toast } from "sonner";
 import {
   Plus,
@@ -623,10 +625,12 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                 Number(row.qty || 0) * Number(row.unit_price || 0)
               );
 
-              const q = row.item_name.trim().toLowerCase();
+              const rawQ = row.item_name.trim();
+              const tooShortQ = isSearchTooShort(rawQ);
+              const q = getEffectiveSearchQuery(rawQ).toLowerCase();
               const catLower = row.category.toLowerCase();
               const rowSuggestions =
-                activeAutocompleteRow === row.rowId
+                activeAutocompleteRow === row.rowId && !tooShortQ
                   ? [...itemSuggestions]
                       .sort((a, b) => {
                         const aMatch =
@@ -728,33 +732,39 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
 
                       {activeAutocompleteRow === row.rowId &&
                         rowProfile.showMasterItemAutocomplete &&
-                        rowSuggestions.length > 0 && (
+                        (tooShortQ || rowSuggestions.length > 0) && (
                           <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg max-h-52 overflow-y-auto divide-y divide-border/50">
-                            {rowSuggestions.map((s) => (
-                              <button
-                                key={`${s.item_name}-${s.is_master}`}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  handleSelectSuggestion(row.rowId, s);
-                                }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-accent/60 flex items-center justify-between gap-2"
-                              >
-                                <div className="min-w-0">
-                                  <p className="font-medium text-foreground truncate">
-                                    {s.item_name}
-                                  </p>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    {s.category} • {s.satuan_beli || "Pcs"}
-                                  </p>
-                                </div>
-                                {s.last_unit_price > 0 && (
-                                  <span className="text-[11px] font-semibold text-foreground tabular-nums shrink-0">
-                                    {formatRupiah(s.last_unit_price)}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
+                            {tooShortQ ? (
+                              <div className="px-3 py-2">
+                                <SearchMinCharHint query={row.item_name} className="mt-0" />
+                              </div>
+                            ) : (
+                              rowSuggestions.map((s) => (
+                                <button
+                                  key={`${s.item_name}-${s.is_master}`}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSelectSuggestion(row.rowId, s);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-accent/60 flex items-center justify-between gap-2"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-foreground truncate">
+                                      <HighlightText text={s.item_name} query={q} />
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      <HighlightText text={s.category} query={q} /> • {s.satuan_beli || "Pcs"}
+                                    </p>
+                                  </div>
+                                  {s.last_unit_price > 0 && (
+                                    <span className="text-[11px] font-semibold text-foreground tabular-nums shrink-0">
+                                      {formatRupiah(s.last_unit_price)}
+                                    </span>
+                                  )}
+                                </button>
+                              ))
+                            )}
                           </div>
                         )}
                     </div>

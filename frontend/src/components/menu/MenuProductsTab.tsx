@@ -42,6 +42,8 @@ import {
   type BulkRowColumn,
 } from "@/components/common/BulkRowImportDialog";
 import { DataTable } from "@/components/common/DataTable";
+import { SearchMinCharHint } from "@/components/common/HighlightText";
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
 import {
   LedgerMetricStrip,
   LedgerStateBlock,
@@ -630,6 +632,8 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const [shareExpireHours, setShareExpireHours] = useState(24);
   const [generatedShareUrl, setGeneratedShareUrl] = useState("");
 
+  const effectiveSearch = useMemo(() => getEffectiveSearchQuery(search), [search]);
+
   const {
     data: menuRes,
     isLoading,
@@ -638,11 +642,11 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   } = useQuery({
     queryKey: [
       "menus",
-      { search, categoryFilter, hppStatusFilter, itemTypeFilter, anonymizeMode },
+      { search: effectiveSearch, categoryFilter, hppStatusFilter, itemTypeFilter, anonymizeMode },
     ],
     queryFn: () =>
       getMenus({
-        search: search.trim() || undefined,
+        search: effectiveSearch || undefined,
         category: categoryFilter !== "all" ? categoryFilter : undefined,
         hpp_status: hppStatusFilter !== "all" ? hppStatusFilter : undefined,
         item_type: itemTypeFilter !== "all" ? itemTypeFilter : undefined,
@@ -776,7 +780,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
 
   useEffect(() => {
     setPage(1);
-  }, [search, categoryFilter, hppStatusFilter, itemTypeFilter]);
+  }, [effectiveSearch, categoryFilter, hppStatusFilter, itemTypeFilter]);
 
   useEffect(() => {
     if (isLockedReadOnly) {
@@ -990,7 +994,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   });
 
   const currentFilterParams = {
-    search: search.trim() || undefined,
+    search: effectiveSearch || undefined,
     category: categoryFilter !== "all" ? categoryFilter : undefined,
     hpp_status: hppStatusFilter !== "all" ? hppStatusFilter : undefined,
     item_type: itemTypeFilter !== "all" ? itemTypeFilter : undefined,
@@ -1107,7 +1111,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
   const dirtyCount = Object.keys(quickEdits).length;
 
   const hasFilters = Boolean(
-    search.trim() ||
+    effectiveSearch ||
       categoryFilter !== "all" ||
       hppStatusFilter !== "all" ||
       itemTypeFilter !== "all"
@@ -2007,19 +2011,22 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
         <div className="rounded-xl border border-[color:var(--ledger-hairline)] bg-[var(--ledger-surface)] overflow-hidden">
           <div className="p-3 sm:px-3.5 sm:py-2.5 border-b border-[color:var(--ledger-hairline)]">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              <div className="relative lg:col-span-2 min-w-0">
-                <Search className="w-3.5 h-3.5 text-[var(--ledger-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={
-                    effectiveAnonymized
-                      ? "Cari kode anonim atau kategori..."
-                      : "Cari nama menu, prepared, kode anonim, SKU..."
-                  }
-                  className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
-                  aria-label="Cari menu"
-                />
+              <div className="lg:col-span-2 min-w-0">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-[var(--ledger-muted)] absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder={
+                      effectiveAnonymized
+                        ? "Cari kode anonim atau kategori..."
+                        : "Cari nama menu, prepared, kode anonim, SKU..."
+                    }
+                    className="pl-8 h-9 text-xs rounded-lg bg-[var(--ledger-surface)] border-[color:var(--ledger-hairline)]"
+                    aria-label="Cari menu"
+                  />
+                </div>
+                <SearchMinCharHint query={search} />
               </div>
 
               <select
@@ -2141,6 +2148,7 @@ export const MenuProductsTab: React.FC<MenuProductsTabProps> = ({
             <DataTable
               table={menuTable}
               recordCount={items.length}
+              searchQuery={search}
               containerClassName="border-0 rounded-none shadow-none"
               footerClassName="border-t border-[color:var(--ledger-hairline)] px-3.5 py-2 ledger-recessed-subtle"
               tableWrapperClassName="hidden md:block"

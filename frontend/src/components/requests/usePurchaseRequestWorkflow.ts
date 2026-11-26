@@ -27,6 +27,8 @@ import {
   WarehouseReceiveItemInput,
 } from "@/types";
 
+import { getEffectiveSearchQuery } from "@/lib/searchHighlight";
+
 export interface UsePurchaseRequestWorkflowOptions {
   enableRequests?: boolean;
   enablePurchasing?: boolean;
@@ -60,13 +62,16 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
     queryClient.invalidateQueries({ queryKey: ["warehouse-incoming"] });
   };
 
+  const effectiveSearchQuery = getEffectiveSearchQuery(searchQuery);
+  const effectiveWarehouseSearch = getEffectiveSearchQuery(warehouseSearch);
+
   const requestsQuery = useQuery({
-    queryKey: ["purchase-requests", statusFilter, urgencyFilter, searchQuery],
+    queryKey: ["purchase-requests", statusFilter, urgencyFilter, effectiveSearchQuery],
     queryFn: () =>
       getPurchaseRequests({
         status: statusFilter === "ALL" ? undefined : statusFilter,
         urgency: urgencyFilter === "ALL" ? undefined : urgencyFilter,
-        search: searchQuery || undefined,
+        search: effectiveSearchQuery || undefined,
         limit: 100,
       }),
     enabled: enableRequests,
@@ -91,8 +96,8 @@ export function usePurchaseRequestWorkflow(options: UsePurchaseRequestWorkflowOp
   });
 
   const warehouseQuery = useQuery({
-    queryKey: ["warehouse-incoming", warehouseSearch],
-    queryFn: () => getWarehouseIncoming(warehouseSearch),
+    queryKey: ["warehouse-incoming", effectiveWarehouseSearch],
+    queryFn: () => getWarehouseIncoming(effectiveWarehouseSearch),
     enabled: enableWarehouse,
   });
 

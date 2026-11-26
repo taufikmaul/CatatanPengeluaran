@@ -15,6 +15,8 @@ import {
 } from "@/types";
 import { formatRupiah } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import { getEffectiveSearchQuery, isSearchTooShort } from "@/lib/searchHighlight";
+import { HighlightText, SearchMinCharHint } from "@/components/common/HighlightText";
 import {
   Check,
   CornerDownLeft,
@@ -195,8 +197,10 @@ export const RecipeQuickAddAutocomplete: React.FC<
     };
   }, []);
 
+  const effectiveQuery = useMemo(() => getEffectiveSearchQuery(query), [query]);
+
   const { dbOptions, totalMatchedCount } = useMemo(() => {
-    const trimmed = query.trim();
+    const trimmed = effectiveQuery;
     const candidates: Array<{
       opt: DropdownOption;
       score: number;
@@ -324,10 +328,10 @@ export const RecipeQuickAddAutocomplete: React.FC<
       dbOptions: candidates.slice(0, MAX_DB_OPTIONS).map((c) => c.opt),
       totalMatchedCount: candidates.length,
     };
-  }, [masterItems, menuOptions, isBundle, excludeMenuId, targetMode, query]);
+  }, [masterItems, menuOptions, isBundle, excludeMenuId, targetMode, effectiveQuery]);
 
   const manualOptions = useMemo<DropdownOption[]>(() => {
-    const trimmed = query.trim();
+    const trimmed = effectiveQuery;
     if (!trimmed) return [];
 
     if (isBundle) {
@@ -372,7 +376,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
         targetGroup: targetMode,
       },
     ];
-  }, [query, targetMode, isBundle]);
+  }, [effectiveQuery, targetMode, isBundle]);
 
   const options = useMemo<DropdownOption[]>(
     () => [...dbOptions, ...manualOptions],
@@ -614,6 +618,11 @@ export const RecipeQuickAddAutocomplete: React.FC<
               transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
               className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg max-h-72 overflow-y-auto divide-y divide-border/50"
             >
+            {isSearchTooShort(query) && (
+              <div className="px-3 py-1.5 bg-amber-50/70 dark:bg-amber-950/30">
+                <SearchMinCharHint query={query} className="mt-0" />
+              </div>
+            )}
             {options.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-slate-600 dark:text-slate-400">
                 {isBundle
@@ -662,7 +671,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <Layers className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300 shrink-0" />
                             <span className="font-medium truncate">
-                              {menu.name}
+                              <HighlightText text={menu.name} query={effectiveQuery} />
                             </span>
                             <Badge
                               variant="outline"
@@ -680,7 +689,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
                             )}
                           </div>
                           <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5">
-                            {menu.category} | Hasil: {menu.batch_yield_qty || 1}{" "}
+                            <HighlightText text={menu.category} query={effectiveQuery} /> | Hasil: {menu.batch_yield_qty || 1}{" "}
                             {unitLabel}
                           </div>
                         </div>
@@ -755,7 +764,7 @@ export const RecipeQuickAddAutocomplete: React.FC<
                               <Utensils className="w-3.5 h-3.5 text-blue-700 dark:text-blue-300 shrink-0" />
                             )}
                             <span className="font-medium truncate">
-                              {item.item_name}
+                              <HighlightText text={item.item_name} query={effectiveQuery} />
                             </span>
                             <Badge
                               variant="outline"
@@ -778,8 +787,8 @@ export const RecipeQuickAddAutocomplete: React.FC<
                             )}
                           </div>
                           <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate mt-0.5 tabular-nums">
-                            {item.category || "Master Item"} | Beli:{" "}
-                            {item.satuan_beli || "-"}
+                            <HighlightText text={item.category || "Master Item"} query={effectiveQuery} /> | Beli:{" "}
+                            <HighlightText text={item.satuan_beli || "-"} query={effectiveQuery} />
                             {hasMasterRecipe
                               ? ` | 1 ${item.satuan_beli || "unit"} = ${item.konversi_resep} ${item.satuan_resep}`
                               : item.satuan_ecer &&
