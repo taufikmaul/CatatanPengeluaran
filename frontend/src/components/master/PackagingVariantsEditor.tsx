@@ -5,12 +5,13 @@ import { formatConversionQty } from "@/lib/packagingConversion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
-import { Plus, Trash2, Star, ArrowRight, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Star, ArrowRight, ChevronDown, Layers } from "lucide-react";
 
 export interface EditablePackagingVariant {
   localId: string;
   id?: number;
   label: string;
+  has_sub_tier: boolean;
   purchase_unit: string;
   retail_qty: string;
   retail_unit: string;
@@ -128,7 +129,7 @@ export function computeVariantBaseQty(
     return Number.isFinite(manual) && manual > 0 ? Math.round(manual * 10000) / 10000 : 0;
   }
 
-  const rQty = Number(variant.retail_qty) || 1;
+  const rQty = variant.has_sub_tier ? Number(variant.retail_qty) || 1 : 1;
   const pQty = Number(variant.per_retail_qty);
   if (!(rQty > 0 && pQty > 0)) {
     const manual = Number(variant.manual_base_qty);
@@ -152,6 +153,7 @@ export function createDefaultPackagingVariant(opts?: {
   retailUnit?: string;
   perRetailQty?: string;
   perRetailUnit?: string;
+  hasSubTier?: boolean;
   isDefault?: boolean;
 }): EditablePackagingVariant {
   const pUnit = opts?.purchaseUnit?.trim() || "Box";
@@ -165,6 +167,7 @@ export function createDefaultPackagingVariant(opts?: {
   return {
     localId: `pkg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     label: "",
+    has_sub_tier: Boolean(opts?.hasSubTier),
     purchase_unit: pUnit,
     retail_qty: "1",
     retail_unit: rUnit,
@@ -188,17 +191,24 @@ export function toEditableVariants(
 ): EditablePackagingVariant[] {
   if (packagings && packagings.length > 0) {
     return packagings.map((p, idx) => {
+      const pUnit = p.purchase_unit || "Pcs";
       const rQty = p.retail_qty ?? 1;
       const bQty = p.base_qty ?? 0;
       const bUnit = p.base_unit || fallbackItem?.satuan_resep || "Gram";
-      const { perQty, perUnit } = decomposePerRetail(bQty, rQty, bUnit);
+      const hasSubTier =
+        rQty > 1 &&
+        Boolean(p.retail_unit) &&
+        p.retail_unit.toLowerCase() !== bUnit.toLowerCase();
+      const effectiveRetailQty = hasSubTier ? rQty : 1;
+      const { perQty, perUnit } = decomposePerRetail(bQty, effectiveRetailQty, bUnit);
       return {
         localId: `pkg-${p.id || idx}-${idx}`,
         id: p.id,
         label: p.label || "",
-        purchase_unit: p.purchase_unit || "Pcs",
-        retail_qty: String(rQty),
-        retail_unit: p.retail_unit || p.purchase_unit || "Pcs",
+        has_sub_tier: hasSubTier,
+        purchase_unit: pUnit,
+        retail_qty: String(effectiveRetailQty),
+        retail_unit: hasSubTier ? p.retail_unit || pUnit : pUnit,
         per_retail_qty: perQty,
         per_retail_unit: perUnit,
         manual_base_qty: bQty > 0 ? String(bQty) : "",
@@ -213,7 +223,6 @@ export function toEditableVariants(
 
   if (fallbackItem) {
     const pUnit = fallbackItem.satuan_beli || "Box";
-    const rUnit = fallbackItem.satuan_ecer || pUnit;
     const bUnit = fallbackItem.satuan_resep || suggestBaseUnitFromUnit(pUnit) || "Gram";
     const bQty = Number(fallbackItem.konversi_resep) || 0;
     const { perQty, perUnit } = decomposePerRetail(bQty, 1, bUnit);
@@ -221,9 +230,10 @@ export function toEditableVariants(
       {
         localId: `pkg-legacy-${fallbackItem.id || "new"}`,
         label: "",
+        has_sub_tier: false,
         purchase_unit: pUnit,
         retail_qty: "1",
-        retail_unit: rUnit,
+        retail_unit: pUnit,
         per_retail_qty: perQty,
         per_retail_unit: perUnit,
         manual_base_qty: bQty > 0 ? String(bQty) : "",
@@ -245,12 +255,12 @@ export function formatAutoVariantLabel(
   baseUnit: string
 ): string {
   const pUnit = variant.purchase_unit.trim() || "Pcs";
-  const rQty = Math.max(0.0001, Number(variant.retail_qty) || 1);
-  const rUnit = variant.retail_unit.trim() || pUnit;
+  const rQty = variant.has_sub_tier ? Math.max(0.0001, Number(variant.retail_qty) || 1) : 1;
+  const rUnit = variant.has_sub_tier ? variant.retail_unit.trim() || pUnit : pUnit;
   const pQty = Number(variant.per_retail_qty) || 0;
   const pPerUnit = variant.per_retail_unit.trim();
 
-  if (rQty > 1 || rUnit.toLowerCase() !== pUnit.toLowerCase()) {
+  if (variant.has_sub_tier && rQty > 1) {
     if (pQty > 0 && pPerUnit) {
       return `${pUnit} (${formatConversionQty(rQty)} ${rUnit} @ ${formatConversionQty(pQty)}${pPerUnit})`;
     }
@@ -280,7 +290,9 @@ export function buildItemUnitPayload(
     activeVariants.find((v) => v.is_default) || activeVariants[0] || variants[0];
 
   const satuanBeli = defaultVar?.purchase_unit.trim() || "Pcs";
-  const satuanEcer = defaultVar?.retail_unit.trim() || satuanBeli;
+  const satuanEcer = defaultVar?.has_sub_tier
+    ? defaultVar.retail_unit.trim() || satuanBeli
+    : satuanBeli;
 
   const hasAnyDefault = activeVariants.some((v) => v.is_default);
 
@@ -288,8 +300,8 @@ export function buildItemUnitPayload(
   for (let idx = 0; idx < activeVariants.length; idx++) {
     const v = activeVariants[idx];
     const pUnit = v.purchase_unit.trim();
-    const rQty = Math.max(0.0001, Number(v.retail_qty) || 1);
-    const rUnit = v.retail_unit.trim() || pUnit;
+    const rQty = v.has_sub_tier ? Math.max(0.0001, Number(v.retail_qty) || 1) : 1;
+    const rUnit = v.has_sub_tier ? v.retail_unit.trim() || pUnit : pUnit;
     const bQty = computeVariantBaseQty(v, cleanBaseUnit);
     if (!cleanBaseUnit || !(bQty > 0)) continue;
 
@@ -316,9 +328,7 @@ export function buildItemUnitPayload(
 
   const hasMultiVariant = packagings.length > 1;
   const hasRetailTier =
-    Boolean(defaultVar) &&
-    ((Number(defaultVar.retail_qty) || 1) > 1 ||
-      (defaultVar.retail_unit.trim() || satuanBeli).toLowerCase() !== satuanBeli.toLowerCase());
+    Boolean(defaultVar?.has_sub_tier) && (Number(defaultVar?.retail_qty) || 1) > 1;
 
   const tipeSatuan: "keduanya" | "paket" | "ecer" =
     hasMultiVariant || hasRetailTier ? "keduanya" : "paket";
@@ -326,12 +336,12 @@ export function buildItemUnitPayload(
   const summaryParts = activeVariants
     .map((v) => {
       const bQty = computeVariantBaseQty(v, cleanBaseUnit);
-      const rQty = Number(v.retail_qty) || 1;
-      const rUnit = v.retail_unit.trim() || v.purchase_unit.trim();
+      const rQty = v.has_sub_tier ? Number(v.retail_qty) || 1 : 1;
+      const rUnit = v.has_sub_tier ? v.retail_unit.trim() || v.purchase_unit.trim() : v.purchase_unit.trim();
       const pQty = Number(v.per_retail_qty) || 0;
       const pPerUnit = v.per_retail_unit.trim();
       if (pQty > 0 && pPerUnit) {
-        return rQty > 1 || rUnit.toLowerCase() !== v.purchase_unit.trim().toLowerCase()
+        return v.has_sub_tier && rQty > 1
           ? `${formatConversionQty(rQty)} ${rUnit} @ ${formatConversionQty(pQty)} ${pPerUnit}`
           : `${formatConversionQty(pQty)} ${pPerUnit}`;
       }
@@ -377,9 +387,10 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
     const first = variants[0];
     const nextRow = createDefaultPackagingVariant({
       purchaseUnit: first?.purchase_unit || "Box",
-      retailUnit: "Pcs",
+      retailUnit: first?.purchase_unit || "Box",
       perRetailQty: "",
       perRetailUnit: baseUnit.trim() || first?.per_retail_unit || "Gram",
+      hasSubTier: false,
       isDefault: variants.length === 0,
     });
     onChange([...variants, nextRow]);
@@ -414,6 +425,26 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
     }
   };
 
+  const toggleSubTier = (v: EditablePackagingVariant) => {
+    if (v.has_sub_tier) {
+      updateRow(v.localId, {
+        has_sub_tier: false,
+        retail_qty: "1",
+        retail_unit: v.purchase_unit.trim() || "Box",
+      });
+    } else {
+      updateRow(v.localId, {
+        has_sub_tier: true,
+        retail_qty: Number(v.retail_qty) > 1 ? v.retail_qty : "8",
+        retail_unit:
+          v.retail_unit.trim() &&
+          v.retail_unit.toLowerCase() !== v.purchase_unit.trim().toLowerCase()
+            ? v.retail_unit
+            : "Pouch",
+      });
+    }
+  };
+
   return (
     <div className="pt-3 border-t border-border/70 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
@@ -422,7 +453,7 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
             Kemasan &amp; Konversi Beli
           </span>
           <span className="text-[11px] text-muted-foreground">
-            Isi satuan beli, jumlah eceran, dan ukuran per ecer — total satuan resep dihitung otomatis.
+            Cukup isi satuan beli dan isinya (mis. 1 Box → 125 Gram). Aktifkan sub-kemasan hanya bila bertingkat.
           </span>
         </div>
         <Button
@@ -439,10 +470,10 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
 
       <div className="space-y-2.5">
         {variants.map((v, idx) => {
-          const rQty = Number(v.retail_qty) || 1;
+          const rQty = v.has_sub_tier ? Number(v.retail_qty) || 1 : 1;
           const pQty = Number(v.per_retail_qty) || 0;
           const pUnit = v.purchase_unit.trim() || "Beli";
-          const rUnit = v.retail_unit.trim() || pUnit;
+          const rUnit = v.has_sub_tier ? v.retail_unit.trim() || pUnit : pUnit;
           const effectiveBase =
             baseUnit.trim() || suggestBaseUnitFromUnit(v.per_retail_unit) || "";
           const converted =
@@ -475,18 +506,16 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                     </span>
                   )}
                   <span className="font-medium text-foreground">1 {pUnit}</span>
-                  {(rQty > 1 || rUnit.toLowerCase() !== pUnit.toLowerCase()) && (
+                  {v.has_sub_tier && rQty > 1 && (
                     <>
                       <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
                       <span className="text-foreground tabular-nums">
                         {formatConversionQty(rQty)} {rUnit}
+                        {pQty > 0 && v.per_retail_unit
+                          ? ` @ ${formatConversionQty(pQty)} ${v.per_retail_unit}`
+                          : ""}
                       </span>
                     </>
-                  )}
-                  {pQty > 0 && v.per_retail_unit && (
-                    <span className="text-muted-foreground tabular-nums">
-                      @ {formatConversionQty(pQty)} {v.per_retail_unit}
-                    </span>
                   )}
                   <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
                   {computedBase > 0 && effectiveBase ? (
@@ -504,6 +533,20 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleSubTier(v)}
+                    title="Aktifkan jika 1 kemasan beli berisi beberapa kemasan eceran (mis. 1 Dus = 8 Pouch)"
+                    className={`h-7 px-2 rounded-md border text-[11px] inline-flex items-center gap-1 transition-colors ${
+                      v.has_sub_tier
+                        ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300 font-medium"
+                        : "border-border/70 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Layers className="w-3 h-3" />
+                    <span>{v.has_sub_tier ? "Bertingkat" : "+ Sub-kemasan"}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() =>
@@ -559,23 +602,19 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                 </div>
               </div>
 
-              {/* 3 Core Packaging Inputs */}
+              {/* Packaging Inputs: 2 clean columns in simple mode, 3 when Sub-kemasan is active */}
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                <div className="sm:col-span-3 space-y-1 min-w-0">
+                <div className={`${v.has_sub_tier ? "sm:col-span-3" : "sm:col-span-5"} space-y-1 min-w-0`}>
                   <label className="text-[11px] font-medium text-muted-foreground block">
                     Satuan Beli
                   </label>
                   <AdaptiveSelect
                     value={v.purchase_unit}
                     onValueChange={(val) => {
-                      const prevP = v.purchase_unit.trim();
-                      const syncRetail =
-                        !v.retail_unit.trim() ||
-                        (v.retail_unit === prevP && (Number(v.retail_qty) || 1) === 1);
                       const spec = suggestBaseUnitFromUnit(val);
                       updateRow(v.localId, {
                         purchase_unit: val,
-                        ...(syncRetail ? { retail_unit: val } : {}),
+                        ...(!v.has_sub_tier ? { retail_unit: val } : {}),
                         ...(!v.per_retail_qty && spec
                           ? {
                               per_retail_unit:
@@ -587,39 +626,41 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                     options={units}
                     creatable={true}
                     creatablePrefix="Satuan"
-                    placeholder="Dus / Pouch..."
+                    placeholder="Box / Dus / Pcs..."
                   />
                 </div>
 
-                <div className="sm:col-span-4 space-y-1 min-w-0">
-                  <label className="text-[11px] font-medium text-muted-foreground block">
-                    Isi per 1 {pUnit}
-                  </label>
-                  <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-1.5">
-                    <Input
-                      type="number"
-                      min={0.0001}
-                      step="any"
-                      placeholder="1"
-                      value={v.retail_qty}
-                      onChange={(e) => updateRow(v.localId, { retail_qty: e.target.value })}
-                      className="h-9 text-xs tabular-nums px-2"
-                    />
-                    <AdaptiveSelect
-                      value={v.retail_unit}
-                      onValueChange={(val) => updateRow(v.localId, { retail_unit: val })}
-                      options={units}
-                      creatable={true}
-                      creatablePrefix="Satuan"
-                      placeholder="Pouch..."
-                    />
+                {v.has_sub_tier && (
+                  <div className="sm:col-span-4 space-y-1 min-w-0">
+                    <label className="text-[11px] font-medium text-muted-foreground block">
+                      Isi per 1 {pUnit}
+                    </label>
+                    <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-1.5">
+                      <Input
+                        type="number"
+                        min={0.0001}
+                        step="any"
+                        placeholder="8"
+                        value={v.retail_qty}
+                        onChange={(e) => updateRow(v.localId, { retail_qty: e.target.value })}
+                        className="h-9 text-xs tabular-nums px-2"
+                      />
+                      <AdaptiveSelect
+                        value={v.retail_unit}
+                        onValueChange={(val) => updateRow(v.localId, { retail_unit: val })}
+                        options={units}
+                        creatable={true}
+                        creatablePrefix="Satuan"
+                        placeholder="Pouch..."
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="sm:col-span-5 space-y-1 min-w-0">
+                <div className={`${v.has_sub_tier ? "sm:col-span-5" : "sm:col-span-7"} space-y-1 min-w-0`}>
                   <div className="flex items-center justify-between gap-1">
                     <label className="text-[11px] font-medium text-muted-foreground truncate">
-                      Ukuran / 1 {rUnit}
+                      {v.has_sub_tier ? `Ukuran / 1 ${rUnit}` : `Isi / 1 ${pUnit}`}
                     </label>
                     {!needsManual && (
                       <button
@@ -636,12 +677,12 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(92px,1fr)] gap-1.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(96px,1fr)] gap-1.5">
                     <Input
                       type="number"
                       min={0.0001}
                       step="any"
-                      placeholder="2 / 480 / 900"
+                      placeholder="125 / 900 / 2"
                       value={v.per_retail_qty}
                       onChange={(e) => {
                         const nextVal = e.target.value;
@@ -662,13 +703,13 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                       options={perRetailUnits}
                       creatable={true}
                       creatablePrefix="Satuan"
-                      placeholder="Kg / Gram..."
+                      placeholder="Gram / ml..."
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Manual Total Fallback (only when unit cannot auto-convert or manually toggled) */}
+              {/* Manual Total Fallback */}
               {needsManual && (
                 <div className="flex items-center gap-2 pt-0.5 flex-wrap">
                   <label className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
@@ -679,7 +720,7 @@ export const PackagingVariantsEditor: React.FC<PackagingVariantsEditorProps> = (
                       type="number"
                       min={0.0001}
                       step="any"
-                      placeholder="mis. 16000"
+                      placeholder="mis. 125"
                       value={v.manual_base_qty}
                       onChange={(e) =>
                         updateRow(v.localId, {

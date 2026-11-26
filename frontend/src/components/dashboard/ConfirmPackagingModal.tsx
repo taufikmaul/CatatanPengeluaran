@@ -5,6 +5,7 @@ import { formatRupiah } from "@/lib/formatters";
 import {
   computeLiveConversionPreview,
   formatConversionQty,
+  shouldShowRetailTier,
 } from "@/lib/packagingConversion";
 import {
   Dialog,
@@ -168,8 +169,17 @@ export const ConfirmPackagingModal: React.FC<ConfirmPackagingModalProps> = ({
                     >
                       <div className="text-xs font-semibold">{pkg.label}</div>
                       <div className="text-[11px] opacity-80 mt-0.5">
-                        1 {pkg.purchase_unit} = {formatConversionQty(pkg.retail_qty)} {pkg.retail_unit} ={" "}
-                        {formatConversionQty(pkg.base_qty)} {pkg.base_unit}
+                        1 {pkg.purchase_unit}
+                        {shouldShowRetailTier({
+                          qty: 1,
+                          unit: pkg.purchase_unit,
+                          retailQty: pkg.retail_qty,
+                          retailUnit: pkg.retail_unit,
+                          baseUnit: pkg.base_unit,
+                        })
+                          ? ` → ${formatConversionQty(pkg.retail_qty)} ${pkg.retail_unit}`
+                          : ""}{" "}
+                        → {formatConversionQty(pkg.base_qty)} {pkg.base_unit}
                       </div>
                     </button>
                   );
@@ -223,17 +233,20 @@ export const ConfirmPackagingModal: React.FC<ConfirmPackagingModalProps> = ({
                 <span>
                   {formatConversionQty(Number(qty) || 1)} {unit}
                 </span>
-                {livePreview.retail_qty !== null &&
-                  livePreview.retail_unit &&
-                  (livePreview.retail_unit.toLowerCase() !== unit.toLowerCase() ||
-                    livePreview.retail_qty !== (Number(qty) || 1)) && (
-                    <>
-                      <ArrowRight className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {formatConversionQty(livePreview.retail_qty)} {livePreview.retail_unit}
-                      </span>
-                    </>
-                  )}
+                {shouldShowRetailTier({
+                  qty: Number(qty) || 1,
+                  unit,
+                  retailQty: livePreview.retail_qty,
+                  retailUnit: livePreview.retail_unit,
+                  baseUnit: livePreview.base_unit,
+                }) && (
+                  <>
+                    <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {formatConversionQty(livePreview.retail_qty)} {livePreview.retail_unit}
+                    </span>
+                  </>
+                )}
                 <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 <strong className="tabular-nums">
                   {formatConversionQty(livePreview.base_qty)} {livePreview.base_unit}

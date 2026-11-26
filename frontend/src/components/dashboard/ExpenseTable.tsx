@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Expense, ExpenseInvoiceGroup } from "@/types";
 import { formatRupiah, formatDateId, getCategoryColor } from "@/lib/formatters";
-import { formatConversionQty } from "@/lib/packagingConversion";
+import { formatConversionQty, shouldShowRetailTier } from "@/lib/packagingConversion";
 import { parseTelegramLink } from "@/lib/telegram";
 import {
   getExpensePaymentBreakdown,
@@ -135,10 +135,13 @@ export const ExpenseTable: React.FC<ExpenseTableProps> = ({
     if (!exp.base_qty || !exp.base_unit) return null;
     const parts: string[] = [];
     if (
-      exp.retail_qty &&
-      exp.retail_unit &&
-      (exp.retail_unit.toLowerCase() !== (exp.unit || "").toLowerCase() ||
-        exp.retail_qty !== exp.qty)
+      shouldShowRetailTier({
+        qty: exp.qty,
+        unit: exp.unit || "Pcs",
+        retailQty: exp.retail_qty,
+        retailUnit: exp.retail_unit,
+        baseUnit: exp.base_unit,
+      })
     ) {
       parts.push(`${formatConversionQty(exp.retail_qty)} ${exp.retail_unit}`);
     }

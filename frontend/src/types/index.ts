@@ -729,6 +729,10 @@ export interface MasterItemMergeResponse {
   merged_sources: string[];
   expenses_reassigned_count: number;
   aliases_added: string[];
+  packagings_moved?: number;
+  packagings_deduped?: number;
+  menu_ingredients_reassigned?: number;
+  purchase_request_items_reassigned?: number;
 }
 
 export interface ItemSuggestion {

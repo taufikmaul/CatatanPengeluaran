@@ -784,6 +784,10 @@ class MasterItemMergeResponse(BaseModel):
     merged_sources: list[str]
     expenses_reassigned_count: int
     aliases_added: list[str]
+    packagings_moved: int = 0
+    packagings_deduped: int = 0
+    menu_ingredients_reassigned: int = 0
+    purchase_request_items_reassigned: int = 0
 
 
 class AuthPermissions(BaseModel):

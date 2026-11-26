@@ -92,6 +92,7 @@ class TestSchemaConsistency:
             "dashboard_pins",
             "dashboard_access_logs",
             "master_items",
+            "master_item_packagings",
             "suppliers",
             "monthly_budgets",
             "expense_logs",

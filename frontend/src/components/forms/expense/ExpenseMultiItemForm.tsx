@@ -37,6 +37,7 @@ import { PriceSpikeAlert } from "./PriceSpikeAlert";
 import {
   computeLiveConversionPreview,
   formatConversionQty,
+  shouldShowRetailTier,
 } from "@/lib/packagingConversion";
 
 function allocateInvoiceDpAcrossRows(
@@ -895,19 +896,21 @@ export const ExpenseMultiItemForm: React.FC<ExpenseMultiItemFormProps> = ({
                           <span>
                             {formatConversionQty(row.qty)} {row.unit}
                           </span>
-                          {rowConv.retail_qty !== null &&
-                            rowConv.retail_unit &&
-                            (rowConv.retail_unit.toLowerCase() !==
-                              (row.unit || "").toLowerCase() ||
-                              rowConv.retail_qty !== row.qty) && (
-                              <>
-                                <ArrowRight className="w-3 h-3 shrink-0" />
-                                <span>
-                                  {formatConversionQty(rowConv.retail_qty)}{" "}
-                                  {rowConv.retail_unit}
-                                </span>
-                              </>
-                            )}
+                          {shouldShowRetailTier({
+                            qty: row.qty,
+                            unit: row.unit || "Pcs",
+                            retailQty: rowConv.retail_qty,
+                            retailUnit: rowConv.retail_unit,
+                            baseUnit: rowConv.base_unit,
+                          }) && (
+                            <>
+                              <ArrowRight className="w-3 h-3 shrink-0" />
+                              <span>
+                                {formatConversionQty(rowConv.retail_qty)}{" "}
+                                {rowConv.retail_unit}
+                              </span>
+                            </>
+                          )}
                           <ArrowRight className="w-3 h-3 shrink-0" />
                           <strong className="tabular-nums">
                             {formatConversionQty(rowConv.base_qty)}{" "}

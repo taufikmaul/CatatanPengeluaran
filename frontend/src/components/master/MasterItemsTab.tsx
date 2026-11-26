@@ -14,6 +14,7 @@ import {
   type BulkRowColumn,
 } from "@/components/common/BulkRowImportDialog";
 import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDialog";
+import { buildMergedPackagingPreview } from "@/lib/mergePackagingPreview";
 import {
   PackagingVariantsEditor,
   type EditablePackagingVariant,
@@ -561,7 +562,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       return (await api.post("/master-items/merge", payload)).data;
     },
     onSuccess: (res) => {
-      toast.success(res.message || "Berhasil menggabungkan item!");
+      const extras: string[] = [];
+      if (res.packagings_moved) extras.push(`${res.packagings_moved} varian kemasan dipindahkan`);
+      if (res.packagings_deduped) extras.push(`${res.packagings_deduped} varian identik disatukan`);
+      if (res.menu_ingredients_reassigned) extras.push(`${res.menu_ingredients_reassigned} resep menu dialihkan`);
+      toast.success(
+        [res.message || "Berhasil menggabungkan item!", extras.join(", ")].filter(Boolean).join(" ")
+      );
       setMergeDialogOpen(false);
       setSelectedIds([]);
       invalidateAll();
@@ -2338,7 +2345,57 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            {/* Step 3: Opsi Gabung & Alias */}
+            {/* Pratinjau varian kemasan hasil gabungan */}
+            {(() => {
+              const preview = buildMergedPackagingPreview(mergeItemsList, targetItemId);
+              if (preview.rows.length === 0 && !preview.incompatibleReason) return null;
+              return (
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <label className="font-semibold text-slate-700 block">
+                    3. Varian Kemasan Hasil Gabungan ({preview.rows.length}):
+                  </label>
+                  {preview.incompatibleReason && (
+                    <div
+                      role="alert"
+                      className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-800"
+                    >
+                      {preview.incompatibleReason} Samakan satuan resep kedua item lebih dulu.
+                    </div>
+                  )}
+                  <ul className="space-y-1.5">
+                    {preview.rows.map((row) => (
+                      <li
+                        key={row.key}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 flex items-start justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold text-slate-800 tabular-nums">
+                            {row.formula}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            dari: {row.sourceName}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {row.isDuplicate && (
+                            <Badge variant="outline" className="text-[10px]">
+                              identik, disatukan
+                            </Badge>
+                          )}
+                          {row.isDefault && (
+                            <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-800">
+                              default
+                            </Badge>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+
+            {/* Step 4: Opsi Gabung & Alias */}
             <div className="space-y-2 pt-2 border-t border-slate-100 bg-slate-50/70 p-3 rounded-xl border border-slate-200/60">
               <span className="font-semibold text-slate-800 block text-[11px]">
                 Opsi Sinkronisasi & Otomasi AI:
@@ -2404,7 +2461,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             </Button>
             <Button
               size="sm"
-              disabled={mergeMutation.isPending || !customMergeName.trim()}
+              disabled={
+                mergeMutation.isPending ||
+                !customMergeName.trim() ||
+                Boolean(buildMergedPackagingPreview(mergeItemsList, targetItemId).incompatibleReason)
+              }
               onClick={handleExecuteMerge}
               className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold gap-1.5 px-4"
             >

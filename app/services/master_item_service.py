@@ -7,11 +7,13 @@ import re
 from typing import Any
 from uuid import uuid4
 from difflib import SequenceMatcher
-from sqlalchemy import select, func, or_, and_, delete
+from sqlalchemy import select, func, or_, and_, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.master_item import MasterItem, MasterItemPackaging
 from app.models.expense import Expense
 from app.models.expense_log import ExpenseLog
+from app.models.menu_product import MenuIngredient
+from app.models.purchase_request import PurchaseRequestItem
 from app.models.supplier import Supplier
 from app.config import settings
 from app.services.master_data_service import (
@@ -392,12 +394,165 @@ async def sync_master_item_packagings(
 
     if cleaned_rows:
         default_pkg = next((r for r in cleaned_rows if r.is_default and r.is_active), None) or cleaned_rows[0]
-        master_item.satuan_beli = default_pkg.purchase_unit
-        master_item.satuan_ecer = default_pkg.retail_unit
-        master_item.satuan_resep = default_pkg.base_unit
-        master_item.konversi_resep = round(float(default_pkg.base_qty), 6)
-        if len(cleaned_rows) > 1 or default_pkg.retail_qty > 1:
-            master_item.tipe_satuan = "keduanya"
+        _apply_default_packaging_to_legacy_fields(master_item, default_pkg, len(cleaned_rows))
+
+
+def _apply_default_packaging_to_legacy_fields(
+    master_item: MasterItem,
+    default_pkg: MasterItemPackaging,
+    packaging_count: int,
+) -> None:
+    """Selaraskan field legacy MasterItem dengan varian kemasan default."""
+    master_item.satuan_beli = default_pkg.purchase_unit
+    master_item.satuan_ecer = default_pkg.retail_unit
+    master_item.satuan_resep = default_pkg.base_unit
+    master_item.konversi_resep = round(float(default_pkg.base_qty), 6)
+    if packaging_count > 1 or float(default_pkg.retail_qty) > 1:
+        master_item.tipe_satuan = "keduanya"
+
+
+def _packaging_dedupe_key(p: MasterItemPackaging) -> tuple[str, float, str, float]:
+    return (
+        (normalize_recipe_unit(p.purchase_unit) or p.purchase_unit or "").strip().lower(),
+        round(float(p.retail_qty), 4),
+        (normalize_recipe_unit(p.retail_unit) or p.retail_unit or "").strip().lower(),
+        round(float(p.base_qty), 4),
+    )
+
+
+def _merge_keyword_strings(*parts: str | None) -> str:
+    """Gabungkan daftar keyword dipisah koma tanpa duplikat (case-insensitive)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in parts:
+        for token in (part or "").split(","):
+            t = token.strip()
+            if t and t.lower() not in seen:
+                seen.add(t.lower())
+                out.append(t)
+    return ", ".join(out)
+
+
+async def _materialize_legacy_packaging(db: AsyncSession, items: list[MasterItem]) -> None:
+    """Item lama tanpa baris varian tetapi punya konversi resep dibuatkan 1 varian default."""
+    for item in items:
+        if item.packagings:
+            continue
+        b_unit = (item.satuan_resep or "").strip()
+        b_qty = float(item.konversi_resep or 0.0)
+        if not b_unit or b_qty <= 0:
+            continue
+        p_unit = (item.satuan_beli or "Pcs").strip() or "Pcs"
+        r_unit = (item.satuan_ecer or p_unit).strip() or p_unit
+        isi = (item.isi_paket or "").strip()
+        label = f"{p_unit} ({isi})" if isi else f"{p_unit} ({b_qty:g} {b_unit})"
+        pkg = MasterItemPackaging(
+            master_item_id=item.id,
+            label=label[:120],
+            purchase_unit=p_unit[:50],
+            retail_qty=1.0,
+            retail_unit=r_unit[:50],
+            base_qty=round(b_qty, 4),
+            base_unit=(normalize_recipe_unit(b_unit) or b_unit)[:50],
+            keywords=isi,
+            is_default=True,
+            is_active=True,
+        )
+        db.add(pkg)
+        await db.flush()
+        await db.refresh(item, ["packagings"])
+
+
+def _resolve_merge_base_unit(target: MasterItem, sources: list[MasterItem]) -> str | None:
+    default_pkg = next((p for p in target.packagings if p.is_default), None) or (
+        target.packagings[0] if target.packagings else None
+    )
+    if default_pkg and default_pkg.base_unit:
+        return normalize_recipe_unit(default_pkg.base_unit) or default_pkg.base_unit
+    if target.satuan_resep:
+        return normalize_recipe_unit(target.satuan_resep) or target.satuan_resep
+    for s in sources:
+        for p in s.packagings:
+            if p.base_unit:
+                return normalize_recipe_unit(p.base_unit) or p.base_unit
+    return None
+
+
+def _assert_packaging_units_compatible(
+    target: MasterItem,
+    sources: list[MasterItem],
+    base_unit: str | None,
+) -> None:
+    """Tolak merge bila satuan resep sebuah varian tidak sekeluarga dengan satuan resep item utama."""
+    if not base_unit:
+        return
+    for item in [target, *sources]:
+        for p in item.packagings:
+            converted, _ = _convert_direct_qty_to_base(1.0, p.base_unit, base_unit)
+            if converted is None:
+                raise ValueError(
+                    f"Satuan resep '{p.base_unit}' pada '{item.item_name}' tidak kompatibel dengan "
+                    f"'{base_unit}' milik item utama. Samakan satuan resep kedua item sebelum digabungkan."
+                )
+
+
+async def _merge_packagings(
+    db: AsyncSession,
+    target: MasterItem,
+    sources: list[MasterItem],
+    base_unit: str | None,
+) -> dict[str, int]:
+    """
+    Pindahkan varian kemasan item sumber ke item target.
+    - Varian identik dengan milik target tidak dipindah; transaksi dialihkan ke varian target.
+    - Varian unik dipindah lewat relasi ORM sehingga `id` tetap dan Expense.packaging_id tetap valid.
+    """
+    moved = 0
+    deduped = 0
+    existing: dict[tuple[str, float, str, float], MasterItemPackaging] = {
+        _packaging_dedupe_key(p): p for p in target.packagings
+    }
+
+    for src in sources:
+        seed = _merge_keyword_strings(src.item_name, src.aliases)
+        for pkg in list(src.packagings):
+            if base_unit and (normalize_recipe_unit(pkg.base_unit) or pkg.base_unit) != base_unit:
+                converted, _ = _convert_direct_qty_to_base(float(pkg.base_qty), pkg.base_unit, base_unit)
+                if converted is not None:
+                    pkg.base_qty = converted
+                    pkg.base_unit = base_unit
+
+            key = _packaging_dedupe_key(pkg)
+            kept = existing.get(key)
+            if kept is not None:
+                await db.execute(
+                    update(Expense).where(Expense.packaging_id == pkg.id).values(packaging_id=kept.id)
+                )
+                kept.keywords = _merge_keyword_strings(kept.keywords, pkg.keywords, seed)
+                deduped += 1
+                continue
+
+            pkg.is_default = False
+            pkg.keywords = _merge_keyword_strings(pkg.keywords, seed)
+            pkg.master_item = target
+            existing[key] = pkg
+            moved += 1
+
+    await db.flush()
+
+    if target.packagings:
+        defaults = [p for p in target.packagings if p.is_default and p.is_active]
+        if not defaults:
+            first_active = next((p for p in target.packagings if p.is_active), target.packagings[0])
+            first_active.is_default = True
+        elif len(defaults) > 1:
+            for extra in defaults[1:]:
+                extra.is_default = False
+        default_pkg = next((p for p in target.packagings if p.is_default), target.packagings[0])
+        _apply_default_packaging_to_legacy_fields(target, default_pkg, len(target.packagings))
+        await db.flush()
+
+    return {"packagings_moved": moved, "packagings_deduped": deduped}
 
 
 def _pick_closest_by_price(
@@ -2317,6 +2472,26 @@ async def merge_master_items(
             "Silakan pilih nama lain atau sertakan item tersebut untuk digabungkan."
         )
 
+    # 2b. Kemasan: materialisasi item lama -> validasi satuan resep -> pindahkan varian (id tetap)
+    await _materialize_legacy_packaging(db, [target, *sources])
+    merge_base_unit = _resolve_merge_base_unit(target, sources)
+    _assert_packaging_units_compatible(target, sources, merge_base_unit)
+    pkg_stats = await _merge_packagings(db, target, sources, merge_base_unit)
+
+    # 2c. Alihkan tautan resep menu & request belanja agar tidak terputus (FK SET NULL saat sumber dihapus)
+    menu_ing_res = await db.execute(
+        update(MenuIngredient)
+        .where(MenuIngredient.master_item_id.in_(clean_source_ids))
+        .values(master_item_id=target.id)
+    )
+    pr_item_res = await db.execute(
+        update(PurchaseRequestItem)
+        .where(PurchaseRequestItem.master_item_id.in_(clean_source_ids))
+        .values(master_item_id=target.id)
+    )
+    menu_ingredients_reassigned = int(menu_ing_res.rowcount or 0)
+    purchase_request_items_reassigned = int(pr_item_res.rowcount or 0)
+
     # 3. Kumpulkan data sources sebelum diubah/dihapus
     source_names = [s.item_name for s in sources]
     source_aliases_lists = [(s.aliases or "").split(",") for s in sources]
@@ -2436,18 +2611,21 @@ async def merge_master_items(
         target.category = target_category
     if adopted_supplier is not None:
         target.default_supplier = adopted_supplier or "-"
-    if adopted_satuan_beli is not None:
+    # Bila item punya varian kemasan, field legacy mengikuti varian default (kecuali dioverride eksplisit)
+    has_pkgs = bool(target.packagings)
+    if adopted_satuan_beli is not None and (not has_pkgs or custom_satuan_beli is not None):
         target.satuan_beli = adopted_satuan_beli or "Pcs"
     if adopted_tipe_satuan is not None:
         target.tipe_satuan = adopted_tipe_satuan or "keduanya"
     if adopted_isi_paket is not None:
         target.isi_paket = adopted_isi_paket
-    if adopted_satuan_ecer is not None:
+    if adopted_satuan_ecer is not None and (not has_pkgs or custom_satuan_ecer is not None):
         target.satuan_ecer = adopted_satuan_ecer or "Pcs"
-    if adopted_satuan_resep is not None:
-        target.satuan_resep = adopted_satuan_resep
-    if adopted_konversi_resep is not None:
-        target.konversi_resep = adopted_konversi_resep
+    if not has_pkgs:
+        if adopted_satuan_resep is not None:
+            target.satuan_resep = adopted_satuan_resep
+        if adopted_konversi_resep is not None:
+            target.konversi_resep = adopted_konversi_resep
     if merge_aliases:
         target.aliases = final_aliases_str
 
@@ -2495,16 +2673,27 @@ async def merge_master_items(
         "last_unit_price": last_unit_price,
         "last_supplier": last_supplier,
         "tx_count": tx_count,
+        "packagings": serialize_master_item_packagings(
+            target, t_stats.get("packaging_last_prices") or {}
+        ),
         "created_at": target.created_at,
     }
 
     return {
         "ok": True,
-        "message": f"Berhasil menggabungkan {len(sources)} item ke '{target.item_name}'. {reassigned_count} transaksi dialihkan.",
+        "message": (
+            f"Berhasil menggabungkan {len(sources)} item ke '{target.item_name}'. "
+            f"{reassigned_count} transaksi dialihkan, "
+            f"{len(target.packagings)} varian kemasan."
+        ),
         "target_item": target_resp,
         "merged_sources": source_names,
         "expenses_reassigned_count": reassigned_count,
         "aliases_added": aliases_added,
+        "packagings_moved": pkg_stats["packagings_moved"],
+        "packagings_deduped": pkg_stats["packagings_deduped"],
+        "menu_ingredients_reassigned": menu_ingredients_reassigned,
+        "purchase_request_items_reassigned": purchase_request_items_reassigned,
     }
 
 

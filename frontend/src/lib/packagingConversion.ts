@@ -110,3 +110,29 @@ export function formatConversionQty(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return "0";
   return Number(n).toLocaleString("id-ID", { maximumFractionDigits: 3 });
 }
+
+export function shouldShowRetailTier(params: {
+  qty: number;
+  unit: string;
+  retailQty: number | null | undefined;
+  retailUnit: string | null | undefined;
+  baseUnit: string | null | undefined;
+}): boolean {
+  if (
+    params.retailQty === null ||
+    params.retailQty === undefined ||
+    !(params.retailQty > 0) ||
+    !params.retailUnit?.trim()
+  ) {
+    return false;
+  }
+  const qtySafe = params.qty > 0 ? params.qty : 1;
+  const retailClean = params.retailUnit.trim().toLowerCase();
+  const unitClean = (params.unit || "").trim().toLowerCase();
+  const baseClean = (params.baseUnit || "").trim().toLowerCase();
+
+  if (Math.abs(params.retailQty - qtySafe) <= 1e-6) return false;
+  if (retailClean === unitClean) return false;
+  if (baseClean && retailClean === baseClean) return false;
+  return true;
+}

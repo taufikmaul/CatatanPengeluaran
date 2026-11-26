@@ -6,6 +6,7 @@ import { formatRupiah, toIsoDate } from "@/lib/formatters";
 import {
   computeLiveConversionPreview,
   formatConversionQty,
+  shouldShowRetailTier,
 } from "@/lib/packagingConversion";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -392,19 +393,21 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
                 <span>
                   {formatConversionQty(Number(qty || 1))} {unit || "Pcs"}
                 </span>
-                {liveConversion.retail_qty !== null &&
-                  liveConversion.retail_unit &&
-                  (liveConversion.retail_unit.toLowerCase() !==
-                    (unit || "").toLowerCase() ||
-                    liveConversion.retail_qty !== Number(qty || 1)) && (
-                    <>
-                      <ArrowRight className="w-3 h-3 shrink-0" />
-                      <span>
-                        {formatConversionQty(liveConversion.retail_qty)}{" "}
-                        {liveConversion.retail_unit}
-                      </span>
-                    </>
-                  )}
+                {shouldShowRetailTier({
+                  qty: Number(qty || 1),
+                  unit: unit || "Pcs",
+                  retailQty: liveConversion.retail_qty,
+                  retailUnit: liveConversion.retail_unit,
+                  baseUnit: liveConversion.base_unit,
+                }) && (
+                  <>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span>
+                      {formatConversionQty(liveConversion.retail_qty)}{" "}
+                      {liveConversion.retail_unit}
+                    </span>
+                  </>
+                )}
                 <ArrowRight className="w-3 h-3 shrink-0" />
                 <strong className="tabular-nums">
                   {formatConversionQty(liveConversion.base_qty)}{" "}
@@ -421,8 +424,9 @@ export const LedgerSummaryPanel: React.FC<LedgerSummaryPanelProps> = React.memo(
         </div>
       )}
 
-      {/* Hint & Selector Satuan & Turunan dari Master Item (Flat Hairline Section) */}
-      {catProfile.showMasterItemAutocomplete &&
+      {/* Hint & Selector Satuan & Turunan Legacy (hanya jika belum pakai Varian Kemasan) */}
+      {activePackagings.length === 0 &&
+        catProfile.showMasterItemAutocomplete &&
         selectedSuggestionHint &&
         (selectedSuggestionHint.isi_paket ||
           selectedSuggestionHint.tipe_satuan === "keduanya") && (
