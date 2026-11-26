@@ -17,8 +17,9 @@ import { CsvTemplateImportDialog } from "@/components/common/CsvTemplateImportDi
 import {
   PackagingVariantsEditor,
   type EditablePackagingVariant,
+  createDefaultPackagingVariant,
   toEditableVariants,
-  toApiPackagingsPayload,
+  buildItemUnitPayload,
 } from "./PackagingVariantsEditor";
 import {
   MasterItem,
@@ -30,12 +31,6 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupText,
-} from "@/components/ui/input-group";
 import { AdaptiveSelect } from "@/components/ui/searchable-select";
 import { DataTable } from "@/components/common/DataTable";
 import {
@@ -87,7 +82,6 @@ import {
   AlertTriangle,
   Layers,
   Sparkles,
-  ArrowRight,
   ShieldCheck,
   SlidersHorizontal,
   Table2,
@@ -100,110 +94,6 @@ import {
 } from "lucide-react";
 
 const RECIPE_UNIT_BASE = ["Gram", "ml", "Pcs", "Butir", "Lembar", "cm"] as const;
-
-function normalizeLocalRecipeUnit(raw: string): string {
-  const cleaned = raw.trim().toLowerCase().replace(/[^a-z]/g, "");
-  const map: Record<string, string> = {
-    g: "Gram",
-    gr: "Gram",
-    gram: "Gram",
-    grams: "Gram",
-    kg: "Kg",
-    kilogram: "Kg",
-    ons: "Ons",
-    oz: "Ons",
-    ml: "ml",
-    cc: "ml",
-    l: "Liter",
-    lt: "Liter",
-    ltr: "Liter",
-    liter: "Liter",
-    m: "Meter",
-    meter: "Meter",
-    cm: "cm",
-    pcs: "Pcs",
-    pc: "Pcs",
-    buah: "Pcs",
-    butir: "Butir",
-    lembar: "Lembar",
-    lbr: "Lembar",
-    lusin: "Lusin",
-    lsn: "Lusin",
-    kodi: "Kodi",
-    gross: "Gross",
-    tray: "Tray",
-  };
-  return map[cleaned] || raw.trim();
-}
-
-function convertParsedQtyToSmallest(
-  qty: number,
-  rawUnit: string
-): { unit: string; factor: number } | null {
-  if (!Number.isFinite(qty) || qty <= 0) return null;
-  const norm = normalizeLocalRecipeUnit(rawUnit);
-  const direct: Record<string, { unit: string; mult: number }> = {
-    Kg: { unit: "Gram", mult: 1000 },
-    Ons: { unit: "Gram", mult: 100 },
-    Gram: { unit: "Gram", mult: 1 },
-    Liter: { unit: "ml", mult: 1000 },
-    ml: { unit: "ml", mult: 1 },
-    Meter: { unit: "cm", mult: 100 },
-    cm: { unit: "cm", mult: 1 },
-    Lusin: { unit: "Pcs", mult: 12 },
-    Kodi: { unit: "Pcs", mult: 20 },
-    Gross: { unit: "Pcs", mult: 144 },
-    Tray: { unit: "Butir", mult: 30 },
-    Butir: { unit: "Butir", mult: 1 },
-    Pcs: { unit: "Pcs", mult: 1 },
-    Lembar: { unit: "Lembar", mult: 1 },
-  };
-  const found = direct[norm];
-  if (!found) return null;
-  return {
-    unit: found.unit,
-    factor: Math.round(qty * found.mult * 10000) / 10000,
-  };
-}
-
-function suggestLocalRecipeUnit(
-  satuanBeli: string,
-  isiPaket: string
-): { unit: string; factor: string } | null {
-  if (isiPaket && isiPaket.trim()) {
-    for (const seg of isiPaket.split(/[,;]/)) {
-      const s = seg.trim();
-      if (!s) continue;
-      const mMult = s.match(
-        /(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)?\s*(?:x|@)\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)/i
-      );
-      if (mMult) {
-        const outerQty = parseFloat(mMult[1].replace(",", "."));
-        const innerQty = parseFloat(mMult[3].replace(",", "."));
-        const innerConv = convertParsedQtyToSmallest(innerQty, mMult[4]);
-        if (innerConv && outerQty > 0) {
-          const total = Math.round(outerQty * innerConv.factor * 10000) / 10000;
-          return { unit: innerConv.unit, factor: String(total) };
-        }
-      }
-      const mSingle = s.match(/(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)/);
-      if (mSingle) {
-        const qtyVal = parseFloat(mSingle[1].replace(",", "."));
-        const conv = convertParsedQtyToSmallest(qtyVal, mSingle[2]);
-        if (conv) {
-          return { unit: conv.unit, factor: String(conv.factor) };
-        }
-      }
-    }
-  }
-
-  const normBeli = normalizeLocalRecipeUnit(satuanBeli);
-  const direct = convertParsedQtyToSmallest(1, normBeli);
-  if (direct) {
-    return { unit: direct.unit, factor: String(direct.factor) };
-  }
-  return null;
-}
 
 interface MasterItemsTabProps {
   categories: string[];
@@ -232,16 +122,28 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   const [category, setCategory] = useState(categories[0] || "Bahan Kue");
   const [aliases, setAliases] = useState("");
   const [defaultSupplier, setDefaultSupplier] = useState("");
-  const [satuanBeli, setSatuanBeli] = useState("Box");
-  const [tipeSatuan, setTipeSatuan] = useState<"keduanya" | "paket" | "ecer">("keduanya");
-  const [isiPaket, setIsiPaket] = useState("");
-  const [satuanEcer, setSatuanEcer] = useState("Pouch");
   const [satuanResep, setSatuanResep] = useState("");
-  const [konversiResep, setKonversiResep] = useState("");
-  const [recipeUnitTouched, setRecipeUnitTouched] = useState(false);
 
   const recipeUnitOptions = useMemo(
     () => Array.from(new Set([...RECIPE_UNIT_BASE, ...units])),
+    [units]
+  );
+
+  const perRetailUnitOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...RECIPE_UNIT_BASE,
+          "Kg",
+          "Ons",
+          "Liter",
+          "Lusin",
+          "Kodi",
+          "Gross",
+          "Meter",
+          ...units,
+        ])
+      ),
     [units]
   );
 
@@ -334,20 +236,26 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
   // Edit dialog state
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [addPackagings, setAddPackagings] = useState<EditablePackagingVariant[]>([]);
+  const [addPackagings, setAddPackagings] = useState<EditablePackagingVariant[]>(() => [
+    createDefaultPackagingVariant(),
+  ]);
   const [editPackagings, setEditPackagings] = useState<EditablePackagingVariant[]>([]);
   const [editForm, setEditForm] = useState({
     item_name: "",
     category: "",
     aliases: "",
     default_supplier: "",
-    satuan_beli: "Pcs",
-    tipe_satuan: "keduanya" as "keduanya" | "paket" | "ecer",
-    isi_paket: "",
-    satuan_ecer: "Pcs",
     satuan_resep: "",
-    konversi_resep: "",
   });
+
+  const openAddDialog = () => {
+    setItemName("");
+    setAliases("");
+    setDefaultSupplier("");
+    setSatuanResep("");
+    setAddPackagings([createDefaultPackagingVariant()]);
+    setIsAddDialogOpen(true);
+  };
 
   // Audit & Merge state
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -457,21 +365,20 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   const addMutation = useMutation({
     mutationFn: async () => {
-      const parsedKonv = Number(konversiResep);
-      const packagingsPayload = toApiPackagingsPayload(addPackagings);
+      const derived = buildItemUnitPayload(addPackagings, satuanResep);
       return (
         await api.post("/master-items", {
           item_name: itemName,
           category,
           aliases,
           default_supplier: defaultSupplier || "-",
-          satuan_beli: satuanBeli || "Pcs",
-          tipe_satuan: tipeSatuan,
-          isi_paket: isiPaket,
-          satuan_ecer: satuanEcer || "Pcs",
-          satuan_resep: satuanResep.trim() || null,
-          konversi_resep: parsedKonv > 0 ? parsedKonv : null,
-          ...(packagingsPayload.length > 0 ? { packagings: packagingsPayload } : {}),
+          satuan_beli: derived.satuan_beli,
+          tipe_satuan: derived.tipe_satuan,
+          isi_paket: derived.isi_paket,
+          satuan_ecer: derived.satuan_ecer,
+          satuan_resep: derived.satuan_resep,
+          konversi_resep: derived.konversi_resep,
+          ...(derived.packagings.length > 0 ? { packagings: derived.packagings } : {}),
         })
       ).data;
     },
@@ -481,12 +388,8 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
       setItemName("");
       setAliases("");
       setDefaultSupplier("");
-      setIsiPaket("");
-      setAddPackagings([]);
-      setRecipeUnitTouched(false);
-      const nextHint = suggestLocalRecipeUnit(satuanBeli, "");
-      setSatuanResep(nextHint ? nextHint.unit : "");
-      setKonversiResep(nextHint ? nextHint.factor : "");
+      setSatuanResep("");
+      setAddPackagings([createDefaultPackagingVariant()]);
       invalidateAll();
     },
     onError: (err: any) => {
@@ -807,21 +710,13 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
   const startEdit = (item: MasterItem) => {
     setEditingItem(item);
-    setEditPackagings(toEditableVariants(item.packagings));
+    setEditPackagings(toEditableVariants(item.packagings, item));
     setEditForm({
       item_name: item.item_name,
       category: item.category,
       aliases: item.aliases || "",
       default_supplier: item.default_supplier === "-" ? "" : item.default_supplier,
-      satuan_beli: item.satuan_beli || "Pcs",
-      tipe_satuan: item.tipe_satuan || "keduanya",
-      isi_paket: item.isi_paket || "",
-      satuan_ecer: item.satuan_ecer || "Pcs",
       satuan_resep: item.satuan_resep || "",
-      konversi_resep:
-        item.konversi_resep !== null && item.konversi_resep !== undefined
-          ? String(item.konversi_resep)
-          : "",
     });
     setIsEditDialogOpen(true);
   };
@@ -1376,17 +1271,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
           {canEdit && (
             <Button
               size="sm"
-              onClick={() => {
-                setItemName("");
-                setAliases("");
-                setDefaultSupplier("");
-                setIsiPaket("");
-                setRecipeUnitTouched(false);
-                const nextHint = suggestLocalRecipeUnit(satuanBeli, "");
-                setSatuanResep(nextHint ? nextHint.unit : "");
-                setKonversiResep(nextHint ? nextHint.factor : "");
-                setIsAddDialogOpen(true);
-              }}
+              onClick={openAddDialog}
               className="h-8 rounded-lg text-xs font-semibold gap-1.5 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:hover:bg-slate-200 dark:text-slate-900 ledger-press"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1542,6 +1427,11 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (!itemName.trim()) return;
+              const derived = buildItemUnitPayload(addPackagings, satuanResep);
+              if (satuanResep.trim() && !(derived.konversi_resep && derived.konversi_resep > 0)) {
+                toast.error("Isi ukuran kemasan agar konversi ke satuan resep terhitung.");
+                return;
+              }
               addMutation.mutate();
             }}
             className="space-y-4 pt-2"
@@ -1575,87 +1465,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground block">
-                  Tipe Satuan
-                </label>
-                <AdaptiveSelect
-                  value={tipeSatuan}
-                  onValueChange={(val) => setTipeSatuan(val as any)}
-                  options={[
-                    { value: "keduanya", label: "Paket & Ecer" },
-                    { value: "paket", label: "Hanya Paket" },
-                    { value: "ecer", label: "Hanya Ecer" },
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Satuan Beli / Kemasan
-                </label>
-                <AdaptiveSelect
-                  value={satuanBeli}
-                  onValueChange={(nextBeli) => {
-                    setSatuanBeli(nextBeli);
-                    if (!recipeUnitTouched) {
-                      const nextHint = suggestLocalRecipeUnit(nextBeli, isiPaket);
-                      setSatuanResep(nextHint ? nextHint.unit : "");
-                      setKonversiResep(nextHint ? nextHint.factor : "");
-                    }
-                  }}
-                  options={units}
-                  creatable={true}
-                  creatablePrefix="Satuan"
-                  placeholder="Pilih satuan beli..."
-                  searchPlaceholder="Cari satuan..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Satuan Eceran
-                </label>
-                <AdaptiveSelect
-                  value={satuanEcer}
-                  onValueChange={setSatuanEcer}
-                  disabled={tipeSatuan === "paket"}
-                  options={units}
-                  creatable={true}
-                  creatablePrefix="Satuan"
-                  placeholder="Pilih satuan ecer..."
-                  searchPlaceholder="Cari satuan..."
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Turunan / Isi Kemasan
-                </label>
-                <Input
-                  placeholder="Contoh: 1Kg, 500g atau 1 box isi 6 pouch 2kg"
-                  value={isiPaket}
-                  onChange={(e) => {
-                    const nextIsi = e.target.value;
-                    setIsiPaket(nextIsi);
-                    if (!recipeUnitTouched) {
-                      const nextHint = suggestLocalRecipeUnit(satuanBeli, nextIsi);
-                      setSatuanResep(nextHint ? nextHint.unit : "");
-                      setKonversiResep(nextHint ? nextHint.factor : "");
-                    }
-                  }}
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
                   Supplier / Toko Default
                 </label>
                 <Input
-                  placeholder="Opsional (mis. Toko Makmur)"
+                  placeholder="Opsional (mis. Ny. Liem)"
                   value={defaultSupplier}
                   onChange={(e) => setDefaultSupplier(e.target.value)}
                   className="h-9 text-xs"
@@ -1663,96 +1476,45 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground block">
-                Kata Kunci / Alias di Struk (Opsional)
-              </label>
-              <Input
-                placeholder="Pisahkan koma: carnation pouch, skm carnation"
-                value={aliases}
-                onChange={(e) => setAliases(e.target.value)}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <div className="pt-3 border-t border-border/70 space-y-2.5">
-              <span className="text-xs font-semibold text-foreground block">
-                Konfigurasi Satuan Resep (Terkecil)
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-foreground block">
-                    Satuan Resep (Terkecil)
-                  </label>
-                  <AdaptiveSelect
-                    value={satuanResep}
-                    onValueChange={(val) => {
-                      setRecipeUnitTouched(true);
-                      setSatuanResep(val);
-                    }}
-                    options={[
-                      { value: "", label: "Auto dari satuan beli / isi paket" },
-                      ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
-                    ]}
-                    creatable={true}
-                    creatablePrefix="Satuan"
-                    placeholder="Auto dari satuan beli..."
-                    searchPlaceholder="Cari satuan resep..."
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-foreground block">
-                    Isi / 1 {satuanBeli || "Satuan Beli"}
-                  </label>
-                  <InputGroup className="h-9">
-                    <InputGroupInput
-                      type="number"
-                      min={0.0001}
-                      step="any"
-                      placeholder="Contoh: 1000"
-                      value={konversiResep}
-                      onChange={(e) => {
-                        setRecipeUnitTouched(true);
-                        setKonversiResep(e.target.value);
-                      }}
-                      className="text-xs tabular-nums"
-                    />
-                    {satuanResep && (
-                      <InputGroupAddon align="inline-end" className="pr-2.5">
-                        <InputGroupText className="text-xs">{satuanResep}</InputGroupText>
-                      </InputGroupAddon>
-                    )}
-                  </InputGroup>
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
+                  Satuan Resep (Terkecil)
+                </label>
+                <AdaptiveSelect
+                  value={satuanResep}
+                  onValueChange={setSatuanResep}
+                  options={[
+                    { value: "", label: "Pilih satuan resep (opsional)" },
+                    ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
+                  ]}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Gram / ml / Pcs..."
+                  searchPlaceholder="Cari satuan resep..."
+                />
               </div>
 
-              <div className="text-[11px] text-muted-foreground">
-                {satuanResep && Number(konversiResep) > 0 ? (
-                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
-                    <span>1 {satuanBeli || "Pcs"}</span>
-                    <ArrowRight className="w-3 h-3 shrink-0" />
-                    {isiPaket ? <span>({isiPaket})</span> : null}
-                    <span>=</span>
-                    <strong className="tabular-nums">
-                      {konversiResep} {satuanResep}
-                    </strong>
-                  </div>
-                ) : (
-                  <span>Kosongkan jika ingin sistem mendeteksi otomatis (mis. 1 Kg = 1000 Gram).</span>
-                )}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
+                  Alias Struk / AI (Opsional)
+                </label>
+                <Input
+                  placeholder="Pisahkan koma: skm carnation, carnation 2kg"
+                  value={aliases}
+                  onChange={(e) => setAliases(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
             </div>
 
             <PackagingVariantsEditor
               variants={addPackagings}
               onChange={setAddPackagings}
+              baseUnit={satuanResep}
+              onAutoSuggestBaseUnit={(unit) => setSatuanResep(unit)}
               units={units}
-              recipeUnits={recipeUnitOptions}
-              defaultPurchaseUnit={satuanBeli}
-              defaultRetailUnit={satuanEcer}
-              defaultBaseUnit={satuanResep}
-              defaultBaseQty={konversiResep}
+              perRetailUnits={perRetailUnitOptions}
             />
 
             <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
@@ -1794,24 +1556,25 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
             onSubmit={(e) => {
               e.preventDefault();
               if (!editingItem || !editForm.item_name.trim()) return;
-              const cleanUnit = editForm.satuan_resep.trim();
-              const cleanKonv = Number(editForm.konversi_resep);
-              if (cleanUnit && !(cleanKonv > 0)) {
-                toast.error("Isi faktor konversi resep lebih dari 0.");
-                return;
-              }
-              if (!cleanUnit && editForm.konversi_resep.trim() !== "") {
-                toast.error("Pilih satuan resep terkecil.");
+              const derived = buildItemUnitPayload(editPackagings, editForm.satuan_resep);
+              if (editForm.satuan_resep.trim() && !(derived.konversi_resep && derived.konversi_resep > 0)) {
+                toast.error("Isi ukuran kemasan agar konversi ke satuan resep terhitung.");
                 return;
               }
               updateMutation.mutate({
                 id: editingItem.id,
                 payload: {
-                  ...editForm,
+                  item_name: editForm.item_name,
+                  category: editForm.category,
+                  aliases: editForm.aliases,
                   default_supplier: editForm.default_supplier.trim() || "-",
-                  satuan_resep: cleanUnit || null,
-                  konversi_resep: cleanUnit && cleanKonv > 0 ? cleanKonv : null,
-                  packagings: toApiPackagingsPayload(editPackagings),
+                  satuan_beli: derived.satuan_beli,
+                  satuan_ecer: derived.satuan_ecer,
+                  tipe_satuan: derived.tipe_satuan,
+                  isi_paket: derived.isi_paket,
+                  satuan_resep: derived.satuan_resep,
+                  konversi_resep: derived.konversi_resep,
+                  packagings: derived.packagings,
                 },
               });
             }}
@@ -1846,78 +1609,10 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
 
               <div className="space-y-1">
                 <label className="text-xs font-medium text-foreground block">
-                  Tipe Satuan
-                </label>
-                <AdaptiveSelect
-                  value={editForm.tipe_satuan}
-                  onValueChange={(val) =>
-                    setEditForm({ ...editForm, tipe_satuan: val as any })
-                  }
-                  options={[
-                    { value: "keduanya", label: "Paket & Ecer" },
-                    { value: "paket", label: "Hanya Paket" },
-                    { value: "ecer", label: "Hanya Ecer" },
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Satuan Beli / Kemasan
-                </label>
-                <AdaptiveSelect
-                  value={editForm.satuan_beli}
-                  onValueChange={(val) =>
-                    setEditForm({ ...editForm, satuan_beli: val })
-                  }
-                  options={units}
-                  creatable={true}
-                  creatablePrefix="Satuan"
-                  placeholder="Pilih satuan beli..."
-                  searchPlaceholder="Cari satuan..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Satuan Eceran
-                </label>
-                <AdaptiveSelect
-                  value={editForm.satuan_ecer}
-                  onValueChange={(val) =>
-                    setEditForm({ ...editForm, satuan_ecer: val })
-                  }
-                  disabled={editForm.tipe_satuan === "paket"}
-                  options={units}
-                  creatable={true}
-                  creatablePrefix="Satuan"
-                  placeholder="Pilih satuan ecer..."
-                  searchPlaceholder="Cari satuan..."
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
-                  Turunan / Isi Kemasan
-                </label>
-                <Input
-                  placeholder="Contoh: 1Kg, 500g"
-                  value={editForm.isi_paket}
-                  onChange={(e) => setEditForm({ ...editForm, isi_paket: e.target.value })}
-                  className="h-9 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-foreground block">
                   Supplier / Toko Default
                 </label>
                 <Input
-                  placeholder="Opsional (mis. Toko Makmur)"
+                  placeholder="Opsional (mis. Ny. Liem)"
                   value={editForm.default_supplier}
                   onChange={(e) => setEditForm({ ...editForm, default_supplier: e.target.value })}
                   className="h-9 text-xs"
@@ -1925,120 +1620,51 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground block">
-                Kata Kunci / Alias di Struk (Opsional)
-              </label>
-              <Input
-                placeholder="Pisahkan koma: alias1, alias2"
-                value={editForm.aliases}
-                onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <div className="pt-3 border-t border-border/70 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-foreground">
-                  Konfigurasi Satuan Resep (Terkecil)
-                </span>
-                {(() => {
-                  const suggested = suggestLocalRecipeUnit(
-                    editForm.satuan_beli,
-                    editForm.isi_paket
-                  );
-                  return suggested ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditForm((prev) => ({
-                          ...prev,
-                          satuan_resep: suggested.unit,
-                          konversi_resep: suggested.factor,
-                        }))
-                      }
-                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                    >
-                      Saran: {suggested.factor} {suggested.unit}
-                    </button>
-                  ) : null;
-                })()}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
+                  Satuan Resep (Terkecil)
+                </label>
+                <AdaptiveSelect
+                  value={editForm.satuan_resep}
+                  onValueChange={(val) =>
+                    setEditForm({ ...editForm, satuan_resep: val })
+                  }
+                  options={[
+                    { value: "", label: "Belum diatur" },
+                    ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
+                  ]}
+                  creatable={true}
+                  creatablePrefix="Satuan"
+                  placeholder="Gram / ml / Pcs..."
+                  searchPlaceholder="Cari satuan resep..."
+                />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-foreground block">
-                    Satuan Resep (Terkecil)
-                  </label>
-                  <AdaptiveSelect
-                    value={editForm.satuan_resep}
-                    onValueChange={(val) =>
-                      setEditForm({ ...editForm, satuan_resep: val })
-                    }
-                    options={[
-                      { value: "", label: "Belum diatur" },
-                      ...recipeUnitOptions.map((u) => ({ value: u, label: u })),
-                    ]}
-                    creatable={true}
-                    creatablePrefix="Satuan"
-                    placeholder="Belum diatur"
-                    searchPlaceholder="Cari satuan resep..."
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-foreground block">
-                    Isi / 1 {editForm.satuan_beli || "Beli"}
-                  </label>
-                  <InputGroup className="h-9">
-                    <InputGroupInput
-                      type="number"
-                      min={0.0001}
-                      step="any"
-                      placeholder="mis. 1000"
-                      value={editForm.konversi_resep}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, konversi_resep: e.target.value })
-                      }
-                      className="text-xs tabular-nums"
-                    />
-                    {editForm.satuan_resep && (
-                      <InputGroupAddon align="inline-end" className="pr-2.5">
-                        <InputGroupText className="text-xs">
-                          {editForm.satuan_resep}
-                        </InputGroupText>
-                      </InputGroupAddon>
-                    )}
-                  </InputGroup>
-                </div>
-              </div>
-
-              <div className="text-[11px] text-muted-foreground">
-                {editForm.satuan_resep && Number(editForm.konversi_resep) > 0 ? (
-                  <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 font-medium">
-                    <span>1 {editForm.satuan_beli || "Pcs"}</span>
-                    <ArrowRight className="w-3 h-3 shrink-0" />
-                    {editForm.isi_paket ? <span>({editForm.isi_paket})</span> : null}
-                    <span>=</span>
-                    <strong className="tabular-nums">
-                      {editForm.konversi_resep} {editForm.satuan_resep}
-                    </strong>
-                  </div>
-                ) : (
-                  <span>Belum ada konversi resep.</span>
-                )}
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-foreground block">
+                  Alias Struk / AI (Opsional)
+                </label>
+                <Input
+                  placeholder="Pisahkan koma: alias1, alias2"
+                  value={editForm.aliases}
+                  onChange={(e) => setEditForm({ ...editForm, aliases: e.target.value })}
+                  className="h-9 text-xs"
+                />
               </div>
             </div>
 
             <PackagingVariantsEditor
               variants={editPackagings}
               onChange={setEditPackagings}
+              baseUnit={editForm.satuan_resep}
+              onAutoSuggestBaseUnit={(unit) =>
+                setEditForm((prev) =>
+                  prev.satuan_resep.trim() ? prev : { ...prev, satuan_resep: unit }
+                )
+              }
               units={units}
-              recipeUnits={recipeUnitOptions}
-              defaultPurchaseUnit={editForm.satuan_beli}
-              defaultRetailUnit={editForm.satuan_ecer}
-              defaultBaseUnit={editForm.satuan_resep}
-              defaultBaseQty={editForm.konversi_resep}
+              perRetailUnits={perRetailUnitOptions}
             />
 
             <DialogFooter className="gap-2 pt-3 border-t border-border/70 flex justify-end">
@@ -2102,7 +1728,7 @@ export const MasterItemsTab: React.FC<MasterItemsTabProps> = ({
                 {canEdit && (
                   <Button
                     size="sm"
-                    onClick={() => setIsAddDialogOpen(true)}
+                    onClick={openAddDialog}
                     className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 rounded-lg text-xs h-8 font-semibold gap-1"
                   >
                     <Plus className="w-3.5 h-3.5" />

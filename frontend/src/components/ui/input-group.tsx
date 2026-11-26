@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
-function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
+const InputGroup = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div">
+>(({ className, ...props }, ref) => {
   return (
     <div
+      ref={ref}
       data-slot="input-group"
       role="group"
       className={cn(
@@ -34,7 +38,8 @@ function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
       {...props}
     />
   )
-}
+})
+InputGroup.displayName = "InputGroup"
 
 const inputGroupAddonVariants = cva(
   "text-muted-foreground flex h-auto cursor-text select-none items-center justify-center gap-2 py-1.5 text-sm font-medium group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-4",
@@ -128,12 +133,13 @@ function InputGroupText({ className, ...props }: React.ComponentProps<"span">) {
   )
 }
 
-function InputGroupInput({
-  className,
-  ...props
-}: React.ComponentProps<"input">) {
+const InputGroupInput = React.forwardRef<
+  HTMLInputElement,
+  React.ComponentProps<"input">
+>(({ className, ...props }, ref) => {
   return (
     <Input
+      ref={ref}
       data-slot="input-group-control"
       className={cn(
         "flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent",
@@ -142,14 +148,16 @@ function InputGroupInput({
       {...props}
     />
   )
-}
+})
+InputGroupInput.displayName = "InputGroupInput"
 
-function InputGroupTextarea({
-  className,
-  ...props
-}: React.ComponentProps<"textarea">) {
+const InputGroupTextarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.ComponentProps<"textarea">
+>(({ className, ...props }, ref) => {
   return (
     <Textarea
+      ref={ref}
       data-slot="input-group-control"
       className={cn(
         "flex-1 resize-none rounded-none border-0 bg-transparent py-3 shadow-none focus-visible:ring-0 dark:bg-transparent",
@@ -158,7 +166,8 @@ function InputGroupTextarea({
       {...props}
     />
   )
-}
+})
+InputGroupTextarea.displayName = "InputGroupTextarea"
 
 export {
   InputGroup,

@@ -1086,11 +1086,11 @@ export const ExpenseFormDrawer: React.FC<ExpenseFormDrawerProps> = ({
                             setValue("master_item_id", null);
                             setSelectedSuggestionHint(null);
                           },
+                          onBlur: () => setTimeout(() => setShowItemDropdown(false), 180),
                         })}
                         onFocus={() => {
                           if (catProfile.showMasterItemAutocomplete) setShowItemDropdown(true);
                         }}
-                        onBlur={() => setTimeout(() => setShowItemDropdown(false), 180)}
                         className="text-xs"
                       />
                       {catProfile.showMasterItemAutocomplete &&
