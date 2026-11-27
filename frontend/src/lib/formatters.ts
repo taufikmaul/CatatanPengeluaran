@@ -15,6 +15,25 @@ export function formatRupiah(amount: number | string | null | undefined): string
 }
 
 /**
+ * Format angka harga satuan kecil (seperti harga per Gram/ml) dengan presisi desimal bila diperlukan.
+ */
+export function formatUnitRupiah(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || isNaN(Number(amount))) {
+    return "Rp 0";
+  }
+  const num = Number(amount);
+  const abs = Math.abs(num);
+  const maxDigits =
+    abs === 0 ? 0 : abs < 1 ? 4 : abs < 1000 || Math.abs(num - Math.round(num)) >= 0.005 ? 2 : 0;
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDigits,
+  }).format(num);
+}
+
+/**
  * Format tanggal ISO (2026-10-22) ke format bahasa Indonesia (22 Okt 2026)
  */
 export function formatDateId(dateStr: string | null | undefined, includeDay: boolean = false): string {

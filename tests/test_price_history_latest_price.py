@@ -358,3 +358,171 @@ async def test_audit_merge_and_search_last_price_use_latest_not_max(
     assert latest_exp is not None
     assert latest_exp.expense_date == date(2026, 10, 20)
     assert float(latest_exp.unit_price) == 295000.0
+
+
+@pytest.mark.asyncio
+async def test_price_history_normalizes_to_master_recipe_unit_across_packagings(
+    client, auth_cookies, db
+):
+    """
+    Grafik inflasi & perbandingan harga antar toko harus menormalisasi harga ke satuan resep/terkecil
+    ketika satu item dibeli dengan kemasan berbeda (mis. Dus 16kg vs Pouch 2kg) atau transaksi lama
+    dibuat sebelum satuan resep dikonfigurasi.
+    """
+    client.cookies.update(auth_cookies)
+
+    # 1. Buat transaksi lama SEBELUM MasterItem memiliki satuan_resep/packaging
+    tx_legacy_res = await client.post(
+        "/api/v1/expenses",
+        json={
+            "expense_date": "2026-09-11",
+            "supplier": "Alat Kopi Bandung",
+            "item_name": "Susu Carnation Test",
+            "qty": 2,
+            "unit": "Dus",
+            "category": "Bahan Kue",
+            "unit_price": 436000,
+            "total_price": 872000,
+            "pay_method": "Transfer",
+            "pay_status": "Lunas",
+        },
+    )
+    assert tx_legacy_res.status_code == 201
+    tx_legacy = tx_legacy_res.json()
+    assert tx_legacy["base_unit_price"] is None
+
+    # 2. Daftarkan MasterItem dengan satuan_resep='Gram' dan 2 varian kemasan (Dus 16000g & Pouch 2000g)
+    m_res = await client.post(
+        "/api/v1/master-items",
+        json={
+            "item_name": "Susu Carnation Test",
+            "category": "Bahan Kue",
+            "satuan_beli": "Dus",
+            "satuan_ecer": "Pouch",
+            "satuan_resep": "Gram",
+            "konversi_resep": 16000,
+            "packagings": [
+                {
+                    "label": "Karton Pouch (8x2kg)",
+                    "purchase_unit": "Dus",
+                    "retail_qty": 8,
+                    "retail_unit": "Pouch",
+                    "base_qty": 16000,
+                    "base_unit": "Gram",
+                    "keywords": "dus, karton",
+                    "is_default": True,
+                    "is_active": True,
+                },
+                {
+                    "label": "Pouch 2kg",
+                    "purchase_unit": "Pouch",
+                    "retail_qty": 1,
+                    "retail_unit": "Pouch",
+                    "base_qty": 2000,
+                    "base_unit": "Gram",
+                    "keywords": "pouch, 2kg",
+                    "is_default": False,
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+    assert m_res.status_code == 201, m_res.text
+    mi = m_res.json()
+    pkgs = {p["purchase_unit"]: p for p in mi["packagings"]}
+
+    # 3. Beli eceran 24 Pouch @ Rp 61.000 (= Rp 30.5 / Gram) di Ny. Liem
+    tx_pouch_res = await client.post(
+        "/api/v1/expenses",
+        json={
+            "expense_date": "2026-10-08",
+            "supplier": "Ny. Liem",
+            "item_name": "Susu Carnation Test",
+            "master_item_id": mi["id"],
+            "packaging_id": pkgs["Pouch"]["id"],
+            "qty": 24,
+            "unit": "Pouch",
+            "category": "Bahan Kue",
+            "unit_price": 61000,
+            "total_price": 1464000,
+            "pay_method": "Transfer",
+            "pay_status": "Lunas",
+        },
+    )
+    assert tx_pouch_res.status_code == 201
+    assert tx_pouch_res.json()["base_unit_price"] == 30.5
+
+    # 4. Beli 2 Dus @ Rp 488.000 (= Rp 30.5 / Gram) di Ny. Liem
+    tx_dus_res = await client.post(
+        "/api/v1/expenses",
+        json={
+            "expense_date": "2026-11-02",
+            "supplier": "Ny. Liem",
+            "item_name": "Susu Carnation Test",
+            "master_item_id": mi["id"],
+            "packaging_id": pkgs["Dus"]["id"],
+            "qty": 2,
+            "unit": "Dus",
+            "category": "Bahan Kue",
+            "unit_price": 488000,
+            "total_price": 976000,
+            "pay_method": "Transfer",
+            "pay_status": "Lunas",
+        },
+    )
+    assert tx_dus_res.status_code == 201
+    assert tx_dus_res.json()["base_unit_price"] == 30.5
+
+    # 5. Cek price-history: semua transaksi termasuk transaksi legacy harus ternormalisasi ke Gram
+    ph = (await client.get(f"/api/v1/expenses/price-history?item_id={mi['id']}")).json()
+    assert ph["ok"] is True
+    assert ph["base_unit"] == "Gram"
+    assert ph["has_recipe_unit"] is True
+    assert ph["tx_count"] == 3
+
+    # Field satuan beli lama tetap terjaga untuk kompatibilitas API
+    assert ph["latest_price"] == 488000.0
+    assert ph["min_price"] == 61000.0
+
+    # Field satuan terkecil / resep: Alat Kopi Bandung (436.000 / 16.000 = 27.25/Gram) paling murah!
+    assert ph["base_min_price"] == 27.25
+    assert ph["base_max_price"] == 30.5
+    assert ph["base_latest_price"] == 30.5
+    assert ph["base_cheapest_supplier"] == "Alat Kopi Bandung"
+    assert ph["suppliers_comparison"][0]["supplier"] == "Alat Kopi Bandung"
+    assert ph["suppliers_comparison"][0]["base_min_price"] == 27.25
+    assert ph["suppliers_comparison"][1]["supplier"] == "Ny. Liem"
+    assert ph["suppliers_comparison"][1]["base_min_price"] == 30.5
+
+    by_id = {h["id"]: h for h in ph["history"]}
+    assert by_id[tx_legacy["id"]]["base_unit"] == "Gram"
+    assert by_id[tx_legacy["id"]]["base_unit_price"] == 27.25
+    assert by_id[tx_pouch_res.json()["id"]]["base_unit_price"] == 30.5
+    assert by_id[tx_dus_res.json()["id"]]["base_unit_price"] == 30.5
+
+
+@pytest.mark.asyncio
+async def test_price_history_unconfigured_container_unit_has_no_forced_base_unit(
+    client, auth_cookies
+):
+    """Item tanpa satuan resep dan memakai unit kemasan tak terukur tidak memaksa base_unit."""
+    client.cookies.update(auth_cookies)
+    res = await client.post(
+        "/api/v1/expenses",
+        json={
+            "expense_date": "2026-11-10",
+            "supplier": "Toko Kemasan",
+            "item_name": "Kardus Polos Custom",
+            "qty": 5,
+            "unit": "Bal",
+            "category": "Kemasan",
+            "unit_price": 75000,
+            "total_price": 375000,
+        },
+    )
+    assert res.status_code == 201
+    ph = (await client.get("/api/v1/expenses/price-history?item_name=Kardus%20Polos%20Custom")).json()
+    assert ph["base_unit"] is None
+    assert ph["has_recipe_unit"] is False
+    assert ph["base_latest_price"] is None
+    assert ph["latest_price"] == 75000.0

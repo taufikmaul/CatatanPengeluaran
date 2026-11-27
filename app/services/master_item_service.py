@@ -257,6 +257,29 @@ def _convert_direct_qty_to_base(
     return None, None
 
 
+def convert_unit_price_between_base_units(
+    price_per_unit: float,
+    from_unit: str | None,
+    to_unit: str | None,
+) -> float | None:
+    """Konversi harga per satuan dasar antar satuan metrik/standar yang kompatibel (mis. /Kg -> /Gram)."""
+    if price_per_unit is None or price_per_unit <= 0:
+        return None
+    norm_from = normalize_recipe_unit(from_unit)
+    norm_to = normalize_recipe_unit(to_unit)
+    if not norm_from or not norm_to:
+        return None
+    if norm_from.lower() == norm_to.lower():
+        return round(float(price_per_unit), 4)
+    mult = _METRIC_CONVERSIONS.get((norm_from, norm_to))
+    if mult is not None and mult > 0:
+        return round(float(price_per_unit) / mult, 4)
+    inv = _METRIC_CONVERSIONS.get((norm_to, norm_from))
+    if inv is not None and inv > 0:
+        return round(float(price_per_unit) * inv, 4)
+    return None
+
+
 def _score_packaging_keywords(pkg: MasterItemPackaging, raw_text: str) -> int:
     """Hitung kecocokan keyword/label/ukuran kemasan pada teks struk."""
     if not raw_text:

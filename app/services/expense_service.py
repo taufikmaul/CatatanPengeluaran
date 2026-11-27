@@ -1137,6 +1137,182 @@ async def search_last_price(db: AsyncSession, keyword: str) -> Expense | None:
     return result.scalar_one_or_none()
 
 
+def _resolve_configured_base_unit(master_item) -> str | None:
+    """Ambil satuan terkecil / satuan resep yang dikonfigurasi pada MasterItem."""
+    from app.services.master_item_service import normalize_recipe_unit
+
+    if not master_item:
+        return None
+    if getattr(master_item, "satuan_resep", None) and str(master_item.satuan_resep).strip():
+        raw = str(master_item.satuan_resep).strip()
+        return normalize_recipe_unit(raw) or raw
+    active_pkgs = [p for p in (getattr(master_item, "packagings", None) or []) if p.is_active]
+    if active_pkgs:
+        def_pkg = next((p for p in active_pkgs if p.is_default), active_pkgs[0])
+        if def_pkg and def_pkg.base_unit and str(def_pkg.base_unit).strip():
+            raw = str(def_pkg.base_unit).strip()
+            return normalize_recipe_unit(raw) or raw
+    return None
+
+
+def _resolve_ecer_base_price_from_isi_paket(
+    master_item,
+    row_unit: str | None,
+    qty: float,
+    eff_price: float,
+    target_base_unit: str,
+) -> tuple[float | None, str | None, float | None]:
+    """
+    Fallback khusus untuk MasterItem lama yang mengisi satuan_ecer + isi_paket + satuan_resep
+    tanpa baris MasterItemPackaging (mis. satuan_beli='Dus', satuan_ecer='Pouch', isi_paket='8 pouch @ 2kg').
+    """
+    import re
+    from app.services.master_item_service import (
+        _units_match,
+        _convert_qty_to_smallest_unit,
+        convert_unit_price_between_base_units,
+    )
+
+    if not master_item or not row_unit or eff_price <= 0:
+        return None, None, None
+    satuan_ecer = getattr(master_item, "satuan_ecer", None)
+    if not satuan_ecer or not _units_match(satuan_ecer, row_unit):
+        return None, None, None
+
+    isi_paket = (getattr(master_item, "isi_paket", None) or "").strip()
+    if isi_paket:
+        for seg in re.split(r"[,;]", isi_paket):
+            s = seg.strip()
+            if not s:
+                continue
+            m_mult = re.search(
+                r"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)\s*(?:x|@)?\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)",
+                s,
+                re.IGNORECASE,
+            )
+            if m_mult and _units_match(m_mult.group(2), satuan_ecer):
+                inner_qty = float(m_mult.group(3).replace(",", "."))
+                inner_unit, inner_factor = _convert_qty_to_smallest_unit(inner_qty, m_mult.group(4))
+                if inner_unit and inner_factor and inner_factor > 0:
+                    raw_price = round(eff_price / inner_factor, 4)
+                    converted = convert_unit_price_between_base_units(raw_price, inner_unit, target_base_unit)
+                    if converted is not None and converted > 0:
+                        b_qty = round((eff_price * qty) / converted, 4)
+                        return b_qty, target_base_unit, converted
+
+            m_count = re.search(r"(\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)", s)
+            if (
+                m_count
+                and _units_match(m_count.group(2), satuan_ecer)
+                and getattr(master_item, "konversi_resep", None)
+                and float(master_item.konversi_resep) > 0
+                and getattr(master_item, "satuan_resep", None)
+            ):
+                count_val = float(m_count.group(1).replace(",", "."))
+                if count_val > 0:
+                    per_ecer_konv = float(master_item.konversi_resep) / count_val
+                    raw_price = round(eff_price / per_ecer_konv, 4)
+                    converted = convert_unit_price_between_base_units(
+                        raw_price, master_item.satuan_resep, target_base_unit
+                    )
+                    if converted is not None and converted > 0:
+                        b_qty = round((eff_price * qty) / converted, 4)
+                        return b_qty, target_base_unit, converted
+
+    return None, None, None
+
+
+def _resolve_row_base_price(
+    r: Expense,
+    eff_price: float,
+    matched_master,
+    configured_base_unit: str | None,
+    pkg_last_prices: dict[int, float],
+) -> tuple[float | None, str | None, float | None]:
+    """Hitung (base_qty, base_unit, base_unit_price) per transaksi untuk normalisasi riwayat harga."""
+    from app.services.master_item_service import (
+        convert_unit_price_between_base_units,
+        normalize_recipe_unit,
+        resolve_packaging_conversion,
+    )
+
+    if eff_price <= 0:
+        return None, None, None
+
+    qty_val = float(r.qty or 1) if float(r.qty or 0) > 0 else 1.0
+    stored_b_unit_raw = (getattr(r, "base_unit", None) or "").strip() or None
+    stored_b_unit = normalize_recipe_unit(stored_b_unit_raw) or stored_b_unit_raw
+    stored_b_qty = (
+        float(r.base_qty)
+        if getattr(r, "base_qty", None) is not None and float(r.base_qty) > 0
+        else None
+    )
+    stored_b_price = (
+        float(r.base_unit_price)
+        if getattr(r, "base_unit_price", None) is not None and float(r.base_unit_price) > 0
+        else None
+    )
+    if stored_b_price is None and stored_b_qty and stored_b_qty > 0:
+        stored_b_price = round((eff_price * qty_val) / stored_b_qty, 4)
+
+    if configured_base_unit:
+        if stored_b_price is not None and stored_b_price > 0 and stored_b_unit:
+            converted = convert_unit_price_between_base_units(
+                stored_b_price, stored_b_unit, configured_base_unit
+            )
+            if converted is not None and converted > 0:
+                b_qty = round((eff_price * qty_val) / converted, 4)
+                return b_qty, configured_base_unit, converted
+
+        conv = resolve_packaging_conversion(
+            matched_master,
+            qty=qty_val,
+            unit=getattr(r, "unit", None),
+            unit_price=eff_price,
+            raw_text=f"{r.item_name or ''} {r.notes or ''}",
+            explicit_packaging_id=getattr(r, "packaging_id", None),
+            pkg_last_prices=pkg_last_prices,
+            allow_draft_warning=False,
+        )
+        if conv.get("base_unit_price") is not None and conv.get("base_unit"):
+            converted = convert_unit_price_between_base_units(
+                float(conv["base_unit_price"]), conv["base_unit"], configured_base_unit
+            )
+            if converted is not None and converted > 0:
+                b_qty = round((eff_price * qty_val) / converted, 4)
+                return b_qty, configured_base_unit, converted
+
+        return _resolve_ecer_base_price_from_isi_paket(
+            matched_master,
+            getattr(r, "unit", None),
+            qty_val,
+            eff_price,
+            configured_base_unit,
+        )
+
+    if stored_b_price is not None and stored_b_price > 0 and stored_b_unit:
+        return stored_b_qty, stored_b_unit, stored_b_price
+
+    conv = resolve_packaging_conversion(
+        matched_master,
+        qty=qty_val,
+        unit=getattr(r, "unit", None),
+        unit_price=eff_price,
+        raw_text=f"{r.item_name or ''} {r.notes or ''}",
+        explicit_packaging_id=getattr(r, "packaging_id", None),
+        pkg_last_prices=pkg_last_prices,
+        allow_draft_warning=False,
+    )
+    if conv.get("base_unit_price") is not None and conv.get("base_unit"):
+        raw_bu = str(conv["base_unit"]).strip()
+        return (
+            conv.get("base_qty"),
+            normalize_recipe_unit(raw_bu) or raw_bu,
+            float(conv["base_unit_price"]),
+        )
+    return None, None, None
+
+
 async def get_item_price_history(
     db: AsyncSession,
     item_name: str | None = None,
@@ -1145,10 +1321,14 @@ async def get_item_price_history(
     """
     Ambil riwayat pembelian suatu barang beserta statistik harga satuan
     (termurah, rata-rata, tertinggi, terakhir) dan perbandingan harga antar toko/supplier.
-    Mendukung pencarian via ID Item Baku (produk ID) maupun nama barang/alias.
+    Mendukung pencarian via ID Item Baku (produk ID) maupun nama barang/alias,
+    serta normalisasi harga ke satuan terkecil / satuan resep (base_unit) bila tersedia.
     """
     from app.models.master_item import MasterItem
-    from app.services.master_item_service import resolve_effective_unit_price
+    from app.services.master_item_service import (
+        convert_unit_price_between_base_units,
+        resolve_effective_unit_price,
+    )
 
     matched_master = None
     if master_item_id:
@@ -1173,17 +1353,25 @@ async def get_item_price_history(
 
     target_master_id = matched_master.id if matched_master else master_item_id
     display_name = matched_master.item_name if matched_master else clean_q
+    configured_base_unit = _resolve_configured_base_unit(matched_master)
 
     if not target_master_id and not clean_q:
         return {
             "item_name": "",
             "master_item_id": None,
+            "base_unit": configured_base_unit,
+            "has_recipe_unit": bool(configured_base_unit),
             "tx_count": 0,
             "min_price": 0.0,
             "max_price": 0.0,
             "avg_price": 0.0,
             "latest_price": 0.0,
             "cheapest_supplier": "-",
+            "base_min_price": None,
+            "base_max_price": None,
+            "base_avg_price": None,
+            "base_latest_price": None,
+            "base_cheapest_supplier": None,
             "suppliers_comparison": [],
             "history": [],
         }
@@ -1233,38 +1421,96 @@ async def get_item_price_history(
         return {
             "item_name": display_name or clean_q,
             "master_item_id": target_master_id,
+            "base_unit": configured_base_unit,
+            "has_recipe_unit": bool(configured_base_unit),
             "tx_count": 0,
             "min_price": 0.0,
             "max_price": 0.0,
             "avg_price": 0.0,
             "latest_price": 0.0,
             "cheapest_supplier": "-",
+            "base_min_price": None,
+            "base_max_price": None,
+            "base_avg_price": None,
+            "base_latest_price": None,
+            "base_cheapest_supplier": None,
             "suppliers_comparison": [],
             "history": [],
         }
 
-    priced_rows = [
-        (r, resolve_effective_unit_price(r.unit_price, r.total_price, r.qty))
-        for r in rows
-    ]
-    priced_rows = [(r, up) for r, up in priced_rows if up > 0]
-    prices = [up for _, up in priced_rows]
+    pkg_last_prices: dict[int, float] = {}
+    for r in rows:
+        if (getattr(r, "review_status", None) or "CONFIRMED") == "DRAFT_WARNING":
+            continue
+        pid = getattr(r, "packaging_id", None)
+        if pid is not None and int(pid) not in pkg_last_prices:
+            eff_p = resolve_effective_unit_price(r.unit_price, r.total_price, r.qty)
+            if eff_p > 0:
+                pkg_last_prices[int(pid)] = eff_p
 
+    enriched_rows: list[tuple[Expense, float, float | None, str | None, float | None]] = []
+    row_base_by_id: dict[int, tuple[float | None, str | None, float | None]] = {}
+    for r in rows:
+        up = resolve_effective_unit_price(r.unit_price, r.total_price, r.qty)
+        b_qty, b_unit, b_price = _resolve_row_base_price(
+            r, up, matched_master, configured_base_unit, pkg_last_prices
+        )
+        row_base_by_id[r.id] = (b_qty, b_unit, b_price)
+        if up > 0:
+            enriched_rows.append((r, up, b_qty, b_unit, b_price))
+
+    # Tentukan item_base_unit bila MasterItem tidak eksplisit menyetel satuan_resep,
+    # hanya jika seluruh transaksi bernilai harga dapat dinormalisasi ke 1 satuan dasar yang kompatibel.
+    item_base_unit = configured_base_unit
+    if not item_base_unit and enriched_rows:
+        candidate_unit = enriched_rows[0][3]
+        if candidate_unit:
+            all_compatible = True
+            normalized_enriched = []
+            for r, up, b_qty, b_unit, b_price in enriched_rows:
+                if b_price is None or not b_unit:
+                    all_compatible = False
+                    break
+                conv_p = convert_unit_price_between_base_units(b_price, b_unit, candidate_unit)
+                if conv_p is None:
+                    all_compatible = False
+                    break
+                qty_val = float(r.qty or 1) if float(r.qty or 0) > 0 else 1.0
+                conv_q = round((up * qty_val) / conv_p, 4) if conv_p > 0 else b_qty
+                normalized_enriched.append((r, up, conv_q, candidate_unit, conv_p))
+            if all_compatible:
+                item_base_unit = candidate_unit
+                enriched_rows = normalized_enriched
+                for r, _, conv_q, conv_u, conv_p in normalized_enriched:
+                    row_base_by_id[r.id] = (conv_q, conv_u, conv_p)
+
+    prices = [up for _, up, _, _, _ in enriched_rows]
     min_price = min(prices) if prices else 0.0
     max_price = max(prices) if prices else 0.0
     avg_price = round(sum(prices) / len(prices), 2) if prices else 0.0
-    latest_price = priced_rows[0][1] if priced_rows else 0.0
+    latest_price = enriched_rows[0][1] if enriched_rows else 0.0
+
+    base_prices = [bp for _, _, _, _, bp in enriched_rows if bp is not None and bp > 0]
+    base_min_price = round(min(base_prices), 4) if base_prices else None
+    base_max_price = round(max(base_prices), 4) if base_prices else None
+    base_avg_price = round(sum(base_prices) / len(base_prices), 4) if base_prices else None
+    base_latest_price = next((bp for _, _, _, _, bp in enriched_rows if bp is not None and bp > 0), None)
 
     # Perbandingan harga per toko/supplier
     sup_map: dict[str, dict] = {}
     cheapest_supplier = "-"
     cheapest_val = None
+    base_cheapest_supplier: str | None = None
+    base_cheapest_val: float | None = None
 
-    for r, up in priced_rows:
+    for r, up, _, _, bp in enriched_rows:
         sup_raw = (r.supplier or "-").strip() or "-"
         if cheapest_val is None or up < cheapest_val:
             cheapest_val = up
             cheapest_supplier = sup_raw
+        if bp is not None and bp > 0 and (base_cheapest_val is None or bp < base_cheapest_val):
+            base_cheapest_val = bp
+            base_cheapest_supplier = sup_raw
 
         skey = sup_raw.lower()
         if skey not in sup_map:
@@ -1273,6 +1519,9 @@ async def get_item_price_history(
                 "min_price": up,
                 "max_price": up,
                 "latest_price": up,
+                "base_min_price": round(bp, 4) if (bp is not None and bp > 0) else None,
+                "base_max_price": round(bp, 4) if (bp is not None and bp > 0) else None,
+                "base_latest_price": round(bp, 4) if (bp is not None and bp > 0) else None,
                 "last_date": str(r.expense_date),
                 "tx_count": 1,
             }
@@ -1283,38 +1532,69 @@ async def get_item_price_history(
                 entry["min_price"] = up
             if up > entry["max_price"]:
                 entry["max_price"] = up
+            if bp is not None and bp > 0:
+                rbp = round(bp, 4)
+                if entry["base_min_price"] is None or rbp < entry["base_min_price"]:
+                    entry["base_min_price"] = rbp
+                if entry["base_max_price"] is None or rbp > entry["base_max_price"]:
+                    entry["base_max_price"] = rbp
+                if entry["base_latest_price"] is None:
+                    entry["base_latest_price"] = rbp
 
-    suppliers_comparison = sorted(
-        sup_map.values(),
-        key=lambda x: (x["min_price"], -x["tx_count"]),
-    )
+    if item_base_unit and base_prices:
+        suppliers_comparison = sorted(
+            sup_map.values(),
+            key=lambda x: (
+                x["base_min_price"] if x.get("base_min_price") is not None else float("inf"),
+                x["min_price"],
+                -x["tx_count"],
+            ),
+        )
+    else:
+        suppliers_comparison = sorted(
+            sup_map.values(),
+            key=lambda x: (x["min_price"], -x["tx_count"]),
+        )
 
-    history = [
-        {
-            "id": r.id,
-            "expense_date": str(r.expense_date),
-            "supplier": r.supplier or "-",
-            "item_name": r.item_name,
-            "qty": float(r.qty or 1),
-            "unit": getattr(r, "unit", "Pcs") or "Pcs",
-            "unit_price": resolve_effective_unit_price(r.unit_price, r.total_price, r.qty),
-            "total_price": float(r.total_price or 0),
-            "category": r.category or "Operasional",
-            "notes": r.notes or "-",
-            "master_item_id": r.master_item_id,
-        }
-        for r in rows[:50]
-    ]
+    history = []
+    for r in rows[:50]:
+        b_qty, b_unit, b_price = row_base_by_id.get(r.id, (None, None, None))
+        history.append(
+            {
+                "id": r.id,
+                "expense_date": str(r.expense_date),
+                "supplier": r.supplier or "-",
+                "item_name": r.item_name,
+                "qty": float(r.qty or 1),
+                "unit": getattr(r, "unit", "Pcs") or "Pcs",
+                "unit_price": resolve_effective_unit_price(r.unit_price, r.total_price, r.qty),
+                "base_qty": b_qty,
+                "base_unit": b_unit,
+                "base_unit_price": b_price,
+                "review_status": getattr(r, "review_status", "CONFIRMED") or "CONFIRMED",
+                "total_price": float(r.total_price or 0),
+                "category": r.category or "Operasional",
+                "notes": r.notes or "-",
+                "master_item_id": r.master_item_id,
+            }
+        )
 
     return {
         "item_name": display_name or rows[0].item_name,
         "master_item_id": target_master_id,
+        "base_unit": item_base_unit,
+        "has_recipe_unit": bool(configured_base_unit),
         "tx_count": len(rows),
         "min_price": min_price,
         "max_price": max_price,
         "avg_price": avg_price,
         "latest_price": latest_price,
         "cheapest_supplier": cheapest_supplier,
+        "base_min_price": base_min_price,
+        "base_max_price": base_max_price,
+        "base_avg_price": base_avg_price,
+        "base_latest_price": base_latest_price,
+        "base_cheapest_supplier": base_cheapest_supplier,
         "suppliers_comparison": suppliers_comparison,
         "history": history,
     }

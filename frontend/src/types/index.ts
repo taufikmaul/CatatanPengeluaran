@@ -872,6 +872,9 @@ export interface SupplierPriceComparison {
   min_price: number;
   max_price: number;
   latest_price: number;
+  base_min_price?: number | null;
+  base_max_price?: number | null;
+  base_latest_price?: number | null;
   last_date: string;
   tx_count: number;
 }
@@ -880,12 +883,19 @@ export interface ItemPriceHistoryResponse {
   ok: boolean;
   item_name: string;
   master_item_id?: number | null;
+  base_unit?: string | null;
+  has_recipe_unit?: boolean;
   tx_count: number;
   min_price: number;
   max_price: number;
   avg_price: number;
   latest_price: number;
   cheapest_supplier: string;
+  base_min_price?: number | null;
+  base_max_price?: number | null;
+  base_avg_price?: number | null;
+  base_latest_price?: number | null;
+  base_cheapest_supplier?: string | null;
   suppliers_comparison: SupplierPriceComparison[];
   history: Array<{
     id: number;
@@ -895,6 +905,10 @@ export interface ItemPriceHistoryResponse {
     qty: number;
     unit?: string;
     unit_price: number;
+    base_qty?: number | null;
+    base_unit?: string | null;
+    base_unit_price?: number | null;
+    review_status?: string;
     total_price: number;
     category: string;
     notes: string;
